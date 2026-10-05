@@ -1,0 +1,453 @@
+name: Build Manager
+
+on:
+  push:
+    branches: [ "main", "dev", "ci" ]
+    paths:
+      - '.github/workflows/build-manager.yml'
+      - '.github/workflows/build-lkm.yml'
+      - '.github/workflows/ddk-lkm.yml'
+      - '.github/workflows/ksud.yml'
+      - '.github/workflows/ksud-extra.yml'
+      - '.github/scripts/setup-rust-build.sh'
+      - 'repack_apk.py'
+      - 'manager/**'
+      - 'kernel/**'
+      - 'userspace/**'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+  pull_request:
+    branches: [ "main", "dev" ]
+    paths:
+      - '.github/workflows/build-manager.yml'
+      - '.github/workflows/build-lkm.yml'
+      - '.github/workflows/ddk-lkm.yml'
+      - '.github/workflows/ksud.yml'
+      - '.github/workflows/ksud-extra.yml'
+      - '.github/scripts/setup-rust-build.sh'
+      - 'repack_apk.py'
+      - 'manager/**'
+      - 'kernel/**'
+      - 'userspace/**'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+  workflow_call:
+
+jobs:
+  generate-key:
+    runs-on: ubuntu-latest
+    outputs:
+      expected_size: ${{ steps.extract.outputs.expected_size }}
+      expected_hash: ${{ steps.extract.outputs.expected_hash }}
+      keystore: ${{ steps.gen.outputs.keystore }}
+      keystore_password: ${{ steps.gen.outputs.keystore_password }}
+      key_password: ${{ steps.gen.outputs.key_password }}
+    steps:
+      # 品牌签名密钥不入库：各消费 job 直读 secrets.SIGN_*（secret 不能经
+      # job outputs 传递——Actions 会 "Skip output ... may contain secret"）。
+      # PR 构建走下面的临时密钥，不依赖 secrets，fork PR 不受影响。
+      - name: Generate temporary keystore
+        if: github.event_name == 'pull_request'
+        id: gen
+        run: |
+          KEYSTORE_PASSWORD=$(openssl rand -hex 32)
+          KEY_PASSWORD=$(openssl rand -hex 32)
+          echo "keystore_password=$KEYSTORE_PASSWORD" >> $GITHUB_OUTPUT
+          echo "key_password=$KEY_PASSWORD" >> $GITHUB_OUTPUT
+
+          keytool -genkeypair \
+            -alias pr-key \
+            -keyalg RSA -keysize 2048 \
+            -validity 1 \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -keypass "$KEY_PASSWORD" \
+            -dname "CN=KernelSU PR Build" \
+            -storetype JKS \
+            -keystore pr-key.jks
+
+          echo "keystore=$(base64 -w 0 pr-key.jks)" >> $GITHUB_OUTPUT
+
+      - name: Extract certificate hash and size
+        if: github.event_name == 'pull_request'
+        id: extract
+        env:
+          STORE_PASS: ${{ steps.gen.outputs.keystore_password }}
+        run: |
+          # Export DER certificate
+          keytool -exportcert \
+            -alias pr-key \
+            -keystore pr-key.jks \
+            -storepass "$STORE_PASS" \
+            -file pr-cert.der
+
+          # Calculate size in hex
+          SIZE_DEC=$(stat -c%s pr-cert.der)
+          SIZE_HEX=$(printf '0x%04x' "$SIZE_DEC")
+          echo "expected_size=$SIZE_HEX" >> $GITHUB_OUTPUT
+
+          # Calculate SHA256 hash
+          HASH=$(sha256sum pr-cert.der | awk '{print $1}')
+          echo "expected_hash=$HASH" >> $GITHUB_OUTPUT
+
+          echo "Certificate size: $SIZE_HEX ($SIZE_DEC bytes)"
+          echo "Certificate hash: $HASH"
+
+  build-lkm:
+    needs: generate-key
+    uses: ./.github/workflows/build-lkm.yml
+    with:
+      expected_size2: ${{ needs.generate-key.outputs.expected_size || '' }}
+      expected_hash2: ${{ needs.generate-key.outputs.expected_hash || '' }}
+    secrets: inherit
+
+  build-ksuinit:
+    uses: ./.github/workflows/ksuinit.yml
+
+  build-ksud:
+    needs: [build-lkm, build-ksuinit]
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-linux-android
+          - target: x86_64-linux-android
+    uses: ./.github/workflows/ksud.yml
+    with:
+      target: ${{ matrix.target }}
+      pack_lkm: true
+      pack_ksuinit: true
+  
+  build-ksud-extra:
+    needs: [build-lkm, build-ksuinit]
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-pc-windows-gnu # windows pc
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin # Intel mac
+            os: macos-latest
+          - target: aarch64-apple-darwin # M chip mac
+            os: macos-latest
+          - target: aarch64-unknown-linux-musl # arm64 Linux
+            os: ubuntu-latest
+          - target: x86_64-unknown-linux-musl # x86 Linux
+            os: ubuntu-latest
+    uses: ./.github/workflows/ksud-extra.yml
+    with:
+      target: ${{ matrix.target }}
+      os: ${{ matrix.os }}
+      pack_lkm: true
+      pack_ksuinit: true
+
+  build-manager:
+    needs: [generate-key]
+    if: always() && needs.generate-key.result == 'success'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./manager
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Write key
+        if: ${{ ( github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' )) || github.ref_type == 'tag' }}
+        env:
+          BRAND_KEYSTORE: ${{ secrets.SIGN_KEYSTORE_B64 }}
+          BRAND_STORE_PASS: ${{ secrets.SIGN_STORE_PASS }}
+          BRAND_KEY_PASS: ${{ secrets.SIGN_KEY_PASS }}
+        run: |
+          [ -n "$BRAND_KEYSTORE" ] || { echo "::error::secret SIGN_KEYSTORE_B64 not set"; exit 1; }
+          echo "$BRAND_KEYSTORE" | base64 -d > xecpro-key.jks
+          {
+            echo KEYSTORE_PASSWORD="$BRAND_STORE_PASS"
+            echo KEY_ALIAS='xecpro-key'
+            echo KEY_PASSWORD="$BRAND_KEY_PASS"
+            echo KEYSTORE_FILE='xecpro-key.jks'
+          } >> gradle.properties
+
+      - name: Write PR key
+        if: github.event_name == 'pull_request'
+        env:
+          PR_KEYSTORE: ${{ needs.generate-key.outputs.keystore }}
+          PR_KEYSTORE_PASSWORD: ${{ needs.generate-key.outputs.keystore_password }}
+          PR_KEY_PASSWORD: ${{ needs.generate-key.outputs.key_password }}
+        run: |
+          echo "$PR_KEYSTORE" | base64 -d > pr-key.jks
+          {
+            echo KEYSTORE_PASSWORD="$PR_KEYSTORE_PASSWORD"
+            echo KEY_ALIAS='pr-key'
+            echo KEY_PASSWORD="$PR_KEY_PASSWORD"
+            echo KEYSTORE_FILE='pr-key.jks'
+          } >> gradle.properties
+
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # 不用 android-actions/setup-android@v4：它会无条件执行 `sdkmanager tools`，
+      # 而 Google 已下架 tools 包，导致该 action 必然以 exit 1 收尾并中断 job
+      # （本 job 历史上的每一次 failure 都停在这里，Gradle 从未真正启动过）。
+      # 改为直接复用 runner 镜像自带的 Android SDK + cmdline-tools，逐包安装。
+      - name: Setup Android SDK
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "${SDK_ROOT}" ] || [ ! -d "${SDK_ROOT}" ]; then
+            SDK_ROOT=""
+            for d in /usr/local/lib/android/sdk /opt/android-sdk /opt/android "$HOME/Android/Sdk" "$HOME/android-sdk"; do
+              if [ -d "$d" ]; then SDK_ROOT="$d"; break; fi
+            done
+          fi
+          if [ -z "${SDK_ROOT}" ]; then
+            echo "::error::no Android SDK found on this runner"
+            ls -la /usr/local/lib/android 2>/dev/null || true
+            exit 1
+          fi
+          echo "Android SDK root: ${SDK_ROOT}"
+          echo "ANDROID_HOME=${SDK_ROOT}" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=${SDK_ROOT}" >> "$GITHUB_ENV"
+
+          SDKMGR="$(find "${SDK_ROOT}/cmdline-tools" -maxdepth 3 -type f -name sdkmanager 2>/dev/null | sort | tail -n 1)"
+          if [ -z "${SDKMGR}" ]; then
+            echo "::error::sdkmanager not found under ${SDK_ROOT}/cmdline-tools"
+            find /usr/local /opt "$HOME" -maxdepth 5 -type f -name sdkmanager 2>/dev/null | head -n 20 || true
+            exit 1
+          fi
+          echo "sdkmanager: ${SDKMGR}"
+          echo "$(dirname "${SDKMGR}")" >> "$GITHUB_PATH"
+          echo "${SDK_ROOT}/platform-tools" >> "$GITHUB_PATH"
+
+          # 先接受全部 license，保证 sdkmanager 与 AGP 的自动下载都不会被卡住。
+          yes | "${SDKMGR}" --sdk_root="${SDK_ROOT}" --licenses > /dev/null 2>&1 || true
+
+          # 逐包安装：个别包名即使不存在，也不会中断其余包。
+          # 版本与 manager/build.gradle.kts 保持一致：
+          #   compileSdk=37 / buildToolsVersion=37.0.0 / ndk=29.0.14206865
+          for pkg in "platform-tools" "platforms;android-37" "build-tools;37.0.0" "ndk;29.0.14206865"; do
+            echo "--- installing ${pkg}"
+            "${SDKMGR}" --sdk_root="${SDK_ROOT}" --install "${pkg}" \
+              || echo "::warning::sdkmanager could not install '${pkg}'; Gradle will try to auto-download it"
+          done
+
+          ls "${SDK_ROOT}/build-tools" 2>/dev/null || true
+          ls "${SDK_ROOT}/platforms" 2>/dev/null || true
+          ls "${SDK_ROOT}/ndk" 2>/dev/null || true
+
+      - name: Build with Gradle
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          GRADLE_EXTRA=""
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            GRADLE_EXTRA="-PIS_PR_BUILD=true"
+          fi
+
+          # 日志同时落盘。kotlinc / javac 的诊断行不会被 runner 自动上报，
+          # 构建一失败就只剩一句 "exit code 1"，从 Actions 页面之外（例如
+          # check-runs/annotations API）完全看不出是哪一行代码错的。
+          # 这里把关键诊断行转成 annotation，让报错跟着 check run 一起暴露出来。
+          set +e
+          ./gradlew clean assembleRelease ${GRADLE_EXTRA} 2>&1 | tee /tmp/gradle-build.log
+          STATUS="${PIPESTATUS[0]}"
+
+          if [ "${STATUS}" -ne 0 ]; then
+            echo "===== Gradle failed with exit ${STATUS} ====="
+            emit() {
+              while IFS= read -r l; do
+                l="${l%$'\r'}"
+                l="${l//'%'/'%25'}"
+                echo "::error::${l}"
+              done
+            }
+            # 1) 编译器与 Gradle 的关键诊断行（前面带行号，便于定位日志位置）
+            grep -nE "(^|[[:space:]])[ew]: |error:|What went wrong|Execution failed for task|Could not (find|resolve|determine|create)|Caused by|SDK location" \
+              /tmp/gradle-build.log | head -n 25 | emit
+            # 2) 兜底：日志末尾通常就是根因所在
+            tail -n 20 /tmp/gradle-build.log | emit
+            echo "===== end of diagnostics ====="
+            exit "${STATUS}"
+          fi
+
+      - name: Upload build artifact
+        if: ${{ github.event_name == 'pull_request' || (github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) || github.ref_type == 'tag' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: manager-gradle
+          path: manager/app/build/outputs/apk/release/*.apk
+
+      - name: Upload mappings
+        uses: actions/upload-artifact@v7
+        if: ${{ ( github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' )) || github.ref_type == 'tag' }}
+        with:
+          name: "mappings"
+          path: "manager/app/build/outputs/mapping/release/"
+
+  repack-manager:
+    needs: [build-manager, build-ksud, generate-key]
+    if: always() && needs.build-manager.result == 'success' && needs.build-ksud.result == 'success' && needs.generate-key.result == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup need_upload
+        id: need_upload
+        run: |
+          if [ ! -z "${{ secrets.BOT_TOKEN }}" ]; then
+            echo "UPLOAD=true" >> $GITHUB_OUTPUT
+          else
+            echo "UPLOAD=false" >> $GITHUB_OUTPUT
+          fi
+
+      # 同 build-manager：绕开必然失败的 android-actions/setup-android。
+      # repack 需要 build-tools 的 zipalign/apksigner 与 NDK 的 llvm-strip。
+      - name: Setup Android SDK
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "${SDK_ROOT}" ] || [ ! -d "${SDK_ROOT}" ]; then
+            SDK_ROOT=""
+            for d in /usr/local/lib/android/sdk /opt/android-sdk /opt/android "$HOME/Android/Sdk" "$HOME/android-sdk"; do
+              if [ -d "$d" ]; then SDK_ROOT="$d"; break; fi
+            done
+          fi
+          if [ -z "${SDK_ROOT}" ]; then
+            echo "::error::no Android SDK found on this runner"
+            ls -la /usr/local/lib/android 2>/dev/null || true
+            exit 1
+          fi
+          echo "Android SDK root: ${SDK_ROOT}"
+          echo "ANDROID_HOME=${SDK_ROOT}" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=${SDK_ROOT}" >> "$GITHUB_ENV"
+
+          SDKMGR="$(find "${SDK_ROOT}/cmdline-tools" -maxdepth 3 -type f -name sdkmanager 2>/dev/null | sort | tail -n 1)"
+          if [ -z "${SDKMGR}" ]; then
+            echo "::error::sdkmanager not found under ${SDK_ROOT}/cmdline-tools"
+            find /usr/local /opt "$HOME" -maxdepth 5 -type f -name sdkmanager 2>/dev/null | head -n 20 || true
+            exit 1
+          fi
+          echo "sdkmanager: ${SDKMGR}"
+          echo "$(dirname "${SDKMGR}")" >> "$GITHUB_PATH"
+          echo "${SDK_ROOT}/platform-tools" >> "$GITHUB_PATH"
+
+          yes | "${SDKMGR}" --sdk_root="${SDK_ROOT}" --licenses > /dev/null 2>&1 || true
+
+          for pkg in "platform-tools" "build-tools;37.0.0" "ndk;29.0.14206865"; do
+            echo "--- installing ${pkg}"
+            "${SDKMGR}" --sdk_root="${SDK_ROOT}" --install "${pkg}" \
+              || echo "::warning::sdkmanager could not install '${pkg}'; falling back to whatever the runner already has"
+          done
+
+      - name: Download gradle manager artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: manager-gradle
+          path: artifacts/manager-gradle
+
+      - name: Download arm64 ksud
+        uses: actions/download-artifact@v8
+        with:
+          name: ksud-aarch64-linux-android
+          path: artifacts/ksud-aarch64-linux-android
+
+      - name: Download x86_64 ksud
+        uses: actions/download-artifact@v8
+        with:
+          name: ksud-x86_64-linux-android
+          path: artifacts/ksud-x86_64-linux-android
+
+      - name: Place manager apk and ksud artifacts
+        run: |
+          mkdir -p manager/app/build/outputs/apk/release
+          APK=$(find artifacts/manager-gradle -type f -name "*.apk" | head -n 1)
+          test -n "$APK"
+          cp -f "$APK" manager/app/build/outputs/apk/release/
+
+          mkdir -p target/aarch64-linux-android/release
+          mkdir -p target/x86_64-linux-android/release
+          ARM64_KSUD=$(find artifacts/ksud-aarch64-linux-android -type f -name xudc | head -n 1)
+          X86_64_KSUD=$(find artifacts/ksud-x86_64-linux-android -type f -name xudc | head -n 1)
+          test -n "$ARM64_KSUD"
+          test -n "$X86_64_KSUD"
+          cp -f "$ARM64_KSUD" target/aarch64-linux-android/release/xudc
+          cp -f "$X86_64_KSUD" target/x86_64-linux-android/release/xudc
+
+      - name: Prepare signing inputs
+        if: ${{ github.event_name == 'pull_request' || (github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) || github.ref_type == 'tag' }}
+        env:
+          PR_KEYSTORE: ${{ needs.generate-key.outputs.keystore }}
+          PR_KEYSTORE_PASSWORD: ${{ needs.generate-key.outputs.keystore_password }}
+          PR_KEY_PASSWORD: ${{ needs.generate-key.outputs.key_password }}
+          BRAND_KEYSTORE: ${{ secrets.SIGN_KEYSTORE_B64 }}
+          BRAND_STORE_PASS: ${{ secrets.SIGN_STORE_PASS }}
+          BRAND_KEY_PASS: ${{ secrets.SIGN_KEY_PASS }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "$PR_KEYSTORE" | base64 -d > pr-key.jks
+            echo "SIGN_KEYSTORE_FILE=pr-key.jks" >> $GITHUB_ENV
+            echo "SIGN_KEY_ALIAS=pr-key" >> $GITHUB_ENV
+            echo "SIGN_KEYSTORE_PASSWORD=$PR_KEYSTORE_PASSWORD" >> $GITHUB_ENV
+            echo "SIGN_KEY_PASSWORD=$PR_KEY_PASSWORD" >> $GITHUB_ENV
+          else
+            [ -n "$BRAND_KEYSTORE" ] || { echo "::error::secret SIGN_KEYSTORE_B64 not set"; exit 1; }
+            echo "$BRAND_KEYSTORE" | base64 -d > key.jks
+            echo "SIGN_KEYSTORE_FILE=key.jks" >> $GITHUB_ENV
+            echo "SIGN_KEY_ALIAS=xecpro-key" >> $GITHUB_ENV
+            echo "SIGN_KEYSTORE_PASSWORD=$BRAND_STORE_PASS" >> $GITHUB_ENV
+            echo "SIGN_KEY_PASSWORD=$BRAND_KEY_PASS" >> $GITHUB_ENV
+          fi
+
+      - name: Repack and resign
+        if: ${{ github.event_name == 'pull_request' || (github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) || github.ref_type == 'tag' }}
+        run: |
+          python3 repack_apk.py repack \
+            -b release \
+            -t release \
+            -a arm64-v8a \
+            -a x86_64 \
+            -K "$SIGN_KEYSTORE_FILE" \
+            -A "$SIGN_KEY_ALIAS" \
+            -P "$SIGN_KEYSTORE_PASSWORD" \
+            -S "$SIGN_KEY_PASSWORD" \
+            --strip
+
+      - name: Upload build artifact
+        if: ${{ github.event_name == 'pull_request' || (github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) || github.ref_type == 'tag' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: manager
+          path: dist/*.apk
+
+      - name: Upload to telegram
+        if: github.event_name != 'pull_request' && steps.need_upload.outputs.UPLOAD == 'true'
+        env:
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          MESSAGE_THREAD_ID: ${{ secrets.MESSAGE_THREAD_ID }}
+          GITHUB_EVENT: ${{ toJson(github.event) }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TITLE: Manager
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          if [ ! -z "${{ secrets.BOT_TOKEN }}" ]; then
+            export VERSION=$(git rev-list --count HEAD)
+            APK=$(find ./dist -name "*.apk")
+            pip3 install telethon
+            python3 $GITHUB_WORKSPACE/scripts/ksubot.py $APK
+          fi

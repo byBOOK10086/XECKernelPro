@@ -1,0 +1,19 @@
+# Built-in layout: module files live under /dev/.xudc_hidden (tmpfs label),
+# data dir under /data/adb/.xudc_secure (adb_data_file). A normal flash only
+# needs the adb_data_file rules; the tmpfs rules below are what lets the
+# keystore-side components traverse /dev, map the injected libs and talk over
+# local sockets once this module ships inside the kernel.
+allow keystore {adb_data_file shell_data_file tmpfs} file *
+allow keystore tmpfs dir *
+allow keystore tmpfs sock_file *
+allow crash_dump keystore process *
+allow crash_dump platform_app process *
+
+# The engine daemon runs in the root-script domain (renamed here to xecpro);
+# mirror the tcp/udp allowances upstream grants to ksu/magisk domains.
+allow xecpro self:tcp_socket { create connect read write getopt setopt }
+allow xecpro node:tcp_socket node_bind
+allow xecpro port:tcp_socket name_connect
+allow xecpro self:udp_socket { create connect read write getopt setopt }
+allow xecpro node:udp_socket node_bind
+allow xecpro port:udp_socket name_connect
