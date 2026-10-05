@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  XEC Fluid Glass 自适应图标底层：深色玻璃底。
+  设计语言：底是静的（深色渐变），光是水的（teal 光晕）。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="12"
+                android:startY="4"
+                android:endX="96"
+                android:endY="104">
+                <item android:offset="0.0" android:color="#FF143A33" />
+                <item android:offset="0.45" android:color="#FF0D1F1E" />
+                <item android:offset="1.0" android:color="#FF070C0D" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 左上角一层极淡的 teal 光晕，让深底"有光"，避免纯扁平黑。 -->
+    <path android:pathData="M-6,-6h64v64h-64z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="26"
+                android:centerY="24"
+                android:gradientRadius="62">
+                <item android:offset="0.0" android:color="#3312B886" />
+                <item android:offset="1.0" android:color="#0012B886" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

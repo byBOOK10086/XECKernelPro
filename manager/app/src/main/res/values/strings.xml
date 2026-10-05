@@ -1,0 +1,472 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home">Home</string>
+    <string name="home_not_installed">Not installed</string>
+    <string name="home_click_to_install">Tap to install</string>
+    <string name="home_working">Working</string>
+    <string name="home_working_version">Version: %s</string>
+    <string name="home_lkm_update_available">A newer bundled LKM is available. Tap to update.</string>
+    <string name="home_lkm_custom">Custom</string>
+    <string name="home_unsupported">Unsupported</string>
+    <string name="home_unsupported_reason">XECKernel Pro only supports GKI kernels now, but you can patch the image for GKI devices.</string>
+    <string name="home_device_model">Device model</string>
+    <string name="home_kernel">Kernel version</string>
+    <string name="home_manager_version">Manager version</string>
+    <string name="home_download_count">Downloads</string>
+    <string name="home_fingerprint">Fingerprint</string>
+    <string name="home_selinux_status">SELinux status</string>
+    <string name="selinux_status_disabled">Disabled</string>
+    <string name="selinux_status_enforcing">Enforcing</string>
+    <string name="selinux_status_permissive">Permissive</string>
+    <string name="selinux_status_unknown">Unknown</string>
+    <string name="home_seccomp_status">Seccomp status</string>
+    <string name="seccomp_status_not_supported">Not supported</string>
+    <string name="seccomp_status_disabled">Disabled</string>
+    <string name="seccomp_status_strict">Strict</string>
+    <string name="seccomp_status_filter">Filter</string>
+    <string name="seccomp_status_unknown">Unknown</string>
+    <string name="superuser">Superuser</string>
+    <string name="sulog_log_files">Log files</string>
+    <string name="sulog_failed_to_load">Failed to load SU log</string>
+    <string name="sulog_disabled_title">SU log is not enabled</string>
+    <string name="sulog_unsupported_title">SU log is unsupported</string>
+    <string name="sulog_enable_action">Enable</string>
+    <string name="sulog_filter_title">Filter by type</string>
+    <string name="sulog_clean_title">Clean log</string>
+    <string name="sulog_filter_root_execve">Root execve</string>
+    <string name="sulog_filter_sucompat">Classic SU</string>
+    <string name="sulog_filter_ioctl_grant_root">Grant Root</string>
+    <string name="sulog_filter_daemon_restart">Daemon restart</string>
+    <string name="module_failed_to_enable">Failed to enable module: %s</string>
+    <string name="module_failed_to_disable">Failed to disable module: %s</string>
+    <string name="module_empty">No module installed</string>
+    <string name="module">Module</string>
+    <string name="kpm_empty">No kernel patch module installed</string>
+    <string name="kpm">KPM</string>
+    <string name="kpm_activated">KPM activated</string>
+    <string name="kpm_not_activated">KPM not activated</string>
+    <string name="kpm_not_activated_hint">Enable CONFIG_KPM in your kernel and reboot to use kernel patch modules</string>
+    <string name="kpm_version">KPM version: %s</string>
+    <string name="kpm_flash">Flash KPM module</string>
+    <string name="kpm_flash_success">KPM module flashed successfully</string>
+    <string name="kpm_flash_failed">Failed to flash KPM module</string>
+    <string name="kpm_embed">Embed KPM engine</string>
+    <!-- One-Tap Hide (Violet Toolbox pack) -->
+    <string name="hide_env_title">Hide environments</string>
+    <string name="hide_env_violet_title">Violet environment hide</string>
+    <string name="hide_env_violet_desc">Violet Toolbox V6.0 · full hidden-environment deploy (modules + apps + keys)</string>
+    <string name="hide_one_tap_title">One-Tap Hide</string>
+    <string name="hide_one_tap_subtitle">Violet Toolbox · deploy hidden environment</string>
+    <string name="hide_pack_step_manifest">Fetching resource manifest…</string>
+    <string name="hide_pack_step_download">Preparing resource bundle (download / verify)…</string>
+    <string name="hide_pack_manifest_fail">Failed to fetch resource manifest: %1$s</string>
+    <string name="hide_pack_download_fail">Resource download failed: %1$s</string>
+    <string name="hide_pack_dialog_message">本一键隐藏来自紫罗兰工具箱</string>
+    <string name="hide_pack_dialog_use">Use</string>
+    <string name="hide_pack_running">Deploying hidden environment, please keep the screen on…</string>
+    <string name="hide_pack_step_extract">Unpacking resource bundle…</string>
+    <string name="hide_pack_step_modules">Flashing bundled modules (HMA / TEESimulator / Violet / LSPosed / SUSFS / brick-rescue)…</string>
+    <string name="hide_pack_step_apks">Installing bundled apps…</string>
+    <string name="hide_pack_step_tricky">Copying keybox.xml / security_patch.txt / target.txt to /data/adb/tricky_store/…</string>
+    <string name="hide_pack_done">All done. The device will reboot in %1$d seconds…</string>
+    <string name="hide_pack_done_now">Rebooting now…</string>
+    <string name="hide_pack_failed">Failed at: %1$s
+Aborted — the device was NOT rebooted.</string>
+    <string name="hide_pack_back">Go back</string>
+
+    <string name="kpm_embed_hint">Patch the current boot partition with KPatch-Next and flash it back. A reboot is required afterwards — no fastboot needed.</string>
+    <string name="module_install_prompt_with_name">The following modules will be installed: %1$s</string>
+    <string name="module_sort_action_first">Action first</string>
+    <string name="module_sort_enabled_first">Enabled first</string>
+    <string name="module_repos">Repos</string>
+    <string name="module_repos_sort_updated">Updated time</string>
+    <string name="module_repos_sort_created">Created time</string>
+    <string name="module_repos_sort_name">Name</string>
+    <string name="module_repos_sort_stars">Stars</string>
+    <string name="module_repos_source_code">Source code</string>
+    <string name="confirm">Confirm</string>
+    <string name="uninstall">Uninstall</string>
+    <string name="enable">Enable</string>
+    <string name="disable">Disable</string>
+    <string name="module_install">Install</string>
+    <string name="install">Install</string>
+    <string name="reboot">Reboot</string>
+    <string name="settings">Settings</string>
+    <string name="terminal">Terminal</string>
+    <string name="terminal_unavailable">Unable to reach %1$s</string>
+    <string name="terminal_hint">Make sure the Auto_Trigger module is installed and enabled, then retry.</string>
+    <string name="terminal_starting">Starting the module web service…</string>
+    <string name="terminal_start_failed">The module web service did not start</string>
+    <string name="terminal_start_hint">The module binary was found and launched, but nothing is listening on the port. Reboot and retry.</string>
+    <string name="reboot_soft">Soft restart</string>
+    <string name="reboot_userspace">Userspace reboot</string>
+    <string name="reboot_recovery">Reboot to Recovery</string>
+    <string name="reboot_bootloader">Reboot to Bootloader</string>
+    <string name="reboot_download">Reboot to Download</string>
+    <string name="reboot_edl">Reboot to EDL</string>
+    <string name="about">About</string>
+    <string name="module_uninstall_confirm">Are you sure you want to uninstall module %s?</string>
+    <string name="metamodule_uninstall_confirm">Are you sure you want to uninstall module %s? This action will affect all modules, and certain features provided by the metamodule (such as mounting) will no longer work.</string>
+    <string name="module_uninstall_success">%s uninstalled</string>
+    <string name="module_uninstall_failed">Failed to uninstall: %s</string>
+    <string name="module_version">Version</string>
+    <string name="module_author">Author</string>
+    <string name="module_description">Description</string>
+    <string name="module_update_url">Update URL</string>
+    <string name="webui">WebUi</string>
+    <string name="module_long_press_hint">Long press a module banner for 1 second to view details</string>
+    <string name="module_sheet_capability_hint">Action and WebUi are available only when the module provides them</string>
+    <string name="module_sheet_version_label">Version</string>
+    <string name="show_system_apps">Show system apps</string>
+    <string name="send_log">Send logs</string>
+    <string name="safe_mode">Safe mode</string>
+    <string name="jailbreak_mode">Jailbreak mode</string>
+    <string name="home_jailbreak">Jailbreak</string>
+    <string name="jailbreak_timeout">Jailbreak may have failed, please check logs</string>
+    <string name="jailbreak_reboot_warning">You are in Jailbreak mode. Rebooting will lose root access, and you will have to jailbreak again after the device starts up. Reboot anyway?</string>
+    <string name="safe_mode_module_disabled">Module installation is disabled in safe mode</string>
+    <string name="reboot_to_apply">Reboot to take effect</string>
+    <string name="module_magisk_conflict">Modules are unavailable due to a conflict with Magisk!</string>
+    <string name="home_learn_kernelsu">Learn XECKernel Pro</string>
+    <string name="home_learn_kernelsu_url">https://github.com/byBOOK10086/xecpro</string>
+    <string name="home_click_to_learn_kernelsu">Learn how to install XECKernel Pro and use modules.</string>
+    <string name="home_support_title">Developers</string>
+    <string name="home_support_content">Project developers and contributors (official)</string>
+    <string name="home_developers_list"><![CDATA[
+Project developers and contributors (official)
+
+This project is initiated and developed by XEC (3228636402). The following members made important contributions to development, icon design, UI design, testing feedback and module support. We hereby announce and sincerely thank them (in no particular order):
+
+Project developers/authors
+XEC (3228636402)
+
+APK icon design
+阿零不是阿麟 (3068258374)
+今天蕾姆了吗 (2941123540)
+
+UI aesthetic design
+XEC (3228636402)
+小Y (3961592339)
+橙子 (370753004)
+
+Bug testing and quality feedback
+永雏塔菲喵 (1658998584)
+江不辞 (3318621299)
+阿零不是阿麟 (3068258374)
+小Y (3961592339)
+力克千均 (602432323)
+贝利亚大王 (3483361380)
+大表哥 (381283226)
+薇尔莉特 (1941333061)
+我曾是少年。 (1187779562)
+廿二序 (3917257393)
+花香蝶自来 (2815014730)
+etc.
+
+Module support
+微微微 (2898395199)
+
+AK3 build
+凌洛 (3239554101)
+
+API support
+疑问小猫 (3301237007)
+IV. Acknowledgements
+This project is based on tiann/KernelSU. Thanks to KernelSU author weishu (tiann) and the upstream community; thanks to HMA-OSS (frknkrc44), TEESimulator-RS (JingMatrix, Enginex0), Tricky Addon (Enginex0), susfs4ksu (sidex15, simonpunk) and LSPosed for their upstream work.
+Project developer XEC sincerely thanks all the above members for their contributions in development, design, testing and module support.
+We hereby announce and express our gratitude.
+
+Official group: 941895988
+
+XEC Project Team
+]]></string>
+    <string name="home_gki_warning">Starting from v3.0.0, the GKI work mode will be used only in testing environments. We do not recommend it for daily use, and image files will no longer be provided.</string>
+    <string name="about_source_code"><![CDATA[View source code at %1$s<br/>Join our %2$s channel]]></string>
+    <string name="profile" translatable="false">App Profile</string>
+    <string name="profile_default">Default</string>
+    <string name="profile_template">Template</string>
+    <string name="profile_custom">Custom</string>
+    <string name="profile_name">Profile name</string>
+    <string name="profile_namespace">Mount namespace</string>
+    <string name="profile_namespace_inherited">Inherited</string>
+    <string name="profile_namespace_global">Global</string>
+    <string name="profile_namespace_individual">Individual</string>
+    <string name="profile_groups">Groups</string>
+    <string name="profile_capabilities">Capabilities</string>
+    <string name="profile_flags">Flags</string>
+    <string name="profile_selinux_context">SELinux context</string>
+    <string name="profile_umount_modules">Umount modules</string>
+    <string name="failed_to_update_app_profile">Failed to update App Profile for %s</string>
+    <string name="require_manager_version">Manager update required</string>
+    <string name="require_kernel_version">Kernel update required. Tap to install.</string>
+    <string name="require_kernel_version_gki">Kernel update required</string>
+    <string name="settings_umount_modules_default">Umount modules by default</string>
+    <string name="settings_umount_modules_default_summary">The global default value for \"Umount modules\" in App Profile. If enabled, it will remove all module modifications to the system for apps that don\'t have a profile set.</string>
+    <string name="profile_umount_modules_summary">Enabling this option will allow XECKernel Pro to restore any modified files by the modules for this app.</string>
+    <string name="profile_selinux_domain">Domain</string>
+    <string name="profile_selinux_rules">Rules</string>
+    <string name="recently_installed">Recently installed</string>
+    <string name="module_update">Update</string>
+    <string name="module_downloading">Downloading module: %s</string>
+    <string name="module_start_downloading">Start downloading: %s</string>
+    <string name="module_action_success">Module action executed successfully.</string>
+    <string name="new_version_available">New version %s is available, click to upgrade!</string>
+    <string name="launch_app">Launch</string>
+    <string name="force_stop_app">Force stop</string>
+    <string name="restart_app">Restart</string>
+    <string name="failed_to_update_sepolicy">Failed to update SELinux rules for %s</string>
+    <string name="su_not_allowed">Couldn\'t grant Superuser access to %s</string>
+    <string name="module_changelog">Changelog</string>
+    <string name="settings_profile_template">App Profile template</string>
+    <string name="settings_profile_template_summary">Manage local and online template of App Profile.</string>
+    <string name="app_profile_template_create">Create template</string>
+    <string name="app_profile_template_edit">Edit template</string>
+    <string name="app_profile_template_id">ID</string>
+    <string name="app_profile_template_id_invalid">Invalid template ID</string>
+    <string name="app_profile_template_name">Name</string>
+    <string name="app_profile_template_description">Description</string>
+    <string name="app_profile_template_save">Save</string>
+    <string name="app_profile_template_delete">Delete</string>
+    <string name="app_profile_template_view">View template</string>
+    <string name="app_profile_template_id_exist">Template ID already exists!</string>
+    <string name="app_profile_import_export">Import/Export</string>
+    <string name="app_profile_import_from_clipboard">Import from clipboard</string>
+    <string name="app_profile_export_to_clipboard">Export to clipboard</string>
+    <string name="app_profile_template_export_empty">Cannot find local template to export!</string>
+    <string name="app_profile_template_import_success">Imported successfully</string>
+    <string name="app_profile_template_save_failed">Failed to save template</string>
+    <string name="app_profile_template_import_empty">Clipboard is empty!</string>
+    <string name="app_profile_affects_following_apps">Affects the following apps</string>
+    <string name="settings_check_update">Check for updates</string>
+    <string name="settings_check_update_summary">Automatically check for updates when opening the app.</string>
+    <string name="settings_enable_predictive_back">Predictive back gesture</string>
+    <string name="settings_enable_predictive_back_summary">Enable predictive back gesture support.</string>
+    <string name="settings_module_check_update">Check for module updates</string>
+    <string name="grant_root_failed">Failed to grant Root!</string>
+    <string name="home_daemon_missing">Daemon missing (/data/adb/xudc): built-in modules will not work. Reinstall the full package and reboot</string>
+    <string name="home_susfs_status">SUSFS</string>
+    <string name="home_susfs_unsupported">Not enabled (kernel lacks SUSFS patches)</string>
+    <string name="home_pr_build_warning">This is a PR debug build. Do NOT use it in production!</string>
+    <string name="home_pr_kernel_warning">The kernel was built with PR signature support. This is not a production kernel!</string>
+    <string name="action">Action</string>
+    <string name="open">Open</string>
+    <string name="close">Close</string>
+    <string name="enable_web_debugging">WebView debugging</string>
+    <string name="enable_web_debugging_summary">Can be used to debug WebUI. Please enable only when needed.</string>
+    <string name="direct_install">Direct install (Recommended)</string>
+    <string name="select_file">Select a file and patch KMI</string>
+    <string name="select_file_kpm">Select a file and patch KPM</string>
+    <string name="select_file_kpm_tip">Patch the boot partition kernel to enable KPM</string>
+    <string name="download_file">Download a file and patch</string>
+    <string name="download_dialog_title">Enter URL</string>
+    <string name="download_dialog_msg">Full OTA image or factory image</string>
+    <string name="download_no_boot_partition">No boot, init_boot or vendor_boot partition found in the image</string>
+    <string name="download_probe_failed">Failed to probe the image: %1$s</string>
+    <string name="install_inactive_slot">Install to inactive slot (After OTA)</string>
+    <string name="install_anykernel">Flash AnyKernel3 package</string>
+    <string name="install_anykernel_tip">Flash a third-party AnyKernel3 zip (e.g. a GKI kernel)</string>
+    <string name="install_requires_root">Root is required to flash partitions directly. Install and activate XECKernel Pro first, then reopen this app.</string>
+    <string name="install_requires_gki">Direct flashing (including AnyKernel3) needs a GKI kernel (5.10 or newer). Use image patching on this device instead.</string>
+    <string name="install_inactive_slot_warning">Your device will be **FORCED** to boot to the current inactive slot after a reboot!\nOnly use this option after OTA is done.\nContinue?</string>
+    <string name="jailbreak_flash_warning">You are in **Jailbreak mode**. Flashing a partition on a device with a **locked bootloader** will break AVB (Android Verified Boot) and may cause the device to **fail to boot**.\n\nMake sure your bootloader is unlocked before proceeding!</string>
+    <string name="jailbreak_flash_warning_countdown">Continue (%1$d)</string>
+    <string name="install_next">Next</string>
+    <string name="install_select_partition">Select partition</string>
+    <string name="install_upload_lkm_file">Use local LKM file</string>
+    <string name="install_force_backup">Backup as stock image</string>
+    <string name="install_force_backup_summary">Please make sure your selected boot image is a stock image</string>
+    <string name="install_only_support_ko_file">Only .ko files are supported</string>
+    <string name="select_file_tip">%1$s partition image is recommended</string>
+    <string name="select_kmi">Select KMI</string>
+    <string name="settings_uninstall">Uninstall</string>
+    <string name="settings_uninstall_temporary">Uninstall temporarily</string>
+    <string name="settings_uninstall_permanent">Uninstall permanently</string>
+    <string name="settings_restore_stock_image">Restore stock image</string>
+    <string name="settings_uninstall_temporary_message">Temporarily uninstall XECKernel Pro, restore to original state after next reboot.</string>
+    <string name="settings_uninstall_permanent_message">Uninstalling XECKernel Pro (Root and all modules) completely and permanently.</string>
+    <string name="settings_restore_stock_image_message">Restore the stock factory image (if a backup exists), usually used before OTA; if you need to uninstall XECKernel Pro, please use \"Uninstall permanently\".</string>
+    <string name="flashing">Flashing</string>
+    <string name="flash_success">Flash success</string>
+    <string name="flash_failed">Flash failed</string>
+    <string name="selected_lkm">Selected LKM: %s</string>
+    <string name="save_log">Save logs</string>
+    <string name="log_saved">Logs saved</string>
+    <string name="settings_sucompat">Classic SU command</string>
+    <string name="settings_sucompat_summary">Allow Root access via /system/bin/su, in new processes</string>
+    <string name="settings_kernel_umount">Kernel umount</string>
+    <string name="settings_kernel_umount_summary">Unmount modules from kernel in App Profile</string>
+    <string name="settings_selinux_hide">Hide SELinux modification</string>
+    <string name="settings_selinux_hide_summary">Prevent applications from detecting SELinux modifications</string>
+    <string name="settings_selinux_hide_reboot_required">Reboot to take effect</string>
+    <string name="settings_selinux_hide_failed">Error: %d</string>
+    <string name="settings_sulog">SU Log</string>
+    <string name="settings_sulog_summary">Record Root-related events into XECKernel Pro sulog files</string>
+    <string name="feature_status_unsupported_summary">Kernel does not support this feature</string>
+    <string name="feature_status_managed_summary">This feature is managed by a module</string>
+    <string name="settings_mode_enable_by_default">Enable (Default)</string>
+    <string name="settings_mode_disable_until_reboot">Disable until Reboot</string>
+    <string name="settings_mode_disable_always">Always disable</string>
+    <string name="processing">Processing…</string>
+    <string name="refresh_pulling">Pull down to refresh</string>
+    <string name="refresh_release">Release to refresh</string>
+    <string name="refresh_refresh">Refreshing…</string>
+    <string name="refresh_complete">Refreshed successfully</string>
+    <string name="undo">Undo</string>
+    <string name="module_undo_uninstall_success">Successfully canceled uninstall of %s</string>
+    <string name="module_undo_uninstall_failed">Failed to undo uninstall: %s</string>
+    <string name="group_contains_apps">Contains %d apps</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_summary">Choose the app theme mode.</string>
+    <string name="settings_theme_mode_system">Follow system</string>
+    <string name="settings_theme_mode_light">Light</string>
+    <string name="settings_theme_mode_dark">Dark</string>
+    <string name="settings_monet">Enable Monet</string>
+    <string name="settings_key_color">Key color</string>
+    <string name="settings_key_color_default">Default</string>
+    <string name="settings_page_scale">Page Scale</string>
+    <string name="settings_page_scale_summary">Adjust the global display scale.</string>
+    <string name="settings_color_spec">Color Spec</string>
+    <string name="settings_color_style">Color Style</string>
+    <string name="color_blue">Blue</string>
+    <string name="color_red">Red</string>
+    <string name="color_green">Green</string>
+    <string name="color_purple">Purple</string>
+    <string name="color_orange">Orange</string>
+    <string name="color_teal">Teal</string>
+    <string name="color_pink">Pink</string>
+    <string name="color_brown">Brown</string>
+    <string name="color_deep_purple">Deep Purple</string>
+    <string name="color_indigo">Indigo</string>
+    <string name="color_cyan">Cyan</string>
+    <string name="color_yellow">Yellow</string>
+    <string name="color_amber">Amber</string>
+    <string name="color_blue_grey">Blue Grey</string>
+    <string name="color_sakura">Sakura</string>
+    <string name="network_offline">Not connected to network</string>
+    <string name="network_retry">Retry</string>
+    <string name="tab_readme">README</string>
+    <string name="tab_releases">Releases</string>
+    <string name="tab_info">Info</string>
+    <string name="module_shortcut_title">Create shortcut</string>
+    <string name="module_shortcut_name_label">Shortcut name</string>
+    <string name="module_shortcut_icon_pick">Choose custom icon</string>
+    <string name="module_shortcut_not_supported">Launcher does not support desktop shortcuts</string>
+    <string name="module_shortcut_created">Shortcut created on desktop</string>
+    <string name="module_shortcut_updated">Shortcut updated</string>
+    <string name="module_shortcut_delete">Delete shortcut</string>
+    <string name="module_shortcut_permission_tip_xiaomi">Please enable \"Home screen shortcuts\" permission for this app in Xiaomi settings.</string>
+    <string name="module_shortcut_permission_tip_oppo">Please enable \"Create Home screen shortcuts\" permission for this app in OPPO settings.</string>
+    <string name="module_shortcut_permission_tip_default">If shortcut creation fails, please enable desktop shortcut permission for this app in system settings.</string>
+    <string name="no_such_module">Module %s does not exist</string>
+    <string name="module_unavailable">Module %s is disabled, updating, or pending removal</string>
+    <string name="select_file_tip_nogki">Please select the GKI device image file you want to patch!</string>
+    <string name="current_kmi">KMI version of this device: %s</string>
+    <string name="current_device_kmi">This device KMI</string>
+    <string name="settings_enable_blur">Blur</string>
+    <string name="settings_enable_blur_summary">Enable blur effect for top and bottom bars.</string>
+    <string name="settings_floating_bottom_bar">Floating bottom bar</string>
+    <string name="settings_floating_bottom_bar_summary">Use Apple style floating bottom bar.</string>
+    <string name="settings_enable_glass">Liquid glass</string>
+    <string name="settings_enable_glass_summary">Enable liquid glass effect for floating bottom bar.</string>
+    <string name="show_only_primary_user_apps">Show only primary user apps</string>
+    <string name="settings_auto_jailbreak">Auto jailbreak</string>
+    <string name="settings_auto_jailbreak_summary">Automatically use Magica to escalate privileges when Permissive SELinux is detected at boot. Requires granting autostart permission to this app.</string>
+    <string name="settings_soft_reboot">Soft restart instead of reboot</string>
+    <string name="settings_soft_reboot_summary">Use soft restart instead of a full reboot when installing, updating, or toggling modules.</string>
+    <string name="allow_shell">Always grant Root to Shell</string>
+    <string name="allow_shell_summary">Always allow adb shell to call SU command. Do not enable this unless absolutely necessary.</string>
+    <string name="enable_adb">Force enable adb on boot</string>
+    <string name="enable_adb_summary">Force enable USB debugging and disable adb authentication. Do not enable this unless absolutely necessary.</string>
+    <string name="advanced_options">Advanced Options</string>
+    <string name="expand">Expand</string>
+    <string name="download_channel_name">Module Downloads</string>
+    <string name="download_progress_title">Downloading %s</string>
+    <string name="download_complete_title">Download complete</string>
+    <string name="download_complete_content">%s downloaded successfully</string>
+    <string name="download_failed_title">Download failed</string>
+    <string name="download_failed_content">Failed to download %s</string>
+    <string name="download">Download</string>
+    <string name="download_cancel">Cancel</string>
+    <string name="download_install">Install</string>
+    <string name="settings_adb_root" translatable="false">ADB Root</string>
+    <string name="settings_adb_root_summary">Run adbd daemon with Root privileges</string>
+    <string name="menu_sort">Sort</string>
+    <string name="sort_by_name">Application name</string>
+    <string name="sort_by_package_name">Package name</string>
+    <string name="sort_by_install_time">Install time</string>
+    <string name="sort_by_update_time">Update time</string>
+    <string name="sort_reverse">Reverse</string>
+    <string name="profile_flags_desc_no_new_privs">Prevent further privilege escalation via XECKernel Pro from within the context of this root profile</string>
+    <string name="module_shortcut_copy_scheme">Copy URL scheme</string>
+    <string name="module_shortcut_scheme_copied">URL scheme copied</string>
+    <string name="nav_rail_expand">Expand navigation rail</string>
+    <string name="nav_rail_collapse">Collapse navigation rail</string>
+    <string name="settings_navigation_badge">Navigation badge</string>
+    <string name="settings_navigation_badge_summary">Show granted app and enabled module counts on the navigation bar</string>
+    <string name="detection">Detection</string>
+    <string name="detect_app_name">KeyChain Integrity Check</string>
+    <string name="detect_checking">Checking…</string>
+    <string name="detect_not_installed">Not installed</string>
+    <string name="detect_installed_fmt">Installed · v%s</string>
+    <string name="detect_install">Install checker</string>
+    <string name="detect_reinstall">Reinstall checker</string>
+    <string name="detect_install_hint">Bundled checker APK, installed silently with root</string>
+    <string name="detect_working">Working…</string>
+    <string name="detect_open">Open checker</string>
+    <string name="detect_open_hint">Launch the integrity check</string>
+    <string name="detect_uninstall">Uninstall checker</string>
+    <string name="detect_uninstall_hint">Remove the checker from this device</string>
+    <string name="detect_install_done">Checker installed</string>
+    <string name="detect_install_failed">Install failed, is root active?</string>
+    <string name="detect_uninstall_done">Checker removed</string>
+    <string name="detect_uninstall_failed">Uninstall failed</string>
+    <string name="detect_about_title">About this checker</string>
+    <string name="detect_about_body">Bundled verification tool: validates key chain integrity, bootloader lock state and environment anomalies. Use it to confirm that the built-in TEE key simulation and boot-state spoofing are actually working.</string>
+    <!-- Remote Module Assistant -->
+    <string name="remote_assistant_title">Remote Module Assistant</string>
+    <string name="remote_assistant_subtitle">Share and receive module direct links</string>
+    <string name="remote_assistant_share">Share module</string>
+    <string name="remote_assistant_receive">Receive module</string>
+    <string name="remote_share_hint">Paste direct links to module zips — or upload local files to the XEC module repo — then generate a SHORT code for the receiver. Codes require sign-in and let you set max uses and validity; one code can carry multiple modules. Note: cloud-drive SHARE PAGE links are web pages, not files — the app cannot download them.</string>
+    <string name="remote_add_link">Add link</string>
+    <string name="remote_link_label">Link %1$d</string>
+    <string name="remote_remove">Remove</string>
+    <string name="remote_share_copy">Copy</string>
+    <string name="remote_share_copied">Copied</string>
+    <string name="remote_upload_pick">Upload module files to the repo</string>
+    <string name="remote_hub_login">Log in / Sign up</string>
+    <string name="remote_hub_logout">Log out</string>
+    <string name="remote_hub_logged_in">Signed in: %1$s</string>
+    <string name="remote_hub_not_logged">Not signed in — an account is required to create and use codes</string>
+    <string name="remote_hub_auth_title_login">Sign in to XEC Module Repo</string>
+    <string name="remote_hub_auth_title_register">Create an XEC Module Repo account</string>
+    <string name="remote_hub_note">Remote modules carry risk. Your account records distribution and usage (username, time, IP). Signing up means you acknowledge and accept this.</string>
+    <string name="remote_hub_username">Username (2-32 chars)</string>
+    <string name="remote_hub_password">Password (at least 6 chars)</string>
+    <string name="remote_hub_submit_login">Sign in</string>
+    <string name="remote_hub_submit_register">Sign up &amp; sign in</string>
+    <string name="remote_hub_switch_register">No account? Sign up</string>
+    <string name="remote_hub_switch_login">Have an account? Sign in</string>
+    <string name="remote_hub_back">Back</string>
+    <string name="remote_hub_fill_both">Enter both username and password</string>
+    <string name="remote_hub_fail">Operation failed, try again later</string>
+    <string name="remote_hub_max_uses">Max uses</string>
+    <string name="remote_hub_expire_days">Valid for (days, 0 = forever)</string>
+    <string name="remote_hub_generate">Generate code</string>
+    <string name="remote_hub_code_label">Code (send to receiver)</string>
+    <string name="remote_hub_bad_uses">Max uses must be 1-9999</string>
+    <string name="remote_hub_bad_days">Validity must be 0-3650 days</string>
+    <string name="remote_upload_done">Uploaded %1$d file(s) — set uses, then tap \"Generate code\".</string>
+    <string name="remote_recv_hint">Paste the short code from the sender (starts with XEC-, sign-in required); legacy share codes and raw direct links still work. Every module is downloaded and flashed automatically, in order. Use \"Add link\" to batch multiple codes.</string>
+    <string name="remote_recv_link_placeholder">Paste share code or direct link</string>
+    <string name="remote_recv_start">Flash now</string>
+    <string name="remote_recv_running">Working, please keep the screen on…</string>
+    <string name="remote_recv_done">%1$d module(s) flashed. Reboot to apply.</string>
+    <string name="remote_recv_failed">Failed at: %1$s
+See the log below for details.</string>
+    <string name="remote_recv_back">Go back</string>
+    <string name="remote_recv_warning_title">Read this before flashing</string>
+    <string name="remote_recv_warning">Make sure you fully understand who the sender is, what their purpose is, and the risks after flashing. This flashing mode cannot block malicious files sent by the other party, which may cause irreversible damage to your property. We assume no legal responsibility for any loss caused.</string>
+    <string name="remote_recv_warning_confirm">Confirm</string>
+    <string name="remote_recv_warning_reject">Reject</string>
+</resources>

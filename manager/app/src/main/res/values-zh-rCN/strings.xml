@@ -1,0 +1,463 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home">主页</string>
+    <string name="home_not_installed">未安装</string>
+    <string name="home_click_to_install">点击安装</string>
+    <string name="home_working">正在运行</string>
+    <string name="home_working_version">版本：%s</string>
+    <string name="home_lkm_update_available">内嵌 LKM 有可用更新，点击更新</string>
+    <string name="home_lkm_custom">自定义</string>
+    <string name="home_unsupported">不支持</string>
+    <string name="home_unsupported_reason">XECKernel Pro 现在只支持 GKI 内核，但是你可以为 GKI 设备补丁镜像</string>
+    <string name="home_device_model">设备型号</string>
+    <string name="home_kernel">内核版本</string>
+    <string name="home_manager_version">管理器版本</string>
+    <string name="home_download_count">下载量</string>
+    <string name="home_fingerprint">系统指纹</string>
+    <string name="home_selinux_status">SELinux 状态</string>
+    <string name="selinux_status_disabled">被禁用</string>
+    <string name="selinux_status_enforcing">强制执行</string>
+    <string name="selinux_status_permissive">宽容模式</string>
+    <string name="selinux_status_unknown">未知</string>
+    <string name="home_seccomp_status">Seccomp 状态</string>
+    <string name="seccomp_status_not_supported">内核未开启</string>
+    <string name="seccomp_status_disabled">未启用</string>
+    <string name="seccomp_status_strict">严格模式</string>
+    <string name="seccomp_status_filter">过滤模式</string>
+    <string name="seccomp_status_unknown">未知</string>
+    <string name="superuser">超级用户</string>
+    <string name="module_failed_to_enable">无法启用模块：%s</string>
+    <string name="module_failed_to_disable">无法禁用模块：%s</string>
+    <string name="module_empty">没有安装模块</string>
+    <string name="module">模块</string>
+    <string name="kpm_empty">暂无内核补丁模块</string>
+    <string name="kpm">KPM</string>
+    <string name="kpm_activated">KPM 已激活</string>
+    <string name="kpm_not_activated">KPM 未激活</string>
+    <string name="kpm_not_activated_hint">请在内核中启用 CONFIG_KPM 并重启以使用内核补丁模块</string>
+    <string name="kpm_version">KPM 版本：%s</string>
+    <string name="kpm_flash">刷入 KPM 模块</string>
+    <string name="kpm_flash_success">KPM 模块刷入成功</string>
+    <string name="kpm_flash_failed">KPM 模块刷入失败</string>
+    <string name="kpm_embed">嵌入 KPM 引擎</string>
+    <!-- One-Tap Hide (Violet Toolbox pack) -->
+    <string name="hide_env_title">隐藏环境</string>
+    <string name="hide_env_violet_title">紫罗兰环境隐藏</string>
+    <string name="hide_env_violet_desc">紫罗兰工具箱 V6.0 · 隐藏环境全套部署（模块 + 应用 + 密钥）</string>
+    <string name="hide_one_tap_title">一键隐藏</string>
+    <string name="hide_one_tap_subtitle">紫罗兰工具箱 · 隐藏环境一键部署</string>
+    <string name="hide_pack_step_manifest">获取资源清单…</string>
+    <string name="hide_pack_step_download">准备资源包（下载 / 校验）…</string>
+    <string name="hide_pack_manifest_fail">获取资源清单失败：%1$s</string>
+    <string name="hide_pack_download_fail">资源下载失败：%1$s</string>
+    <string name="hide_pack_dialog_message">本一键隐藏来自紫罗兰工具箱</string>
+    <string name="hide_pack_dialog_use">使用</string>
+    <string name="hide_pack_running">正在部署隐藏环境，请保持屏幕常亮…</string>
+    <string name="hide_pack_step_extract">解包资源文件…</string>
+    <string name="hide_pack_step_modules">刷入内置模块（HMA / TEESimulator / 紫罗兰 / LSPosed / SUSFS / 自动救砖）…</string>
+    <string name="hide_pack_step_apks">安装内置应用…</string>
+    <string name="hide_pack_step_tricky">写入 keybox.xml / security_patch.txt / target.txt 到 /data/adb/tricky_store/…</string>
+    <string name="hide_pack_done">全部完成，设备将在 %1$d 秒后自动重启…</string>
+    <string name="hide_pack_done_now">正在重启…</string>
+    <string name="hide_pack_failed">执行失败：%1$s
+已中止，设备不会重启。</string>
+    <string name="hide_pack_back">返回</string>
+
+    <string name="kpm_embed_hint">对当前 boot 分区打 KPatch-Next 补丁并写回，完成后需重启生效，无需 fastboot</string>
+    <string name="module_sort_action_first">可执行优先</string>
+    <string name="module_sort_enabled_first">已启用优先</string>
+    <string name="module_repos">模块仓库</string>
+    <string name="module_repos_sort_updated">更新时间</string>
+    <string name="module_repos_sort_created">创建时间</string>
+    <string name="module_repos_sort_name">名称</string>
+    <string name="module_repos_sort_stars">星标数</string>
+    <string name="module_repos_source_code">源码</string>
+    <string name="uninstall">卸载</string>
+    <string name="enable">启用</string>
+    <string name="disable">关闭</string>
+    <string name="module_install">安装</string>
+    <string name="install">安装</string>
+    <string name="reboot">重启</string>
+    <string name="settings">设置</string>
+    <string name="terminal">终端</string>
+    <string name="terminal_unavailable">无法连接 %1$s</string>
+    <string name="terminal_hint">请确认模块已安装并已启用，然后重试。</string>
+    <string name="reboot_soft">软重启</string>
+    <string name="reboot_userspace">用户空间重启</string>
+    <string name="reboot_recovery">重启到 Recovery</string>
+    <string name="reboot_bootloader">重启到 Bootloader</string>
+    <string name="reboot_download">重启到 Download</string>
+    <string name="reboot_edl">重启到 EDL</string>
+    <string name="about">关于</string>
+    <string name="module_uninstall_confirm">确定要卸载模块 %s 吗？</string>
+    <string name="metamodule_uninstall_confirm">确定要卸载模块 %s 吗？此操作将影响所有模块，并且元模块提供的某些功能（如挂载）将不再工作</string>
+    <string name="module_uninstall_success">%s 已卸载</string>
+    <string name="module_uninstall_failed">卸载失败：%s</string>
+    <string name="module_version">版本</string>
+    <string name="module_author">作者</string>
+    <string name="module_description">介绍</string>
+    <string name="module_update_url">更新 URL</string>
+    <string name="webui">WebUi</string>
+    <string name="module_long_press_hint">长按模块横幅 1 秒查看详情</string>
+    <string name="module_sheet_capability_hint">Action、WebUi 仅当模块包含对应能力时可点击</string>
+    <string name="module_sheet_version_label">版本号</string>
+    <string name="show_system_apps">显示系统应用</string>
+    <string name="send_log">发送日志</string>
+    <string name="safe_mode">安全模式</string>
+    <string name="jailbreak_mode">越狱模式</string>
+    <string name="home_jailbreak">越狱</string>
+    <string name="jailbreak_timeout">越狱可能失败，请检查日志</string>
+    <string name="jailbreak_reboot_warning">当前处于越狱模式，重启后将失去 Root 权限，开机后需要重新越狱。确定要重启吗？</string>
+    <string name="safe_mode_module_disabled">处于安全模式下，禁止安装模块</string>
+    <string name="reboot_to_apply">重启生效</string>
+    <string name="module_magisk_conflict">因与 Magisk 有冲突，所有模块不可用！</string>
+    <string name="home_learn_kernelsu">了解 XECKernel Pro</string>
+    <string name="home_learn_kernelsu_url">https://github.com/byBOOK10086/xecpro</string>
+    <string name="home_click_to_learn_kernelsu">了解如何安装 XECKernel Pro 以及如何开发模块</string>
+    <string name="home_support_title">开发者名单</string>
+    <string name="home_support_content">项目开发者及贡献者名单（官方公示）</string>
+    <string name="home_developers_list"><![CDATA[
+项目开发者及贡献者名单（官方公示）
+
+本项目由 XEC（3228636402）发起并开发。以下成员在项目开发、图标提供、UI 设计、测试反馈及模块支持等方面作出了重要贡献。特此公示，并致以诚挚感谢（以下排名不分先后）：
+
+项目开发者/作者
+XEC（3228636402）
+
+APK 图标提供
+阿零不是阿麟（3068258374）
+今天蕾姆了吗（2941123540）
+
+UI 美学设计
+XEC（3228636402）
+小Y（3961592339）
+橙子（370753004）
+
+BUG 测试与质量反馈
+永雏塔菲喵（1658998584）
+江不辞（3318621299）
+阿零不是阿麟（3068258374）
+小Y（3961592339）
+力克千均（602432323）
+贝利亚大王（3483361380）
+大表哥（381283226）
+薇尔莉特（1941333061）
+我曾是少年。（1187779562）
+廿二序（3917257393）
+花香蝶自来(2815014730)
+等
+
+模块支持
+微微微（2898395199）
+
+AK3构建
+凌洛 (3239554101)
+
+API支持
+疑问小猫 (3301237007)
+四、致谢
+本项目基于 tiann/KernelSU 修改开发，感谢 KernelSU 作者 weishu（tiann）与上游社区；感谢 HMA-OSS（frknkrc44）、TEESimulator-RS（JingMatrix、Enginex0）、Tricky Addon（Enginex0）、susfs4ksu（sidex15、simonpunk）、LSPosed 等上游项目的贡献。
+项目开发者 XEC 谨向以上所有人员致以诚挚感谢。感谢各位在开发、设计、测试与模块支持等环节所作出的贡献。
+特此公示，并致谢忱。
+
+官方交流群：941895988
+
+XEC 项目组
+]]></string>
+    <string name="home_gki_warning">自 v3.0.0 起 GKI 工作模式将仅用于测试环境，我们不建议用于日常使用，也不再提供镜像文件</string>
+    <string name="about_source_code"><![CDATA[在 %1$s 查看源码<br/>加入我们的 %2$s 频道<br/>加入我们的 <b><a href="https://pd.qq.com/s/8lipl1brp">QQ</a></b> 频道]]></string>
+    <string name="profile_default">默认</string>
+    <string name="profile_template">模板</string>
+    <string name="profile_custom">自定义</string>
+    <string name="profile_name">名称</string>
+    <string name="profile_namespace">挂载命名空间</string>
+    <string name="profile_namespace_inherited">继承</string>
+    <string name="profile_namespace_global">全局</string>
+    <string name="profile_namespace_individual">独立</string>
+    <string name="profile_groups">组</string>
+    <string name="profile_flags">标签</string>
+    <string name="profile_capabilities">权能</string>
+    <string name="profile_selinux_context">SELinux</string>
+    <string name="profile_umount_modules">卸载模块</string>
+    <string name="failed_to_update_app_profile">为 %s 更新 App Profile 失败！</string>
+    <string name="require_manager_version">需要更新管理器</string>
+    <string name="require_kernel_version">需要更新内核，点击此处安装</string>
+    <string name="require_kernel_version_gki">需要更新内核</string>
+    <string name="settings_umount_modules_default">默认卸载模块</string>
+    <string name="settings_umount_modules_default_summary">App Profile 中「卸载模块」的全局默认值，如果启用，会将未自定义 Profile 的应用移除所有模块针对系统的修改</string>
+    <string name="profile_umount_modules_summary">启用该选项后将允许 XECKernel Pro 为本应用还原被模块修改过的文件</string>
+    <string name="profile_selinux_domain">域</string>
+    <string name="profile_selinux_rules">规则</string>
+    <string name="recently_installed">最近安装</string>
+    <string name="module_update">更新</string>
+    <string name="module_downloading">正在下载模块：%s</string>
+    <string name="module_start_downloading">开始下载：%s</string>
+    <string name="new_version_available">发现新版本：%s，点击升级！</string>
+    <string name="launch_app">启动</string>
+    <string name="force_stop_app">强制停止</string>
+    <string name="restart_app">重新启动</string>
+    <string name="failed_to_update_sepolicy">为 %s 更新 SELinux 策略失败</string>
+    <string name="su_not_allowed">无法授予 %s 超级用户权限</string>
+    <string name="module_changelog">更新日志</string>
+    <string name="settings_profile_template">App Profile 模板</string>
+    <string name="settings_profile_template_summary">管理本地和在线的 App Profile 模板</string>
+    <string name="app_profile_template_create">创建模板</string>
+    <string name="app_profile_template_edit">编辑模板</string>
+    <string name="app_profile_template_id">模板 ID</string>
+    <string name="app_profile_template_id_invalid">模板 ID 不合法</string>
+    <string name="app_profile_template_name">名字</string>
+    <string name="app_profile_template_description">描述</string>
+    <string name="app_profile_template_save">保存</string>
+    <string name="app_profile_template_delete">删除</string>
+    <string name="app_profile_template_view">查看模板</string>
+    <string name="app_profile_template_id_exist">模板 ID 已存在！</string>
+    <string name="app_profile_import_export">导入/导出</string>
+    <string name="app_profile_import_from_clipboard">从剪贴板导入</string>
+    <string name="app_profile_export_to_clipboard">导出到剪贴板</string>
+    <string name="app_profile_template_export_empty">没有可以导出的本地模板！</string>
+    <string name="app_profile_template_import_success">导入成功</string>
+    <string name="app_profile_template_save_failed">模板保存失败</string>
+    <string name="app_profile_template_import_empty">剪贴板为空！</string>
+    <string name="app_profile_affects_following_apps">影响以下应用</string>
+    <string name="settings_check_update">检查更新</string>
+    <string name="settings_check_update_summary">在应用启动后自动检查是否有最新版</string>
+    <string name="settings_enable_predictive_back">预测性返回手势</string>
+    <string name="settings_enable_predictive_back_summary">启用对预测性返回手势的支持</string>
+    <string name="settings_module_check_update">检查模块更新</string>
+    <string name="grant_root_failed">获取 Root 失败！</string>
+    <string name="home_daemon_missing">守护组件缺失（/data/adb/xudc）：内置模块不会生效，请重新安装完整包并重启</string>
+    <string name="home_susfs_status">SUSFS</string>
+    <string name="home_susfs_unsupported">未启用（内核未打 SUSFS 补丁）</string>
+    <string name="home_pr_build_warning">当前为 PR 调试构建，请勿在生产环境中使用！</string>
+    <string name="home_pr_kernel_warning">当前内核包含 PR 签名支持，这不是一个生产内核！</string>
+    <string name="action">执行</string>
+    <string name="open">打开</string>
+    <string name="close">关闭</string>
+    <string name="enable_web_debugging">WebView 调试</string>
+    <string name="enable_web_debugging_summary">可用于调试 WebUI，请仅在需要时启用</string>
+    <string name="direct_install">直接安装（推荐）</string>
+    <string name="select_file">选择文件并修补KMI</string>
+    <string name="select_file_kpm">选择文件并修补KPM</string>
+    <string name="select_file_kpm_tip">修补 boot 分区内核以启用 KPM</string>
+    <string name="download_file">下载文件并修补</string>
+    <string name="download_dialog_title">输入链接</string>
+    <string name="download_dialog_msg">完整 OTA 镜像或 factory 镜像</string>
+    <string name="download_no_boot_partition">镜像中未找到 boot、init_boot 或 vendor_boot 分区</string>
+    <string name="download_probe_failed">探测镜像失败：%1$s</string>
+    <string name="install_inactive_slot">安装到未使用的槽位（OTA 后）</string>
+    <string name="install_anykernel">刷入 AnyKernel3 内核包</string>
+    <string name="install_anykernel_tip">刷入第三方 AnyKernel3 压缩包（如 GKI 内核）</string>
+    <string name="install_requires_root">直接刷写分区需要 root 权限。请先安装并激活 XECKernel Pro，再重新打开本应用。</string>
+    <string name="install_requires_gki">直接刷写（含 AnyKernel3）需要 GKI 内核（5.10 及以上）。本设备请改用镜像修补方式。</string>
+    <string name="install_inactive_slot_warning">将在重启后强制切换到另一个槽位！注意只能在 OTA 更新完成后的重启之前使用</string>
+    <string name="jailbreak_flash_warning">当前处于**越狱模式**。在**未解锁 Bootloader** 的设备上刷写分区会破坏 AVB（Android 验证启动），可能导致设备**无法开机**。\n\n请确保 Bootloader 已解锁后再继续操作！</string>
+    <string name="jailbreak_flash_warning_countdown">继续 (%1$d)</string>
+    <string name="install_next">下一步</string>
+    <string name="install_select_partition">选择分区</string>
+    <string name="install_upload_lkm_file">使用本地 LKM 文件</string>
+    <string name="install_only_support_ko_file">仅支持选择 .ko 文件</string>
+    <string name="select_file_tip">建议选择 %1$s 分区镜像</string>
+    <string name="select_kmi">选择 KMI</string>
+    <string name="settings_uninstall">卸载</string>
+    <string name="settings_uninstall_temporary">临时卸载</string>
+    <string name="settings_uninstall_permanent">永久卸载</string>
+    <string name="settings_restore_stock_image">恢复原厂镜像</string>
+    <string name="settings_uninstall_temporary_message">临时卸载 XECKernel Pro，下次重启后恢复至原始状态</string>
+    <string name="settings_uninstall_permanent_message">完全并永久卸载 XECKernel Pro（Root 权限和所有模块）</string>
+    <string name="settings_restore_stock_image_message">恢复原厂镜像（若存在备份），一般在 OTA 前使用；如果你需要卸载 XECKernel Pro，请使用「永久卸载」</string>
+    <string name="flashing">刷写中</string>
+    <string name="flash_success">刷写完成</string>
+    <string name="flash_failed">刷写失败</string>
+    <string name="selected_lkm">已选择的 LKM：%s</string>
+    <string name="save_log">保存日志</string>
+    <string name="log_saved">日志已保存</string>
+    <string name="settings_mode_enable_by_default">启用（默认）</string>
+    <string name="settings_mode_disable_until_reboot">禁用直到下次重启</string>
+    <string name="settings_mode_disable_always">始终禁用</string>
+    <string name="settings_sucompat">传统 SU 命令支持</string>
+    <string name="settings_sucompat_summary">允许通过 /system/bin/su 获取 Root 权限</string>
+    <string name="settings_kernel_umount">卸载模块（内核级）</string>
+    <string name="settings_kernel_umount_summary">在内核给需要的应用卸载模块</string>
+    <string name="module_install_prompt_with_name">将安装以下模块：%1$s</string>
+    <string name="confirm">确认</string>
+    <string name="processing">处理中…</string>
+    <string name="refresh_pulling">下拉刷新</string>
+    <string name="refresh_release">松开刷新</string>
+    <string name="refresh_refresh">正在刷新…</string>
+    <string name="refresh_complete">刷新成功</string>
+    <string name="undo">撤销</string>
+    <string name="module_undo_uninstall_success">成功撤销卸载 %s</string>
+    <string name="module_undo_uninstall_failed">撤销卸载 %s 失败</string>
+    <string name="group_contains_apps">包含 %d 个应用</string>
+    <string name="settings_theme">主题设置</string>
+    <string name="settings_theme_summary">自定义更多主题选项</string>
+    <string name="settings_theme_mode_system">跟随系统</string>
+    <string name="settings_theme_mode_light">浅色</string>
+    <string name="settings_theme_mode_dark">深色</string>
+    <string name="settings_monet">启用 Monet 颜色</string>
+    <string name="settings_key_color">强调色</string>
+    <string name="settings_key_color_default">默认</string>
+    <string name="settings_page_scale">界面缩放</string>
+    <string name="settings_page_scale_summary">调整全局显示比例</string>
+    <string name="settings_color_spec">色彩标准</string>
+    <string name="settings_color_style">色彩风格</string>
+    <string name="color_blue">蓝色</string>
+    <string name="color_red">红色</string>
+    <string name="color_green">绿色</string>
+    <string name="color_purple">紫色</string>
+    <string name="color_orange">橙色</string>
+    <string name="color_teal">青绿</string>
+    <string name="color_pink">粉色</string>
+    <string name="color_brown">棕色</string>
+    <string name="color_sakura">樱花</string>
+    <string name="color_deep_purple">深紫</string>
+    <string name="color_indigo">靛青</string>
+    <string name="color_cyan">青色</string>
+    <string name="color_yellow">黄色</string>
+    <string name="color_amber">琥珀</string>
+    <string name="color_blue_grey">灰蓝</string>
+    <string name="network_offline">未连接到网络</string>
+    <string name="network_retry">重试</string>
+    <string name="tab_readme">自述</string>
+    <string name="tab_releases">版本</string>
+    <string name="tab_info">信息</string>
+    <string name="feature_status_unsupported_summary">内核不支持此特性</string>
+    <string name="feature_status_managed_summary">此功能由一个模块管理</string>
+    <string name="module_shortcut_title">创建快捷方式</string>
+    <string name="module_shortcut_name_label">快捷方式名称</string>
+    <string name="module_shortcut_icon_pick">选择自定义图标</string>
+    <string name="module_shortcut_not_supported">启动器不支持桌面快捷方式</string>
+    <string name="module_shortcut_created">已在桌面创建快捷方式</string>
+    <string name="module_shortcut_updated">快捷方式已更新</string>
+    <string name="module_shortcut_delete">删除快捷方式</string>
+    <string name="module_shortcut_permission_tip_xiaomi">请在 Xiaomi 设置中为本应用启用「桌面快捷方式」权限</string>
+    <string name="module_shortcut_permission_tip_oppo">请在 OPPO 设置中为本应用启用「创建桌面快捷方式」权限</string>
+    <string name="module_shortcut_permission_tip_default">若创建快捷方式失败，请在系统设置中为本应用启用桌面快捷方式权限</string>
+    <string name="no_such_module">模块 %s 不存在</string>
+    <string name="module_unavailable">模块 %s 被禁用，待更新或待卸载</string>
+    <string name="select_file_tip_nogki">请选择要修补的 GKI 设备镜像文件</string>
+    <string name="current_kmi">本设备 KMI 版本：%s</string>
+    <string name="current_device_kmi">当前设备的 KMI</string>
+    <string name="module_action_success">模块 action 执行成功。</string>
+    <string name="settings_enable_blur">模糊</string>
+    <string name="settings_enable_blur_summary">启用顶栏和底栏的模糊效果</string>
+    <string name="settings_floating_bottom_bar">悬浮底栏</string>
+    <string name="settings_floating_bottom_bar_summary">使用 Apple 风格的悬浮底栏</string>
+    <string name="settings_enable_glass">液态玻璃</string>
+    <string name="settings_enable_glass_summary">启用悬浮底栏的液态玻璃效果</string>
+    <string name="show_only_primary_user_apps">只显示主用户应用</string>
+    <string name="settings_auto_jailbreak">自动越狱</string>
+    <string name="settings_auto_jailbreak_summary">开机检测到 Permissive SELinux 时自动使用 Magica 提权。需要授予本应用自启动权限！</string>
+    <string name="settings_soft_reboot">使用软重启代替重启</string>
+    <string name="settings_soft_reboot_summary">安装、更新或开关模块时使用软重启代替完整重启</string>
+    <string name="allow_shell">总是给 shell 授予 Root 权限</string>
+    <string name="allow_shell_summary">总是允许 adb shell 调用 SU 命令，非必要请勿开启！</string>
+    <string name="enable_adb">启动时强制启用 ADB 调试</string>
+    <string name="enable_adb_summary">强制允许 USB 调试并取消 adb 认证，非必要请勿开启！</string>
+    <string name="advanced_options">高级选项</string>
+    <string name="expand">展开</string>
+    <string name="download_channel_name">模块下载</string>
+    <string name="download_progress_title">正在下载 %s</string>
+    <string name="download_complete_title">下载完成</string>
+    <string name="download_complete_content">%s 下载成功</string>
+    <string name="download_failed_title">下载失败</string>
+    <string name="download_failed_content">%s 下载失败</string>
+    <string name="download">下载</string>
+    <string name="download_cancel">取消</string>
+    <string name="download_install">安装</string>
+    <string name="settings_adb_root_summary">以 Root 权限运行 adbd 守护进程</string>
+    <string name="settings_selinux_hide">隐藏 SELinux 修改</string>
+    <string name="settings_selinux_hide_summary">阻止应用检测 SELinux 修改</string>
+    <string name="settings_selinux_hide_reboot_required">重启生效</string>
+    <string name="settings_selinux_hide_failed">错误：%d</string>
+    <string name="menu_sort">排序</string>
+    <string name="sort_by_name">应用名</string>
+    <string name="sort_by_package_name">包名</string>
+    <string name="sort_by_install_time">安装时间</string>
+    <string name="sort_by_update_time">更新时间</string>
+    <string name="sort_reverse">倒序</string>
+    <string name="profile_flags_desc_no_new_privs">禁止从此 Root Profile 的上下文中通过 XECKernel Pro 进一步提升权限</string>
+    <string name="module_shortcut_copy_scheme">复制 URL Scheme</string>
+    <string name="module_shortcut_scheme_copied">已复制 URL Scheme</string>
+    <string name="install_force_backup">备份为原厂镜像</string>
+    <string name="install_force_backup_summary">请确保你选择的 boot 镜像是原厂镜像</string>
+    <string name="settings_sulog">SU 日志</string>
+    <string name="settings_sulog_summary">将 Root 相关事件记录到 XECKernel Pro 的 SU 日志文件中</string>
+    <string name="sulog_log_files">日志文件</string>
+    <string name="sulog_failed_to_load">加载 SU 日志失败</string>
+    <string name="sulog_disabled_title">SU 日志未启用</string>
+    <string name="sulog_unsupported_title">不支持 SU 日志</string>
+    <string name="sulog_enable_action">启用</string>
+    <string name="sulog_filter_title">按类型筛选</string>
+    <string name="sulog_clean_title">清空日志</string>
+    <string name="nav_rail_expand">展开导航栏</string>
+    <string name="nav_rail_collapse">收起导航栏</string>
+    <string name="settings_navigation_badge">导航栏角标</string>
+    <string name="settings_navigation_badge_summary">在导航栏显示已授权应用和已启用模块数量</string>
+    <string name="detection">检测</string>
+    <string name="detect_app_name">密钥链完整性检测</string>
+    <string name="detect_checking">检测中…</string>
+    <string name="detect_not_installed">未安装</string>
+    <string name="detect_installed_fmt">已安装 · v%s</string>
+    <string name="detect_install">安装检测工具</string>
+    <string name="detect_reinstall">重新安装检测工具</string>
+    <string name="detect_install_hint">内置检测 APK，root 静默安装</string>
+    <string name="detect_working">处理中…</string>
+    <string name="detect_open">打开检测工具</string>
+    <string name="detect_open_hint">启动完整性检测</string>
+    <string name="detect_uninstall">卸载检测工具</string>
+    <string name="detect_uninstall_hint">从本机移除检测工具</string>
+    <string name="detect_install_done">检测工具已安装</string>
+    <string name="detect_install_failed">安装失败，请确认 root 已激活</string>
+    <string name="detect_uninstall_done">检测工具已卸载</string>
+    <string name="detect_uninstall_failed">卸载失败</string>
+    <string name="detect_about_title">关于这个检测工具</string>
+    <string name="detect_about_body">内置验机工具：校验密钥链有效性、bootloader 锁定状态与环境异常。用于验证内置 TEE 密钥模拟与回锁伪装是否真实生效。</string>
+    <!-- 远程模块助手 -->
+    <string name="remote_assistant_title">远程模块助手</string>
+    <string name="remote_assistant_subtitle">模块直链的分享与接收</string>
+    <string name="remote_assistant_share">分享模块</string>
+    <string name="remote_assistant_receive">接收模块</string>
+    <string name="remote_share_hint">粘贴模块 zip 直链，或点下方按钮把本地文件上传到 XEC 模块仓库——然后生成一条短码发给接收者。短码需登录生成，可设置可使用次数与有效期；一条短码可包含多个模块。注意：网盘的「分享页」链接是网页不是文件，程序无法下载。</string>
+    <string name="remote_add_link">添加链接</string>
+    <string name="remote_link_label">链接 %1$d</string>
+    <string name="remote_remove">移除</string>
+    <string name="remote_share_copy">复制</string>
+    <string name="remote_share_copied">已复制</string>
+    <string name="remote_upload_pick">上传模块文件到仓库</string>
+    <string name="remote_hub_login">登录 / 注册</string>
+    <string name="remote_hub_logout">退出登录</string>
+    <string name="remote_hub_logged_in">已登录：%1$s</string>
+    <string name="remote_hub_not_logged">未登录——生成与使用短码需要账号</string>
+    <string name="remote_hub_auth_title_login">登录 XEC 模块仓库</string>
+    <string name="remote_hub_auth_title_register">注册 XEC 模块仓库账号</string>
+    <string name="remote_hub_note">远程模块存在风险。账号用于记录分发与使用行为（用户名、时间、IP），注册即表示知悉并同意。</string>
+    <string name="remote_hub_username">用户名（2-32 字符）</string>
+    <string name="remote_hub_password">密码（至少 6 位）</string>
+    <string name="remote_hub_submit_login">登录</string>
+    <string name="remote_hub_submit_register">注册并登录</string>
+    <string name="remote_hub_switch_register">没有账号？点此注册</string>
+    <string name="remote_hub_switch_login">已有账号？点此登录</string>
+    <string name="remote_hub_back">返回</string>
+    <string name="remote_hub_fill_both">请填写用户名和密码</string>
+    <string name="remote_hub_fail">操作失败，请稍后再试</string>
+    <string name="remote_hub_max_uses">可使用次数</string>
+    <string name="remote_hub_expire_days">有效期（天，0=永久）</string>
+    <string name="remote_hub_generate">生成短码</string>
+    <string name="remote_hub_code_label">短码（发给接收者）</string>
+    <string name="remote_hub_bad_uses">可使用次数需为 1-9999</string>
+    <string name="remote_hub_bad_days">有效期需为 0-3650 天</string>
+    <string name="remote_upload_done">已上传 %1$d 个文件，设置次数后点「生成短码」。</string>
+    <string name="remote_recv_hint">粘贴分享者给你的短码（XEC- 开头，需登录），旧的加密码或直链也兼容，将自动下载并按顺序刷入。可多次点「添加链接」批量填写，一次性全部刷入。</string>
+    <string name="remote_recv_link_placeholder">粘贴加密码或直链</string>
+    <string name="remote_recv_start">开始刷入</string>
+    <string name="remote_recv_running">正在处理，请保持屏幕常亮…</string>
+    <string name="remote_recv_done">已刷入 %1$d 个模块，建议重启后生效。</string>
+    <string name="remote_recv_failed">失败于：%1$s
+详情见下方日志。</string>
+    <string name="remote_recv_back">返回</string>
+    <string name="remote_recv_warning_title">刷入前必读</string>
+    <string name="remote_recv_warning">请确保你充分了解对方是谁，对方的目的，及刷入后的风险。此刷入模式若对方传递恶意文件将无法阻拦，可能会对你的财产造成不可逆的损失，若造成损失我们将不承担任何法律责任。</string>
+    <string name="remote_recv_warning_confirm">确定</string>
+    <string name="remote_recv_warning_reject">拒绝</string>
+</resources>

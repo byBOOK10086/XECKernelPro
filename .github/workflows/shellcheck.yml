@@ -1,0 +1,47 @@
+name: ShellCheck
+
+on:
+  push:
+    branches:
+      - 'main'
+      - 'dev'
+    paths:
+      - '.github/workflows/shellcheck.yml'
+      - '**/*.sh'
+  pull_request:
+    branches:
+      - 'main'
+      - 'dev'
+    paths:
+      - '.github/workflows/shellcheck.yml'
+      - '**/*.sh'
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          ignore_names: gradlew
+          # 说明：
+          #   1) installer.sh / setup-rust-build.sh 是上游既有的豁免脚本。
+          #   2) builtin/ 下的 susfs4ksu、TA_enhanced、SelinuxFix 是第三方随包脚本
+          #      （simonpunk/susfs4ksu 等），不由本项目维护，保持原样以免后续合并冲突。
+          #   3) 本项目自有的脚本（kernel/**、scripts/**、builtin/tricky_store）仍全部纳入检查。
+          #
+          # 格式约定（重要，勿改成带前导 "./" 的写法）：
+          #   action 内部把每个条目展开成三条 find 条件：
+          #     ! -path "*./$path/*"   ! -path "*/$path/*"   ! -path "$path"
+          #   而 find 输出的路径形如 "./userspace/.../x.sh"。
+          #   因此目录条目一旦写成 "./userspace/ksud/builtin/xxx"，第一条会被拼成
+          #   "*././userspace/..." 而永远失配，第二条同理，第三条只对精确文件路径生效，
+          #   结果是目录豁免静默失效。故这里统一使用**不带前导 "./" 的目录形式**。
+          ignore_paths: >-
+            .github/scripts
+            userspace/ksud/src
+            userspace/ksud/builtin/susfs4ksu
+            userspace/ksud/builtin/TA_enhanced
+            userspace/ksud/builtin/SelinuxFix

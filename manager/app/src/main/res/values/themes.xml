@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+      windowBackground 保持品牌深底 #0B0F10：启动图标 ic_logo_vector 是深色底的
+      品牌图形，splash 必须配深底，也避免 Compose 首帧前闪白。
+      注意应用 UI 本身已改为「白色基础液态玻璃」默认档（见 SettingsRepositoryImpl
+      的 themeMode），所以这里是深色 splash → 浅色玻璃 UI 的过渡，属预期表现。
+    -->
+    <style name="Theme.XecPro" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowBackground">@color/ic_splash_background</item>
+    </style>
+
+    <style name="Theme.XecPro.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/ic_splash_background</item>
+        <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_splash</item>
+        <item name="windowSplashScreenAnimationDuration">500</item>
+        <item name="postSplashScreenTheme">@style/Theme.XecPro</item>
+    </style>
+
+    <style name="Theme.XecPro.WebUI" parent="Theme.XecPro" />
+
+</resources>

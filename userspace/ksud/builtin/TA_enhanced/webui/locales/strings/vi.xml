@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="system_default">Mặc định hệ thống</string>
+    <string name="more_language">Thêm</string>
+    <!-- Header -->
+    <string name="header_title">Tricky Addon</string>
+    <!-- Help Menu-->
+    <string name="help_help_instructions">Hướng dẫn</string>
+    <string name="help_save_and_update_description">Lưu cấu hình hiện tại vào target.txt.</string>
+    <string name="help_select_denylist">Chọn từ DenyList</string>
+    <string name="help_select_denylist_description">Chỉ khả dụng trong Magisk, chọn ứng dụng nằm trong DenyList. Khuyến nghị sử dụng.</string>
+    <string name="help_deselect_unnecessary">Bỏ chọn không cần thiết</string>
+    <string name="help_deselect_unnecessary_description">Danh mục không cần thiết: Trình quản lý root, module Xposed, ứng dụng liên quan đến root và các ứng dụng thông thường không bao giờ kiểm tra trạng thái bootloader. Tùy chọn này yêu cầu kết nối Internet.</string>
+    <string name="help_add_system_app">Thêm ứng dụng hệ thống</string>
+    <string name="help_add_system_app_description">Thêm ứng dụng hệ thống cụ thể vào danh sách ứng dụng.</string>
+    <string name="help_set_keybox">Đặt AOSP &amp; Keybox hợp lệ</string>
+    <string name="help_set_keybox_description">Thay thế keybox.xml của Tricky Store. Tùy chọn Keybox hợp lệ yêu cầu kết nối Internet và không phải lúc nào cũng khả dụng.</string>
+    <string name="help_set_custom_keybox">Đặt Keybox tùy chỉnh</string>
+    <string name="help_set_custom_keybox_description">Nhập Keybox từ bộ nhớ thiết bị của bạn. Chỉ hỗ trợ tệp xml.</string>
+    <string name="help_set_security_patch">Đặt bản vá bảo mật</string>
+    <string name="help_set_security_patch_description">Đặt spoof bản vá bảo mật tùy chỉnh. Cấu hình tự động sẽ sử dụng bản vá bảo mật từ module PIF. Để trống và lưu để tắt cấu hình tự động.</string>
+    <string name="help_set_verified_boot_hash">Đặt Verified Boot Hash</string>
+    <string name="help_set_verified_boot_hash_description">Lấy giá trị verifiedBootHash từ Key Attestation Demo. Sửa trạng thái boot bất thường bằng cách đặt lại ro.boot.vbmeta.digest.</string>
+    <!-- Update -->
+    <string name="update_update_available">Đã có phiên bản mới</string>
+    <string name="update_redirect_to_release">Nhấn để tải phiên bản mới nhất</string>
+    <string name="update_changelog">Nhật ký thay đổi</string>
+    <string name="update_install">Cài đặt</string>
+    <string name="update_reboot">Khởi động lại</string>
+    <!-- Search -->
+    <string name="search_bar_search_placeholder">Tìm kiếm</string>
+    <!-- Functional Button -->
+    <string name="functional_button_save">Lưu</string>
+    <string name="functional_button_uninstall_webui">Gỡ cài đặt WebUI</string>
+    <string name="functional_button_close">Đóng</string>
+    <string name="functional_button_cancel">Huỷ</string>
+    <string name="functional_button_confirm">Xác nhận</string>
+    <!-- Loading -->
+    <string name="loading_loading">Đang tải...</string>
+    <!-- Menu -->
+    <string name="menu_refresh">Làm mới</string>
+    <string name="menu_select_all">Chọn tất cả</string>
+    <string name="menu_deselect_all">Bỏ chọn tất cả</string>
+    <string name="menu_select_denylist">Chọn từ DenyList</string>
+    <string name="menu_deselect_unnecessary">Bỏ chọn không cần thiết</string>
+    <string name="menu_add_system_app">Thêm ứng dụng hệ thống</string>
+    <string name="menu_keybox">Keybox</string>
+    <string name="menu_keybox_aosp">AOSP</string>
+    <string name="menu_keybox_unknown">Không xác định</string>
+    <string name="menu_keybox_valid">Hợp lệ</string>
+    <string name="menu_keybox_custom">Tuỳ chỉnh</string>
+    <string name="menu_set_verified_boot_hash">Đặt Verified Boot Hash</string>
+    <string name="menu_set_security_patch">Đặt bản vá bảo mật</string>
+    <string name="menu_set_devconfig">Đặt DevConfig</string>
+    <string name="menu_help">Hỗ trợ</string>
+    <string name="menu_language">Ngôn ngữ</string>
+    <string name="menu_about">Giới thiệu</string>
+    <!-- Boot Hash -->
+    <string name="boot_hash_title">Boot Hash</string>
+    <string name="boot_hash_input_placeholder">Dán Verified Boot Hash của bạn vào đây</string>
+    <!-- About -->
+    <string name="about_module_name_line1">Tricky Addon</string>
+    <string name="about_module_name_line2">Cập nhật danh sách mục tiêu</string>
+    <string name="about_by">Bởi</string>
+    <string name="about_telegram_channel">Kênh Telegram</string>
+    <string name="about_canary_update">Cập nhật lên phiên bản Canary mới nhất</string>
+    <string name="about_translation_update">Cập nhật gói dịch thuật</string>
+    <string name="about_disclaimer">Module này không phải là một phần của module Tricky Store. KHÔNG báo cáo bất kỳ vấn đề nào cho Tricky Store nếu gặp phải.</string>
+    <string name="about_acknowledgment">Lời cảm ơn</string>
+    <!-- Prompt -->
+    <string name="prompt_no_internet">Vui lòng kiểm tra kết nối Internet của bạn</string>
+    <string name="prompt_aosp_key_set">Đã đặt AOSP Keybox thành công</string>
+    <string name="prompt_key_set_error">Không thể cập nhật Keybox</string>
+    <string name="prompt_unknown_key_set">Đã đặt Keybox không xác định thành công</string>
+    <string name="prompt_valid_key_set">Đã đặt Keybox hợp lệ thành công</string>
+    <string name="prompt_no_valid">Không tìm thấy Keybox hợp lệ</string>
+    <string name="prompt_boot_hash_set">Đã lưu Verified Boot Hash thành công</string>
+    <string name="prompt_boot_hash_set_error">Không thể cập nhật Verified Boot Hash</string>
+    <string name="prompt_boot_hash_invalid">Định dạng hash khởi động không hợp lệ</string>
+    <string name="prompt_saved_target">Đã lưu cấu hình vào target.txt</string>
+    <string name="prompt_save_error">Không thể lưu cấu hình</string>
+    <string name="prompt_uninstall_prompt">WebUI sẽ bị Gỡ cài đặt sau khi khởi động lại</string>
+    <string name="prompt_uninstall_failed">Không thể Gỡ cài đặt WebUI</string>
+    <string name="prompt_checking_update">Đang kiểm tra cập nhật...</string>
+    <string name="prompt_new_update">Có bản cập nhật mới!</string>
+    <string name="prompt_no_update">Hiện không có bản cập nhật nào</string>
+    <string name="prompt_downloading">Đang tải bản cập nhật mới...</string>
+    <string name="prompt_downloaded">Tải xuống hoàn tất</string>
+    <string name="prompt_download_fail">Không thể tải bản cập nhật</string>
+    <string name="prompt_installing">Đang cài đặt bản cập nhật...</string>
+    <string name="prompt_installed">Cài đặt thành công, khởi động lại ngay.</string>
+    <string name="prompt_install_fail">Không thể cài đặt, vui lòng cập nhật thủ công</string>
+    <string name="prompt_rebooting">Đang khởi động lại...</string>
+    <string name="prompt_reboot_fail">Không thể khởi động lại, vui lòng khởi động lại thủ công</string>
+    <string name="prompt_translation_updated">Gói dịch thuật đã được cập nhật thành công</string>
+    <string name="prompt_translation_update_failed">Gói dịch thuật cập nhật thất bại</string>
+    <string name="prompt_custom_key_set">Đã đặt Keybox tùy chỉnh thành công</string>
+    <string name="prompt_custom_key_set_error">Không thể đặt Keybox tùy chỉnh</string>
+    <string name="prompt_no_file_selected">Chưa chọn tệp nào</string>
+    <string name="prompt_system_app_not_found">Không tìm thấy ứng dụng hệ thống</string>
+    <string name="prompt_system_app_error">Không thể thêm ứng dụng hệ thống</string>
+    <!-- Security Patch -->
+    <string name="security_patch_title">Bản vá bảo mật</string>
+    <string name="security_patch_advanced_mode">Nâng cao</string>
+    <string name="security_patch_get_date">Lấy ngày bản vá bảo mật</string>
+    <string name="security_patch_auto">Tự động</string>
+    <string name="security_patch_fetching">Đang lấy...</string>
+    <string name="security_patch_fetched">Hoàn tất</string>
+    <string name="security_patch_get_failed">Không thể lấy ngày bản vá bảo mật</string>
+    <string name="security_patch_unable_to_connect">Không thể kết nối tới source.android.com</string>
+    <string name="security_patch_auto_success">Bật cấu hình tự động thành công</string>
+    <string name="security_patch_auto_failed">Không thể bật cấu hình tự động</string>
+    <string name="security_patch_save_success">Đã lưu bản vá bảo mật thành công</string>
+    <string name="security_patch_save_failed">Không thể lưu bản vá bảo mật</string>
+    <string name="security_patch_value_empty">Đã tắt cấu hình bản vá bảo mật</string>
+    <string name="security_patch_invalid_all">Định dạng không hợp lệ</string>
+    <string name="security_patch_invalid_boot">Định dạng boot không hợp lệ</string>
+    <string name="security_patch_invalid_system">Định dạng system không hợp lệ</string>
+    <string name="security_patch_invalid_vendor">Định dạng vendor không hợp lệ</string>
+    <!-- Add System App -->
+    <string name="add_system_app_title">Thêm ứng dụng hệ thống</string>
+    <string name="add_system_app_add">Thêm</string>
+    <string name="add_system_app_current_list">Danh sách ứng dụng hệ thống hiện tại</string>
+    <!-- Uninstall confirmation -->
+    <string name="confirmation_uninstall_title">Xác nhận Gỡ cài đặt?</string>
+    <string name="confirmation_uninstall_message">Bạn có chắc muốn Gỡ cài đặt Tricky Addon không?</string>
+    <!-- Mode dialog -->
+    <string name="mode_dialog_title">Chế độ</string>
+    <string name="mode_auto">Tự động</string>
+    <string name="mode_certificate_generating">Cert Generating (!)</string>
+    <string name="mode_leaf_hack">Leaf Hack (?)</string>
+    <string name="menu_show_system_apps">Hiện ứng dụng hệ thống</string>
+    <!-- Health Banner -->
+    <string name="health_engine_default">Chứng thực</string>
+    <string name="health_checking">Đang kiểm tra...</string>
+    <!-- Automation Settings -->
+    <string name="menu_automation">Tự động hóa Keybox</string>
+    <string name="automation_keybox_header">Tự động lấy Keybox</string>
+    <string name="automation_enable">Bật</string>
+    <string name="automation_src_primary">Nguồn chính</string>
+    <string name="automation_src_mirror">Mirror KOWX712</string>
+    <string name="automation_src_meowdump">MeowDump</string>
+    <string name="automation_src_device">Tạo từ thiết bị</string>
+    <string name="automation_src_stock">Keybox gốc</string>
+    <string name="automation_src_custom">Keybox của bạn</string>
+    <string name="automation_interval_header">Khoảng thời gian lấy</string>
+    <string name="automation_interval_custom">Tùy chỉnh</string>
+    <string name="automation_interval_set">Đặt</string>
+    <string name="automation_manual_header">Thao tác thủ công</string>
+    <string name="automation_fetch_key">Lấy khóa</string>
+    <string name="automation_patch_header">Tự động cập nhật bản vá bảo mật</string>
+    <string name="automation_set_patch">Đặt bản vá</string>
+    <string name="automation_region_header">Props vùng</string>
+    <string name="prompt_region_enabled">Đã bật áp dụng region prop</string>
+    <string name="prompt_region_disabled">Đã tắt áp dụng region prop</string>
+    <string name="automation_appearance_header">Giao diện</string>
+    <string name="automation_randomize_accent">Màu nhấn ngẫu nhiên khi tải</string>
+    <string name="prompt_keybox_fetch_enabled">Tự động lấy keybox đã bật</string>
+    <string name="prompt_keybox_fetch_disabled">Tự động lấy keybox đã tắt</string>
+    <string name="prompt_patch_auto_enabled">Tự động cập nhật bản vá bảo mật đã bật</string>
+    <string name="prompt_patch_auto_disabled">Tự động cập nhật bản vá bảo mật đã tắt</string>
+    <string name="prompt_config_save_failed">Lưu cấu hình thất bại</string>
+    <string name="prompt_denylist_failed">Đọc DenyList thất bại</string>
+    <string name="prompt_exclude_list_failed">Đọc danh sách loại trừ thất bại</string>
+    <string name="prompt_unnecessary_failed">Lấy ứng dụng không cần thiết thất bại</string>
+    <string name="prompt_open_link_failed">Mở liên kết thất bại</string>
+    <string name="prompt_redirecting">Đang chuyển hướng</string>
+    <string name="health_active">Hoạt động</string>
+    <string name="health_not_running">Không chạy</string>
+    <string name="health_unknown">Không xác định</string>
+</resources>
