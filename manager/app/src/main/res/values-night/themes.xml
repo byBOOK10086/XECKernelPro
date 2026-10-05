@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.XecPro" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowBackground">@color/ic_splash_background</item>
+    </style>
+
+    <style name="Theme.XecPro.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/ic_splash_background</item>
+        <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_splash</item>
+        <item name="windowSplashScreenAnimationDuration">500</item>
+        <item name="postSplashScreenTheme">@style/Theme.XecPro</item>
+    </style>
+
+    <style name="Theme.XecPro.WebUI" parent="Theme.XecPro" />
+
+</resources>

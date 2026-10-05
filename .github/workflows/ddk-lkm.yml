@@ -1,0 +1,210 @@
+name: Build KernelSU Kernel Module
+
+on:
+  workflow_call:
+    inputs:
+      kmi:
+        description: 'KMI version'
+        required: true
+        type: string
+      ddk_release:
+        description: 'DDK release version'
+        required: false
+        default: '20260828'
+        type: string
+      expected_size2:
+        description: 'Second expected signature size (for PR builds)'
+        required: false
+        default: ''
+        type: string
+      expected_hash2:
+        description: 'Second expected signature hash (for PR builds)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  build-kernelsu-ko:
+    name: Build kernelsu.ko for ${{ inputs.kmi }}
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ylarod/ddk-min:${{ inputs.kmi }}-${{ inputs.ddk_release }}
+      options: --privileged
+
+    steps:
+    - name: Checkout source code
+      uses: actions/checkout@v7
+
+    - name: Build kernelsu.ko
+      env:
+        EXPECTED_SIZE2: ${{ inputs.expected_size2 }}
+        EXPECTED_HASH2: ${{ inputs.expected_hash2 }}
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+        cd kernel
+
+        echo "=== Building kernelsu.ko for KMI: ${{ inputs.kmi }} ==="
+
+        EXTRA_ARGS=""
+        if [ -n "$EXPECTED_SIZE2" ] && [ -z "$EXPECTED_HASH2" ]; then
+          echo "ERROR: expected_hash2 must be provided when expected_size2 is set."
+          exit 1
+        fi
+        if [ -z "$EXPECTED_SIZE2" ] && [ -n "$EXPECTED_HASH2" ]; then
+          echo "ERROR: expected_size2 must be provided when expected_hash2 is set."
+          exit 1
+        fi
+        if [ -n "$EXPECTED_SIZE2" ]; then
+          EXTRA_ARGS="KSU_EXPECTED_SIZE2=$EXPECTED_SIZE2 KSU_EXPECTED_HASH2=$EXPECTED_HASH2"
+        fi
+
+        # Capture the compiler output so a failure can be reported as an
+        # annotation instead of a bare "exit code 2".
+        BUILD_LOG=$(mktemp)
+        set +e
+        CONFIG_KSU=m CONFIG_KPM=y CC=clang make $EXTRA_ARGS >"$BUILD_LOG" 2>&1
+        BUILD_RC=$?
+        set -e
+        tail -n 20 "$BUILD_LOG"
+        if [ $BUILD_RC -ne 0 ]; then
+          MSG=$(tail -n 200 "$BUILD_LOG" | sed -e 's/%/%25/g' -e 's/\r//g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=aarch64 ${{ inputs.kmi }} compiler output::$MSG"
+          exit $BUILD_RC
+        fi
+
+        echo "=== Build completed ==="
+
+        # Out-of-tree (LKM) builds silently drop `obj-$(CONFIG_KPM)` objects, so a
+        # green build does not prove the KPM loader is actually inside the module.
+        # Assert on the exported loader symbols instead.
+        NM=$(command -v llvm-nm || command -v nm)
+        KPM_SYMS=$($NM kernelsu.ko | grep -E ' [Tt] sukisu_(handle_kpm|kpm_control|kpm_load_module_path|kpm_version)$' || true)
+        echo "$KPM_SYMS"
+        if [ "$(echo "$KPM_SYMS" | grep -c ' [Tt] sukisu_')" -lt 4 ]; then
+          echo "::error title=aarch64 ${{ inputs.kmi }} KPM loader missing::kernelsu.ko does not contain the exported KPM loader symbols; the kpm/ objects were not linked in."
+          exit 1
+        fi
+
+        # Create output directory in GitHub workspace
+        OUT_DIR=/github/workspace/out/aarch64
+        mkdir -p $OUT_DIR
+
+        # Copy with KMI-specific naming
+        OUTPUT_NAME="${{ inputs.kmi }}_kernelsu.ko"
+        cp kernelsu.ko "$OUT_DIR/$OUTPUT_NAME"
+        
+        echo "Copied to: $OUT_DIR/$OUTPUT_NAME"
+        ls -la "$OUT_DIR/$OUTPUT_NAME"
+        echo "Size: $(du -h "$OUT_DIR/$OUTPUT_NAME" | cut -f1)"
+        llvm-strip -d "$OUT_DIR/$OUTPUT_NAME"
+        echo "Size after stripping: $(du -h "$OUT_DIR/$OUTPUT_NAME" | cut -f1)"
+
+    - name: Upload kernelsu.ko artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: aarch64-${{ inputs.kmi }}-lkm
+        path: /github/workspace/out/aarch64/${{ inputs.kmi }}_kernelsu.ko
+
+    - name: Build kernelsu.ko for x64
+      env:
+        EXPECTED_SIZE2: ${{ inputs.expected_size2 }}
+        EXPECTED_HASH2: ${{ inputs.expected_hash2 }}
+      run: |
+        cd kernel
+        make clean
+
+        echo "=== Preparing KDIR for x64 ==="
+
+        mkdir -p /opt/ddk/kdir-x64
+        unset ARCH
+        unset CROSS_COMPILE
+        export ARCH=x86_64
+        kmi=${{ inputs.kmi }}
+        pushd /opt/ddk/src/$kmi
+        export KDIR=/opt/ddk/kdir-x64/$kmi
+
+        # ddk-min images contain the source tarball, whose modpost patch is
+        # not applied to the fresh x86 kdir.  Keep the patch idempotent so
+        # this also works when the image already contains one or more fixes.
+        MODPOST=scripts/mod/modpost.c
+        sed -i -E 's/^([[:space:]]*)check_exports\(mod\);/\1\/\/ check_exports(mod);/' "$MODPOST"
+        sed -i -E 's/^([[:space:]]*)s->module = exp->module;/\1\/\/ s->module = exp->module;/' "$MODPOST"
+        sed -i 's/^static void check_exports(/static void __attribute__((unused)) check_exports(/' "$MODPOST"
+        sed -i 's/__version_ext_names\\") =\\n/__version_ext_names\\") = \\"\\"\\n/' "$MODPOST"
+
+        make O=$KDIR gki_defconfig
+        scripts/config --file $KDIR/.config -d LTO_CLANG -e LTO_NONE -d LTO_CLANG_THIN -d LTO_CLANG_FULL -d THINLTO
+        if [ "$kmi" == "android16-6.12" ] || [ "$kmi" == "android17-6.18" ]; then
+            scripts/config --file $KDIR/.config -e CONFIG_CFI_ICALL_NORMALIZE_INTEGERS
+        fi
+        make O=$KDIR modules_prepare
+        # Generate SELinux headers through Kbuild in this x86 output tree.
+        make O=$KDIR security/selinux/built-in.a
+        popd
+        
+        echo "=== Building x64 kernelsu.ko for KMI: ${{ inputs.kmi }} ==="
+
+        EXTRA_ARGS=""
+        if [ -n "$EXPECTED_SIZE2" ] && [ -z "$EXPECTED_HASH2" ]; then
+          echo "ERROR: expected_hash2 must be provided when expected_size2 is set."
+          exit 1
+        fi
+        if [ -z "$EXPECTED_SIZE2" ] && [ -n "$EXPECTED_HASH2" ]; then
+          echo "ERROR: expected_size2 must be provided when expected_hash2 is set."
+          exit 1
+        fi
+        if [ -n "$EXPECTED_SIZE2" ]; then
+          EXTRA_ARGS="KSU_EXPECTED_SIZE2=$EXPECTED_SIZE2 KSU_EXPECTED_HASH2=$EXPECTED_HASH2"
+        fi
+        
+        MDIR=$(realpath .)
+
+        BUILD_LOG=$(mktemp)
+        set +e
+        if [ "$kmi" == "android17-6.18" ]; then
+          make -C $KDIR M=$MDIR MO=$MDIR compile_commands.json modules CONFIG_KSU=m CONFIG_KPM=y CONFIG_KSU_X86_PATCH_SYSCALL_DISPATCHER=y $EXTRA_ARGS >"$BUILD_LOG" 2>&1
+        else
+          make -C $KDIR M=$MDIR src=$MDIR compile_commands.json modules CONFIG_KSU=m CONFIG_KPM=y CONFIG_KSU_X86_PATCH_SYSCALL_DISPATCHER=y $EXTRA_ARGS >"$BUILD_LOG" 2>&1
+        fi
+        BUILD_RC=$?
+        set -e
+        tail -n 20 "$BUILD_LOG"
+        if [ $BUILD_RC -ne 0 ]; then
+          MSG=$(tail -n 200 "$BUILD_LOG" | sed -e 's/%/%25/g' -e 's/\r//g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=x86_64 ${{ inputs.kmi }} compiler output::$MSG"
+          exit $BUILD_RC
+        fi
+
+        echo "=== Build completed ==="
+
+        # Same KPM linker assertion as the aarch64 step above: KPM is AArch64-only
+        # at runtime, but its objects are linked unconditionally and therefore must
+        # also show up in the x86_64 module.
+        NM=$(command -v llvm-nm || command -v nm)
+        KPM_SYMS=$($NM kernelsu.ko | grep -E ' [Tt] sukisu_(handle_kpm|kpm_control|kpm_load_module_path|kpm_version)$' || true)
+        echo "$KPM_SYMS"
+        if [ "$(echo "$KPM_SYMS" | grep -c ' [Tt] sukisu_')" -lt 4 ]; then
+          echo "::error title=x86_64 ${{ inputs.kmi }} KPM loader missing::kernelsu.ko does not contain the exported KPM loader symbols; the kpm/ objects were not linked in."
+          exit 1
+        fi
+
+        # Create output directory in GitHub workspace
+        OUT_DIR=/github/workspace/out/x86_64
+        mkdir -p $OUT_DIR
+
+        # Copy with KMI-specific naming
+        OUTPUT_NAME="${{ inputs.kmi }}_kernelsu.ko"
+        cp kernelsu.ko "$OUT_DIR/$OUTPUT_NAME"
+        
+        echo "Copied to: $OUT_DIR/$OUTPUT_NAME"
+        ls -la "$OUT_DIR/$OUTPUT_NAME"
+        echo "Size: $(du -h "$OUT_DIR/$OUTPUT_NAME" | cut -f1)"
+        llvm-strip -d "$OUT_DIR/$OUTPUT_NAME"
+        echo "Size after stripping: $(du -h "$OUT_DIR/$OUTPUT_NAME" | cut -f1)"
+        
+    - name: Upload x64 kernelsu.ko artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: x86_64-${{ inputs.kmi }}-lkm
+        path: /github/workspace/out/x86_64/${{ inputs.kmi }}_kernelsu.ko

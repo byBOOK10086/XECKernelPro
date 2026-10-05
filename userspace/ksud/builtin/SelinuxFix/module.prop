@@ -1,0 +1,6 @@
+id=SelinuxFix
+name=修复selinux漏洞
+author=有始有终
+version=无更新
+description=自动修复漏洞。不需要更新，无偷文件。
+versionCode=1

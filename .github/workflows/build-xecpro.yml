@@ -1,0 +1,360 @@
+name: Build XECKernelPro
+
+# 品牌化专用构建流水线。
+# 使用方式:
+#   1. 把本仓库推送到你自己的 GitHub 仓库
+#   2. Actions -> Build XECKernelPro -> Run workflow
+#   3. 跑完后在 "Artifacts" 里下载打好的 XECkernelPro 管理器 APK
+# 签名密钥不入库：使用仓库 Secrets（SIGN_KEYSTORE_B64 / SIGN_STORE_PASS /
+# SIGN_KEY_PASS），密钥内容与原仓库内 xecpro-key.jks 完全相同，签名结果不变。
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  SIGN_KEY_ALIAS: xecpro-key
+  BRAND_PACKAGE: com.xecpro.kernel
+  BRAND_NAME: XECKernelPro
+
+jobs:
+  generate-key:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify signing secrets present
+        env:
+          SIGN_KEYSTORE_B64: ${{ secrets.SIGN_KEYSTORE_B64 }}
+          SIGN_STORE_PASS: ${{ secrets.SIGN_STORE_PASS }}
+          SIGN_KEY_PASS: ${{ secrets.SIGN_KEY_PASS }}
+        run: |
+          # 注意：secret 不能经 job outputs 传给下游（Actions 会 Skip output
+          # since it may contain secret），每个 job 必须直读 secrets.*。
+          # 本 job 只做早期哨兵校验，真正的解码在各自消费步骤完成。
+          [ -n "$SIGN_KEYSTORE_B64" ] || { echo "::error::secret SIGN_KEYSTORE_B64 not set"; exit 1; }
+          [ -n "$SIGN_STORE_PASS" ] || { echo "::error::secret SIGN_STORE_PASS not set"; exit 1; }
+          [ -n "$SIGN_KEY_PASS" ] || { echo "::error::secret SIGN_KEY_PASS not set"; exit 1; }
+          echo "signing secrets present"
+
+  build-lkm:
+    needs: generate-key
+    uses: ./.github/workflows/build-lkm.yml
+    with:
+      expected_size2: ""
+      expected_hash2: ""
+    secrets: inherit
+
+  build-ksuinit:
+    uses: ./.github/workflows/ksuinit.yml
+
+  build-ksud:
+    needs: [build-lkm, build-ksuinit]
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-linux-android
+          - target: x86_64-linux-android
+    uses: ./.github/workflows/ksud.yml
+    with:
+      target: ${{ matrix.target }}
+      pack_lkm: true
+      pack_ksuinit: true
+
+  build-manager:
+    needs: [generate-key]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./manager
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Write brand keystore
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.SIGN_STORE_PASS }}
+          KEY_PASSWORD: ${{ secrets.SIGN_KEY_PASS }}
+          KEYSTORE_B64: ${{ secrets.SIGN_KEYSTORE_B64 }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > xecpro-key.jks
+          {
+            echo KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD"
+            echo KEY_ALIAS='xecpro-key'
+            echo KEY_PASSWORD="$KEY_PASSWORD"
+            echo KEYSTORE_FILE='xecpro-key.jks'
+          } >> gradle.properties
+
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Setup Android SDK
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          # 不用 android-actions/setup-android：它会无条件执行 `sdkmanager tools`，
+          # 而 Google 已下架 tools 包，导致该 action 必然以 exit 1 收尾并中断 job。
+          # 这里直接复用 runner 镜像自带的 Android SDK + cmdline-tools。
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "${SDK_ROOT}" ] || [ ! -d "${SDK_ROOT}" ]; then
+            SDK_ROOT=""
+            for d in /usr/local/lib/android/sdk /opt/android-sdk /opt/android "$HOME/Android/Sdk" "$HOME/android-sdk"; do
+              if [ -d "$d" ]; then SDK_ROOT="$d"; break; fi
+            done
+          fi
+          if [ -z "${SDK_ROOT}" ]; then
+            echo "::error::no Android SDK found on this runner"
+            ls -la /usr/local/lib/android 2>/dev/null || true
+            exit 1
+          fi
+          echo "Android SDK root: ${SDK_ROOT}"
+          echo "ANDROID_HOME=${SDK_ROOT}" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=${SDK_ROOT}" >> "$GITHUB_ENV"
+
+          SDKMGR="$(find "${SDK_ROOT}/cmdline-tools" -maxdepth 3 -type f -name sdkmanager 2>/dev/null | sort | tail -n 1)"
+          if [ -z "${SDKMGR}" ]; then
+            echo "::error::sdkmanager not found under ${SDK_ROOT}/cmdline-tools"
+            find /usr/local /opt "$HOME" -maxdepth 5 -type f -name sdkmanager 2>/dev/null | head -n 20 || true
+            exit 1
+          fi
+          echo "sdkmanager: ${SDKMGR}"
+          echo "$(dirname "${SDKMGR}")" >> "$GITHUB_PATH"
+          echo "${SDK_ROOT}/platform-tools" >> "$GITHUB_PATH"
+
+          # 先接受全部 license，保证 sdkmanager 与 AGP 的自动下载都不会被卡住。
+          yes | "${SDKMGR}" --sdk_root="${SDK_ROOT}" --licenses > /dev/null 2>&1 || true
+
+          # 逐包安装：个别包名即使不存在，也不会中断其余包。
+          for pkg in "platform-tools" "platforms;android-37" "build-tools;37.0.0" "ndk;29.0.14206865"; do
+            echo "--- installing ${pkg}"
+            "${SDKMGR}" --sdk_root="${SDK_ROOT}" --install "${pkg}" \
+              || echo "::warning::sdkmanager could not install '${pkg}'; Gradle will try to auto-download it"
+          done
+
+          ls "${SDK_ROOT}/build-tools" 2>/dev/null || true
+          ls "${SDK_ROOT}/platforms" 2>/dev/null || true
+          ls "${SDK_ROOT}/ndk" 2>/dev/null || true
+
+      - name: Build branded manager
+        run: |
+          ./gradlew clean assembleRelease \
+            -PKSU_PACKAGE_NAME=${{ env.BRAND_PACKAGE }} \
+            -PKSU_NAME=${{ env.BRAND_NAME }}
+
+      - name: Upload gradle artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: manager-gradle
+          path: manager/app/build/outputs/apk/release/*.apk
+
+  repack:
+    needs: [build-manager, build-ksud, generate-key]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Android SDK
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          # 同 build-manager：绕开必然失败的 android-actions/setup-android。
+          # repack 需要 build-tools 的 zipalign/apksigner 与 NDK 的 llvm-strip。
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "${SDK_ROOT}" ] || [ ! -d "${SDK_ROOT}" ]; then
+            SDK_ROOT=""
+            for d in /usr/local/lib/android/sdk /opt/android-sdk /opt/android "$HOME/Android/Sdk" "$HOME/android-sdk"; do
+              if [ -d "$d" ]; then SDK_ROOT="$d"; break; fi
+            done
+          fi
+          if [ -z "${SDK_ROOT}" ]; then
+            echo "::error::no Android SDK found on this runner"
+            ls -la /usr/local/lib/android 2>/dev/null || true
+            exit 1
+          fi
+          echo "Android SDK root: ${SDK_ROOT}"
+          echo "ANDROID_HOME=${SDK_ROOT}" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=${SDK_ROOT}" >> "$GITHUB_ENV"
+
+          SDKMGR="$(find "${SDK_ROOT}/cmdline-tools" -maxdepth 3 -type f -name sdkmanager 2>/dev/null | sort | tail -n 1)"
+          if [ -z "${SDKMGR}" ]; then
+            echo "::error::sdkmanager not found under ${SDK_ROOT}/cmdline-tools"
+            find /usr/local /opt "$HOME" -maxdepth 5 -type f -name sdkmanager 2>/dev/null | head -n 20 || true
+            exit 1
+          fi
+          echo "sdkmanager: ${SDKMGR}"
+          echo "$(dirname "${SDKMGR}")" >> "$GITHUB_PATH"
+          echo "${SDK_ROOT}/platform-tools" >> "$GITHUB_PATH"
+
+          yes | "${SDKMGR}" --sdk_root="${SDK_ROOT}" --licenses > /dev/null 2>&1 || true
+
+          for pkg in "platform-tools" "build-tools;37.0.0" "ndk;29.0.14206865"; do
+            echo "--- installing ${pkg}"
+            "${SDKMGR}" --sdk_root="${SDK_ROOT}" --install "${pkg}" \
+              || echo "::warning::sdkmanager could not install '${pkg}'; falling back to whatever the runner already has"
+          done
+
+      - name: Download manager artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: manager-gradle
+          path: artifacts/manager-gradle
+
+      - name: Download ksud artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: ksud-aarch64-linux-android
+          path: artifacts/ksud-aarch64-linux-android
+      - uses: actions/download-artifact@v8
+        with:
+          name: ksud-x86_64-linux-android
+          path: artifacts/ksud-x86_64-linux-android
+
+      - name: Place manager apk and xudc artifacts
+        run: |
+          mkdir -p manager/app/build/outputs/apk/release
+          APK=$(find artifacts/manager-gradle -type f -name "*.apk" | head -n 1)
+          test -n "$APK"
+          cp -f "$APK" manager/app/build/outputs/apk/release/
+
+          mkdir -p target/aarch64-linux-android/release
+          mkdir -p target/x86_64-linux-android/release
+          ARM64_KSUD=$(find artifacts/ksud-aarch64-linux-android -type f -name xudc | head -n 1)
+          X86_64_KSUD=$(find artifacts/ksud-x86_64-linux-android -type f -name xudc | head -n 1)
+          test -n "$ARM64_KSUD"
+          test -n "$X86_64_KSUD"
+          cp -f "$ARM64_KSUD" target/aarch64-linux-android/release/xudc
+          cp -f "$X86_64_KSUD" target/x86_64-linux-android/release/xudc
+
+      - name: Sign and repack
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.SIGN_STORE_PASS }}
+          KEY_PASSWORD: ${{ secrets.SIGN_KEY_PASS }}
+          KEYSTORE_B64: ${{ secrets.SIGN_KEYSTORE_B64 }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > xecpro-key.jks
+          python3 repack_apk.py repack \
+            -b release \
+            -t release \
+            -a arm64-v8a \
+            -a x86_64 \
+            -K xecpro-key.jks \
+            -A xecpro-key \
+            -P "$KEYSTORE_PASSWORD" \
+            -S "$KEY_PASSWORD" \
+            --strip
+
+      - name: Upload branded APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: XECkernelPro-manager
+          path: dist/*.apk
+
+  # 发布 GitHub Release，让老版本的“检查更新”能发现新版本。
+  # 关键点：release APK 文件名末尾必须带 _<versionCode>，checkNewVersion() 用它做版本比较。
+  release:
+    needs: [repack, build-ksud, build-ksuinit]
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download branded APK
+        uses: actions/download-artifact@v8
+        with:
+          name: XECkernelPro-manager
+          path: artifacts/manager
+
+      - name: Download ksud (arm64)
+        uses: actions/download-artifact@v8
+        with:
+          name: ksud-aarch64-linux-android
+          path: artifacts/ksud-aarch64
+      - name: Download ksud (x86_64)
+        uses: actions/download-artifact@v8
+        with:
+          name: ksud-x86_64-linux-android
+          path: artifacts/ksud-x86_64
+
+      - name: Download ksuinit (arm64)
+        uses: actions/download-artifact@v8
+        with:
+          name: ksuinit-aarch64
+          path: artifacts/ksuinit-aarch64
+      - name: Download ksuinit (x86_64)
+        uses: actions/download-artifact@v8
+        with:
+          name: ksuinit-x86_64
+          path: artifacts/ksuinit-x86_64
+
+      # Release 必须带全 8 个 KMI 的 aarch64 kernelsu.ko（init_boot 修补用）。
+      # .ko 由 build-lkm.yml 产出在它自己的 run 上，这里取最近一次成功的 run。
+      # 缺任何一个 KMI 都直接失败——发版里少 .ko 会让对应 KMI 的用户没得刷。
+      - name: Download kernelsu.ko for all KMIs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          KMIS="android12-5.10 android13-5.10 android13-5.15 android14-5.15 android14-6.1 android15-6.6 android16-6.12 android17-6.18"
+          RUN_ID=$(gh run list --workflow build-lkm.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          echo "latest successful build-lkm run: $RUN_ID"
+          gh run view "$RUN_ID" --json headSha --jq '"  built from " + .headSha'
+          mkdir -p artifacts/ko
+          for KMI in $KMIS; do
+            gh run download "$RUN_ID" --name "aarch64-$KMI-lkm" --dir "artifacts/ko-$KMI"
+            KO=$(find "artifacts/ko-$KMI" -type f -name "*_kernelsu.ko" | head -n 1)
+            [ -n "$KO" ] || { echo "::error::no kernelsu.ko in artifact aarch64-$KMI-lkm"; exit 1; }
+            cp -f "$KO" "artifacts/ko/aarch64-${KMI}_kernelsu.ko"
+          done
+          ls -la artifacts/ko/
+
+      # XecHide 已下架、Zygisk Next 许可证不允许再分发：Release 资产不再包含
+      # XecHide-module-*.zip 与 Zygisk-Next-*.zip，历史 Release 上的同名资产也已清理。
+      # 需要 Zygisk 框架的用户请自行从官方仓库获取：https://github.com/LSPosed/ZygiskNext
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "tag_name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            VCODE=$((31000 + $(git rev-list --count HEAD)))
+            SHA=$(git rev-parse --short=8 HEAD)
+            echo "tag_name=v${VCODE}-${SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.tag.outputs.tag_name }}
+          generate_release_notes: true
+          # 只上传 aarch64 的 xudc / ksuinit。
+          # 此前同时列出 x86_64 目录，而两个目录里的文件名都是 xudc / ksuinit，
+          # action-gh-release 上传第二个同名文件时要去 PATCH 已存在 asset 的元数据，
+          # 拿到 404 后抛错：job 失败、Release 停在 draft 状态，公开 API 读不到，
+          # 管理器的检查更新因此完全无感。Android 设备是 arm64，保留 aarch64 即可。
+          files: |
+            artifacts/manager/*.apk
+            artifacts/ksud-aarch64/*
+            artifacts/ksuinit-aarch64/*
+            artifacts/ko/*

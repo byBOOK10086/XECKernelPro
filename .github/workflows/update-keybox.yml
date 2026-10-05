@@ -1,0 +1,63 @@
+name: Update keybox mirror
+
+# yurikey 原源 raw.githubusercontent.com 在国内直连不可达，ta-enhanced 的 custom
+# 源又不做 base64 解码（原文直存）。这里在 Actions 里解码好 yurikey 的 key，
+# 把明文 keybox.xml 维护在专用 keybox 分支上，供设备端经 jsdelivr 镜像拉取：
+#   https://cdn.jsdelivr.net/gh/byBOOK10086/XECKernelPro@keybox/keybox.xml
+# yurikey 密钥实测数天一轮换，jsdelivr 分支引用 ~12h 缓存完全覆盖；3 分钟一次
+# 的设备端轮询在缓存过期后自动拿到新箱。
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: keybox-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch and decode yurikey keybox
+        run: |
+          set -e
+          curl -fsSL --retry 3 --connect-timeout 20 \
+            https://raw.githubusercontent.com/Yurii0307/yurikey/main/key -o key.b64
+          base64 -d key.b64 > keybox.xml
+          grep -q '<AndroidAttestation>' keybox.xml
+          grep -q 'PrivateKey' keybox.xml
+          echo "decoded $(wc -c < keybox.xml) bytes"
+
+      - name: Push to keybox branch (skip when unchanged)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          git config --global user.name "XECKernelPro"
+          git config --global user.email "xec@localhost"
+          if ! git clone --depth 1 --branch keybox \
+              "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo; then
+            echo "keybox branch missing, recreating"
+            git init -b keybox repo
+            cd repo
+            git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+            cp ../keybox.xml .
+            git add keybox.xml
+            git commit -m "mirror yurikey keybox [skip ci]"
+            git push -u origin keybox
+            exit 0
+          fi
+          cd repo
+          if [ -f keybox.xml ] && cmp -s keybox.xml ../keybox.xml; then
+            echo "unchanged, skipping commit"
+            exit 0
+          fi
+          cp ../keybox.xml .
+          git add keybox.xml
+          git commit -m "mirror yurikey keybox [skip ci]"
+          git push origin keybox

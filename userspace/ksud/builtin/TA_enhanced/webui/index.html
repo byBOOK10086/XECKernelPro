@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrickyAddon</title>
+    <style>
+      /* Fallback for mui.kernelsu.org/internal/insets.css and colors.css (not reachable in browser) */
+      :root {
+        --window-inset-top: 0px;
+        --window-inset-bottom: 0px;
+        --window-inset-left: 0px;
+        --window-inset-right: 0px;
+      }
+      .interval-grid{display:flex;gap:8px;padding:8px 0}
+      .interval-chip{flex:1;padding:8px 0;border:1px solid rgba(255,255,255,.12);border-radius:20px;background:0 0;color:var(--md-sys-color-on-surface,#e0e0e0);font-size:13px;font-weight:500;cursor:pointer;transition:all .2s;text-align:center;font-family:inherit}
+      .interval-chip.selected{background:rgba(var(--accent-rgb,0,214,143),.2);border-color:rgb(var(--accent-rgb,0,214,143));color:rgb(var(--accent-rgb,0,214,143))}
+      .interval-custom{display:flex;gap:8px;padding:4px 0;align-items:center}
+      .interval-input{flex:1;padding:8px 12px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:0 0;color:var(--md-sys-color-on-surface,#e0e0e0);font-size:13px;font-family:inherit;outline:0;min-width:0}
+      .interval-input:focus{border-color:rgb(var(--accent-rgb,0,214,143))}
+      .interval-input{caret-color:rgb(var(--accent-rgb,0,214,143));animation:pulse-input 1.5s ease-in-out infinite}
+      .interval-input:focus{animation:none}
+      @keyframes pulse-input{0%,100%{border-color:rgba(255,255,255,.12);opacity:.6}50%{border-color:rgb(var(--accent-rgb,0,214,143));opacity:1}}
+      .unit-toggle{display:flex;border:1px solid rgba(255,255,255,.12);border-radius:20px;overflow:hidden}
+      .unit-btn{padding:8px 14px;border:0;background:0 0;color:var(--md-sys-color-on-surface,#e0e0e0);font-size:13px;font-family:inherit;cursor:pointer;transition:all .2s}
+      .unit-btn.selected{background:rgba(var(--accent-rgb,0,214,143),.2);color:rgb(var(--accent-rgb,0,214,143))}
+      .interval-set-btn{flex:0 0 auto;padding:8px 16px}
+      #region-fields{display:flex;flex-direction:column;gap:12px;padding:8px 0}
+      #region-fields md-outlined-text-field{width:100%}
+      .region-expand{display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:8px 0;-webkit-tap-highlight-color:transparent}
+      .region-expand:active{opacity:.7}
+      .region-expand-label{font-size:12px;color:var(--md-sys-color-on-surface-variant,#999)}
+      .region-expand-meta{display:flex;align-items:center;gap:6px}
+      .region-expand-count{font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:rgba(var(--accent-rgb,0,214,143),.15);color:rgb(var(--accent-rgb,0,214,143))}
+      .region-chevron{width:16px;height:16px;transition:transform .2s ease;color:rgb(var(--accent-rgb,0,214,143))}
+      .region-chevron.open{transform:rotate(180deg)}
+      #region-extra{display:flex;flex-direction:column;gap:12px;overflow:hidden;max-height:0;opacity:0;transition:max-height .2s ease,opacity .15s ease}
+      #region-extra.expanded{max-height:300px;opacity:1;padding-top:4px}
+      .interval-badge{font-size:11px;font-weight:400;padding:2px 8px;border-radius:10px;background:rgba(var(--accent-rgb,0,214,143),.15);color:rgb(var(--accent-rgb,0,214,143));margin-left:6px;vertical-align:middle}
+    </style>
+  <link rel="preload" href="./assets/material-symbols-outlined-D4N9P62f.woff2" as="font" type="font/woff2" crossorigin>
+  <script type="module" crossorigin src="./assets/index-migrated.min.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-BAzk58Ad.css">
+</head>
+<body>
+    <!-- Header -->
+    <div class="header header-bg" unresolved>
+        <div class="title-container search-bg">
+            <div class="signature-logo header-logo">
+                <div class="logo-ring"></div>
+                <div class="logo-core">⚡</div>
+            </div>
+            <div class="header-text">
+                <div id="title" data-i18n="header_title"></div>
+                <span class="header-subtitle">Enhanced by <span class="enhancer-name">Enginex0</span></span>
+            </div>
+        </div>
+        <md-icon-button class="search-button search-bg" id="search-button">
+            <md-icon>search</md-icon>
+        </md-icon-button>
+        <div class="menu">
+            <md-icon-button id="menu-button">
+                <md-icon>more_vert</md-icon>
+            </md-icon-button>
+            <md-menu id="menu-options" anchor="menu-button">
+                <div class="menu-item-button-container">
+                    <md-filled-tonal-icon-button id="select-all"><md-icon>select_all</md-icon></md-filled-tonal-icon-button>
+                    <md-filled-tonal-icon-button id="deselect-all"><md-icon>deselect</md-icon></md-filled-tonal-icon-button>
+                    <md-filled-tonal-icon-button id="refresh"><md-icon>refresh</md-icon></md-filled-tonal-icon-button>
+                </div>
+                <md-menu-item id="select-denylist" data-i18n="menu_select_denylist"></md-menu-item>
+                <md-menu-item id="deselect-unnecessary" data-i18n="menu_deselect_unnecessary"></md-menu-item>
+                <md-menu-item id="show-system-apps">
+                    <div slot="headline" data-i18n="menu_show_system_apps">Show System Apps</div>
+                    <div slot="end" class="custom-toggle" id="system-apps-toggle">
+                        <div class="toggle-track">
+                            <div class="toggle-thumb"></div>
+                        </div>
+                    </div>
+                </md-menu-item>
+                <md-divider role="separator" tabindex="-1"></md-divider>
+                <md-menu-item id="automation-settings" class="automation-menu-item">
+                    <md-icon slot="start" style="color: #FFD700;">auto_awesome</md-icon>
+                    <div slot="headline" data-i18n="menu_automation">Keybox Automation</div>
+                    <md-icon slot="end">arrow_forward</md-icon>
+                </md-menu-item>
+                <md-menu-item id="boot-hash" data-i18n="menu_set_verified_boot_hash"></md-menu-item>
+                <md-menu-item id="security-patch" data-i18n="menu_set_security_patch"></md-menu-item>
+                <md-menu-item id="help" data-i18n="menu_help"></md-menu-item>
+                <md-sub-menu hover-close-delay="0">
+                    <md-menu-item slot="item" class="sub-menu-entry">
+                        <div slot="headline" data-i18n="menu_language"></div>
+                        <md-icon slot="end">language</md-icon>
+                    </md-menu-item>
+                    <md-menu positioning="popover" slot="menu" id="language-menu"></md-menu>
+                </md-sub-menu>
+                <md-menu-item id="about" data-i18n="menu_about"></md-menu-item>
+            </md-menu>
+        </div>
+        <md-outlined-text-field class="search-input" id="search" data-i18n="search_bar_search_placeholder" placeholder="Search">
+            <md-icon slot="trailing-icon" id="clear-btn">close</md-icon>
+        </md-outlined-text-field>
+    </div>
+
+    <!-- Loading Element -->
+    <div class="loading" data-i18n="loading_loading"></div>
+
+    <!-- Prompt Element -->
+    <div class="prompt-container" popover="manual">
+        <div class="prompt" id="prompt">
+            <md-icon class="prompt-icon">check_circle</md-icon>
+            <span class="prompt-text"></span>
+        </div>
+    </div>
+
+    <!-- Floating Button Element -->
+    <md-fab id="save" class="floating-btn hide" data-i18n="functional_button_save" label="Save">
+        <md-icon slot="icon">edit_note</md-icon>
+    </md-fab>
+
+    <!-- Health Status Banner -->
+    <div class="health-banner" id="health-banner">
+        <div class="health-dot" id="health-dot"></div>
+        <span class="health-label" id="health-engine-name" data-i18n="health_engine_default">Attestation</span>
+        <span class="health-status" id="health-status-text" data-i18n="health_checking">Checking...</span>
+    </div>
+
+    <!-- Applist Display -->
+    <div id="apps-list"></div>
+    <div class="update-card" id="update-card">
+        <md-ripple></md-ripple>
+        <md-icon>download</md-icon>
+        <div>
+            <div id="update-available" data-i18n="update_update_available"></div>
+            <div id="redirect-to-release" data-i18n="update_redirect_to_release"></div>
+        </div>
+    </div>
+    <template id="app-template">
+        <div class="card-box">
+            <div class="card card-alpha content" data-package="">
+                <md-ripple></md-ripple>
+                <label class="name"></label>
+                <md-checkbox class="checkbox" touch-target="wrapper"></md-checkbox>
+            </div>
+        </div>
+    </template>
+
+    <!-- Dialog -->
+    <div class="dialog-wrapper" unresolved>
+        <!-- Mode selection dialog (opened on long-press) -->
+        <md-dialog id="mode-dialog">
+            <div slot="headline" data-i18n="mode_dialog_title"></div>
+            <div slot="content" class="mode-dialog-content">
+                <div id="mode-dialog-appname"></div>
+                <div class="mode-options">
+                    <label class="mode-option">
+                        <md-radio id="mode-default" name="mode" value="normal"></md-radio>
+                        <span data-i18n="mode_auto"></span>
+                    </label>
+                    <label class="mode-option">
+                        <md-radio id="mode-generate" name="mode" value="generate" class="mode-generated"></md-radio>
+                        <span data-i18n="mode_certificate_generating"></span>
+                    </label>
+                    <label class="mode-option">
+                        <md-radio id="mode-hack" name="mode" value="hack" class="mode-hack"></md-radio>
+                        <span data-i18n="mode_leaf_hack"></span>
+                    </label>
+                </div>
+            </div>
+            <div slot="actions">
+                <md-text-button id="mode-cancel" data-i18n="functional_button_cancel"></md-text-button>
+            </div>
+        </md-dialog>
+
+        <!-- Help Dialog -->
+        <md-dialog id="help-dialog">
+            <div slot="headline" data-i18n="help_help_instructions"></div>
+            <div slot="content" class="help-content">
+                <div class="instruction">
+                    <p class="instruction-header" data-i18n="functional_button_save"></p>
+                    <p data-i18n="help_save_and_update_description"></p>
+                </div>
+                <div class="instruction">
+                    <p class="instruction-header" data-i18n="help_select_denylist"></p>
+                    <p data-i18n="help_select_denylist_description"></p>
+                </div>
+                <div class="instruction">
+                    <p class="instruction-header" data-i18n="help_deselect_unnecessary"></p>
+                    <p data-i18n="help_deselect_unnecessary_description"></p>
+                </div>
+                <div class="instruction">
+                    <p class="instruction-header" data-i18n="help_add_system_app"></p>
+                    <p data-i18n="help_add_system_app_description"></p>
+                </div>
+                <div class="instruction">
+                    <p class="instruction-header" data-i18n="help_set_keybox"></p>
+                    <p data-i18n="help_set_keybox_description"></p>
+                </div>
+                <div class="instruction">
+                    <p class="instruction-header" data-i18n="help_set_custom_keybox"></p>
+                    <p data-i18n="help_set_custom_keybox_description"></p>
+                </div>
+                <div class="instruction">
+                    <p class="instruction-header" data-i18n="help_set_security_patch"></p>
+                    <p data-i18n="help_set_security_patch_description"></p>
+                </div>
+                <div class="instruction">
+                    <p class="instruction-header" data-i18n="help_set_verified_boot_hash"></p>
+                    <p data-i18n="help_set_verified_boot_hash_description"></p>
+                </div>
+            </div>
+            <div slot="actions">
+                <md-text-button id="close-help" data-i18n="functional_button_close"></md-text-button>
+            </div>
+        </md-dialog>
+
+        <!-- BootHash Input Dialog -->
+        <md-dialog id="boot-hash-dialog" class="text-field-dialog">
+            <div slot="headline" data-i18n="boot_hash_title"></div>
+            <div slot="content">
+                <md-outlined-text-field id="boot-hash-input" type="textarea" rows="4" placeholder="Paste your verified Boot Hash here" data-i18n="boot_hash_input_placeholder" oninput="window.trimInput(this)"></md-outlined-text-field>
+            </div>
+            <div slot="actions">
+                <md-text-button id="cancel-boot-hash" data-i18n="functional_button_cancel"></md-text-button>
+                <md-filled-button id="boot-hash-save-button" data-i18n="functional_button_save"></md-filled-button>
+            </div>
+        </md-dialog>
+
+        <!-- About Dialog -->
+        <md-dialog id="about-dialog">
+            <div slot="headline" class="about-headline">
+                <div id="module_name_line1" data-i18n="about_module_name_line1"></div>
+                <div id="module_name_line2" data-i18n="about_module_name_line2"></div>
+                <div id="module-version"></div>
+                <div id="author"><span id="authored" data-i18n="about_by"></span> <span class="enhancer-name">Enginex0</span></div>
+            </div>
+            <div slot="content">
+                <div id="disclaimer" data-i18n="about_disclaimer"></div>
+                <div class="link">
+                    <md-filled-button id="telegram">
+                        <span data-i18n="about_telegram_channel"></span>
+                        <svg slot="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M16.114 9.291c.552-.552 1.1-1.84-1.2-.276a395.806 395.806 0 0 1-6.489 4.372 2.7 2.7 0 0 1-2.117.046c-1.38-.414-2.991-.966-2.991-.966s-1.1-.691.783-1.427c0 0 7.961-3.267 10.722-4.418 1.058-.46 4.647-1.932 4.647-1.932s1.657-.645 1.519.92c-.046.644-.414 2.9-.782 5.338-.553 3.451-1.151 7.225-1.151 7.225s-.092 1.058-.874 1.242a3.787 3.787 0 0 1-2.3-.828c-.184-.138-3.451-2.209-4.648-3.221a.872.872 0 0 1 .046-1.473 169.31 169.31 0 0 0 4.835-4.602Z"></path></svg>
+                    </md-filled-button>
+                    <md-filled-button id="github">
+                        <span>GitHub</span>
+                        <svg slot="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 1A10.89 10.89 0 0 0 1 11.77 10.79 10.79 0 0 0 8.52 22c.55.1.75-.23.75-.52v-1.83c-3.06.65-3.71-1.44-3.71-1.44a2.86 2.86 0 0 0-1.22-1.58c-1-.66.08-.65.08-.65a2.31 2.31 0 0 1 1.68 1.11 2.37 2.37 0 0 0 3.2.89 2.33 2.33 0 0 1 .7-1.44c-2.44-.27-5-1.19-5-5.32a4.15 4.15 0 0 1 1.11-2.91 3.78 3.78 0 0 1 .11-2.84s.93-.29 3 1.1a10.68 10.68 0 0 1 5.5 0c2.1-1.39 3-1.1 3-1.1a3.78 3.78 0 0 1 .11 2.84A4.15 4.15 0 0 1 19 11.2c0 4.14-2.58 5.05-5 5.32a2.5 2.5 0 0 1 .75 2v2.95c0 .35.2.63.75.52A10.8 10.8 0 0 0 23 11.77 10.89 10.89 0 0 0 12 1"></path></svg>
+                    </md-filled-button>
+                </div>
+                <div class="acknowledgment">
+                    <p id="acknowledgment" data-i18n="about_acknowledgment"></p>
+                    <p>KOWX712: Original Tricky Addon</p>
+                    <p>JingMatrix: TEESimulator</p>
+                    <p>XtrLumen/TS-Enhancer-Extreme: VBHash concept</p>
+                    <p>Yurikey: Primary keybox source</p>
+                    <p>MeowDump/Integrity-Box: Keybox source</p>
+                    <p>5ec1cff/TrickyStore: Attestation module</p>
+                    <p>Zero-Mount: WebUI design inspiration</p>
+                    <p>j-hc/zygisk-detach: WebUI template</p>
+                    <p>markedjs/marked: Markdown support</p>
+                </div>
+            </div>
+            <div slot="actions">
+                <md-text-button id="close-about" data-i18n="functional_button_close"></md-text-button>
+            </div>
+        </md-dialog>
+
+        <!-- Update Dialog -->
+        <md-dialog id="update-dialog" class="update-dialog">
+            <div slot="headline" data-i18n="update_changelog"></div>
+            <div slot="content" class="changelog"></div>
+            <div slot="actions">
+                <md-text-button id="close-update" data-i18n="functional_button_close"></md-text-button>
+                <md-filled-button class="install" data-i18n="update_install"></md-filled-button>
+                <md-filled-button class="reboot" data-i18n="update_reboot"></md-filled-button>
+            </div>
+        </md-dialog>
+
+        <!-- File Selector Dialog -->
+        <md-dialog id="file-selector-dialog">
+            <div slot="headline" class="file-selector-header">
+                <md-icon-button class="back-button">
+                    <md-icon>arrow_back</md-icon>
+                </md-icon-button>
+                <div class="current-path">/storage/emulated/0/Download</div>
+            </div>
+            <div slot="content">
+                <div class="file-list"></div>
+            </div>
+            <div slot="actions">
+                <md-text-button class="close-selector" data-i18n="functional_button_cancel"></md-text-button>
+            </div>
+        </md-dialog>
+
+        <!-- Security Patch Dialog -->
+        <md-dialog id="security-patch-dialog" class="text-field-dialog">
+            <div slot="headline" data-i18n="security_patch_title"></div>
+            <div slot="content">
+                <!-- Usual input -->
+                <div id="normal-mode-inputs" class="normal-mode-inputs input-group">
+                    <md-outlined-text-field id="all-patch" label="All" placeholder="20250101" maxlength="8" autocapitalize="none"></md-outlined-text-field>
+                </div>
+
+                <!-- Advanced input -->
+                <div id="advanced-mode-inputs" class="advanced-mode-inputs hidden input-group">
+                    <md-outlined-text-field id="system-patch" label="System" placeholder="202501" maxlength="6" autocapitalize="none"></md-outlined-text-field>
+                    <md-outlined-text-field id="boot-patch" label="Boot" placeholder="2025-01-01" autocapitalize="none" oninput="formatDate(this)" maxlength="10"></md-outlined-text-field>
+                    <md-outlined-text-field id="vendor-patch" label="Vendor" placeholder="2025-01-01" autocapitalize="none" oninput="formatDate(this)" maxlength="10"></md-outlined-text-field>
+                </div>
+
+                <!-- James' fork input -->
+                <div id="devconfig-mode-inputs" class="normal-mode-inputs hidden">
+                    <md-outlined-text-field id="devconfig-securityPatch" label="Security Patch" placeholder="2025-01-01" autocapitalize="none" oninput="formatDate(this)" maxlength="10"></md-outlined-text-field>
+                    <md-outlined-text-field id="devconfig-osVersion" label="OS Version" placeholder="34" maxlength="2" autocapitalize="none"></md-outlined-text-field>
+                    <div class="section-label">Device Property</div>
+                    <md-outlined-text-field id="devconfig-brand" label="brand" placeholder="google" autocapitalize="none"></md-outlined-text-field>
+                    <md-outlined-text-field id="devconfig-device" label="device" placeholder="oriole" autocapitalize="none"></md-outlined-text-field>
+                    <md-outlined-text-field id="devconfig-product" label="product" placeholder="oriole_beta" autocapitalize="none"></md-outlined-text-field>
+                    <md-outlined-text-field id="devconfig-manufacturer" label="manufacturer" placeholder="Google" autocapitalize="none"></md-outlined-text-field>
+                    <md-outlined-text-field id="devconfig-model" label="model" placeholder="Pixel 6" autocapitalize="none"></md-outlined-text-field>
+                    <md-outlined-text-field id="devconfig-serial" label="serial" placeholder="5e043839" autocapitalize="none"></md-outlined-text-field>
+                    <md-outlined-text-field id="devconfig-meid" label="meid" placeholder="32b6af4d93aca6" autocapitalize="none"></md-outlined-text-field>
+                    <md-outlined-text-field id="devconfig-imei" label="imei" placeholder="73598126407" autocapitalize="none"></md-outlined-text-field>
+                    <md-outlined-text-field id="devconfig-imei2" label="imei2" placeholder="77983102465" autocapitalize="none"></md-outlined-text-field>
+                </div>
+
+                <!-- Advanced Toggle -->
+                <div class="advanced-toggle">
+                    <md-checkbox id="advanced-mode"></md-checkbox>
+                    <label for="advanced-mode" data-i18n="security_patch_advanced_mode"></label>
+                </div>
+            </div>
+            <div class="security-patch-actions" slot="actions">
+                <md-outlined-button id="get-patch" data-i18n="security_patch_get_date"></md-outlined-button>
+                <md-outlined-button id="auto-config" data-i18n="security_patch_auto"></md-outlined-button>
+                <md-filled-button id="save-patch" data-i18n="functional_button_save"></md-filled-button>
+            </div>
+        </md-dialog>
+
+        <!-- System App Dialog (unused, kept for reference) -->
+        <md-dialog id="add-system-app-dialog" class="text-field-dialog" style="display:none">
+            <div slot="content"></div>
+        </md-dialog>
+
+        <!-- Uninstall Confirmation Dialog -->
+        <md-dialog id="uninstall-confirmation-dialog" type="alert">
+            <div slot="headline" data-i18n="confirmation_uninstall_title"></div>
+            <md-icon slot="icon">delete</md-icon>
+            <div slot="content" data-i18n="confirmation_uninstall_message"></div>
+            <div slot="actions">
+                <md-text-button id="cancel-uninstall" data-i18n="functional_button_cancel"></md-text-button>
+                <md-filled-button id="confirm-uninstall" data-i18n="functional_button_confirm"></md-filled-button>
+            </div>
+        </md-dialog>
+
+        <!-- Automation Settings Dialog -->
+        <md-dialog id="automation-settings-dialog">
+            <div slot="headline">
+                <div class="sheet-handle"></div>
+            </div>
+            <div slot="content" class="automation-content">
+                <div class="setting-section">
+                    <div class="setting-header" data-i18n="automation_keybox_header">Keybox Auto-Fetch</div>
+                    <div class="setting-row">
+                        <span data-i18n="automation_enable">Enable</span>
+                        <div class="custom-toggle" id="keybox-auto-toggle">
+                            <div class="toggle-track">
+                                <div class="toggle-thumb"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="source-grid" id="keybox-source-grid">
+                        <button class="source-card" data-value="yurikey">
+                            <div class="source-icon" style="--icon-color: #FFB347;">
+                                <md-icon>vpn_key</md-icon>
+                            </div>
+                            <div class="source-name">Yurikey</div>
+                            <div class="source-desc" data-i18n="automation_src_primary">Primary source</div>
+                            <div class="source-check"><md-icon>check_circle</md-icon></div>
+                        </button>
+                        <button class="source-card" data-value="upstream">
+                            <div class="source-icon" style="--icon-color: #4FC3F7;">
+                                <md-icon>cloud_sync</md-icon>
+                            </div>
+                            <div class="source-name">KOW</div>
+                            <div class="source-desc" data-i18n="automation_src_mirror">KOWX712 mirror</div>
+                            <div class="source-check"><md-icon>check_circle</md-icon></div>
+                        </button>
+                        <button class="source-card" data-value="integritybox">
+                            <div class="source-icon" style="--icon-color: #BA68C8;">
+                                <md-icon>inventory_2</md-icon>
+                            </div>
+                            <div class="source-name">IntegrityBox</div>
+                            <div class="source-desc" data-i18n="automation_src_meowdump">MeowDump</div>
+                            <div class="source-check"><md-icon>check_circle</md-icon></div>
+                        </button>
+                        <button class="source-card" id="devicekb" data-value="unknown" data-action="true">
+                            <div class="source-icon" style="--icon-color: #E0E0E0;">
+                                <md-icon>help_outline</md-icon>
+                            </div>
+                            <div class="source-name">Unknown</div>
+                            <div class="source-desc" data-i18n="automation_src_device">Device generated</div>
+                            <div class="source-check"><md-icon>check_circle</md-icon></div>
+                        </button>
+                        <button class="source-card" id="aospkb" data-value="aosp" data-action="true">
+                            <div class="source-icon" style="--icon-color: #78909C;">
+                                <md-icon>android</md-icon>
+                            </div>
+                            <div class="source-name">AOSP</div>
+                            <div class="source-desc" data-i18n="automation_src_stock">Stock keybox</div>
+                            <div class="source-check"><md-icon>check_circle</md-icon></div>
+                        </button>
+                        <button class="source-card" id="customkb" data-value="custom" data-action="true">
+                            <div class="source-icon" style="--icon-color: #81C784;">
+                                <md-icon>edit</md-icon>
+                            </div>
+                            <div class="source-name">Custom</div>
+                            <div class="source-desc" data-i18n="automation_src_custom">Your keybox</div>
+                            <div class="source-check"><md-icon>check_circle</md-icon></div>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="setting-section">
+                    <div class="setting-header"><span data-i18n="automation_interval_header">Fetch Interval</span> <span id="current-interval" class="interval-badge"></span></div>
+                    <div class="interval-grid" id="keybox-interval-grid">
+                        <button class="interval-chip" data-seconds="3600">1h</button>
+                        <button class="interval-chip" data-seconds="21600">6h</button>
+                        <button class="interval-chip" data-seconds="43200">12h</button>
+                        <button class="interval-chip" data-seconds="86400">24h</button>
+                        <button class="interval-chip" data-seconds="259200">3d</button>
+                        <button class="interval-chip" data-seconds="604800">7d</button>
+                    </div>
+                    <div class="interval-custom" id="interval-custom-row">
+                        <input type="number" id="interval-custom-input" min="1" placeholder="Custom" data-i18n="automation_interval_custom" class="interval-input">
+                        <div class="unit-toggle" id="interval-unit-toggle">
+                            <button class="unit-btn" data-mult="60">min</button>
+                            <button class="unit-btn selected" data-mult="3600">hr</button>
+                            <button class="unit-btn" data-mult="86400">day</button>
+                        </div>
+                        <button class="interval-chip interval-set-btn" id="interval-custom-set" data-i18n="automation_interval_set">Set</button>
+                    </div>
+                </div>
+
+                <div class="setting-section">
+                    <div class="setting-header" data-i18n="automation_manual_header">Manual Actions</div>
+                    <div class="manual-actions">
+                        <md-filled-button id="fetch-keybox-now">
+                            <md-icon slot="icon">key</md-icon>
+                            <span data-i18n="automation_fetch_key">Fetch Key</span>
+                        </md-filled-button>
+                    </div>
+                </div>
+
+                <div class="setting-section">
+                    <div class="setting-header" data-i18n="automation_patch_header">Security Patch Auto-Update</div>
+                    <div class="setting-row">
+                        <span data-i18n="automation_enable">Enable</span>
+                        <div class="custom-toggle" id="security-patch-auto-toggle">
+                            <div class="toggle-track">
+                                <div class="toggle-thumb"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="manual-actions" style="margin-top: 8px;">
+                        <md-filled-button id="set-patch-now">
+                            <md-icon slot="icon">security</md-icon>
+                            <span data-i18n="automation_set_patch">Set Patch</span>
+                        </md-filled-button>
+                    </div>
+                </div>
+
+                <div class="setting-section">
+                    <div class="setting-header" data-i18n="automation_region_header">Region Props</div>
+                    <div class="setting-row">
+                        <span data-i18n="automation_enable">Enable</span>
+                        <div class="custom-toggle" id="region-enabled-toggle">
+                            <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                        </div>
+                    </div>
+                    <div id="region-fields">
+                        <md-outlined-text-field id="region-hwc" label="ro.boot.hwc" placeholder="GLOBAL" autocapitalize="none"></md-outlined-text-field>
+                        <div class="region-expand" id="region-expand-btn">
+                            <span class="region-expand-label" id="region-expand-label">3 more</span>
+                            <div class="region-expand-meta">
+                                <svg class="region-chevron" id="region-chevron" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
+                            </div>
+                        </div>
+                        <div id="region-extra">
+                            <md-outlined-text-field id="region-hwcountry" label="ro.boot.hwcountry" placeholder="GLOBAL" autocapitalize="none"></md-outlined-text-field>
+                            <md-outlined-text-field id="region-mod-device" label="ro.product.mod_device" placeholder="munchg" autocapitalize="none"></md-outlined-text-field>
+                            <md-outlined-text-field id="region-hw-sku" label="ro.boot.product.hardware.sku" placeholder="nfc" autocapitalize="none"></md-outlined-text-field>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setting-section">
+                    <div class="setting-header" data-i18n="automation_appearance_header">Appearance</div>
+                    <div class="setting-row">
+                        <span data-i18n="automation_randomize_accent">Randomize Accent on Load</span>
+                        <div class="custom-toggle" id="accent-randomize-toggle">
+                            <div class="toggle-track">
+                                <div class="toggle-thumb"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="accent-picker" id="accent-picker"></div>
+                </div>
+            </div>
+            <div slot="actions">
+                <md-text-button id="close-automation-settings" data-i18n="functional_button_close">Close</md-text-button>
+            </div>
+        </md-dialog>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        <md-filled-button class="uninstall-container">
+            <md-icon slot="icon">delete</md-icon>
+            <span data-i18n="functional_button_uninstall_webui"></span>
+        </md-filled-button>
+    </div>
+</body>
+</html>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- XEC Fluid Glass 品牌色：底 #0B0F10 / 强调 teal #12B886 -->
+    <color name="ic_launcher_background">#FF0B0F10</color>
+    <color name="ic_launcher_foreground">#FF12B886</color>
+    <color name="ic_splash_background">#FF0B0F10</color>
+</resources>

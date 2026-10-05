@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="system_default">সিস্টেম পূর্ব-নির্ধারিত</string>
+    <string name="more_language">আরো</string>
+    <!-- Header -->
+    <string name="header_title">Tricky Addon</string>
+    <!-- Help Menu-->
+    <string name="help_help_instructions">নির্দেশনা</string>
+    <string name="help_save_and_update_description">বর্তমান কনফিগারেশন target.txt এ সেভ করুন।</string>
+    <string name="help_select_denylist">DenyList থেকে নির্বাচন করুন</string>
+    <string name="help_select_denylist_description">শুধুমাত্র Magisk এ উপলব্ধ, DenyList এ থাকা অ্যাপগুলি নির্বাচন করুন। সুপারিশকৃত।</string>
+    <string name="help_deselect_unnecessary">অপ্রয়োজনীয় নির্বাচন প্রত্যাহার করুন</string>
+    <string name="help_deselect_unnecessary_description">অপ্রয়োজনীয় বিভাগ: Xposed মডিউল, root ম্যানেজার, root-সম্পর্কিত অ্যাপ, এবং সাধারণ অ্যাপ যা কখনও bootloader স্ট্যাটাস চেক করে না। এই অপশন ইন্টারনেট সংযোগ প্রয়োজন।</string>
+    <string name="help_add_system_app">সিস্টেম অ্যাপ যোগ করুন</string>
+    <string name="help_add_system_app_description">অ্যাপ তালিকায় নির্দিষ্ট সিস্টেম অ্যাপ যোগ করুন।</string>
+    <string name="help_set_keybox">AOSP এবং Valid Keybox সেট করুন</string>
+    <string name="help_set_keybox_description">Tricky store keybox.xml প্রতিস্থাপন করুন। Valid keybox অপশন ইন্টারনেট সংযোগ প্রয়োজন এবং সবসময় উপলব্ধ নয়।</string>
+    <string name="help_set_custom_keybox">Custom Keybox সেট করুন</string>
+    <string name="help_set_custom_keybox_description">আপনার ডিভাইস স্টোরেজ থেকে keybox ইমপোর্ট করুন। শুধুমাত্র xml ফাইল সমর্থন করে।</string>
+    <string name="help_set_security_patch">Security Patch সেট করুন</string>
+    <string name="help_set_security_patch_description">Custom security patch spoof সেট করুন। Auto config PIF মডিউল থেকে security patch ব্যবহার করবে। খালি রাখুন এবং সেভ করুন auto config নিষ্ক্রিয় করতে।</string>
+    <string name="help_set_verified_boot_hash">Verified Boot Hash সেট করুন</string>
+    <string name="help_set_verified_boot_hash_description">Key Attestation Demo থেকে verifiedBootHash মান পান। ro.boot.vbmeta.digest রিসেট করে অস্বাভাবিক boot state ঠিক করুন।</string>
+    <!-- Update -->
+    <string name="update_update_available">একটি নতুন সংস্করণ প্রস্তুত</string>
+    <string name="update_redirect_to_release">সর্বশেষ সংস্করণ ডাউনলোড করতে ট্যাপ করুন</string>
+    <string name="update_changelog">পরিবর্তন তালিকা</string>
+    <string name="update_install">ইনস্টল করুন</string>
+    <string name="update_reboot">রিবুট</string>
+    <!-- Search -->
+    <string name="search_bar_search_placeholder">খুঁজুন</string>
+    <!-- Functional Button -->
+    <string name="functional_button_save">সেভ করুন</string>
+    <string name="functional_button_uninstall_webui">WebUI আনইনস্টল করুন</string>
+    <string name="functional_button_close">বন্ধ করুন</string>
+    <string name="functional_button_cancel">ক্যানসেল করুন</string>
+    <string name="functional_button_confirm">নিশ্চিত করুন</string>
+    <!-- Loading -->
+    <string name="loading_loading">লোড হচ্ছে...</string>
+    <!-- Menu -->
+    <string name="menu_refresh">রিফ্রেশ</string>
+    <string name="menu_select_all">সব নির্বাচন করুন</string>
+    <string name="menu_deselect_all">সমস্ত নির্বাচন প্রত্যাহার করুন</string>
+    <string name="menu_select_denylist">DenyList থেকে নির্বাচন করুন</string>
+    <string name="menu_deselect_unnecessary">অপ্রয়োজনীয় নির্বাচন প্রত্যাহার করুন</string>
+    <string name="menu_add_system_app">সিস্টেম অ্যাপ যোগ করুন</string>
+    <string name="menu_set_verified_boot_hash">Verified Boot Hash সেট করুন</string>
+    <string name="menu_keybox">Keybox</string>
+    <string name="menu_keybox_aosp">AOSP</string>
+    <string name="menu_keybox_unknown">অজানা</string>
+    <string name="menu_keybox_valid">বৈধ</string>
+    <string name="menu_keybox_custom">কাস্টম</string>
+    <string name="menu_set_verified_boot_hash">Verified Boot Hash সেট করুন</string>
+    <string name="menu_set_security_patch">Security Patch সেট করুন</string>
+    <string name="menu_set_devconfig">DevConfig সেট করুন</string>
+    <string name="menu_help">সাহায্য</string>
+    <string name="menu_language">ভাষা</string>
+    <string name="menu_about">সম্পর্কে</string>
+    <!-- Boot Hash -->
+    <string name="boot_hash_title">Boot Hash</string>
+    <string name="boot_hash_input_placeholder">আপনার verified Boot Hash এখানে পেস্ট করুন</string>
+    <!-- About -->
+    <string name="about_module_name_line1">Tricky Addon</string>
+    <string name="about_module_name_line2">টার্গেট তালিকা আপডেট</string>
+    <string name="about_by">দ্বারা</string>
+    <string name="about_telegram_channel">টেলিগ্রাম চ্যানেল</string>
+    <string name="about_canary_update">সর্বশেষ canary সংস্করণে আপডেট করুন</string>
+    <string name="about_disclaimer">এই মডিউলটি Tricky Store মডিউলের অংশ নয়। সমস্যা হলে Tricky Store এ রিপোর্ট করবেন না।</string>
+    <string name="about_acknowledgment">কৃতজ্ঞতা স্বীকার</string>
+    <!-- Prompt -->
+    <string name="prompt_no_internet">অনুগ্রহ করে আপনার ইন্টারনেট সংযোগ চেক করুন।</string>
+    <string name="prompt_aosp_key_set">AOSP keybox সফলভাবে সেট হয়েছে</string>
+    <string name="prompt_key_set_error">Keybox আপডেট করতে ব্যর্থ</string>
+    <string name="prompt_unknown_key_set">Unknown keybox সফলভাবে সেট হয়েছে</string>
+    <string name="prompt_valid_key_set">Valid keybox সফলভাবে সেট হয়েছে</string>
+    <string name="prompt_no_valid">কোন valid keybox পাওয়া যায়নি।</string>
+    <string name="prompt_boot_hash_set">Verified Boot Hash সফলভাবে সেভ হয়েছে</string>
+    <string name="prompt_boot_hash_set_error">Verified Boot Hash আপডেট করতে ব্যর্থ</string>
+    <string name="prompt_boot_hash_invalid">বুট হ্যাশ ফরম্যাট অবৈধ</string>
+    <string name="prompt_saved_target">কনফিগ target.txt এ সেভ হয়েছে</string>
+    <string name="prompt_save_error">কনফিগ সেভ করতে ব্যর্থ</string>
+    <string name="prompt_uninstall_prompt">রিবুটের পর WebUI সরানো হবে</string>
+    <string name="prompt_uninstall_failed">WebUI আনইনস্টল করতে ব্যর্থ</string>
+    <string name="prompt_checking_update">হালনাগাদের জন্য পরীক্ষা করা হচ্ছে...</string>
+    <string name="prompt_new_update">একটি নতুন আপডেট উপলব্ধ</string>
+    <string name="prompt_no_update">বর্তমানে কোন আপডেট উপলব্ধ নেই</string>
+    <string name="prompt_downloading">নতুন আপডেট ডাউনলোড হচ্ছে...</string>
+    <string name="prompt_downloaded">ডাউনলোড সম্পন্ন হয়েছে</string>
+    <string name="prompt_download_fail">আপডেট ডাউনলোড করতে ব্যর্থ</string>
+    <string name="prompt_installing">আপডেট ইন্সটল হচ্ছে...</string>
+    <string name="prompt_installed">সফলভাবে ইন্সটল হয়েছে, এখন রিবুট করুন।</string>
+    <string name="prompt_install_fail">ইন্সটল করতে ব্যর্থ, অনুগ্রহ করে ম্যানুয়ালি আপডেট করুন</string>
+    <string name="prompt_rebooting">রিবুট হচ্ছে...</string>
+    <string name="prompt_reboot_fail">রিবুট করতে ব্যর্থ, অনুগ্রহ করে ম্যানুয়ালি রিবুট করুন</string>
+    <string name="prompt_translation_updated">অনুবাদ প্যাকেজ সফলভাবে আপডেট হয়েছে</string>
+    <string name="prompt_translation_update_failed">অনুবাদ প্যাকেজ আপডেট করতে ব্যর্থ</string>
+    <string name="prompt_custom_key_set">Custom keybox সফলভাবে সেট হয়েছে</string>
+    <string name="prompt_custom_key_set_error">Custom keybox সেট করতে ব্যর্থ</string>
+    <string name="prompt_no_file_selected">কোনো ফাইল সিলেক্ট করা হয় নি</string>
+    <string name="prompt_system_app_not_found">সিস্টেম অ্যাপ পাওয়া যায়নি</string>
+    <string name="prompt_system_app_error">সিস্টেম অ্যাপ যোগ করতে ব্যর্থ</string>
+    <!-- Security Patch -->
+    <string name="security_patch_title">নিরাপত্তা প্যাচ</string>
+    <string name="security_patch_advanced_mode">অগ্রসর</string>
+    <string name="security_patch_get_date">Security Patch Date পান</string>
+    <string name="security_patch_auto">অটো</string>
+    <string name="security_patch_fetching">আনয়ন হচ্ছে...</string>
+    <string name="security_patch_fetched">সম্পন্ন</string>
+    <string name="security_patch_get_failed">Security patch date আনয়ন করতে ব্যর্থ</string>
+    <string name="security_patch_unable_to_connect">source.android.com এর সাথে সংযোগ করতে অক্ষম</string>
+    <string name="security_patch_auto_success">Auto config সফলভাবে সক্রিয় হয়েছে</string>
+    <string name="security_patch_auto_failed">Auto config সক্রিয় করতে ব্যর্থ</string>
+    <string name="security_patch_save_success">Security patch সফলভাবে সেভ হয়েছে</string>
+    <string name="security_patch_save_failed">Security patch সেভ করতে ব্যর্থ</string>
+    <string name="security_patch_value_empty">Security patch কনফিগারেশন নিষ্ক্রিয়</string>
+    <string name="security_patch_invalid_all">অবৈধ ফর্ম্যাট</string>
+    <string name="security_patch_invalid_boot">অবৈধ boot ফর্ম্যাট</string>
+    <string name="security_patch_invalid_system">অবৈধ system ফর্ম্যাট</string>
+    <string name="security_patch_invalid_vendor">অবৈধ vendor ফর্ম্যাট</string>
+    <!-- Add System App -->
+    <string name="add_system_app_title">সিস্টেম অ্যাপ যোগ করুন</string>
+    <string name="add_system_app_add">যোগ করুন</string>
+    <string name="add_system_app_current_list">বর্তমান সিস্টেম অ্যাপ তালিকা</string>
+    <!-- Uninstall confirmation -->
+    <string name="confirmation_uninstall_title">আনইনস্টল নিশ্চিত করুন?</string>
+    <string name="confirmation_uninstall_message">আপনি কি নিশ্চিত যে আপনি Tricky Addon আনইনস্টল করতে চান</string>
+    <!-- Mode dialog -->
+    <string name="menu_show_system_apps">সিস্টেম অ্যাপ দেখান</string>
+    <!-- Health Banner -->
+    <string name="health_engine_default">প্রমাণীকরণ</string>
+    <string name="health_checking">পরীক্ষা করা হচ্ছে...</string>
+    <!-- Automation Settings -->
+    <string name="menu_automation">Keybox স্বয়ংক্রিয়করণ</string>
+    <string name="automation_keybox_header">Keybox স্বয়ংক্রিয় সংগ্রহ</string>
+    <string name="automation_enable">সক্রিয় করুন</string>
+    <string name="automation_src_primary">প্রাথমিক উৎস</string>
+    <string name="automation_src_mirror">KOWX712 মিরর</string>
+    <string name="automation_src_meowdump">MeowDump</string>
+    <string name="automation_src_device">ডিভাইস তৈরি</string>
+    <string name="automation_src_stock">স্টক keybox</string>
+    <string name="automation_src_custom">আপনার keybox</string>
+    <string name="automation_interval_header">সংগ্রহের বিরতি</string>
+    <string name="automation_interval_custom">কাস্টম</string>
+    <string name="automation_interval_set">সেট করুন</string>
+    <string name="automation_manual_header">ম্যানুয়াল কার্যক্রম</string>
+    <string name="automation_fetch_key">কী সংগ্রহ করুন</string>
+    <string name="automation_patch_header">নিরাপত্তা প্যাচ স্বয়ংক্রিয় আপডেট</string>
+    <string name="automation_set_patch">প্যাচ সেট করুন</string>
+    <string name="automation_region_header">রিজিয়ন প্রপস</string>
+    <string name="prompt_region_enabled">রিজিয়ন prop প্রয়োগ সক্রিয় করা হয়েছে</string>
+    <string name="prompt_region_disabled">রিজিয়ন prop প্রয়োগ নিষ্ক্রিয় করা হয়েছে</string>
+    <string name="automation_appearance_header">চেহারা</string>
+    <string name="automation_randomize_accent">লোডে এলোমেলো অ্যাকসেন্ট রঙ</string>
+    <!-- Mode dialog -->
+    <string name="mode_dialog_title">মোড</string>
+    <string name="mode_auto">স্বয়ংক্রিয়</string>
+    <string name="mode_certificate_generating">সার্টিফিকেট তৈরি (!)</string>
+    <string name="mode_leaf_hack">Leaf Hack (?)</string>
+    <string name="prompt_keybox_fetch_enabled">Keybox স্বয়ংক্রিয় সংগ্রহ সক্রিয়</string>
+    <string name="prompt_keybox_fetch_disabled">Keybox স্বয়ংক্রিয় সংগ্রহ নিষ্ক্রিয়</string>
+    <string name="prompt_patch_auto_enabled">নিরাপত্তা প্যাচ স্বয়ংক্রিয় আপডেট সক্রিয়</string>
+    <string name="prompt_patch_auto_disabled">নিরাপত্তা প্যাচ স্বয়ংক্রিয় আপডেট নিষ্ক্রিয়</string>
+    <string name="prompt_config_save_failed">কনফিগারেশন সংরক্ষণ ব্যর্থ</string>
+    <string name="prompt_denylist_failed">DenyList পড়তে ব্যর্থ</string>
+    <string name="prompt_exclude_list_failed">বাদ তালিকা পড়তে ব্যর্থ</string>
+    <string name="prompt_unnecessary_failed">অপ্রয়োজনীয় অ্যাপ পেতে ব্যর্থ</string>
+    <string name="prompt_open_link_failed">লিঙ্ক খুলতে ব্যর্থ</string>
+    <string name="prompt_redirecting">পুনঃনির্দেশ করা হচ্ছে</string>
+    <string name="health_active">সক্রিয়</string>
+    <string name="health_not_running">চলছে না</string>
+    <string name="health_unknown">অজানা</string>
+</resources>

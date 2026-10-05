@@ -1,0 +1,8 @@
+id=TA_enhanced
+name=Tricky Addon Enhanced
+version=v5.27.0
+versionCode=50029
+author=Enginex0
+description=Enhanced TrickyStore addon with dual-source keybox, auto security patch, conflict detection & sleek WebUI
+updateJson=https://raw.githubusercontent.com/Enginex0/tricky-addon-enhanced/main/update.json
+banner=banner.png

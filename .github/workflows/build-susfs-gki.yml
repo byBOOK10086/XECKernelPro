@@ -1,0 +1,337 @@
+name: Build SUSFS GKI Kernel
+
+# 为指定 KMI 构建「内核内置 XECKernel Pro + SUSFS」的 GKI 内核（Image.gz，
+# 可选重打包 boot.img）。
+#
+# 架构说明（关键，不要改回“只打 50_ 补丁”的形态）：
+#   SUSFS 的全部内核代码都在基础内核侧 —— susfs4ksu 的 fs/susfs.c + VFS hook
+#   （50_add_susfs_in_gki-<KMI>.patch）。50_ 的 hook（fs/exec.c、fs/stat.c、
+#   kernel/reboot.c、kernel/sys.c、drivers/input/input.c 等）会调用一组
+#   ksu_handle_* / static key 符号，这些符号由本仓库 kernel/ 树在开启
+#   CONFIG_KSU_SUSFS 后提供（ksu_handle_sys_reboot 等）。因此：
+#     1. 只打 50_ 不带内置 KSU  -> 内核链接失败（ksu_handle_* 未定义）；
+#     2. 只内置 KSU 不打 50_    -> SUSFS 无入口，ksu_susfs 客户端全部空转；
+#     3. 内置 KSU + 50_ + CONFIG_KSU_SUSFS=y（本工作流）-> 完整功能。
+#   SUSFS 符号没有 EXPORT_SYMBOL，LKM 模式用不了 SUSFS —— 这是 susfs4ksu
+#   上游的既有约束（ReSukiSU / SukiSU-Ultra 同样只提供 SUSFS GKI 内核）。
+#
+# 手动触发，不在发版链路里：内核全量构建耗时 40-80 分钟/KMI。
+# 注意：列表里没有 android17-6.18 —— susfs4ksu 上游（gitlab 主仓与 ShirkNeko
+# 镜像）尚未提供 gki-android17-6.18 分支（2026-10-03 实测 clone 报
+# "Remote branch gki-android17-6.18 not found"）。等上游出了再加；LKM 的
+# ddk-lkm.yml 不受影响，6.18 的 kernelsu.ko 照常构建。
+# 产物：
+#   - Image.gz（SUSFS + 内置 XECKernel Pro，LTO 关闭）
+#   - 可选：把官方 GKI boot.img 的内核替换为上述 Image.gz 后的 boot.img
+#
+# 刷入方式：boot.img 产物直接 fastboot flash boot；Image.gz 可走管理器的
+# GKI 内核安装流程或自行打包。
+
+on:
+  workflow_dispatch:
+    inputs:
+      kmi:
+        description: 'KMI version'
+        required: true
+        type: choice
+        options:
+          - android12-5.10
+          - android13-5.10
+          - android13-5.15
+          - android14-5.15
+          - android14-6.1
+          - android15-6.6
+          - android16-6.12
+        default: 'android16-6.12'
+      susfs_branch:
+        description: 'susfs4ksu 分支（默认 gki-<KMI>，可填 -dev 后缀分支名）'
+        required: false
+        default: ''
+        type: string
+      boot_img_url:
+        description: '官方 GKI boot.img 直链（可选；留空只产出 Image.gz）'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  build-susfs-gki:
+    name: SUSFS GKI ${{ inputs.kmi }}
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ylarod/ddk-min:${{ inputs.kmi }}-20260828
+      options: --privileged
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+        with:
+          # kernel/Kbuild 用 git rev-list 计算版本号（KSU_VERSION），需要完整历史
+          fetch-depth: 0
+
+      - name: Apply SUSFS to GKI source
+        run: |
+          set -e
+          KMI="${{ inputs.kmi }}"
+          BRANCH="${{ inputs.susfs_branch }}"
+          [ -n "$BRANCH" ] || BRANCH="gki-$KMI"
+
+          KDIR="/opt/ddk/src/$KMI"
+          [ -d "$KDIR" ] || { echo "::error::GKI source missing at $KDIR"; exit 1; }
+
+          git clone --depth=50 "https://gitlab.com/simonpunk/susfs4ksu.git" -b "$BRANCH" /tmp/susfs \
+            || git clone --depth=50 "https://github.com/ShirkNeko/susfs4ksu" -b "$BRANCH" /tmp/susfs
+
+          # susfs4ksu 的补丁布局：50_add_susfs_in_gki-<KMI>.patch 只改既有文件
+          # 的挂钩点；fs/susfs.c 与 include/linux/susfs*.h 是裸拷贝的新文件
+          cp /tmp/susfs/kernel_patches/fs/* "$KDIR/fs/"
+          cp /tmp/susfs/kernel_patches/include/linux/* "$KDIR/include/linux/"
+          PATCH_FILE=$(ls /tmp/susfs/kernel_patches/50_add_susfs_in_gki-$KMI*.patch | head -n1)
+          [ -f "$PATCH_FILE" ] || { echo "::error::susfs patch for $KMI not found"; exit 1; }
+
+          cd "$KDIR"
+          # ddk-min 镜像里的 GKI 源码树自带历史残留的 .rej/.orig（实测
+          # android15-6.6 镜像含 mm/rmap.c.rej，与 susfs 补丁无关）。先清掉，
+          # 让下面的检查只对本次补丁产生的拒绝负责。
+          find . -name '*.rej' -o -name '*.orig' | head -20 | xargs -r rm -f
+          patch -p1 < "$PATCH_FILE"
+          # patch 在 set -e 下 hunk 失败会直接非零退出；这里兜底再扫一遍
+          # 新产生的 .rej，输出里能看到是哪段
+          REJS=$(find . -name '*.rej' | head -20)
+          if [ -n "$REJS" ]; then
+            echo "::error::susfs patch has rejects for $KMI"
+            echo "$REJS"
+            exit 1
+          fi
+          [ -f fs/susfs.c ] || { echo "::error::fs/susfs.c missing after patch"; exit 1; }
+          echo "SUSFS patches applied to $KDIR ($(grep -m1 'SUSFS_VERSION' include/linux/susfs.h))"
+
+      - name: Integrate XECKernel Pro (built-in KSU)
+        run: |
+          set -e
+          KMI="${{ inputs.kmi }}"
+          KDIR="/opt/ddk/src/$KMI"
+
+          # 带上 .git 拷贝，kernel/Kbuild 才能算出正确的 KSU_VERSION
+          cp -a "$GITHUB_WORKSPACE" "$KDIR/KernelSU"
+          git config --global --add safe.directory "$KDIR/KernelSU" || true
+
+          cd "$KDIR"
+          # 与 kernel/setup.sh 相同的接线：drivers/kernelsu 符号链接 +
+          # drivers 侧 Makefile/Kconfig 挂载，使 CONFIG_KSU=y 时整棵 kernel/
+          # 以 built-in 方式编进 vmlinux。
+          ln -sfn "../KernelSU/kernel" "drivers/kernelsu"
+          grep -q "kernelsu" drivers/Makefile || echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
+          grep -q 'drivers/kernelsu/Kconfig' drivers/Kconfig || \
+            echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          echo "XECKernel Pro integrated as built-in KSU"
+
+      - name: Configure kernel (gki_defconfig + built-in KSU + SUSFS)
+        run: |
+          set -e
+          KMI="${{ inputs.kmi }}"
+          KDIR="/opt/ddk/src/$KMI"
+          ODIR="/tmp/kdir-$KMI"
+          cd "$KDIR"
+          make O="$ODIR" ARCH=arm64 gki_defconfig
+
+          # KSU 内置 + SUSFS 全家桶。KSU_SUSFS 的子开关由 kernel/Kconfig 的
+          # KSU_SUSFS 菜单声明；50_ 的基线 hook 按这些 CONFIG 选择性编译。
+          scripts/config --file "$ODIR/.config" \
+            -e KSU \
+            -e KSU_SUSFS \
+            -e KSU_SUSFS_SUS_PATH \
+            -e KSU_SUSFS_SUS_MOUNT \
+            -e KSU_SUSFS_SUS_KSTAT \
+            -e KSU_SUSFS_SPOOF_UNAME \
+            -e KSU_SUSFS_ENABLE_LOG \
+            -e KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+            -e KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+            -e KSU_SUSFS_OPEN_REDIRECT \
+            -e KSU_SUSFS_SUS_MAP \
+            -d KSU_DEBUG -d KSU_DISABLE_MANAGER -d KSU_DISABLE_POLICY -e KPM \
+            -d LTO_CLANG -e LTO_NONE -d LTO_CLANG_THIN -d LTO_CLANG_FULL -d THINLTO
+          make O="$ODIR" ARCH=arm64 olddefconfig
+
+          # scripts/config 对未知符号静默忽略：逐项断言真的生效了
+          for CFG in KSU KSU_SUSFS KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_KSTAT \
+                     KSU_SUSFS_SPOOF_UNAME KSU_SUSFS_ENABLE_LOG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+                     KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG KSU_SUSFS_OPEN_REDIRECT KSU_SUSFS_SUS_MAP KPM; do
+            grep -q "^CONFIG_${CFG}=y" "$ODIR/.config" || {
+              echo "::error::CONFIG_${CFG} did not land in .config"
+              exit 1
+            }
+          done
+          echo "=== effective KSU/SUSFS config ==="
+          grep -E '^CONFIG_KSU' "$ODIR/.config" || true
+
+      - name: Build Image.gz
+        run: |
+          set -e
+          KMI="${{ inputs.kmi }}"
+          KDIR="/opt/ddk/src/$KMI"
+          ODIR="/tmp/kdir-$KMI"
+          cd "$KDIR"
+
+          # 捕获编译输出，失败时以 annotation 形式给出可读的错误段落
+          BUILD_LOG=$(mktemp)
+          set +e
+          make O="$ODIR" ARCH=arm64 LLVM=1 LLVM_IAS=1 -j"$(nproc)" Image.gz >"$BUILD_LOG" 2>&1
+          BUILD_RC=$?
+          set -e
+          tail -n 30 "$BUILD_LOG"
+          if [ $BUILD_RC -ne 0 ]; then
+            MSG=$(tail -n 200 "$BUILD_LOG" | sed -e 's/%/%25/g' -e 's/\r//g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=SUSFS GKI ${{ inputs.kmi }} compiler output::$MSG"
+            exit $BUILD_RC
+          fi
+
+          # 内置 KSU + SUSFS 路由必须真的在 vmlinux 里（LKM 断言的 built-in 版）
+          NM=$(command -v llvm-nm || command -v nm)
+          for SYM in ksu_handle_sys_reboot ksu_handle_setresuid ksu_handle_vfs_fstat \
+                     susfs_add_sus_path susfs_show_version; do
+            "$NM" "$ODIR/vmlinux" | grep -q " $SYM$" || {
+              echo "::error::symbol $SYM missing from vmlinux (KSU/SUSFS integration broken)"
+              exit 1
+            }
+          done
+          echo "=== KSU/SUSFS symbols verified in vmlinux ==="
+
+          mkdir -p /github/workspace/out
+          cp "$ODIR/arch/arm64/boot/Image.gz" "/github/workspace/out/Image.gz-$KMI"
+          ls -la /github/workspace/out/
+
+      # 默认产出可刷的 AnyKernel3 卡刷包：只替换 boot 分区里的内核、保留设备
+      # 原 ramdisk（split_boot + flash_boot），不需要官方 boot.img，管理器或任意
+      # Recovery 都能刷。配方与社区在 6.12 上验证过的 GKI 2.0 方案一致。
+      - name: Package AnyKernel3 flashable zip
+        run: |
+          set -e
+          KMI="${{ inputs.kmi }}"
+          git clone --depth=1 https://github.com/WildKernels/AnyKernel3.git -b gki-2.0 /tmp/ak3
+          cd /tmp/ak3
+          # GKI 2.0（boot v4，boot/vendor_boot/init_boot 分离）依赖 split_boot；
+          # 上游没有就立即失败，绝不产出一个刷不动的空壳包。
+          grep -q "split_boot()" tools/ak3-core.sh || {
+            echo "::error::AK3 tools lack split_boot (GKI v4 support missing)"
+            exit 1
+          }
+          cp "/github/workspace/out/Image.gz-$KMI" "Image.gz"
+          cat > anykernel.sh <<'SCRIPT'
+          ### AnyKernel3 Ramdisk Mod Script
+          ## XECPro SUSFS GKI kernel
+
+          properties() { '
+          kernel.string=XECPro SUSFS GKI Kernel
+          do.devicecheck=0
+          do.modules=0
+          do.systemless=0
+          do.cleanup=1
+          do.cleanuponabort=0
+          do.check_boot_version=0
+          keycheck.timeout=10
+          '; } # end properties
+
+          block=boot
+          is_slot_device=auto
+          ramdisk_compression=auto
+          patch_vbmeta_flag=auto
+          no_magisk_check=1
+
+          # import functions/variables and setup patching - see for reference (DO NOT REMOVE)
+          . tools/ak3-core.sh
+
+          # GKI 2.0 白名单：非 GKI 内核的设备直接中止，不给刷砖的机会
+          kernel_version=$(cat /proc/version | awk -F '-' '{print $1}' | awk '{print $3}')
+          case $kernel_version in
+              5.10*|5.15*|6.1*|6.6*|6.12*|6.18*) ;;
+              *) abort "  -> Not a GKI 2.0 kernel ($kernel_version), abort." ;;
+          esac
+
+          split_boot
+
+          if [ -f "$SPLITIMG/ramdisk.cpio" ]; then
+              unpack_ramdisk
+              write_boot
+          else
+              flash_boot
+          fi
+
+          ui_print " " "XECPro SUSFS GKI kernel installed." "Reboot to apply."
+          SCRIPT
+          rm -rf .git README.md banner
+          # ddk 容器不带 zip 命令，用 python3 的 zipfile 打包（boot 重打包步骤同源）
+          python3 - /github/workspace/out "XECPro-SUSFS-GKI-$KMI-AnyKernel3.zip" <<'PY'
+          import os, sys, zipfile
+
+          out_dir, name = sys.argv[1], sys.argv[2]
+          dest = os.path.join(out_dir, name)
+          with zipfile.ZipFile(dest, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+              for root, dirs, files in os.walk('.'):
+                  dirs[:] = [d for d in dirs if d != '.git']
+                  for f in files:
+                      p = os.path.join(root, f)
+                      z.write(p, os.path.relpath(p, '.'))
+          print('wrote', dest, os.path.getsize(dest), 'bytes')
+          PY
+          ls -la /github/workspace/out/
+
+      - name: Repack boot.img (optional)
+        if: ${{ inputs.boot_img_url != '' }}
+        run: |
+          set -e
+          KMI="${{ inputs.kmi }}"
+          curl -fL --retry 3 -o /tmp/stock-boot.img "${{ inputs.boot_img_url }}"
+          git clone --depth=1 https://github.com/LineageOS/android_system_tools_mkbootimg.git /tmp/mkbootimg
+          python3 /tmp/mkbootimg/unpack_bootimg.py --boot_img /tmp/stock-boot.img --out /tmp/boot-unpack
+          # unpack_bootimg 把头部全部字段写进 bootimg.json；只替换 --kernel，
+          # 其余参数逐字回填，保证和官方镜像一致。
+          python3 - "$KMI" <<'PY'
+          import json, pathlib, subprocess, sys
+
+          out = pathlib.Path('/tmp/boot-unpack')
+          kmi = sys.argv[1]
+          kernel = pathlib.Path(f'/github/workspace/out/Image.gz-{kmi}')
+          jf = out / 'bootimg.json'
+          if not jf.exists():
+              sys.exit('bootimg.json missing: this unpack_bootimg version is too old for repack')
+
+          j = json.loads(jf.read_text())
+          cmd = ['python3', '/tmp/mkbootimg/mkbootimg.py',
+                 '--kernel', str(kernel)]
+          flag_map = {
+              'header_version': '--header_version',
+              'cmdline': '--cmdline',
+              'base': '--base',
+              'kernel_offset': '--kernel_offset',
+              'ramdisk_offset': '--ramdisk_offset',
+              'second_offset': '--second_offset',
+              'tags_offset': '--tags_offset',
+              'pagesize': '--pagesize',
+              'dtb_offset': '--dtb_offset',
+              'os_version': '--os_version',
+          }
+          for key, flag in flag_map.items():
+              if key in j and j[key] not in (None, ''):
+                  cmd += [flag, str(j[key])]
+          # ramdisk / dtb / second 原样沿用官方镜像
+          for path, flag in (
+              (out / 'ramdisk', '--ramdisk'),
+              (out / 'dtb', '--dtb'),
+              (out / 'second', '--second'),
+          ):
+              if path.is_file():
+                  cmd += [flag, str(path)]
+
+          dest = f'/github/workspace/out/boot-susfs-{kmi}.img'
+          cmd += ['-o', dest]
+          subprocess.run(cmd, check=True)
+          print('repacked ->', dest)
+          PY
+          ls -la /github/workspace/out/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: susfs-gki-${{ inputs.kmi }}
+          path: /github/workspace/out/

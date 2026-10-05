@@ -1,0 +1,370 @@
+package me.weishu.kernelsu.ui.component.dialog
+
+import android.os.Parcelable
+import android.util.Log
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.parcelize.Parcelize
+import kotlin.coroutines.resume
+
+private const val TAG = "DialogComponent"
+
+interface ConfirmDialogVisuals : Parcelable {
+    val title: String
+    val content: String?
+    val isMarkdown: Boolean
+    val isHtml: Boolean
+    val confirm: String?
+    val dismiss: String?
+}
+
+@Parcelize
+private data class ConfirmDialogVisualsImpl(
+    override val title: String,
+    override val content: String?,
+    override val isMarkdown: Boolean,
+    override val isHtml: Boolean,
+    override val confirm: String?,
+    override val dismiss: String?,
+) : ConfirmDialogVisuals {
+    companion object {
+        val Empty: ConfirmDialogVisuals = ConfirmDialogVisualsImpl("", "", isMarkdown = false, isHtml = false, confirm = null, dismiss = null)
+    }
+}
+
+interface DialogHandle {
+    val isShown: Boolean
+    val dialogType: String
+    fun show()
+    fun hide()
+}
+
+interface LoadingDialogHandle : DialogHandle {
+    suspend fun <R> withLoading(block: suspend () -> R): R
+    fun showLoading()
+}
+
+sealed interface ConfirmResult {
+    object Confirmed : ConfirmResult
+    object Canceled : ConfirmResult
+}
+
+interface ConfirmDialogHandle : DialogHandle {
+    val visuals: ConfirmDialogVisuals
+
+    fun showConfirm(
+        title: String,
+        content: String? = null,
+        markdown: Boolean = false,
+        html: Boolean = false,
+        confirm: String? = null,
+        dismiss: String? = null
+    )
+
+    suspend fun awaitConfirm(
+        title: String,
+        content: String? = null,
+        markdown: Boolean = false,
+        html: Boolean = false,
+        confirm: String? = null,
+        dismiss: String? = null
+    ): ConfirmResult
+}
+
+private abstract class DialogHandleBase(
+    val visible: MutableState<Boolean>,
+    val coroutineScope: CoroutineScope
+) : DialogHandle {
+    override val isShown: Boolean
+        get() = visible.value
+
+    override fun show() {
+        coroutineScope.launch {
+            visible.value = true
+        }
+    }
+
+    final override fun hide() {
+        coroutineScope.launch {
+            visible.value = false
+        }
+    }
+
+    override fun toString(): String {
+        return dialogType
+    }
+}
+
+private class LoadingDialogHandleImpl(
+    visible: MutableState<Boolean>,
+    coroutineScope: CoroutineScope
+) : LoadingDialogHandle, DialogHandleBase(visible, coroutineScope) {
+    override suspend fun <R> withLoading(block: suspend () -> R): R {
+        return coroutineScope.async {
+            try {
+                visible.value = true
+                block()
+            } finally {
+                visible.value = false
+            }
+        }.await()
+    }
+
+    override fun showLoading() {
+        show()
+    }
+
+    override val dialogType: String get() = "LoadingDialog"
+}
+
+typealias NullableCallback = (() -> Unit)?
+
+interface ConfirmCallback {
+
+    val onConfirm: NullableCallback
+
+    val onDismiss: NullableCallback
+
+    val isEmpty: Boolean get() = onConfirm == null && onDismiss == null
+
+    companion object {
+        operator fun invoke(
+            onConfirmProvider: () -> NullableCallback,
+            onDismissProvider: () -> NullableCallback
+        ): ConfirmCallback {
+            return object : ConfirmCallback {
+                override val onConfirm: NullableCallback
+                    get() = onConfirmProvider()
+                override val onDismiss: NullableCallback
+                    get() = onDismissProvider()
+            }
+        }
+    }
+}
+
+private class ConfirmDialogHandleImpl(
+    visible: MutableState<Boolean>,
+    coroutineScope: CoroutineScope,
+    callback: ConfirmCallback,
+    initialVisuals: ConfirmDialogVisuals = ConfirmDialogVisualsImpl.Empty,
+    private val resultFlow: ReceiveChannel<ConfirmResult>
+) : ConfirmDialogHandle, DialogHandleBase(visible, coroutineScope) {
+    private val visualsState = mutableStateOf(initialVisuals)
+    override val visuals: ConfirmDialogVisuals get() = visualsState.value
+
+    private class ResultCollector(
+        private val callback: ConfirmCallback
+    ) : FlowCollector<ConfirmResult> {
+        fun handleResult(result: ConfirmResult) {
+            Log.d(TAG, "handleResult: ${result.javaClass.simpleName}")
+            when (result) {
+                ConfirmResult.Confirmed -> onConfirm()
+                ConfirmResult.Canceled -> onDismiss()
+            }
+        }
+
+        fun onConfirm() {
+            callback.onConfirm?.invoke()
+        }
+
+        fun onDismiss() {
+            callback.onDismiss?.invoke()
+        }
+
+        override suspend fun emit(value: ConfirmResult) {
+            handleResult(value)
+        }
+    }
+
+    private val resultCollector = ResultCollector(callback)
+
+    private var awaitContinuation: CancellableContinuation<ConfirmResult>? = null
+
+    private val isCallbackEmpty = callback.isEmpty
+
+    init {
+        coroutineScope.launch {
+            resultFlow
+                .consumeAsFlow()
+                .onEach { result ->
+                    awaitContinuation?.let {
+                        awaitContinuation = null
+                        if (it.isActive) {
+                            it.resume(result)
+                        }
+                    }
+                }
+                .onEach { hide() }
+                .collect(resultCollector)
+        }
+    }
+
+    private suspend fun awaitResult(): ConfirmResult {
+        return suspendCancellableCoroutine {
+            awaitContinuation = it.apply {
+                if (isCallbackEmpty) {
+                    invokeOnCancellation {
+                        visible.value = false
+                    }
+                }
+            }
+        }
+    }
+
+    fun updateVisuals(visuals: ConfirmDialogVisuals) {
+        visualsState.value = visuals
+    }
+
+    override fun show() {
+        if (visuals !== ConfirmDialogVisualsImpl.Empty) {
+            super.show()
+        } else {
+            throw UnsupportedOperationException("can't show confirm dialog with the Empty visuals")
+        }
+    }
+
+    override fun showConfirm(
+        title: String,
+        content: String?,
+        markdown: Boolean,
+        html: Boolean,
+        confirm: String?,
+        dismiss: String?
+    ) {
+        coroutineScope.launch {
+            updateVisuals(ConfirmDialogVisualsImpl(title, content, markdown, html, confirm, dismiss))
+            show()
+        }
+    }
+
+    override suspend fun awaitConfirm(
+        title: String,
+        content: String?,
+        markdown: Boolean,
+        html: Boolean,
+        confirm: String?,
+        dismiss: String?
+    ): ConfirmResult {
+        coroutineScope.launch {
+            updateVisuals(ConfirmDialogVisualsImpl(title, content, markdown, html, confirm, dismiss))
+            show()
+        }
+        return awaitResult()
+    }
+
+    override val dialogType: String get() = "ConfirmDialog"
+
+    override fun toString(): String {
+        return "${super.toString()}(visuals: $visuals)"
+    }
+
+    companion object {
+        fun Saver(
+            visible: MutableState<Boolean>,
+            coroutineScope: CoroutineScope,
+            callback: ConfirmCallback,
+            resultChannel: ReceiveChannel<ConfirmResult>
+        ) = Saver<ConfirmDialogHandle, ConfirmDialogVisuals>(
+            save = {
+                it.visuals
+            },
+            restore = {
+                Log.d(TAG, "ConfirmDialog restore, visuals: $it")
+                ConfirmDialogHandleImpl(visible, coroutineScope, callback, it, resultChannel)
+            }
+        )
+    }
+}
+
+@Composable
+fun rememberLoadingDialog(): LoadingDialogHandle {
+    val visible = remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    val host = LocalXDialogHost.current
+
+    // 显示请求登记到根层宿主，而不是就地画对话框。原因是玻璃必须取**同一个 window**
+    // 的图层：就地画会被页面布局裁掉（`fillMaxSize` 在页面子树里只等于页面大小），
+    // 换成平台 Dialog 又采不到 backdrop、只剩一块死色。
+    // 用 DisposableEffect 而不是直接写：保证"进组合登记一次、退组合摘掉"，
+    // 否则每次重组都会往列表里塞一份重复登记。
+    DisposableEffect(host, visible) {
+        host.loadingStates.add(visible)
+        onDispose { host.loadingStates.remove(visible) }
+    }
+
+    return remember {
+        LoadingDialogHandleImpl(visible, coroutineScope)
+    }
+}
+
+@Composable
+private fun rememberConfirmDialog(visuals: ConfirmDialogVisuals, callback: ConfirmCallback): ConfirmDialogHandle {
+    val visible = rememberSaveable {
+        mutableStateOf(false)
+    }
+    val coroutineScope = rememberCoroutineScope()
+    val resultChannel = remember {
+        Channel<ConfirmResult>()
+    }
+    val host = LocalXDialogHost.current
+
+    val handle = rememberSaveable(
+        saver = ConfirmDialogHandleImpl.Saver(visible, coroutineScope, callback, resultChannel),
+        init = {
+            ConfirmDialogHandleImpl(visible, coroutineScope, callback, visuals, resultChannel)
+        }
+    )
+
+    // 同 rememberLoadingDialog：交给根层宿主画。
+    // 两个回调仍然是"往 resultChannel 投一个结果"——handle 内部的收集器收到后会自己
+    // hide()，所以这里不需要再手动改 visible，避免和收集器抢着改同一个状态。
+    DisposableEffect(host, handle) {
+        val registration = ConfirmDialogRegistration(
+            visible = visible,
+            visualsProvider = { handle.visuals },
+            onConfirm = { coroutineScope.launch { resultChannel.send(ConfirmResult.Confirmed) } },
+            onDismiss = { coroutineScope.launch { resultChannel.send(ConfirmResult.Canceled) } },
+        )
+        host.confirmStates.add(registration)
+        onDispose { host.confirmStates.remove(registration) }
+    }
+
+    return handle
+}
+
+@Composable
+fun rememberConfirmCallback(onConfirm: NullableCallback, onDismiss: NullableCallback): ConfirmCallback {
+    val currentOnConfirm by rememberUpdatedState(newValue = onConfirm)
+    val currentOnDismiss by rememberUpdatedState(newValue = onDismiss)
+    return remember {
+        ConfirmCallback({ currentOnConfirm }, { currentOnDismiss })
+    }
+}
+
+@Composable
+fun rememberConfirmDialog(onConfirm: NullableCallback = null, onDismiss: NullableCallback = null): ConfirmDialogHandle {
+    return rememberConfirmDialog(rememberConfirmCallback(onConfirm, onDismiss))
+}
+
+@Composable
+fun rememberConfirmDialog(callback: ConfirmCallback): ConfirmDialogHandle {
+    return rememberConfirmDialog(ConfirmDialogVisualsImpl.Empty, callback)
+}

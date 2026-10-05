@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  远程模块助手需要访问任意用户提供的 http 直链（模块仓库 42.193.123.248:5244 亦为 http），
+  因此全局放行明文 HTTP；https 流量照常走系统默认校验。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
