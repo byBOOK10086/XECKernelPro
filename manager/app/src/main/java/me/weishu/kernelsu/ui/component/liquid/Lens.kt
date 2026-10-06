@@ -1,5 +1,5 @@
 // Adapted from Kyant0/AndroidLiquidGlass — https://github.com/Kyant0/AndroidLiquidGlass (Apache 2.0).
-// Mirrored from compose-miuix-ui example.
+// Mirrored from the compose-miuix-ui example (miuix, Apache-2.0): https://github.com/yukonga/miuix
 // XC_LENS_SHADER（新绘制内核）移植自 QWEA0/Liquid-Glass-Android —
 // https://github.com/QWEA0/Liquid-Glass-Android (MIT)。
 

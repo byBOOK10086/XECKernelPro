@@ -43,13 +43,27 @@
   - `userspace/ksud/src/apk_sign.rs` — APK 签名扫描的 ZIP 注释长度边界修正，移植自 commit
     9fc9b9c（对应 tiann/KernelSU#3802，作者 fhgffy）。
 
+### 管理器 UI（源文件头部均有同内容注释）
+
+- **Kyant0/AndroidLiquidGlass** — https://github.com/Kyant0/AndroidLiquidGlass （Apache-2.0）
+  `ui/component/liquid/` 下 CombinedBackdrop、Vibrancy、InnerShadow、Lens 的改写来源。
+- **compose-miuix-ui（miuix 项目示例代码）** — 上游 https://github.com/compose-miuix-ui/miuix，
+  维护分支 https://github.com/yukonga/miuix （作者 YuKongA 及 compose-miuix-ui 社区，Apache-2.0）。
+  `ui/component/miuix/effect/`（BgEffect* 与 OS3BgFrag，共 10 个文件）及
+  `ui/component/liquid/` 同名文件以 "Mirrored from" 标注镜像自其 example 代码；
+  `FloatingBottomBar.kt` 改写自其 IosLiquidGlassNavigationBar 示例。
+- **QWEA0/Liquid-Glass-Android** — https://github.com/QWEA0/Liquid-Glass-Android （MIT）
+  `Lens.kt` 中 XC_LENS_SHADER 着色器的移植来源。
+
 ## 内嵌检测工具
 
 - **密钥链验机**（`manager/app/src/main/assets/detect/keychain-check.apk`，包名 `wu.keyChain.test`）— 第三方验机工具，版权归原作者。
 
 ## 其他
 
-- Rust 依赖见各 `Cargo.toml` / `Cargo.lock`；网站依赖见 `website/package.json`；许可证以上游仓库为准。
+- Rust 依赖见各 `Cargo.toml` / `Cargo.lock`；Android 依赖见 `manager/gradle/libs.versions.toml`
+  （含 miuix `top.yukonga.miuix.kmp` 0.9.3，https://github.com/yukonga/miuix ，Apache-2.0）；
+  网站依赖见 `website/package.json`；许可证以上游仓库为准。
 
 ## XecHide 下架说明
 

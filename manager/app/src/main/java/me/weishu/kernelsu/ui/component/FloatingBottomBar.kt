@@ -1,4 +1,5 @@
-// Adapted from compose-miuix-ui example (IosLiquidGlassNavigationBar) — Apache 2.0.
+// Adapted from the compose-miuix-ui example (IosLiquidGlassNavigationBar) — Apache 2.0:
+// https://github.com/yukonga/miuix
 
 package me.weishu.kernelsu.ui.component
 
