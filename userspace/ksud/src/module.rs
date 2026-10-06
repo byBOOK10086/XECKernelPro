@@ -368,7 +368,14 @@ pub fn exec_script<T: AsRef<Path>>(path: T, wait: bool) -> Result<()> {
         .envs(get_common_script_envs(validated_module_id));
 
     let result = if wait {
-        command.status().map(|_| ())
+        let status = command.status()?;
+        if !status.success() {
+            return Err(anyhow!(
+                "Script {} exited with status {status}",
+                path.as_ref().display()
+            ));
+        }
+        Ok(())
     } else {
         command.spawn().map(|_| ())
     };

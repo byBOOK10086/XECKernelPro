@@ -191,6 +191,9 @@ pub fn get(key: &str) -> Result<String> {
 
 /// Set a single config value.
 pub fn set(key: &str, value: &str) -> Result<()> {
+    if key == KEY_AUTO_START_ENABLED && value != "true" && value != "false" {
+        bail!("{KEY_AUTO_START_ENABLED} must be true or false");
+    }
     let mut config = load_config()?;
     config.insert(key.to_string(), value.to_string());
     save_config(&config)
@@ -283,11 +286,13 @@ pub fn load_module_config() -> Result<ModuleConfig> {
 
     let sus_paths_raw = get(KEY_SUS_PATHS);
     let sus_loop_paths_raw = get(KEY_SUS_LOOP_PATHS);
+    let auto_start_enabled = get(KEY_AUTO_START_ENABLED) == "true";
     let sus_maps_raw = get(KEY_SUS_MAPS);
     let kstat_configs_raw = get(KEY_KSTAT_CONFIGS);
     let add_kstat_paths_raw = get(KEY_ADD_KSTAT_PATHS);
 
     Ok(ModuleConfig {
+        auto_start_enabled,
         uname_value: get(KEY_UNAME_VALUE),
         build_time_value: get(KEY_BUILD_TIME_VALUE),
         execute_in_post_fs_data: get(KEY_EXECUTE_IN_POST_FS_DATA) == "true",
@@ -308,6 +313,7 @@ pub fn load_module_config() -> Result<ModuleConfig> {
 #[derive(Debug, Clone)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct ModuleConfig {
+    pub auto_start_enabled: bool,
     pub uname_value: String,
     pub build_time_value: String,
     pub execute_in_post_fs_data: bool,

@@ -31,6 +31,18 @@
 
 > **Zygisk Next** — https://github.com/LSPosed/ZygiskNext 。其许可证不允许第三方再分发，本项目**不再分发**该组件（Release 与资源包均已移除）；需要 Zygisk 框架的用户请从官方仓库获取。
 
+## 移植代码（Ported Code）
+
+- **ReSukiSU** — https://github.com/ReSukiSU/ReSukiSU （GPL-3.0）
+  以下改动移植自其用户态代码，各源文件内有同内容出处注释：
+  - `userspace/ksud/src/susfs.rs` — SUSFS kstat 伪装常量与提交实现，移植自其仓库快照 commit
+    aa7c82a7 中 `userspace/ksud/src/android/susfs/api/features/sus_kstat.rs`；SUSFS 内核 ABI 原作为
+    simonpunk/susfs4ksu（GPL-2.0，见上表）。
+  - `userspace/ksud/src/boot_patch.rs` — config-only 修补（`--no-install` 且传入镜像）跳过 KMI 探测，
+    移植自 commit 63268b9（对应 tiann/KernelSU#3803，作者 fhgffy）。
+  - `userspace/ksud/src/apk_sign.rs` — APK 签名扫描的 ZIP 注释长度边界修正，移植自 commit
+    9fc9b9c（对应 tiann/KernelSU#3802，作者 fhgffy）。
+
 ## 内嵌检测工具
 
 - **密钥链验机**（`manager/app/src/main/assets/detect/keychain-check.apk`，包名 `wu.keyChain.test`）— 第三方验机工具，版权归原作者。

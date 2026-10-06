@@ -313,9 +313,11 @@ pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Resul
                 if ent.file_type().is_ok_and(|v| v.is_file()) {
                     let name = ent.file_name().to_string_lossy().to_string();
                     let target = format!("{}{name}", defs::KSU_BACKUP_DIR);
-                    if name.starts_with(defs::KSU_BACKUP_FILE_PREFIX)
-                        && std::fs::rename(ent.path(), &target).is_err()
-                    {
+                    let migratable = name.starts_with(defs::KSU_BACKUP_FILE_PREFIX)
+                        || name.starts_with(defs::BOOT_TXN_BACKUP_PREFIX)
+                        || name == defs::BOOT_TXN_STATE
+                        || name == defs::BOOT_TXN_STATE_TMP;
+                    if migratable && std::fs::rename(ent.path(), &target).is_err() {
                         std::fs::copy(ent.path(), &target).with_context(|| {
                             format!("failed to move {} -> {target}", ent.path().display())
                         })?;
@@ -336,6 +338,13 @@ pub fn uninstall(package_name: &str) -> Result<()> {
         module::uninstall_all_modules()?;
         module::prune_modules()?;
     }
+    println!("- Restore boot image..");
+    boot_patch::restore(BootRestoreArgs {
+        boot: None,
+        flash: true,
+        out: None,
+        out_name: None,
+    })?;
     println!("- Removing directories..");
     // Drop the KernelSU-compatibility links first, but only when they are ours
     // (never touch a genuine official `ksud` binary).
@@ -350,13 +359,6 @@ pub fn uninstall(package_name: &str) -> Result<()> {
     std::fs::remove_dir_all(defs::MODULE_DIR).ok();
     std::fs::remove_dir_all(defs::PREINIT_DIR_WATCHDOG).ok();
     std::fs::remove_dir_all(defs::PREINIT_DIR_DEFAULT).ok();
-    println!("- Restore boot image..");
-    boot_patch::restore(BootRestoreArgs {
-        boot: None,
-        flash: true,
-        out: None,
-        out_name: None,
-    })?;
     println!("- Uninstall KernelSU manager..");
     Command::new("pm")
         .args(["uninstall", package_name])

@@ -28,7 +28,11 @@ pub fn get_apk_signature(apk: &str) -> Result<(u32, String)> {
             }
         }
 
-        ensure!(n != 0xffff, "not a zip file");
+        // Bound the scan by the ZIP comment length field's maximum instead of
+        // bailing when the trailing bytes happen to read as 0xffff; otherwise
+        // a legitimate APK with trailing data can abort the signature check.
+        // Ported from ReSukiSU commit 9fc9b9c (tiann/KernelSU#3802), GPL-3.0.
+        ensure!(i < 0xffff, "not a zip file");
 
         i += 1;
     }

@@ -363,18 +363,6 @@ fn generate_service_script(
                         path.replace('\'', "'\\''")
                     )
                     .ok();
-                    writeln!(
-                        s,
-                        "/data/adb/ksud susfs update-sus-kstat {}",
-                        shell_quote(path)
-                    )
-                    .ok();
-                    writeln!(
-                        s,
-                        "echo \"$(get_current_time): 更新Kstat配置: {}\" >> \"$LOG_FILE\"",
-                        path.replace('\'', "'\\''")
-                    )
-                    .ok();
                 }
             }
             s.push('\n');
@@ -608,6 +596,23 @@ pub fn install_module() -> anyhow::Result<()> {
     use crate::susfs_config::load_module_config;
     let config = load_module_config()?;
     install_module_with_config(&config)
+}
+
+/// Reconcile the generated auto-start module with the persisted setting.
+///
+/// Keeping this operation idempotent makes every config mutation converge to a
+/// single state: enabled means the generated module is installed with the
+/// latest config; disabled means the generated module is absent.
+pub fn sync_module_from_config() -> anyhow::Result<()> {
+    use crate::susfs_config::load_module_config;
+    let config = load_module_config()?;
+    if config.auto_start_enabled {
+        install_module_with_config(&config)
+    } else if is_module_installed() {
+        remove_module()
+    } else {
+        Ok(())
+    }
 }
 
 fn install_module_with_config(config: &ModuleConfig) -> anyhow::Result<()> {

@@ -1,16 +1,22 @@
 #![allow(clippy::unreadable_literal)]
 use libc::SYS_reboot;
+use std::os::raw::{c_long, c_ulong};
+#[cfg(target_os = "android")]
+use std::os::unix::fs::MetadataExt;
 
 use crate::defs;
 
 const SUSFS_MAX_VERSION_BUFSIZE: usize = 16;
 const SUSFS_ENABLED_FEATURES_SIZE: usize = 8192;
 const SUSFS_MAX_VARIANT_BUFSIZE: usize = 16;
+const SUSFS_MAX_LEN_PATHNAME: usize = 256;
 const ERR_CMD_NOT_SUPPORTED: i32 = 126;
 const KSU_INSTALL_MAGIC1: u32 = 0xDEADBEEF;
 const CMD_SUSFS_SHOW_VERSION: u32 = 0x555e1;
 const CMD_SUSFS_SHOW_ENABLED_FEATURES: u32 = 0x555e2;
 const CMD_SUSFS_SHOW_VARIANT: u32 = 0x555e3;
+const CMD_SUSFS_ADD_SUS_KSTAT: u32 = 0x55570;
+const CMD_SUSFS_UPDATE_SUS_KSTAT: u32 = 0x55571;
 const CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY: u32 = 0x55572;
 const CMD_SUSFS_ADD_SUS_MAP: u32 = 0x60020;
 const CMD_SUSFS_SET_UNAME: u32 = 0x55590;
@@ -21,6 +27,33 @@ const CMD_SUSFS_ADD_OPEN_REDIRECT: u32 = 0x555c0;
 const CMD_SUSFS_ADD_SUS_PATH: u32 = 0x55550;
 const CMD_SUSFS_ADD_SUS_PATH_LOOP: u32 = 0x55553;
 const SUSFS_MAGIC: u32 = 0xFAFAFAFA;
+
+// Field masks from SUSFS v2.3.0's `susfs_def.h`. The layout and flags follow
+// ReSukiSU's SUSFS implementation (commit aa7c82a7f5b5f8693118854383d88d522bdcd0f1,
+// GPL-3.0 userspace), which in turn targets simonpunk/susfs4ksu (GPL-2.0).
+const KSTAT_SPOOF_INO: i32 = 1 << 0;
+const KSTAT_SPOOF_DEV: i32 = 1 << 1;
+const KSTAT_SPOOF_NLINK: i32 = 1 << 2;
+const KSTAT_SPOOF_SIZE: i32 = 1 << 3;
+const KSTAT_SPOOF_ATIME_TV_SEC: i32 = 1 << 4;
+const KSTAT_SPOOF_ATIME_TV_NSEC: i32 = 1 << 5;
+const KSTAT_SPOOF_MTIME_TV_SEC: i32 = 1 << 6;
+const KSTAT_SPOOF_MTIME_TV_NSEC: i32 = 1 << 7;
+const KSTAT_SPOOF_CTIME_TV_SEC: i32 = 1 << 8;
+const KSTAT_SPOOF_CTIME_TV_NSEC: i32 = 1 << 9;
+const KSTAT_SPOOF_BLOCKS: i32 = 1 << 10;
+const KSTAT_SPOOF_BLKSIZE: i32 = 1 << 11;
+const KSTAT_SPOOF_AUTO: i32 = KSTAT_SPOOF_INO
+    | KSTAT_SPOOF_DEV
+    | KSTAT_SPOOF_ATIME_TV_SEC
+    | KSTAT_SPOOF_ATIME_TV_NSEC
+    | KSTAT_SPOOF_MTIME_TV_SEC
+    | KSTAT_SPOOF_MTIME_TV_NSEC
+    | KSTAT_SPOOF_CTIME_TV_SEC
+    | KSTAT_SPOOF_CTIME_TV_NSEC
+    | KSTAT_SPOOF_BLOCKS
+    | KSTAT_SPOOF_BLKSIZE;
+const KSTAT_SPOOF_AUTO_FULL_CLONE: i32 = KSTAT_SPOOF_AUTO | KSTAT_SPOOF_NLINK | KSTAT_SPOOF_SIZE;
 
 #[repr(C)]
 struct SusfsVersion {
@@ -75,24 +108,34 @@ struct SusfsOpenRedirect {
 
 #[repr(C)]
 struct SusfsKstat {
-    is_statically: u32,
-    target_ino: u64,
-    target_pathname: [u8; 256],
-    spoofed_ino: u64,
-    spoofed_dev: u64,
+    is_statically: bool,
+    target_ino: c_ulong,
+    target_pathname: [u8; SUSFS_MAX_LEN_PATHNAME],
+    spoofed_ino: c_ulong,
+    spoofed_dev: c_ulong,
     spoofed_nlink: u32,
-    spoofed_size: u64,
-    spoofed_atime_tv_sec: i64,
-    spoofed_atime_tv_nsec: u64,
-    spoofed_mtime_tv_sec: i64,
-    spoofed_mtime_tv_nsec: u64,
-    spoofed_ctime_tv_sec: i64,
-    spoofed_ctime_tv_nsec: u64,
-    spoofed_blocks: u64,
-    spoofed_blksize: i64,
-    flags: u32,
+    spoofed_size: i64,
+    spoofed_atime_tv_sec: c_long,
+    spoofed_atime_tv_nsec: c_ulong,
+    spoofed_mtime_tv_sec: c_long,
+    spoofed_mtime_tv_nsec: c_ulong,
+    spoofed_ctime_tv_sec: c_long,
+    spoofed_ctime_tv_nsec: c_ulong,
+    spoofed_blocks: i64,
+    spoofed_blksize: c_long,
+    flags: i32,
     err: i32,
 }
+
+#[cfg(target_arch = "aarch64")]
+const _: () = {
+    assert!(std::mem::size_of::<SusfsKstat>() == 376);
+    assert!(std::mem::align_of::<SusfsKstat>() == 8);
+    assert!(std::mem::offset_of!(SusfsKstat, target_ino) == 8);
+    assert!(std::mem::offset_of!(SusfsKstat, target_pathname) == 16);
+    assert!(std::mem::offset_of!(SusfsKstat, flags) == 368);
+    assert!(std::mem::offset_of!(SusfsKstat, err) == 372);
+};
 
 #[repr(C)]
 struct SusfsMap {
@@ -449,24 +492,108 @@ pub fn add_sus_map(path: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[allow(clippy::unnecessary_wraps, clippy::missing_const_for_fn)]
+fn submit_kstat(cmd_code: u32, cmd: &mut SusfsKstat, operation: &str) -> anyhow::Result<()> {
+    let syscall_result =
+        unsafe { libc::syscall(SYS_reboot, KSU_INSTALL_MAGIC1, SUSFS_MAGIC, cmd_code, cmd) };
+    if syscall_result < 0 {
+        return Err(anyhow::anyhow!(
+            "SUSFS {operation} syscall failed: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    if cmd.err != 0 {
+        anyhow::bail!("SUSFS {operation} failed: err={}", cmd.err);
+    }
+    Ok(())
+}
+
+fn copy_metadata_to_kstat(cmd: &mut SusfsKstat, metadata: &std::fs::Metadata) {
+    cmd.spoofed_ino = metadata.ino() as c_ulong;
+    cmd.spoofed_dev = metadata.dev() as c_ulong;
+    cmd.spoofed_nlink = metadata.nlink() as u32;
+    cmd.spoofed_size = metadata.size() as i64;
+    cmd.spoofed_atime_tv_sec = metadata.atime() as c_long;
+    cmd.spoofed_atime_tv_nsec = metadata.atime_nsec() as c_ulong;
+    cmd.spoofed_mtime_tv_sec = metadata.mtime() as c_long;
+    cmd.spoofed_mtime_tv_nsec = metadata.mtime_nsec() as c_ulong;
+    cmd.spoofed_ctime_tv_sec = metadata.ctime() as c_long;
+    cmd.spoofed_ctime_tv_nsec = metadata.ctime_nsec() as c_ulong;
+    cmd.spoofed_blocks = metadata.blocks() as i64;
+    cmd.spoofed_blksize = metadata.blksize() as c_long;
+}
+
+fn update_sus_kstat_impl(path: &str, full_clone: bool) -> anyhow::Result<()> {
+    let metadata = std::fs::metadata(path)
+        .map_err(|e| anyhow::anyhow!("stat SUSFS kstat target {path}: {e}"))?;
+    let mut cmd = SusfsKstat {
+        is_statically: false,
+        target_ino: metadata.ino() as c_ulong,
+        target_pathname: [0; SUSFS_MAX_LEN_PATHNAME],
+        spoofed_ino: 0,
+        spoofed_dev: 0,
+        spoofed_nlink: 0,
+        spoofed_size: 0,
+        spoofed_atime_tv_sec: 0,
+        spoofed_atime_tv_nsec: 0,
+        spoofed_mtime_tv_sec: 0,
+        spoofed_mtime_tv_nsec: 0,
+        spoofed_ctime_tv_sec: 0,
+        spoofed_ctime_tv_nsec: 0,
+        spoofed_blocks: 0,
+        spoofed_blksize: 0,
+        flags: if full_clone {
+            KSTAT_SPOOF_AUTO_FULL_CLONE
+        } else {
+            KSTAT_SPOOF_AUTO
+        },
+        err: ERR_CMD_NOT_SUPPORTED,
+    };
+    copy_path_into(&mut cmd.target_pathname, path)?;
+    copy_metadata_to_kstat(&mut cmd, &metadata);
+    submit_kstat(
+        CMD_SUSFS_UPDATE_SUS_KSTAT,
+        &mut cmd,
+        if full_clone {
+            "full-clone kstat update"
+        } else {
+            "kstat update"
+        },
+    )
+}
+
 pub fn add_sus_kstat(path: &str) -> anyhow::Result<()> {
-    // The kstat spoof list is replayed from the manager's persisted config
-    // by the generated SusFS scripts, so we treat this as accepted here.
-    let _ = path;
-    Ok(())
+    let metadata = std::fs::metadata(path)
+        .map_err(|e| anyhow::anyhow!("stat SUSFS kstat target {path}: {e}"))?;
+    let mut cmd = SusfsKstat {
+        is_statically: false,
+        target_ino: metadata.ino() as c_ulong,
+        target_pathname: [0; SUSFS_MAX_LEN_PATHNAME],
+        spoofed_ino: 0,
+        spoofed_dev: 0,
+        spoofed_nlink: 0,
+        spoofed_size: 0,
+        spoofed_atime_tv_sec: 0,
+        spoofed_atime_tv_nsec: 0,
+        spoofed_mtime_tv_sec: 0,
+        spoofed_mtime_tv_nsec: 0,
+        spoofed_ctime_tv_sec: 0,
+        spoofed_ctime_tv_nsec: 0,
+        spoofed_blocks: 0,
+        spoofed_blksize: 0,
+        flags: KSTAT_SPOOF_AUTO,
+        err: ERR_CMD_NOT_SUPPORTED,
+    };
+    copy_path_into(&mut cmd.target_pathname, path)?;
+    copy_metadata_to_kstat(&mut cmd, &metadata);
+    submit_kstat(CMD_SUSFS_ADD_SUS_KSTAT, &mut cmd, "kstat add")
 }
 
-#[allow(clippy::unnecessary_wraps, clippy::missing_const_for_fn)]
 pub fn update_sus_kstat(path: &str) -> anyhow::Result<()> {
-    let _ = path;
-    Ok(())
+    update_sus_kstat_impl(path, false)
 }
 
-#[allow(clippy::unnecessary_wraps, clippy::missing_const_for_fn)]
 pub fn update_sus_kstat_full_clone(path: &str) -> anyhow::Result<()> {
-    let _ = path;
-    Ok(())
+    update_sus_kstat_impl(path, true)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -485,45 +612,31 @@ pub fn add_sus_kstat_statically(
     blocks: u64,
     blksize: i64,
 ) -> anyhow::Result<()> {
+    let metadata = std::fs::metadata(path)
+        .map_err(|e| anyhow::anyhow!("stat SUSFS kstat target {path}: {e}"))?;
     let mut cmd = SusfsKstat {
-        is_statically: 1,
-        target_ino: 0,
-        target_pathname: [0; 256],
-        spoofed_ino: ino,
-        spoofed_dev: dev,
+        is_statically: true,
+        target_ino: metadata.ino() as c_ulong,
+        target_pathname: [0; SUSFS_MAX_LEN_PATHNAME],
+        spoofed_ino: ino as c_ulong,
+        spoofed_dev: dev as c_ulong,
         spoofed_nlink: nlink,
-        spoofed_size: size,
-        spoofed_atime_tv_sec: atime_sec,
-        spoofed_atime_tv_nsec: atime_nsec_opt,
-        spoofed_mtime_tv_sec: mtime_sec,
-        spoofed_mtime_tv_nsec: mtime_nsec_opt,
-        spoofed_ctime_tv_sec: ctime_sec,
-        spoofed_ctime_tv_nsec: ctime_nsec_opt,
-        spoofed_blocks: blocks,
-        spoofed_blksize: blksize,
-        flags: 0,
+        spoofed_size: size as i64,
+        spoofed_atime_tv_sec: atime_sec as c_long,
+        spoofed_atime_tv_nsec: atime_nsec_opt as c_ulong,
+        spoofed_mtime_tv_sec: mtime_sec as c_long,
+        spoofed_mtime_tv_nsec: mtime_nsec_opt as c_ulong,
+        spoofed_ctime_tv_sec: ctime_sec as c_long,
+        spoofed_ctime_tv_nsec: ctime_nsec_opt as c_ulong,
+        spoofed_blocks: blocks as i64,
+        spoofed_blksize: blksize as c_long,
+        flags: KSTAT_SPOOF_AUTO_FULL_CLONE,
         err: ERR_CMD_NOT_SUPPORTED,
     };
-
-    let path_bytes = path.as_bytes();
-    if path_bytes.len() >= cmd.target_pathname.len() {
-        anyhow::bail!("Path too long");
-    }
-
-    cmd.target_pathname[..path_bytes.len()].copy_from_slice(path_bytes);
-
-    unsafe {
-        libc::syscall(
-            SYS_reboot,
-            KSU_INSTALL_MAGIC1,
-            SUSFS_MAGIC,
-            CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY,
-            &mut cmd,
-        )
-    };
-
-    if cmd.err != 0 {
-        anyhow::bail!("Failed to add sus kstat statically: err={}", cmd.err);
-    }
-    Ok(())
+    copy_path_into(&mut cmd.target_pathname, path)?;
+    submit_kstat(
+        CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY,
+        &mut cmd,
+        "static kstat add",
+    )
 }

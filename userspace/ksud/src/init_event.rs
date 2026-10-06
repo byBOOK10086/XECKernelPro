@@ -58,6 +58,14 @@ fn exec_builtin_stage(stage: &str, block: bool) {
 }
 
 pub fn on_post_data_fs() -> Result<()> {
+    // Resolve a pending direct-flash transaction before any module, built-in
+    // engine, SELinux, or SUSFS work can run. A successful rollback owns this
+    // boot and must return immediately.
+    if crate::boot_txn::on_post_fs_data()? {
+        warn!("boot transaction rollback completed; skipping module startup");
+        return Ok(());
+    }
+
     if let Err(e) = ksucalls::ensure_uapi_version_matched() {
         error!("{e:#}, skip on_post_fs_data");
         return Ok(());
@@ -246,6 +254,11 @@ pub fn on_services() {
 }
 
 pub fn on_boot_completed() {
+    if let Err(e) = crate::boot_txn::commit_boot_success() {
+        error!("boot transaction commit failed: {e:#}; refusing boot-completed stages");
+        return;
+    }
+
     if let Err(e) = ksucalls::ensure_uapi_version_matched() {
         error!("{e:#}, skip on_boot_completed");
         return;

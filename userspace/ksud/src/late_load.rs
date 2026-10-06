@@ -81,6 +81,13 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
 
     utils::install(None, None).context("Failed to install ksud")?;
 
+    // Late-load bypasses on_post_data_fs, so apply the same direct-flash
+    // transaction guard before any module or built-in startup work.
+    if crate::boot_txn::on_post_fs_data()? {
+        warn!("boot transaction rollback completed during late-load; skipping module startup");
+        return Ok(());
+    }
+
     // Reload the user's KPM modules from /data/adb/kpm. The late-load path
     // never runs on_post_data_fs, so without this every .kpm the user placed
     // is lost on each reboot (Magica/late-load activations).

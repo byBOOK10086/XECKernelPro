@@ -72,6 +72,9 @@ mod android {
     pub const KSU_BACKUP_FILE_PREFIX: &str = "ksu_backup_";
     pub const BACKUP_FILENAME: &str = "stock_image.sha1";
     pub const KSU_TEMP_BACKUP_DIR_NAME: &str = "boot_backup";
+    pub const BOOT_TXN_STATE: &str = "boot_txn.state";
+    pub const BOOT_TXN_STATE_TMP: &str = ".boot_txn.state.tmp";
+    pub const BOOT_TXN_BACKUP_PREFIX: &str = "boot_txn_backup_";
 
     pub const DEFAULT_PACKAGE_NAME: &str = env!("KSU_PACKAGE_NAME");
 }
