@@ -372,27 +372,16 @@ fn backup_name(partition: &str, suffix: &str) -> String {
     format!("{}{slot}_{partition}", defs::BOOT_TXN_BACKUP_PREFIX)
 }
 
-fn legacy_source(path: Option<&Path>) -> Result<Option<PathBuf>> {
-    if let Some(path) = path {
-        ensure!(
-            path.is_file(),
-            "legacy stock backup is missing: {}",
-            path.display()
-        );
-        return Ok(Some(path.to_path_buf()));
-    }
-    Ok(None)
-}
-
-/// Back up the selected slot's boot and init_boot images before a direct flash.
-/// A patched target is accepted only when its legacy stock backup is available.
-pub fn prepare(
-    slot_suffix: &str,
-    target_partition: &str,
-    target_is_patched: bool,
-    legacy_stock: Option<&Path>,
-    ota: bool,
-) -> Result<()> {
+/// Back up the selected slot's boot and init_boot (plus vendor_boot when it is
+/// the target) byte-for-byte before a direct flash.
+///
+/// The rollback source is always the pre-flash partition content: the device
+/// is booted from it right now, so it is by definition the last known-good
+/// state, and undoing a flash restores exactly what was there before. This
+/// deliberately makes no claim about the image being factory-stock — targets
+/// patched by an older release carry no stock marker, and requiring one would
+/// block the standard upgrade path.
+pub fn prepare(slot_suffix: &str, target_partition: &str, ota: bool) -> Result<()> {
     validate_suffix(slot_suffix)?;
     validate_partition(target_partition)?;
     ensure!(
@@ -400,7 +389,6 @@ pub fn prepare(
         "a boot transaction is already pending"
     );
     let boot_id = current_boot_id()?;
-    let legacy_stock = legacy_source(legacy_stock)?;
     let mut partitions = vec!["boot", "init_boot"];
     if target_partition == "vendor_boot" {
         partitions.push("vendor_boot");
@@ -411,15 +399,8 @@ pub fn prepare(
         if !path.exists() {
             continue;
         }
-        let source = if partition == target_partition && target_is_patched {
-            legacy_stock
-                .as_deref()
-                .context("patched target has no verified legacy stock backup")?
-        } else {
-            &path
-        };
         let name = backup_name(partition, slot_suffix);
-        let (size, sha256) = copy_backup(source, &name)?;
+        let (size, sha256) = copy_backup(&path, &name)?;
         records.push(BackupRecord {
             partition: partition.to_string(),
             suffix: slot_suffix.to_string(),

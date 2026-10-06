@@ -749,14 +749,12 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
                         &slot_suffix,
                     )
                 });
-                let legacy_stock = legacy_stock_backup(&cpio)?;
-                crate::boot_txn::prepare(
-                    &slot_suffix,
-                    &target_partition,
-                    is_kernelsu_patched,
-                    legacy_stock.as_deref(),
-                    ota,
-                )?;
+                if is_kernelsu_patched {
+                    println!(
+                        "- Target already carries our kernel; rollback keeps the current state"
+                    );
+                }
+                crate::boot_txn::prepare(&slot_suffix, &target_partition, ota)?;
             }
         }
 
