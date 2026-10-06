@@ -10,6 +10,10 @@
 // **之外**（兄弟、祖先的更早兄弟）合法。卡体一律不采页面级 backdrop（卡体就在
 // 录制子树里），改采 `LocalWallpaperBackdrop`（壁纸 Image 的录制子树里只有壁纸，
 // 谁采都安全）——`xGlassBody` 的实现见 `XGlassSurface.kt`。
+//
+// 本体染色由 `Xc.colors.clearGlassTint` 令牌说了算：浅色档全透（经典 Clear 形态），
+// 深色档/AMOLED 是"黑液态玻璃"——深色壁纸已经压暗，玻璃再全透会显得又亮又飘，
+// 深色下给一层吸光介质，折射与边缘光保留。
 
 package me.weishu.kernelsu.ui.design.clear
 
@@ -47,8 +51,9 @@ import top.yukonga.miuix.kmp.shader.isRuntimeShaderSupported
  * 透明液态玻璃表面。
  *
  * @param backdrop 由 `rememberBlurBackdrop` 产出；`null` 表示设备/设置不支持模糊。
- * @param tint 玻璃本体染色，默认 [Color.Transparent] —— 透明玻璃不上色，
- *   可读性由着色器内的亮度自适应层负责。要带介质色时给低透明度的颜色。
+ * @param tint 玻璃本体染色，默认 [Xc.colors.clearGlassTint] —— 浅色档全透
+ *   （透明玻璃不上色，可读性由着色器内的亮度自适应层负责），深色档是黑液态玻璃。
+ *   要覆盖介质色时给低透明度的颜色。
  * @param adaptive 亮度自适应可读性层开关（仅着色器档生效）。
  * @param specular 边缘高光强度倍率。
  */
@@ -57,7 +62,7 @@ fun ClearGlassSurface(
     backdrop: LayerBackdrop?,
     modifier: Modifier = Modifier,
     shape: Shape = Xc.shapes.lg,
-    tint: Color = Color.Transparent,
+    tint: Color = Xc.colors.clearGlassTint,
     blurRadius: Dp = 6.dp,
     refraction: Dp = 26.dp,
     rimColor: Color = Xc.colors.glassRim,
@@ -166,7 +171,7 @@ fun ClearGlassCard(
     backdrop: LayerBackdrop?,
     modifier: Modifier = Modifier,
     shape: Shape = Xc.shapes.md,
-    tint: Color = Color.Transparent,
+    tint: Color = Xc.colors.clearGlassTint,
     glassEnabled: Boolean = true,
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -188,7 +193,7 @@ fun ClearGlassBar(
     backdrop: LayerBackdrop?,
     modifier: Modifier = Modifier,
     shape: Shape = Xc.shapes.bar,
-    tint: Color = Color.Transparent,
+    tint: Color = Xc.colors.clearGlassTint,
     glassEnabled: Boolean = true,
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -216,7 +221,7 @@ fun ClearGlassButton(
     modifier: Modifier = Modifier,
     backdrop: LayerBackdrop? = LocalWallpaperBackdrop.current,
     shape: Shape = Xc.shapes.pill,
-    tint: Color = Color.Transparent,
+    tint: Color = Xc.colors.clearGlassTint,
     glassEnabled: Boolean = true,
     content: @Composable BoxScope.() -> Unit,
 ) {

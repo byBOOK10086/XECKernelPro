@@ -24,6 +24,14 @@ data class XcColors(
     val surfaceMuted: Color,
     /** 玻璃上覆色（半透明），叠在模糊之上。 */
     val glassTint: Color,
+    /**
+     * 透明玻璃（Clear 形态）的本体染色。
+     *
+     * 浅色档是 [Color.Transparent]——浅色壁纸下保持全透，只靠折射与亮度自适应塑形；
+     * 深色档是黑色玻璃：深色壁纸本身已经压暗，透明玻璃再全透就会显得又亮又飘，
+     * 这就是"黑液态玻璃"——介质吸光，但折射、菲涅尔亮边与高光全部保留。
+     */
+    val clearGlassTint: Color = Color.Transparent,
     /** 玻璃 1px 描边，用于在没有模糊的设备上依然能分辨层次。 */
     val glassRim: Color,
     val text: Color,
@@ -92,6 +100,8 @@ private val XcDarkBase = XcColors(
     surface = Color(0xFF131A1C),
     surfaceMuted = Color(0xFF1A2225),
     glassTint = Color(0x8C131A1C),
+    // 黑液态玻璃：42% 纯黑介质，折射与边缘光仍然全部保留
+    clearGlassTint = Color(0x6B000000),
     glassRim = Color(0xFF263033),
     text = Color(0xFFE7EDEE),
     textSecondary = Color(0xFFBAC6C8),
@@ -133,6 +143,8 @@ private val XcAmoled = XcDarkBase.copy(
     surface = Color(0xFF0A0E0F),
     surfaceMuted = Color(0xFF111819),
     glassTint = Color(0x6B0A0E0F),
+    // 纯黑底上玻璃要更实一档，否则与背景拉不开层次
+    clearGlassTint = Color(0x80000000),
     glassRim = Color(0xFF2E3A3C),
 )
 

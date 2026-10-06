@@ -108,6 +108,8 @@ import me.weishu.kernelsu.ui.screen.templateeditor.TemplateEditorScreen
 import me.weishu.kernelsu.ui.screen.terminal.TerminalPager
 import me.weishu.kernelsu.ui.theme.KernelSUTheme
 import me.weishu.kernelsu.ui.theme.isInDarkTheme
+
+import kotlin.random.Random
 import me.weishu.kernelsu.ui.theme.LocalColorMode
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.theme.LocalEnableFloatingBottomBar
@@ -125,6 +127,27 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+/**
+ * 壁纸池：亮色原版与深色适配版各四张（`bg_light_1..4` / `bg_dark_1..4`，暗版由
+ * 亮版自适应压暗到同一亮度带生成）。每次冷启动随机抽一张，深浅模式只决定取
+ * 哪一档调色，不改变抽中的那张。
+ */
+private const val WALLPAPER_COUNT = 4
+
+private val BG_LIGHT_DRAWABLES = intArrayOf(
+    R.drawable.bg_light_1,
+    R.drawable.bg_light_2,
+    R.drawable.bg_light_3,
+    R.drawable.bg_light_4,
+)
+
+private val BG_DARK_DRAWABLES = intArrayOf(
+    R.drawable.bg_dark_1,
+    R.drawable.bg_dark_2,
+    R.drawable.bg_dark_3,
+    R.drawable.bg_dark_4,
+)
 
 class MainActivity : ComponentActivity() {
 
@@ -194,6 +217,21 @@ class MainActivity : ComponentActivity() {
                         // 5 个 nav entry（Main / Home / SuperUser / Module / Settings）
                         // 共用的，拿不到任何单独一页的采样源。
                         val dialogBackdrop = rememberBlurBackdrop(uiState.enableBlur)
+                        // 壁纸：每次冷启动随机抽一张（rememberSaveable 保证转屏/重建
+                        // Activity 不重抽）；深浅模式只决定取这张的亮色原版还是深色
+                        // 适配版——"此次进入用哪张"与"该不该调色"是两个独立决定，
+                        // 会话中途切换模式时壁纸保持同一张、只换调色档。
+                        val wallpaperIndex = rememberSaveable {
+                            mutableIntStateOf(Random.nextInt(WALLPAPER_COUNT))
+                        }
+                        val wallpaperDark = isInDarkTheme()
+                        val wallpaperRes = remember(wallpaperIndex.intValue, wallpaperDark) {
+                            if (wallpaperDark) {
+                                BG_DARK_DRAWABLES[wallpaperIndex.intValue]
+                            } else {
+                                BG_LIGHT_DRAWABLES[wallpaperIndex.intValue]
+                            }
+                        }
                         // 壁纸采样源：挂在下面壁纸 Image 上的独立 backdrop。卡体、按钮、面板
                         // 都通过 [LocalWallpaperBackdrop] 采它——壁纸的录制子树里只有壁纸，
                         // 谁采都不会自采样成环（页面级 backdrop 录的是滚动内容，卡体在里面，
@@ -274,9 +312,7 @@ class MainActivity : ComponentActivity() {
                                         ),
                                 ) {
                                     Image(
-                                        painter = painterResource(
-                                            if (isManager) R.drawable.bg_lkm_active else R.drawable.bg_not_patched
-                                        ),
+                                        painter = painterResource(wallpaperRes),
                                         contentDescription = null,
                                         modifier = Modifier
                                             .fillMaxSize()
