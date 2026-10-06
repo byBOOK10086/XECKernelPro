@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -161,11 +162,11 @@ fun SearchStatus.SearchPager(
                 .padding(top = topPadding)
                 .then(
                     if (!searchStatus.isCollapsed()) {
-                        // 搜索展开时的顶部条：只圆下方两角，避免出现直角矩形。
-                        Modifier.background(
-                            colorScheme.surface,
-                            RoundedCornerShape(bottomStart = XcRadius.xl, bottomEnd = XcRadius.xl)
-                        )
+                        // The expanded input and its result layer share one frame.
+                        // Round all corners so the frame encloses the whole search header.
+                        Modifier
+                            .clip(RoundedCornerShape(XcRadius.xl))
+                            .background(colorScheme.surface)
                     } else Modifier
                 ),
             horizontalArrangement = Arrangement.Start,

@@ -2,6 +2,7 @@ package me.weishu.kernelsu.ui.design.glass
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -80,6 +81,14 @@ fun XGlassDialog(
     // 退场动画期间必须留在树上，跑完才整体撤掉。
     if (!visibleState.currentState && !visibleState.targetState) return
 
+    // Keep the scrim on the same timeline as the panel. Drawing it at full
+    // opacity before the panel starts is the source of the black-frame flash.
+    val scrimAlpha by animateFloatAsState(
+        targetValue = if (visibleState.targetState) 1f else 0f,
+        animationSpec = tween(durationMillis = 160),
+        label = "dialogScrimAlpha",
+    )
+
     // 放在绘制之前、并且和绘制共用同一个可见性判断：隐藏时不会被注册，
     // 所以不会出现"对话框早就没了、返回键还被吃掉"的情况。
     val navEventState = rememberNavigationEventState(NavigationEventInfo.None)
@@ -103,7 +112,7 @@ fun XGlassDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Xc.colors.backdropScrim)
+                .background(Xc.colors.backdropScrim.copy(alpha = scrimAlpha))
                 .pointerInput(Unit) {
                     detectTapGestures { onDismissRequest() }
                 },

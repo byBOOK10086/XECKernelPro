@@ -26,6 +26,7 @@ data class SearchStatus(
     fun shouldExpand() = current == Status.EXPANDED || current == Status.EXPANDING
     fun shouldCollapsed() = current == Status.COLLAPSED || current == Status.COLLAPSING
     fun isAnimatingExpand() = current == Status.EXPANDING
+    fun isAnimatingCollapse() = current == Status.COLLAPSING
 
     fun onAnimationComplete(): SearchStatus {
         return when (current) {

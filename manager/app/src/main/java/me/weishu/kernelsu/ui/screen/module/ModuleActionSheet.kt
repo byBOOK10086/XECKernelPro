@@ -117,8 +117,13 @@ fun ModuleActionSheet(
     // 所以内容要留一份快照，不然滑出的是空壳。
     if (!visibleState.currentState && !visibleState.targetState) return
     val cachedModule = remember { mutableStateOf(module) }
-    if (module != null) cachedModule.value = module
+    val cachedUpdateUrl = remember { mutableStateOf(updateUrl) }
+    if (module != null) {
+        cachedModule.value = module
+        cachedUpdateUrl.value = updateUrl
+    }
     val data = module ?: cachedModule.value ?: return
+    val displayedUpdateUrl = if (module != null) updateUrl else cachedUpdateUrl.value
 
     val navEventState = rememberNavigationEventState(NavigationEventInfo.None)
     NavigationBackHandler(
@@ -130,7 +135,7 @@ fun ModuleActionSheet(
     val neon = XcNeon.colors
     val canAction = data.hasActionScript && data.enabled && !data.remove
     val canWebUi = data.hasWebUi && data.enabled && !data.remove
-    val canUpdate = updateUrl.isNotEmpty() && !data.remove
+    val canUpdate = displayedUpdateUrl.isNotEmpty() && !data.remove
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize(),
@@ -235,7 +240,7 @@ fun ModuleActionSheet(
                         SheetDivider()
 
                         // 更新 URL：`break-all` + 外链图标；为空时整块不画。
-                        if (canUpdate || updateUrl.isNotEmpty()) {
+                        if (canUpdate || displayedUpdateUrl.isNotEmpty()) {
                             Spacer(Modifier.height(12.dp))
                             Text(
                                 text = stringResource(R.string.module_update_url),
@@ -251,7 +256,7 @@ fun ModuleActionSheet(
                                     contentDescription = null,
                                 )
                                 Text(
-                                    text = updateUrl,
+                                    text = displayedUpdateUrl,
                                     color = neon.accentCyan,
                                     fontSize = 14.sp,
                                     modifier = Modifier.padding(start = 4.dp),

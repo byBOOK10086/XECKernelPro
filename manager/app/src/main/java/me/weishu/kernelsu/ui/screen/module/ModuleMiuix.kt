@@ -379,10 +379,15 @@ fun ModulePagerMiuix(
                                 modifier = Modifier
                                     .alpha(if (searchStatus.isCollapsed()) 1f else 0f)
                                     .onGloballyPositioned { coordinates ->
-                                        with(density) {
-                                            val newOffsetY = coordinates.positionInWindow().y.toDp()
-                                            if (searchStatus.offsetY != newOffsetY) {
-                                                actions.onSearchStatusChange(searchStatus.copy(offsetY = newOffsetY))
+                                        // Freeze the collapsed anchor while expanding/collapsing.
+                                        // Using the live scroll position during exit makes the result
+                                        // layer chase the list and visibly jump outside the frame.
+                                        if (searchStatus.isCollapsed()) {
+                                            with(density) {
+                                                val newOffsetY = coordinates.positionInWindow().y.toDp()
+                                                if (searchStatus.offsetY != newOffsetY) {
+                                                    actions.onSearchStatusChange(searchStatus.copy(offsetY = newOffsetY))
+                                                }
                                             }
                                         }
                                     }
