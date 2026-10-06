@@ -22,6 +22,10 @@
 - [genuine](https://github.com/brevent/genuine/): APK v2 signature validation.
 - [Diamorphine](https://github.com/m0nad/Diamorphine): Some rootkit skills.
 
+### 美术资源
+
+- 应用图标 / Logo：**明风ouo**（依 CC 协议授权使用，在此致谢）
+
 第三方组件与内置/分发模块的完整致谢与许可证清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；应用内「关于 → 开发者名单 → 致谢」同样列有上游致谢。
 
 ## 构建
