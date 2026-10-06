@@ -352,8 +352,7 @@ fn read_prefix_hash(path: &Path, size: u64) -> Result<String> {
         "boot image size {size} exceeds the supported limit"
     );
     let size_usize = usize::try_from(size).context("boot image is too large for verification")?;
-    let mut input =
-        File::open(path).with_context(|| format!("open partition {}", path.display()))?;
+    let input = File::open(path).with_context(|| format!("open partition {}", path.display()))?;
     let mut bytes = Vec::with_capacity(size_usize);
     input.take(size).read_to_end(&mut bytes)?;
     ensure!(

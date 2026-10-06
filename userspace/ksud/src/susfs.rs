@@ -493,8 +493,18 @@ pub fn add_sus_map(path: &str) -> anyhow::Result<()> {
 }
 
 fn submit_kstat(cmd_code: u32, cmd: &mut SusfsKstat, operation: &str) -> anyhow::Result<()> {
-    let syscall_result =
-        unsafe { libc::syscall(SYS_reboot, KSU_INSTALL_MAGIC1, SUSFS_MAGIC, cmd_code, cmd) };
+    let syscall_result = unsafe {
+        libc::syscall(
+            SYS_reboot,
+            KSU_INSTALL_MAGIC1,
+            SUSFS_MAGIC,
+            cmd_code,
+            // A raw pointer keeps `cmd` usable below: a `&mut` passed through a
+            // C-variadic call is moved, so the kernel-written `err` field could
+            // not be read afterwards.
+            cmd as *mut SusfsKstat,
+        )
+    };
     if syscall_result < 0 {
         return Err(anyhow::anyhow!(
             "SUSFS {operation} syscall failed: {}",

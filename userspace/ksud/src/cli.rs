@@ -1111,7 +1111,7 @@ pub fn run() -> Result<()> {
                 Ok(())
             }
             Susfs::Config { command } => {
-                use crate::susfs_config;
+                use crate::{susfs_config, susfs_module};
                 match command {
                     SusfsConfigCmd::Get { key } => {
                         println!("{}", susfs_config::get(&key)?);
