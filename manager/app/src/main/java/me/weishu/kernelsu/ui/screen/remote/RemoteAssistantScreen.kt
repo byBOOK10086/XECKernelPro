@@ -18,16 +18,23 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.add
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateBottomPadding
+import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
@@ -129,6 +136,9 @@ private fun flashFromUrl(
  * 「远程模块助手·接收」编排器：逐条解析输入（XEC- 短码 → 登录兑换；
  * XEC1/XEC2 → 本地解码）→ 下载全部 zip → 依序刷入。返回 flashed 计数与
  * 失败步骤（null = 全部成功）。
+ *
+ * 失败不再中止整批：一条坏码/坏链接只记失败并继续后面的条目——过去
+ * 第 1 条就报废整批，是"高概率出错"体感的主要放大器。
  */
 private fun runRemoteDeploy(
     context: Context,
@@ -142,13 +152,15 @@ private fun runRemoteDeploy(
         mkdirs()
     }
     var flashed = 0
+    val failures = mutableListOf<String>()
     for ((index, entry) in entries.withIndex()) {
         val label = "#${index + 1}/${entries.size}"
         onStep("解析 $label")
         val links: List<String> = if (entry.uppercase().startsWith("XEC-")) {
             if (redeemToken == null) {
                 log("✗ $label 短码需要登录后使用")
-                return DeployOutcome(flashed, "短码 $label")
+                failures.add("短码 $label")
+                continue
             }
             try {
                 val r = RemoteApi.redeem(redeemToken, entry)
@@ -156,33 +168,46 @@ private fun runRemoteDeploy(
                 r.links
             } catch (e: Exception) {
                 log("✗ $label ${e.message}")
-                return DeployOutcome(flashed, "短码 $label")
+                failures.add("短码 $label")
+                continue
             }
         } else {
-            RemoteModuleCodec.decodeAll(entry).getOrElse {
-                log("✗ $label ${it.message}")
-                return DeployOutcome(flashed, "加密码 $label")
+            val decoded = RemoteModuleCodec.decodeAll(entry)
+            if (decoded.isFailure) {
+                log("✗ $label ${decoded.exceptionOrNull()?.message}")
+                failures.add("加密码 $label")
+                continue
             }
+            decoded.getOrThrow()
         }
         log("→ 第 $label 条包含 ${links.size} 个模块")
         for ((li, link) in links.withIndex()) {
             val tag = if (links.size > 1) "$label-${li + 1}" else label
             if (!link.startsWith("http", ignoreCase = true)) {
                 log("✗ 解出的不是链接: $link")
-                return DeployOutcome(flashed, "加密码 $tag")
+                failures.add("加密码 $tag")
+                continue
             }
             if (isPanSharePage(link)) {
                 // 网盘「分享页」是网页不是文件——提前拦截，别下回来一坨 HTML 才报错
                 log("✗ 这是网盘分享页链接（需要网页打开/登录），程序无法直接下载文件")
                 log("  请让分享者改用 zip 的直链（浏览器点开就开始下载的那种）重新生成加密码")
-                return DeployOutcome(flashed, "加密码 $tag")
+                failures.add("加密码 $tag")
+                continue
             }
             val name = link.substringBefore('?').trimEnd('/').substringAfterLast('/')
                 .ifBlank { "module.zip" }
             val fail = flashFromUrl(dir, name, { link }, log, onStep)
-            if (fail != null) return DeployOutcome(flashed, fail)
+            if (fail != null) {
+                failures.add(fail)
+                continue
+            }
             flashed++
         }
+    }
+    if (failures.isNotEmpty()) {
+        log("— 完成：成功 $flashed 个，失败 ${failures.size} 项 —")
+        return DeployOutcome(flashed, failures.joinToString("、"))
     }
     return DeployOutcome(flashed, null)
 }
@@ -411,11 +436,15 @@ fun RemoteAssistantScreen() {
         contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout)
             .only(WindowInsetsSides.Horizontal),
     ) { innerPadding ->
+        // 整页可滚动：此前外层是普通 Column，加几个链接或键盘一弹，
+        // 底部的"生成短码 / 开始刷入"就被推出屏幕且无路可达（表现为"不能下拉"）。
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 12.dp)
-                .padding(top = innerPadding.calculateTopPadding()),
+                .padding(top = innerPadding.calculateTopPadding())
+                .overScrollVertical()
+                .verticalScroll(rememberScrollState()),
         ) {
             Spacer(Modifier.height(12.dp))
             Card(
@@ -789,9 +818,12 @@ fun RemoteAssistantScreen() {
                 }
                 if (running || logLines.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
+                    // 外层页面现在可滚动，日志卡必须自限高度（fillMaxSize 在无限高
+                    // 约束下失效），日志自身在这块固定视口里滚动。
                     Card(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .fillMaxWidth()
+                            .heightIn(min = 180.dp, max = 320.dp)
                             .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
                         colors = CardDefaults.defaultColors(color = Color.Transparent),
                     ) {
@@ -824,6 +856,14 @@ fun RemoteAssistantScreen() {
                     }
                 }
             }
+            // 底部安全区：Scaffold 只保留水平 insets，页面滚到底时
+            // 内容不会被导航手势条压住。
+            Spacer(
+                Modifier.height(
+                    12.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                            WindowInsets.captionBar.asPaddingValues().calculateBottomPadding()
+                )
+            )
         }
     }
 

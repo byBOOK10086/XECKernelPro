@@ -17,7 +17,7 @@ fun isPanSharePage(url: String): Boolean {
         Regex("""123\d{3}\.(com|cn)""").containsMatchIn(host)
 }
 
-/** 任意外链的直连下载器：带进度回调、500MB 上限与 zip 头校验。 */
+/** 任意外链的直连下载器：带进度回调、500MB 上限、zip 头校验与一次自动重试。 */
 object RemoteDownloader {
     private const val MAX_FILE_BYTES: Long = 500L * 1024 * 1024
     private const val UA = "Mozilla/5.0 (Linux; Android 16) XECKernelPro/1.0"
@@ -27,9 +27,24 @@ object RemoteDownloader {
         target: File,
         onProgress: (downloaded: Long, total: Long) -> Unit,
     ) {
+        try {
+            downloadOnce(url, target, onProgress)
+        } catch (e: IOException) {
+            // 一次自动重试：移动网络切换、OpenList 中转抖动造成的超时/连接重置
+            // 很常见，不值得让用户手动重来一遍。重试前必须清掉半截文件。
+            target.delete()
+            downloadOnce(url, target, onProgress)
+        }
+    }
+
+    private fun downloadOnce(
+        url: String,
+        target: File,
+        onProgress: (downloaded: Long, total: Long) -> Unit,
+    ) {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 15_000
-        conn.readTimeout = 60_000
+        conn.readTimeout = 120_000
         conn.instanceFollowRedirects = true
         conn.setRequestProperty("User-Agent", UA)
         runCatching {
@@ -61,8 +76,13 @@ object RemoteDownloader {
             }
         }
         target.inputStream().use { ins ->
-            val head = ByteArray(2)
-            if (ins.read(head) != 2 || head[0] != 'P'.code.toByte() || head[1] != 'K'.code.toByte()) {
+            val head = ByteArray(4)
+            val n = ins.read(head)
+            val isZip = n >= 2 && head[0] == 'P'.code.toByte() && head[1] == 'K'.code.toByte()
+            if (!isZip) {
+                if (n >= 1 && (head[0] == '<'.code.toByte() || head[0] == '{'.code.toByte())) {
+                    throw IOException("链接返回的是网页/JSON 而不是文件（需要 zip 的直链）")
+                }
                 throw IOException("下载内容不是 zip（链接指向的可能不是文件本身）")
             }
         }

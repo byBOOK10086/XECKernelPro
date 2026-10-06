@@ -12,14 +12,22 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.add
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateBottomPadding
+import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ErrorOutline
@@ -244,11 +252,15 @@ fun OneTapHideScreen() {
         contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout)
             .only(WindowInsetsSides.Horizontal),
     ) { innerPadding ->
+        // 整页可滚动 + 底部安全区：与远程模块助手页同一修法——
+        // 普通 Column 在日志变长后底部内容不可达。
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 12.dp)
-                .padding(top = innerPadding.calculateTopPadding()),
+                .padding(top = innerPadding.calculateTopPadding())
+                .overScrollVertical()
+                .verticalScroll(rememberScrollState()),
         ) {
             if (done && failedAt == null) {
                 Spacer(Modifier.height(12.dp))
@@ -284,9 +296,12 @@ fun OneTapHideScreen() {
                 )
             }
             Spacer(Modifier.height(12.dp))
+            // 日志卡自限高度：页面可滚动后 fillMaxSize 在无限高约束下失效，
+            // 日志在这块固定视口里滚动。
             Card(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
+                    .heightIn(min = 180.dp, max = 320.dp)
                     .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
                 colors = CardDefaults.defaultColors(color = Color.Transparent),
             ) {
@@ -317,6 +332,12 @@ fun OneTapHideScreen() {
                     }
                 }
             }
+            Spacer(
+                Modifier.height(
+                    12.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                            WindowInsets.captionBar.asPaddingValues().calculateBottomPadding()
+                )
+            )
         }
     }
 }

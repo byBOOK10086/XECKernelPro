@@ -36,6 +36,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.add
@@ -122,6 +124,7 @@ import me.weishu.kernelsu.ui.component.dialog.rememberLoadingDialog
 import me.weishu.kernelsu.ui.component.miuix.SearchBarFake
 import me.weishu.kernelsu.ui.component.miuix.SearchBox
 import me.weishu.kernelsu.ui.component.miuix.SearchPager
+import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.design.token.XcNeon
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
@@ -563,9 +566,12 @@ fun ModulePagerMiuix(
                 contentPadding = contentPadding,
             ) {
                 if (modules.isEmpty()) {
+                    // 空态必须是可滚动容器：PullToRefresh 靠子容器的 nested scroll
+                    // 分发下拉手势，普通 Box 会把手势吞成死区（下拉永远没反应）。
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
                             .padding(
                                 top = innerPadding.calculateTopPadding(),
                                 start = innerPadding.calculateStartPadding(layoutDirection),
@@ -903,8 +909,15 @@ fun ModuleItem(
                     color = glowColor,
                 ),
             )
-            .clip(Xc.shapes.sm)
-            .background(neon.cardBg)
+            // 真液态玻璃卡体：neon.cardBg 作为玻璃介质色（深色 60% 夜蓝、浅色 92% 白，
+            // 经 clearGlass 着色器的 media 模型混合，任何透明度都不会糊死折射）。
+            // rim 关掉——neon 自带一圈动效描边，再叠玻璃亮边就成双层。
+            .xGlassBody(
+                backdrop = null,
+                shape = Xc.shapes.sm,
+                tint = neon.cardBg,
+                rim = false,
+            )
             .border(width = 1.dp, color = borderColor, shape = Xc.shapes.sm)
             .combinedClickable(
                 // 平台标准语义：纹丝不动按住 longPressTimeout（默认 400ms）弹操作面板；
@@ -1033,8 +1046,12 @@ private fun HidePackEntryCard(onClick: () -> Unit) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(Xc.shapes.sm)
-                .background(neon.cardBg)
+                .xGlassBody(
+                    backdrop = null,
+                    shape = Xc.shapes.sm,
+                    tint = neon.cardBg,
+                    rim = false,
+                )
                 .border(width = 1.dp, color = neon.cardBorder, shape = Xc.shapes.sm)
                 .combinedClickable(
                     interactionSource = remember { MutableInteractionSource() },

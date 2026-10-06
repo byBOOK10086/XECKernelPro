@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
@@ -39,6 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.KeyEventBlocker
+import me.weishu.kernelsu.ui.design.glass.xGlassBody
+import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.util.BlurredBar
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
@@ -134,13 +137,16 @@ fun FlashScreenMiuix(
                         scrollState.animateScrollTo(scrollState.maxValue)
                     }
                     Spacer(Modifier.height(innerPadding.calculateTopPadding()))
+                    // 日志压进玻璃卡体：磨砂玻璃垫底后文字跟着主题语义色走
+                    // （浅色档深字 / 深色档浅字），不再固定纯黑。
                     Text(
-                        modifier = Modifier.padding(8.dp),
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .fillMaxWidth()
+                            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.lg)
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
                         text = state.text,
-                        // 刷写日志固定用纯黑：这一屏是叠在浅色壁纸上的玻璃浮层，
-                        // 跟着 LocalContentColor 走会在浅色档变成深灰、在深色档变成亮灰，
-                        // 两种都不如直接压黑来得清楚。
-                        color = Color.Black,
+                        color = Xc.colors.text,
                         fontSize = 12.sp,
                         fontFamily = FontFamily.Monospace,
                     )

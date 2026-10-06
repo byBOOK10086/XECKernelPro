@@ -45,15 +45,28 @@ object RemoteModuleCodec {
      * 解出原始链接列表。以 http 开头的输入按原始链接直接放行（便于直接粘贴，
      * 不走加密串）；`XEC2.` 解出多条链接，`XEC1.` 解出单条；CRC32 不符视为
      * 复制不完整。
+     *
+     * 解码健壮性：加密码本体只可能含 `[A-Za-z0-9._-]`，清洗时把聊天工具夹带的
+     * 全角空格、零宽字符、引号与"来自 xx 的分享"之类装饰**全部**剔除——过去一个
+     * 不可见字符就能让整条码报废；Base64 先按 URL_SAFE 解，失败再退标准字母表，
+     * 兼容旧端用 `+/` 生成的码。
      */
     fun decodeAll(code: String): Result<List<String>> {
-        val cleaned = code.trim()
+        // 纯链接直通：只清普通空白，保住 URL 里的冒号、斜杠等字符
+        val loose = code.trim()
             .replace(" ", "")
             .replace("\n", "")
             .replace("\r", "")
             .replace("\t", "")
-        if (cleaned.startsWith("http", ignoreCase = true)) {
-            return Result.success(listOf(cleaned))
+        if (loose.startsWith("http", ignoreCase = true)) {
+            return Result.success(listOf(loose))
+        }
+        val cleaned = loose.filter {
+            it in 'A'..'Z' || it in 'a'..'z' || it in '0'..'9' ||
+                it == '.' || it == '_' || it == '-' || it == '='
+        }
+        if (cleaned.isEmpty()) {
+            return Result.failure(IllegalArgumentException("unrecognized share code"))
         }
         val prefix = when {
             cleaned.startsWith("$PREFIX_V2.") -> PREFIX_V2
@@ -69,7 +82,11 @@ object RemoteModuleCodec {
         val payload = body.substring(dot + 1)
         val padded = payload + "=".repeat((4 - payload.length % 4) % 4)
         val xored = try {
-            Base64.decode(padded, Base64.URL_SAFE)
+            try {
+                Base64.decode(padded, Base64.URL_SAFE)
+            } catch (first: IllegalArgumentException) {
+                Base64.decode(padded, Base64.DEFAULT)
+            }
         } catch (e: IllegalArgumentException) {
             return Result.failure(IllegalArgumentException("unrecognized share code"))
         }

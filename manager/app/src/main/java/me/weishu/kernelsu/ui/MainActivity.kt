@@ -75,6 +75,7 @@ import me.weishu.kernelsu.ui.component.dialog.LocalXDialogBackdrop
 import me.weishu.kernelsu.ui.component.dialog.LocalXDialogHost
 import me.weishu.kernelsu.ui.component.dialog.XDialogHost
 import me.weishu.kernelsu.ui.component.dialog.XDialogHostState
+import me.weishu.kernelsu.ui.design.clear.LocalWallpaperBackdrop
 import me.weishu.kernelsu.ui.design.liquid.XDropletHost
 import me.weishu.kernelsu.ui.design.token.XcTheme
 import me.weishu.kernelsu.ui.navigation3.IntentDispatcher
@@ -193,11 +194,17 @@ class MainActivity : ComponentActivity() {
                         // 5 个 nav entry（Main / Home / SuperUser / Module / Settings）
                         // 共用的，拿不到任何单独一页的采样源。
                         val dialogBackdrop = rememberBlurBackdrop(uiState.enableBlur)
+                        // 壁纸采样源：挂在下面壁纸 Image 上的独立 backdrop。卡体、按钮、面板
+                        // 都通过 [LocalWallpaperBackdrop] 采它——壁纸的录制子树里只有壁纸，
+                        // 谁采都不会自采样成环（页面级 backdrop 录的是滚动内容，卡体在里面，
+                        // 采它会成环）。跟随同一个 enableBlur 开关，关模糊即全应用退实色档。
+                        val wallpaperBackdrop = rememberBlurBackdrop(uiState.enableBlur)
                         val dialogHostState = remember { XDialogHostState() }
 
                         CompositionLocalProvider(
                             LocalXDialogHost provides dialogHostState,
                             LocalXDialogBackdrop provides dialogBackdrop,
+                            LocalWallpaperBackdrop provides wallpaperBackdrop,
                         ) {
                             XDropletHost {
                                 IntentDispatcher(intentChannel = intentChannel)
@@ -271,7 +278,15 @@ class MainActivity : ComponentActivity() {
                                             if (isManager) R.drawable.bg_lkm_active else R.drawable.bg_not_patched
                                         ),
                                         contentDescription = null,
-                                        modifier = Modifier.fillMaxSize(),
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .then(
+                                                if (wallpaperBackdrop != null) {
+                                                    Modifier.layerBackdrop(wallpaperBackdrop)
+                                                } else {
+                                                    Modifier
+                                                }
+                                            ),
                                         contentScale = ContentScale.Crop,
                                     )
                                     Scaffold(containerColor = Color.Transparent) {

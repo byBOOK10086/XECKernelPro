@@ -13,6 +13,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -389,9 +391,12 @@ fun ModuleRepoScreenMiuix(
                 ),
             ) {
                 if (!contentReady || isLoading) {
+                    // 空态必须是可滚动容器：PullToRefresh 靠子容器的 nested scroll
+                    // 分发下拉手势，普通 Box 会把手势吞成死区（下拉永远没反应）。
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
                             .padding(
                                 top = innerPadding.calculateTopPadding(),
                                 start = innerPadding.calculateStartPadding(layoutDirection),

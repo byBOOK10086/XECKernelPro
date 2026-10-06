@@ -14,7 +14,6 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,7 +38,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -66,6 +64,7 @@ import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
 import me.weishu.kernelsu.ui.component.SearchStatus
+import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.liquid.xWaterDropClick
 import me.weishu.kernelsu.ui.design.token.XcRadius
 import top.yukonga.miuix.kmp.basic.Icon
@@ -165,8 +164,10 @@ fun SearchStatus.SearchPager(
                         // The expanded input and its result layer share one frame.
                         // Round all corners so the frame encloses the whole search header.
                         Modifier
-                            .clip(RoundedCornerShape(XcRadius.xl))
-                            .background(colorScheme.surface)
+                            .xGlassBody(
+                                backdrop = null,
+                                shape = RoundedCornerShape(XcRadius.xl),
+                            )
                     } else Modifier
                 ),
             horizontalArrangement = Arrangement.Start,
@@ -271,7 +272,12 @@ fun SearchBar(
             .padding(horizontal = 12.dp)
             .padding(top = searchBarTopPadding, bottom = 6.dp)
             .heightIn(min = 45.dp)
-            .background(colorScheme.surfaceContainerHigh, CircleShape)
+            .xGlassBody(
+                backdrop = null,
+                shape = CircleShape,
+                // 输入胶囊压在头部玻璃上，介质色比头部重一档才分得出层次
+                tint = colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
+            )
             .focusRequester(focusRequester),
         decorationBox = { innerTextField ->
             Row(

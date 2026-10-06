@@ -215,7 +215,10 @@ private fun KpmStatusCardMiuix(uiState: KpmUiState) {
         stringResource(R.string.kpm_not_activated_hint)
     }
 
-    Card {
+    Card(
+        modifier = Modifier.xGlassBody(backdrop = null, shape = Xc.shapes.md),
+        colors = CardDefaults.defaultColors(color = Color.Transparent),
+    ) {
         BasicComponent(
             title = title,
             summary = summary,
@@ -232,7 +235,10 @@ private fun KpmStatusCardMiuix(uiState: KpmUiState) {
 
 @Composable
 private fun KpmModuleListMiuix(modules: List<String>) {
-    Card {
+    Card(
+        modifier = Modifier.xGlassBody(backdrop = null, shape = Xc.shapes.md),
+        colors = CardDefaults.defaultColors(color = Color.Transparent),
+    ) {
         Column {
             if (modules.isEmpty()) {
                 BasicComponent(
