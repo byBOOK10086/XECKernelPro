@@ -128,8 +128,12 @@ endif
 
 # Calculate version if git version is available
 ifdef KSU_GIT_VERSION_VALID
-# ksu_version: major * 10000 + git version + 200 for historical reasons
-$(eval KSU_VERSION=$(shell expr 30000 + $(KSU_GIT_VERSION)))
+# ksu_version: 31000 + git commit count. The base MUST match the manager's
+# versionCode (manager/build.gradle.kts uses the same 31000 base): the home
+# screen compares the kernel version against the manager version to decide
+# whether the bundled LKM is up to date. Bases 30000 vs 31000 made that
+# comparison fail forever, so the update prompt never cleared.
+$(eval KSU_VERSION=$(shell expr 31000 + $(KSU_GIT_VERSION)))
 $(info -- KernelSU version: $(KSU_VERSION))
 ccflags-y += -DKSU_VERSION=$(KSU_VERSION)
 ccflags-y += -DKSU_VERSION_FULL=\"XECKernelPro-$(KSU_VERSION)\"

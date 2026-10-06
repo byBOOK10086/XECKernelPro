@@ -39,7 +39,7 @@
  * MIN_KSU_VERSION (10940) as "TooOld", and older builds of the ZN/ReZygisk
  * lineage also rejected anything above MAX_KSU_VERSION (20000) as "Abnormal",
  * which disables every feature including the denylist. This fork reports
- * >= 30000 natively, so KSU_COMPAT_REPORTED_VERSION - shared with the ioctl
+ * >= 31000 natively, so KSU_COMPAT_REPORTED_VERSION - shared with the ioctl
  * path so both interfaces agree - clamps it into a window both generations
  * accept. See the definition in uapi/supercall.h for the full rationale.
  */

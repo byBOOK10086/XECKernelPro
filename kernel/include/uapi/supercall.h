@@ -22,7 +22,7 @@ static const __u32 KERNEL_SU_UAPI_VERSION = 4;
  * classified anything above it as "Abnormal" - in which case *every* feature,
  * the denylist included, is silently disabled.
  *
- * This fork reports KERNEL_SU_VERSION >= 30000, far above the legacy upper
+ * This fork reports KERNEL_SU_VERSION >= 31000, far above the legacy upper
  * bound, so the externally visible version is clamped into the window that
  * both generations accept. Current builds no longer enforce an upper bound, so
  * 11999 is deliberately conservative: it satisfies the lower bound and stays

@@ -24,7 +24,10 @@ object Natives {
     // 32336: new set_sepolicy ioctl
     // 32377: add set_init_pgrp ioctl
     // 32513: add uapi version
-    const val MINIMAL_SUPPORTED_KERNEL = 32513
+    // 31000: XECKernelPro version base (kernel/Kbuild; matches the manager
+    // versionCode base). The old 32513 predated the base migration and no
+    // kernel of this repository can ever report it.
+    const val MINIMAL_SUPPORTED_KERNEL = 31000
 
     const val KERNEL_SU_DOMAIN = "u:r:ksu:s0"
 
