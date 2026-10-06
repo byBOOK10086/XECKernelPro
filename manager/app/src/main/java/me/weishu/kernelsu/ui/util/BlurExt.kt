@@ -8,7 +8,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import me.weishu.kernelsu.ui.design.glass.XGlassBar
+import me.weishu.kernelsu.ui.design.clear.ClearGlassBar
+import me.weishu.kernelsu.ui.design.liquid.xJellyBar
 import me.weishu.kernelsu.ui.design.token.Xc
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
@@ -36,24 +37,26 @@ fun rememberBlurBackdrop(enableBlur: Boolean): LayerBackdrop? {
 /**
  * 全局玻璃栏（顶栏 / 底栏 / 导航轨的内容底）。
  *
- * 现在只是 [XGlassBar] 的一层薄包装——玻璃画法、圆角取值、三档降级
- * 全部由 `ui/design/glass` 一处说了算（见 `XGlassSurface` 的 KDoc）。
- * 这里只保留两件壳层语义：
+ * 现在是 [ClearGlassBar]（透明液态玻璃）加果冻过渡（[xJellyBar]）的一层薄包装——
+ * 玻璃画法、圆角取值、三档降级全部由 `ui/design/clear` 一处说了算
+ * （见 `ClearGlassSurface` 的 KDoc）。这里只保留三件壳层语义：
  *
  * 1. **全宽**：贴满可用宽度。
  * 2. **悬浮内缩** [inset]：左右缩进，让圆角露出来，形成一条悬浮的玻璃条，
  *    而不是贴边的色块。这也是"每个方形框角都要圆滑"在顶/底栏上的落点。
+ * 3. **果冻过渡**：栏体高度随大标题折叠/展开变化时，按变化速度压扁/拉伸，
+ *    欠阻尼弹簧回弹——iOS 式的果冻过渡。
  *
  * 历史坑（不要再犯）：这里曾经传 `RectangleShape`。除了四角是直角，它还让
  * miuix 的 `lens()` 静默失效（`Lens.kt` 里 `shape as? CornerBasedShape ?: return`），
  * 也就是过去的「液态玻璃」其实只有模糊、从来没有折射。现在默认取
- * `Xc.shapes.bar`，并且裁剪切由 `XGlassSurface` 排在绘制**之后**，
+ * `Xc.shapes.bar`，并且裁剪切由 `ClearGlassSurface` 排在绘制**之后**，
  * 不会把折射所需的外扩取样区一起裁掉。
  *
  * @param blurActive 为 `false`（用户关掉模糊、或设备不支持模糊）时玻璃层退化为不透明底色
  *   + 1dp 渐变描边，依旧不是直角色块，也不会让栏体变成半透明。
- * @param tint 有模糊时的玻璃上覆色。默认取当前明暗档的 [Xc.colors]，需要一根"固定配色"的栏
- *   （例：首页顶栏的白毛玻璃）时在调用点覆盖。
+ * @param tint 有模糊时的玻璃本体染色。默认 [Color.Transparent] —— 透明玻璃不上色，
+ *   可读性由着色器内的亮度自适应层负责；需要有色玻璃时在调用点覆盖。
  * @param solidTint 不能模糊时的不透明底色。默认取 `surface` 实色 —— 与调用方原本自己画的
  *   `barColor` 完全一致，叠加后看不出差别；覆盖 [tint] 时通常也要一并覆盖它，
  *   否则玻璃是白的、关掉模糊后又变回深色。
@@ -73,11 +76,12 @@ fun BlurredBar(
     // 所以只有「真的能模糊」时才用玻璃上覆色；其余情况由玻璃层提供一个不透明底，
     // 取 `surface` 的实色正好等于调用方原本自己画的 barColor，叠加后完全一致。
     val glassOn = blurActive && backdrop != null
-    XGlassBar(
+    ClearGlassBar(
         backdrop = backdrop,
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = inset),
+            .padding(horizontal = inset)
+            .xJellyBar(),
         shape = shape,
         tint = if (glassOn) tint else solidTint,
         glassEnabled = glassOn,

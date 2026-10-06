@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
+import me.weishu.kernelsu.ui.design.clear.ClearGlassSurface
 import me.weishu.kernelsu.ui.design.token.Xc
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 
@@ -135,14 +136,13 @@ fun XGlassDialog(
                 ),
                 exit = fadeOut(animationSpec = tween(durationMillis = 120)),
             ) {
-                XGlassSurface(
+                ClearGlassSurface(
                     backdrop = backdrop,
                     modifier = Modifier
                         .padding(horizontal = 24.dp)
                         .widthIn(max = maxWidth)
                         .heightIn(max = panelMaxHeight),
                     shape = shape,
-                    tint = Xc.colors.glassTint,
                     blurRadius = 12.dp,
                     refraction = 26.dp,
                 ) {
