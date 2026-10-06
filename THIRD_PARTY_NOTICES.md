@@ -10,6 +10,22 @@
 - **android_bootimg** — https://github.com/5ec1cff/android_bootimg （boot 镜像解析库，许可证以上游仓库为准）
 - **AnyKernel3**（osm0sis 原作；GKI 配方参考 WildKernels 维护分支）— https://github.com/osm0sis/AnyKernel3 （GPL-2.0）
 
+### KernelSU 上游致谢（原样转引）
+
+以下条目原样转引自上游 tiann/KernelSU 的 README「Credits」节（`docs/README.md` @ main，
+2026-10-06 取）。它们是 KernelSU 的灵感与能力来源，也是本项目的间接上游，感谢原作者：
+
+- [Kernel-Assisted Superuser](https://git.zx2c4.com/kernel-assisted-superuser/about/): The KernelSU idea.
+- [Magisk](https://github.com/topjohnwu/Magisk): The powerful root tool.
+- [genuine](https://github.com/brevent/genuine/): APK v2 signature validation.
+- [Diamorphine](https://github.com/m0nad/Diamorphine): Some rootkit skills.
+
+### 管理器透明玻璃（XEC Clear Glass）
+
+`ui/design/clear/` 下的透明液态玻璃着色器与组件为本项目原创（AGSL 手写）；
+观感参考 Apple iOS 26 Liquid Glass 设计语言（仅设计参考，未引用代码），
+玻璃管线宿主 API 为 miuix-blur（见「其他」节）。
+
 ## 内置模块（随管理器核心 xudc 内嵌分发，`userspace/ksud/builtin/`）
 
 | 模块目录 | 上游 | 作者 | 许可证 |

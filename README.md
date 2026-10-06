@@ -13,6 +13,15 @@
 
 感谢 KernelSU 及其社区的上游工作。`docs/` 内保留了上游 KernelSU 的原版 README（含 tiann/KernelSU 链接），一并作为归属声明。
 
+### 上游致谢（转引自 KernelSU README「Credits」）
+
+以下条目原样转引自 tiann/KernelSU 的 `docs/README.md`「Credits」节（main 分支，2026-10-06 取）：
+
+- [Kernel-Assisted Superuser](https://git.zx2c4.com/kernel-assisted-superuser/about/): The KernelSU idea.
+- [Magisk](https://github.com/topjohnwu/Magisk): The powerful root tool.
+- [genuine](https://github.com/brevent/genuine/): APK v2 signature validation.
+- [Diamorphine](https://github.com/m0nad/Diamorphine): Some rootkit skills.
+
 第三方组件与内置/分发模块的完整致谢与许可证清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；应用内「关于 → 开发者名单 → 致谢」同样列有上游致谢。
 
 ## 构建

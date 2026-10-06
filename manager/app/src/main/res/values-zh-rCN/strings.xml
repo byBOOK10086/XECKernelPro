@@ -112,7 +112,7 @@
     <string name="reboot_to_apply">重启生效</string>
     <string name="module_magisk_conflict">因与 Magisk 有冲突，所有模块不可用！</string>
     <string name="home_learn_kernelsu">了解 XECKernel Pro</string>
-    <string name="home_learn_kernelsu_url">https://github.com/byBOOK10086/xecpro</string>
+    <string name="home_learn_kernelsu_url">https://github.com/byBOOK10086/XECKernelPro</string>
     <string name="home_click_to_learn_kernelsu">了解如何安装 XECKernel Pro 以及如何开发模块</string>
     <string name="home_support_title">开发者名单</string>
     <string name="home_support_content">项目开发者及贡献者名单（官方公示）</string>

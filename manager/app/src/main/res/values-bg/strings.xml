@@ -47,7 +47,7 @@
     <string name="reboot_to_apply">Рестартирай за да приеме ефект</string>
     <string name="module_magisk_conflict">Модулите не са налични поради конфликт с Magisk!</string>
     <string name="home_learn_kernelsu">Научи XECKernel Pro</string>
-    <string name="home_learn_kernelsu_url">https://github.com/byBOOK10086/xecpro</string>
+    <string name="home_learn_kernelsu_url">https://github.com/byBOOK10086/XECKernelPro</string>
     <string name="home_click_to_learn_kernelsu">Научи как да изтеглите XECKernel Pro и да използвате модули.</string>
     <string name="home_support_title">Помогнете Ни</string>
     <string name="home_support_content">XECKernel Pro си е, и винаги ще е безплатен, и с отворен код. Обаче, можете да ни покажете че се интересувате като ни направите дарение.</string>

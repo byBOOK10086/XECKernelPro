@@ -77,7 +77,7 @@
     <string name="reboot_to_apply">Mulai ulang untuk menerapkan</string>
     <string name="module_magisk_conflict">Modul tidak tersedia karena konflik dengan Magisk!</string>
     <string name="home_learn_kernelsu">Pelajari XECKernel Pro</string>
-    <string name="home_learn_kernelsu_url">https://github.com/byBOOK10086/xecpro</string>
+    <string name="home_learn_kernelsu_url">https://github.com/byBOOK10086/XECKernelPro</string>
     <string name="home_click_to_learn_kernelsu">Pelajari cara memasang XECKernel Pro dan menggunakan modul</string>
     <string name="home_support_title">Dukung Kami</string>
     <string name="home_support_content">XECKernel Pro gratis dan sumber terbuka, sekarang dan selamanya. Namun, Anda dapat menunjukkan kepedulian Anda kepada kami dengan memberikan donasi.</string>

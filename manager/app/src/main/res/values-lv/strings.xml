@@ -43,7 +43,7 @@
     <string name="send_log">Sūtīt žurnālus</string>
     <string name="reboot_to_apply">Restartējiet, lai stātos spēkā</string>
     <string name="home_learn_kernelsu">Uzzināt par XECKernel Pro</string>
-    <string name="home_learn_kernelsu_url">https://github.com/byBOOK10086/xecpro</string>
+    <string name="home_learn_kernelsu_url">https://github.com/byBOOK10086/XECKernelPro</string>
     <string name="home_click_to_learn_kernelsu">Uzzināt, kā instalēt XECKernel Pro un izmantot moduļus</string>
     <string name="home_support_title">Atbalsti mūs</string>
     <string name="about_source_code">Skatiet avota kodu vietnē %1$s<br/> Pievienojies mūsu %2$s kanālam</string>

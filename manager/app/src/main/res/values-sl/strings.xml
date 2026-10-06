@@ -25,7 +25,7 @@
     <string name="module_author">Avtor</string>
     <string name="send_log">Prijavite dnevnik</string>
     <string name="home_learn_kernelsu">Naučite se XECKernel Pro</string>
-    <string name="home_learn_kernelsu_url">https://github.com/byBOOK10086/xecpro</string>
+    <string name="home_learn_kernelsu_url">https://github.com/byBOOK10086/XECKernelPro</string>
     <string name="home_click_to_learn_kernelsu">Naučite se, kako namestiti XECKernel Pro in uporabiti module</string>
     <string name="about_source_code">Glej odprto kodo na %1$s<br/>Pridružite se našem %2$s kanalu</string>
     <string name="profile_default">Privzeto</string>

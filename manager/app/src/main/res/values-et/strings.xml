@@ -16,7 +16,7 @@
     <string name="safe_mode">Turvarežiim</string>
     <string name="reboot_to_apply">Muudatuste rakendamiseks taaskäivita</string>
     <string name="home_learn_kernelsu">Õpi XECKernel Prod</string>
-    <string name="home_learn_kernelsu_url">https://github.com/byBOOK10086/xecpro</string>
+    <string name="home_learn_kernelsu_url">https://github.com/byBOOK10086/XECKernelPro</string>
     <string name="profile_default">Vaikimisi</string>
     <string name="profile_namespace">Haagi nimeruum</string>
     <string name="profile_umount_modules">Lahtihaagitud moodulid</string>
