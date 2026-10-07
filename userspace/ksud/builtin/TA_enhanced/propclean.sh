@@ -1,4 +1,6 @@
 #!/bin/sh
+# 修改版（GPL-3.0 §5(a)）：本文件由 XECKernel Pro 修改，非上游原样；改动清单与日期见
+# 同目录 NOTICE.md「本地修改」。上游：Enginex0/tricky-addon-enhanced（GPL-3.0）。
 # propclean.sh - Post-boot property cleanup via hexpatch + partition normalization
 # Runs after boot completion. Called by service.sh and periodically by Rust daemon.
 # Techniques adapted from silvzr/sensitive-props-crontabs.

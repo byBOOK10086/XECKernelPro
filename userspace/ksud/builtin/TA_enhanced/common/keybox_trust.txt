@@ -1,0 +1,32 @@
+# 可信 keybox 证书指纹表（GPL-3.0，本项目整理，2026-10-08）
+# ============================================================================
+# 每行一个 sha256；比对对象是"规范化后的 PEM 证书体"：
+#   把 keybox.xml 里 <Certificate format="pem"> 的内容去掉全部空白字符（含换行）
+#   与 BEGIN/END 标记之后，对剩下的 base64 字符串本身取 sha256。
+#   base64 体只由 DER 决定（换行位置不影响），所以无论镜像怎么重新排版都能命中。
+# 解析实现见同目录 keybox.sh::kb_cert_hashes / kb_trust_level。
+#
+# 命中的意义：这个 keybox 的证书链里**包含**下面这些 Google Hardware Attestation
+# 根/中间证书——也就是说它不是自签/伪造链（自签链在严格校验的检测方面前等于没有
+# TEE）。注意这一层是"证书在不在链里"的指纹比对，不是密码学验证；链上的签名关系
+# 由引擎与检测方在运行时验证。
+# 出厂那份 yurikey 盒子另做过一次私钥↔证书公钥一致性复核（结论：EC 与 RSA 两把
+# 私钥的公钥部分都等于链首证书的 SPKI，且链首由中间证书签发、中间证书由根签发），
+# 复核脚本与完整输出见交接文档 —— "指纹命中" + "私钥一致" 才等于可信密钥。
+# 未命中不代表内容非法：仍然按"结构合法"接受（可信级别 1），只是日志会标注。
+#
+# 下面三个指纹来自当前设备端已部署的 yurikey 盒子（DeviceID="Yurikey58"），
+# 用 scripts 里的解析脚本从 PEM 体直接算出，可复核：
+#   Google Hardware Attestation Root（自签，subject=issuer=serialNumber f92009e853b6b045，
+#     有效期 2019-11-22 ~ 2034-11-18，RSA-4096；EC 链与 RSA 链共用这一张）
+5be402bf9aa353b635a748a9e017de182c02e030a2e274fe3100435ee031c5ff
+#   Google Hardware Attestation 中间证书（EC 链；subject OU=TEE serialNumber 70912df46104faae947864e5804f1f8d0，
+#     有效期 2020-09-28 ~ 2030-09-26）
+e68f322a3da6640faa0b411f740cc6dacd33f69a250bbed09d2b6fb76efd3387
+#   Google Hardware Attestation 中间证书（RSA 链；同上 subject，密钥不同）
+d89d90d070e71ca96a044f8d5380956dee2e7ac2fc016110a6827419b88945ff
+#
+# 注意：
+#   * 本文件**不能有空行**语义依赖（解析时会清掉空行与 # 行），但仍按惯例不留空行。
+#   * 中间证书会随 Google 轮换而变；变了的后果只是"降级为级别 1"，不会拒绝安装。
+#     要恢复级别 0，只需把新中间证书的规范化 sha256 追加到本文件。

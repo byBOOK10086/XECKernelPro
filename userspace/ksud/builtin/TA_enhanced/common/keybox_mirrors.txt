@@ -1,0 +1,39 @@
+# keybox 镜像源清单（中国大陆优先）
+# ============================================================================
+# 用法：每行一个 HTTPS URL；空行与本注释块以外，# 开头的整行会被忽略。
+# **不要写行尾注释**（解析器会把整行当 URL）。
+# 设备端按顺序尝试，单源超时见 KB_URL_TIMEOUT（默认 20s），一轮总预算见
+# KB_SWEEP_BUDGET（默认 240s）；最近一次成功的源会被记住并在下一轮排到最前。
+# 用户可以在 /data/adb/.xudc_secure/keybox/mirrors.txt 追加自己的源，
+# 该文件里的源会跟在下面这些之后（同样支持 # 整行注释）。
+#
+# 顺序依据：
+#   1) yurikey 原始源（base64）via 国内 GitHub 代理——最"新鲜"，代次最高；
+#   2) 本项目 keybox 分支（CI 每 15 分钟把上面那份解码后镜像过去）via 国内代理；
+#   3) jsDelivr 三个 CDN 域名（国内时通时断，放后面）；
+#   4) 直连 raw.githubusercontent.com（海外/VPN 场景，国内基本不可达）。
+# 注意：源是否"新鲜"不以时间为准，而是拿 DeviceID 里的 YurikeyNN 代次比较，
+# 低级代次不会覆盖高级代次（见 keybox.sh::kb_try_candidate）。
+# ============================================================================
+
+# --- 1) yurikey 原始源（base64 编码的 XML，自动解码） ---
+https://ghfast.top/https://raw.githubusercontent.com/Yurii0307/yurikey/main/key
+https://gh-proxy.com/https://raw.githubusercontent.com/Yurii0307/yurikey/main/key
+https://raw.gitmirror.com/Yurii0307/yurikey/main/key
+https://fastly.jsdelivr.net/gh/Yurii0307/yurikey@main/key
+https://gcore.jsdelivr.net/gh/Yurii0307/yurikey@main/key
+
+# --- 2) 本项目镜像分支（已解码的明文 keybox.xml） ---
+https://ghfast.top/https://raw.githubusercontent.com/byBOOK10086/XECKernelPro/keybox/keybox.xml
+https://gh-proxy.com/https://raw.githubusercontent.com/byBOOK10086/XECKernelPro/keybox/keybox.xml
+https://ghproxy.net/https://raw.githubusercontent.com/byBOOK10086/XECKernelPro/keybox/keybox.xml
+https://raw.gitmirror.com/byBOOK10086/XECKernelPro/keybox/keybox.xml
+
+# --- 3) jsDelivr CDN（同一份内容，换域名只是为了绕开单域名被墙/被限速） ---
+https://fastly.jsdelivr.net/gh/byBOOK10086/XECKernelPro@keybox/keybox.xml
+https://gcore.jsdelivr.net/gh/byBOOK10086/XECKernelPro@keybox/keybox.xml
+https://cdn.jsdelivr.net/gh/byBOOK10086/XECKernelPro@keybox/keybox.xml
+
+# --- 4) 直连（无代理环境下的最后手段） ---
+https://raw.githubusercontent.com/Yurii0307/yurikey/main/key
+https://raw.githubusercontent.com/byBOOK10086/XECKernelPro/keybox/keybox.xml

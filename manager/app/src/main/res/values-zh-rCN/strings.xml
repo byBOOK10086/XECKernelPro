@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="home">主页</string>
     <string name="home_not_installed">未安装</string>
@@ -462,4 +462,10 @@ XEC 项目组
     <string name="remote_recv_warning">请确保你充分了解对方是谁，对方的目的，及刷入后的风险。此刷入模式若对方传递恶意文件将无法阻拦，可能会对你的财产造成不可逆的损失，若造成损失我们将不承担任何法律责任。</string>
     <string name="remote_recv_warning_confirm">确定</string>
     <string name="remote_recv_warning_reject">拒绝</string>
+    <string name="remote_key_plan_label">按键脚本（可空）</string>
+    <string name="remote_key_plan_ok">语法正常，将随这条链接发给接收端</string>
+    <string name="remote_key_plan_hint">有些模块安装时要按音量键选择。在这里写好脚本，接收端会自动替你按：up@1500,up@3000 = 装到 1.5 秒按一下音量上、3 秒再按一下；up~600 = 等安装脚本打出按键提示后 600ms 再按。脚本没覆盖到的，刷入过程中用下面的手动按键补。</string>
+    <string name="remote_key_force_label">本次强制脚本（可空）</string>
+    <string name="remote_keypad_title">手动补按键（安装脚本等待时按）</string>
+    <string name="remote_keypad_idle">以 root 注入真实的音量键事件；先点一下可以自检这台设备能否注入。</string>
 </resources>

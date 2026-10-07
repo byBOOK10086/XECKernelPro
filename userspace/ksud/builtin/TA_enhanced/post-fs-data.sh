@@ -1,3 +1,5 @@
+# 修改版（GPL-3.0 §5(a)）：本文件由 XECKernel Pro 修改，非上游原样；改动清单与日期见
+# 同目录 NOTICE.md「本地修改」。上游：Enginex0/tricky-addon-enhanced（GPL-3.0）。
 MODPATH=${0%/*}
 TS="/dev/.xudc_hidden/tricky_store"
 LOG_BASE_DIR="/data/adb/.xudc_secure/ta-enhanced/logs"
@@ -58,5 +60,28 @@ fi
 echo "MANAGER=$MANAGER" > "$MODPATH/common/manager.sh"
 chmod 755 "$MODPATH/common/manager.sh"
 _pfd_log "Root manager detected: $MANAGER"
+
+# ---------------------------------------------------------------------------
+# bootloader 回锁态：在**第一个能写属性的时机**就落笔
+# ---------------------------------------------------------------------------
+# 这是本阶段存在的唯一理由：LKM 模式下这些属性是 bootloader 原样上报的
+# （verifiedbootstate=orange / flash.locked=0），而检测方在开机后任意时刻都可能
+# 读它们。原实现放在 service 阶段、并且要先等 sys.boot_completed，等于把整个
+# 开机过程都暴露成"已解锁"。这里提前写一次，service 阶段（prop.sh）再写一次，
+# 之后由 service.sh 启动的看护循环持续兜底。
+if [ -f "$MODPATH/common/bootstate.sh" ]; then
+    MODDIR="$MODPATH"
+    mkdir -p "$LOG_BASE_DIR" 2>/dev/null
+    . "$MODPATH/common/common.sh"
+    . "$MODPATH/common/bootstate.sh"
+    _PROP_SPOOF_COUNT=0
+    _PROP_FAIL_COUNT=0
+    _pfd_log "boot-state spoof (early) starting"
+    bootstate_spoof_lock
+    _pfd_log "boot-state spoof (early) done: $_PROP_SPOOF_COUNT spoofed, $_PROP_FAIL_COUNT failed"
+    _pfd_log "early boot-state: device_state=$(getprop ro.boot.vbmeta.device_state) verifiedboot=$(getprop ro.boot.verifiedbootstate) flash.locked=$(getprop ro.boot.flash.locked)"
+else
+    _pfd_log "common/bootstate.sh missing - early boot-state spoof skipped"
+fi
 
 _pfd_log "post-fs-data completed"

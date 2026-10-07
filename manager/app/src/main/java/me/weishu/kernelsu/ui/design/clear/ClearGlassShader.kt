@@ -26,6 +26,28 @@ private const val CLEAR_GLASS_LIGHT_X = 0.6f
 private const val CLEAR_GLASS_LIGHT_Y = 0.8f
 
 /**
+ * 玻璃的底噪（颗粒）幅度：5%。
+ *
+ * 用户点名要的一档。数学上完美的介质在屏幕上会读成"塑料贴膜"——尤其大面积
+ * 透明玻璃，折射再准也没有材质感。5% 的静态颗粒把"这是一块材料"这件事补上，
+ * 同时和果冻感（回弹时的软）配对：颗粒给材质、弹簧给触感。
+ *
+ * 取值是**峰值**：着色器里按 `(hash - 0.5) * 2 * noise` 施加，所以实际是
+ * ±0.05 的亮度扰动，肉眼刚好可辨、不会脏。用坐标哈希而不是时间哈希，
+ * 颗粒在滚动/惯性滚动时**不闪**。
+ */
+private const val CLEAR_GLASS_NOISE = 0.05f
+
+/** 斜面带宽最多占表面短边的比例：收起的顶栏（52dp）因此不会被斜面吃满。 */
+private const val COMPACT_BEVEL_RATIO = 0.42f
+
+/** 短边小于这个值（px）就算"紧凑表面"，补一档边缘光。约等于 96dp@2.75x。 */
+private const val COMPACT_SHORT_SIDE_PX = 264f
+
+/** 紧凑表面的边缘光倍率。 */
+private const val COMPACT_SPECULAR_BOOST = 1.35f
+
+/**
  * 本着色器能否被当前设备的 AGSL 编译器接受。
  *
  * AGSL 编译失败不会在注册 effect 时抛出，而是拖到渲染线程真正绘制那一帧；
@@ -52,6 +74,7 @@ private val clearShaderUsable: Boolean by lazy {
  * @param adaptive 亮度自适应开关：亮背景上局部压暗、暗背景上局部提亮，
  *   保证玻璃跨明暗内容时文字始终可读。
  * @param specular 边缘高光强度倍率。
+ * @param noise 底噪（颗粒）峰值幅度，默认 [CLEAR_GLASS_NOISE]。传 0 关掉颗粒。
  */
 internal fun BackdropEffectScope.clearGlass(
     refraction: Float,
@@ -59,6 +82,7 @@ internal fun BackdropEffectScope.clearGlass(
     tint: Color,
     adaptive: Boolean = true,
     specular: Float = 1f,
+    noise: Float = CLEAR_GLASS_NOISE,
 ) {
     if (!isRuntimeShaderSupported()) return
     if (!clearShaderUsable) return
@@ -79,8 +103,28 @@ internal fun BackdropEffectScope.clearGlass(
     val scaledW = size.width / sf
     val scaledH = size.height / sf
     val scaledRadii = FloatArray(radii.size) { radii[it] / sf }
-    val scaledRefraction = refraction / sf
-    val scaledBevel = bevel / sf
+
+    // --- 短边自适应：收起的顶栏为什么"不像玻璃" ---
+    //
+    // 折叠后的顶栏只有 52dp 高，而斜面固定 28dp ⇒ 整条栏都是斜面，没有一段
+    // 平的中段：远看就是"上下两道亮边的半透明条"，而不是一块玻璃。展开态
+    // （大标题，100dp 以上）斜面只占上下两成，中间那截才是读作玻璃的部分。
+    //
+    // 所以斜面与折射量都必须跟着短边走：斜面最多占短边的 42%，折射位移不超过
+    // 斜面的 1.25 倍。大卡片/面板（短边 ≥ 130dp）永远取不到这组上限，观感与
+    // 改动前逐像素一致；只有窄条（收起的顶栏、药丸按钮）会真正被钳到。
+    val shortSidePx = size.minDimension
+    val bevelLimit = shortSidePx * COMPACT_BEVEL_RATIO
+    val effectiveBevel = bevel.coerceAtMost(bevelLimit)
+    val effectiveRefraction = refraction.coerceAtMost(effectiveBevel * 1.25f)
+
+    // 紧凑表面再加一档边缘光：短边小的时候菲涅尔亮边是"这是玻璃"的主要线索，
+    // 光靠折射（位移量已经被钳小）撑不住材质感。
+    val effectiveSpecular =
+        if (shortSidePx < COMPACT_SHORT_SIDE_PX) specular * COMPACT_SPECULAR_BOOST else specular
+
+    val scaledRefraction = effectiveRefraction / sf
+    val scaledBevel = effectiveBevel / sf
     val tintComponents = floatArrayOf(tint.red, tint.green, tint.blue, tint.alpha)
     runCatching {
         runtimeShaderEffect(
@@ -96,7 +140,8 @@ internal fun BackdropEffectScope.clearGlass(
             setFloatUniform("bevel", scaledBevel)
             setFloatUniform("tint", tintComponents)
             setFloatUniform("adaptive", if (adaptive) 1f else 0f)
-            setFloatUniform("specular", specular)
+            setFloatUniform("specular", effectiveSpecular)
+            setFloatUniform("noise", noise)
             setFloatUniform("light", CLEAR_GLASS_LIGHT_X, CLEAR_GLASS_LIGHT_Y)
         }
     }
@@ -136,12 +181,21 @@ uniform float  bevel;
 uniform float4 tint;
 uniform float  adaptive;
 uniform float  specular;
+uniform float  noise;
 uniform float2 light;
 
 float sdBox4(float2 p, float2 b, float4 r) {
     float rx = (p.x > 0.0) ? ((p.y > 0.0) ? r.z : r.y) : ((p.y > 0.0) ? r.w : r.x);
     float2 q = abs(p) - b + rx;
     return length(max(q, float2(0.0))) + min(max(q.x, q.y), 0.0) - rx;
+}
+
+// 静态哈希：底噪按像素坐标取，不随时间变化——玻璃在滚动/惯性滚动时颗粒不闪，
+// 否则那层 5% 的底噪会变成一片噪点在动，比没有颗粒更糟。
+float hash21(float2 p) {
+    p = fract(p * float2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
 }
 
 float sdf(float2 local) {
@@ -175,21 +229,26 @@ half4 main(float2 coord) {
         n = float2(0.0, -1.0);
     }
 
-    // 厚度剖面：t=1 在玻璃深处，t=0 在边缘。1.5 次幂剖面——比二次斜面"胖"得多
-    // （t=0.5 处仍有 0.35 的位移量，二次只剩 0.25），边缘弯折带更宽更有存在感，
-    // 这是"厚玻璃"读感的来源；过窄的弯折带只会让玻璃看起来像一坨软凝胶。
+    // 厚度剖面：t=1 在玻璃深处，t=0 在边缘。
+    //
+    // 主项的幂从 1.5 收到 1.15：幂越小，中段位移越大 —— 同一段斜面里玻璃"弯"
+    // 得更狠，折射角更高，这是"更厚的玻璃"在着色器里的直接旋钮。
+    // 第二项是贴边 14% 宽度内的窄棱面：它把最外圈的位移再抬高约 28%，形成一条
+    // 清晰的折线（切面感），而不是从边缘到内部一路圆滑过渡的软凝胶。
     float t = clamp(-d / max(bevel, 1.0), 0.0, 1.0);
-    float slope = pow(1.0 - t, 1.5);
+    float slope = pow(1.0 - t, 1.15) + 0.28 * pow(1.0 - min(t / 0.14, 1.0), 2.0);
 
     // 折射：沿法线向内采样（iOS 一致的内侧压缩镜像）
     float2 offs = -n * (slope * refraction);
 
-    // 轻微色散：蓝光弯得比红光多，只在边缘斜面带内可见（中部 slope≈0 三通道重合）
+    // 轻微色散：蓝光弯得比红光多，只在边缘斜面带内可见（中部 slope≈0 三通道重合）。
+    // 折射角抬高之后色散带更宽，这里保持比例（±6%/±9%），比原来各多一档，
+    // 玻璃的"彩虹边"因此更明显一点，但仍在"看得见但不脏"的范围内。
     float2 lo = float2(margin + 0.5, margin + 0.5);
     float2 hi = float2(margin + size.x - 1.5, margin + size.y - 1.5);
-    float2 pR = clamp(coord + offs * 0.94, lo, hi);
+    float2 pR = clamp(coord + offs * 0.93, lo, hi);
     float2 pG = clamp(coord + offs, lo, hi);
-    float2 pB = clamp(coord + offs * 1.06, lo, hi);
+    float2 pB = clamp(coord + offs * 1.09, lo, hi);
     float3 col = float3(content.eval(pR).r, content.eval(pG).g, content.eval(pB).b);
 
     // 亮度自适应的可读性层：透明玻璃没有实底，文字直接压在背景上，
@@ -203,6 +262,11 @@ half4 main(float2 coord) {
 
     // 本体染色：给一层近乎全透的色调（透明玻璃靠它带一点介质色）
     col = mix(col, tint.rgb, tint.a);
+
+    // 底噪：5% 的静态颗粒。加了它，玻璃才是"一块材料"而不是一层数学渐变；
+    // 与回弹的果冻感配对——颗粒给材质、弹簧给触感。只作用在本体上，
+    // 边缘高光（下面那步）保持干净，否则亮边会发毛。
+    col += float3((hash21(floor(coord)) - 0.5) * 2.0 * noise);
 
     // 光照：菲涅尔双瓣——迎光侧与背光侧各一道亮边（透明介质的内壁反射），
     // 外加迎光侧向内衰减的柔和高光带

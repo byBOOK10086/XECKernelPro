@@ -22,6 +22,11 @@ private fun xorWithKey(data: ByteArray, key: String): ByteArray =
  *
  * CRC32 不是加密，这里做的是「混淆 + 完整性校验」：链接明文不直接出现在码里，
  * 接收端解码后重算 CRC32 与码内校验段比对，能挡住复制不全/转发出错的情况。
+ *
+ * 载荷里的每条链接可以自带 `#xec=<按键脚本>` 片段（见 [RemoteEntry]）：本编码器
+ * 不做任何解析，原样收进/放出，所以带脚本的链接在 V1/V2 两种码里都能通过，
+ * 旧版本管理器也能照常安装、只是忽略脚本。服务端上传页生成的码不带这个片段
+ * （那边没有脚本输入），接收端对这种码走"强制模板 / 模块记忆"两条兜底。
  */
 object RemoteModuleCodec {
     private const val PREFIX_V1 = "XEC1"

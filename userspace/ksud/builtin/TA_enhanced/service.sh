@@ -1,3 +1,5 @@
+# 修改版（GPL-3.0 §5(a)）：本文件由 XECKernel Pro 修改，非上游原样；改动清单与日期见
+# 同目录 NOTICE.md「本地修改」。上游：Enginex0/tricky-addon-enhanced（GPL-3.0）。
 MODPATH=${0%/*}
 MODDIR="$MODPATH"
 PATH=$MODPATH/common/bin:/data/adb/ap/bin:/data/adb/ksu/bin:/data/adb/magisk:$PATH
@@ -6,6 +8,14 @@ TSPA="/data/adb/modules/tsupport-advance"
 
 . "$MODPATH/common/common.sh"
 detect_manager
+
+# 日志目录必须在这里就建出来：_log 只在目录存在时才写文件，而 daemon 自己的默认
+# 日志目录（/data/adb/tricky_store/ta-enhanced/logs，见 vendor config/mod.rs 的
+# LoggingConfig::default）**不是**这个路径——不建的话本模块 shell 层的全部证据
+# （权限修复、keybox 来源/级别、锁态校验、真实启动状态）都只进 logcat，
+# 事后排查等于没有日志。daemon 的 logging.log_dir 在下面会统一到这里。
+mkdir -p "$LOG_BASE_DIR" 2>/dev/null
+chmod 755 "$LOG_BASE_DIR" 2>/dev/null
 
 _log "INFO" "Service started (manager=$MANAGER)"
 
@@ -172,27 +182,56 @@ mkdir -p "$MODPATH/common/tmp"
 _log "INFO" "Prop spoofing started"
 sh "$MODPATH/prop.sh" &
 
-# Keybox auto-fetch（yurikey，3 分钟一次）：TEERS（tricky_store）在位即视为
-# 两个 TEE 模块均已激活，开机直接下发配置，用户无需进 WebUI 手动开。
-# interval/enabled 每次开机强制对齐；source 仅在未设置时补 yurikey 默认值，
-# 不覆盖用户在 WebUI 里自选的源。拉取由 ta-enhanced 守护进程的 keybox 任务
-# 周期执行，写入 /data/adb/.xudc_secure/keybox.xml 供 TEERS supervisor 消费。
-# 这里只写配置、不等 boot：放在 daemon 启动之前，首个周期就能读到。
+# bootloader 回锁态看护（30s 一次）：sys.oem_unlock_allowed 这类非 ro 属性会被
+# 系统改回去，ro.boot.verifiedbootstate 也可能被别的模块覆盖；漂移要补写并留痕。
+# 放在这里而不是 prop.sh 里：prop.sh 会被 daemon 周期调用，放里面会反复起进程。
+if [ -f "$MODPATH/common/bootstate.sh" ]; then
+    . "$MODPATH/common/bootstate.sh"
+    bootstate_detect_mode
+    bootstate_watchdog_loop &
+    _log "INFO" "boot-state watchdog started"
+fi
+
+# Keybox 自动获取（面向中国大陆）：TEERS（tricky_store）在位即视为两个 TEE 模块
+# 均已激活，开机直接下发配置，用户无需进 WebUI 手动开/手动填源。
+#
+# 为什么源要换：vendor 自己的四路源（yurikey/upstream/integritybox）除了
+# integritybox 的镜像之外全是 raw.githubusercontent.com，国内直连不可达；
+# 而 vendor 的 is_online() 又是 ping api.github.com——国内必假，daemon 的首轮
+# 拉取直接被跳过。设备端因此永远拿不到新箱子，只能用模块里的出厂副本直到吊销。
+# 这里把 vendor 的 custom 源指向**本项目 keybox 分支的国内代理**（内容是解码好的
+# 明文 XML，vendor 的 validate 能过；yurikey 原始源是 base64，不能给 vendor 用），
+# 真正的多镜像轮换与可信核验由 common/keybox.sh 负责。
+#
+# interval/enabled 每次开机强制对齐；source/custom_url 只在用户没设过时补默认值
+# （WebUI 里选过的源属于用户状态，不能被开机脚本覆盖）。
 if [ -d "$TS" ] || [ -d "/data/adb/modules/.tricky_store" ] || [ -d "/data/adb/modules/tricky_store" ]; then
     "$BIN" config set keybox.enabled true >/dev/null 2>&1 || _log "WARN" "keybox.enabled set failed"
     "$BIN" config set keybox.interval 180 >/dev/null 2>&1 || _log "WARN" "keybox.interval set failed"
-    # Use the project mirror only when no source has been selected yet. A
-    # setting written in the WebUI is user state and must not be overwritten on
-    # every boot. The URL is treated the same way for custom sources.
+
+    # daemon 日志目录统一到 shell/WebUI 都在看的那一个路径，否则 fetch 失败原因
+    # 只写在另一个目录里，排查时永远看不到。
+    if [ "$(read_config logging.log_dir "")" != "$LOG_BASE_DIR" ]; then
+        if "$BIN" config set logging.log_dir "$LOG_BASE_DIR" >/dev/null 2>&1; then
+            _log "INFO" "daemon log_dir -> $LOG_BASE_DIR"
+        else
+            _log "WARN" "daemon log_dir set failed"
+        fi
+    fi
+
     keybox_source=$(read_config keybox.source "")
     if [ -z "$keybox_source" ]; then
         "$BIN" config set keybox.source custom >/dev/null 2>&1 || _log "WARN" "keybox.source set failed"
         keybox_source=custom
     fi
+    # 给 vendor 用的源必须是"解码后的明文 XML"；镜像清单里第一条本项目分支的条目
+    # 在国内代理上（ghfast.top），拿不到就退回 jsDelivr 上的同一份。
+    keybox_primary_url=$(grep -m1 'XECKernelPro/keybox/keybox.xml' "$MODPATH/common/keybox_mirrors.txt" 2>/dev/null)
+    [ -n "$keybox_primary_url" ] || keybox_primary_url="https://fastly.jsdelivr.net/gh/byBOOK10086/XECKernelPro@keybox/keybox.xml"
     keybox_url=$(read_config keybox.custom_url "")
     if [ "$keybox_source" = "custom" ] && [ -z "$keybox_url" ]; then
-        "$BIN" config set keybox.custom_url "https://cdn.jsdelivr.net/gh/byBOOK10086/XECKernelPro@keybox/keybox.xml" >/dev/null 2>&1 || _log "WARN" "keybox.custom_url set failed"
-        keybox_url="https://cdn.jsdelivr.net/gh/byBOOK10086/XECKernelPro@keybox/keybox.xml"
+        "$BIN" config set keybox.custom_url "$keybox_primary_url" >/dev/null 2>&1 || _log "WARN" "keybox.custom_url set failed"
+        keybox_url="$keybox_primary_url"
     fi
     _log "INFO" "Keybox auto-fetch on: source=$keybox_source interval=$(read_config keybox.interval 180)s url=$keybox_url (TEERS active)"
 else
@@ -205,6 +244,31 @@ fi
 _log "INFO" "Starting ta-enhanced daemon"
 "$BIN" daemon --manager "$MANAGER" &
 _log "INFO" "Daemon launched"
+
+# ---------------------------------------------------------------------------
+# Keybox 守护（中国大陆可用）：权限 / 可信核验 / 多镜像刷新 / 防退化
+# ---------------------------------------------------------------------------
+# 实现全部在 common/keybox.sh（本仓库新增文件，文件头逐条写了改动理由与代码证据），
+# 这里只做接线：
+#
+#   1) kb_prepare             —— 建状态目录；把可信证书指纹表去注释后缓存
+#                                （grep -f 遇到空行会匹配一切，必须先清干净）
+#   2) kb_ensure_from_module  —— 开机即时可用：模块内置副本（由 CI 在上游拉取后
+#                                打进构建产物）比实时副本新就换掉它。这是
+#                                "刷写即拿到可信密钥"的**离线**路径，不需要设备
+#                                能连上 GitHub；只有内置副本就是当前实时副本时
+#                                才什么都不做。
+#   3) kb_guardian_loop       —— 常驻看护：
+#        每 1s  把实时 keybox 权限钉回 644（vendor 每次成功拉取都会写成
+#               0600 root，而读它的 KeyBoxManager 跑在 keystore2 进程里，
+#               uid=keystore 打不开；不修就是"密钥传不过来"）
+#        每 15s 复核可信度（Google 链指纹）、防退化（无效/低级别副本一律用
+#               上次可信副本顶回去）、双向对账 TA 兼容副本，并按需扫镜像换新
+. "$MODPATH/common/keybox.sh"
+kb_prepare
+kb_ensure_from_module "$TS/keybox.xml"
+kb_guardian_loop &
+_log "INFO" "Keybox guardian started (state=$KB_STATE live级别=$(kb_trust_level "$KB_LIVE") DeviceID=$(kb_device_id "$KB_LIVE"))"
 
 # Post-boot maintenance, bounded and fully backgrounded: a hung boot skips
 # these tasks with a warning instead of stalling this script.
@@ -237,28 +301,16 @@ _log "INFO" "Daemon launched"
     # Xposed Detection (background)
     "$BIN" status xposed-scan >> "$LOG_BASE_DIR/main.log" 2>&1 &
 
-    # 密钥镜像：守护进程只写 $TS_DIR/keybox.xml（内置 TEERS 读这里）；资源包
-    # 形态的 TEERS 走标准 TrickyStore 目录 /data/adb/tricky_store/keybox.xml。
-    # 后台循环只在源更新且内容确实不同时覆盖（-nt + cmp），避免用旧文件倒灌
-    # 新目录。
-    (
-        while :; do
-            sleep 60
-            src="$TS_DIR/keybox.xml"
-            dst="/data/adb/tricky_store/keybox.xml"
-            if [ -f "$src" ] && [ -d "/data/adb/tricky_store" ] && \
-               { [ ! -f "$dst" ] || [ "$src" -nt "$dst" ]; }; then
-                if [ ! -f "$dst" ] || ! cmp -s "$src" "$dst" 2>/dev/null; then
-                    tmp="${dst}.tmp.$$"
-                    if cp -f "$src" "$tmp" 2>/dev/null && chmod 644 "$tmp" 2>/dev/null && \
-                       sync && mv -f "$tmp" "$dst" 2>/dev/null; then
-                        _log "INFO" "keybox mirrored to /data/adb/tricky_store/keybox.xml"
-                    else
-                        rm -f "$tmp" 2>/dev/null
-                        _log "WARN" "keybox mirror failed"
-                    fi
-                fi
-            fi
-        done
-    ) &
+    # Keybox 相关（权限守护 / 有效性 / 镜像）已移到 daemon 启动处独立运行：
+    # 那条守护必须早于 boot 完成，才能盖住"拉取成功 -> 权限变 0600 -> engine
+    # 读不到"这个窗口。这里不再重复做一遍，避免两个循环同时写兼容副本。
+
+    # 开机完成后的最终取证（用户排查"密钥/bootloader 状态对不对"看的就这一行）：
+    #   live级别 0 = 证书链挂到 Google Hardware Attestation Root（可信）
+    #            1 = 结构合法但未命中指纹（多为中间证书轮换，仍可用）
+    #            2 = 无效（此时守护已经尝试用副本恢复，见上面 WARN）
+    if [ -f "$MODPATH/common/keybox.sh" ]; then
+        bootstate_leak_report
+        _log "INFO" "boot 后总览：keybox live级别=$(kb_trust_level "$KB_LIVE") DeviceID=$(kb_device_id "$KB_LIVE") 权限=$(stat -c %a "$KB_LIVE" 2>/dev/null) sha=$(kb_short "$(kb_sha "$KB_LIVE")") | 锁态 verifiedboot=$(getprop ro.boot.verifiedbootstate) flash.locked=$(getprop ro.boot.flash.locked) device_state=$(getprop ro.boot.vbmeta.device_state) | mode=$BOOTSTATE_MODE"
+    fi
 ) &

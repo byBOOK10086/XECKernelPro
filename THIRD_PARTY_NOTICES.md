@@ -3,6 +3,41 @@
 本项目（XECKernel Pro）包含或分发以下第三方作品。各作品的许可证均未被改变，
 感谢原作者。如你是权利人且不希望被列于此或被随本项目分发，请提交 issue，我们会立即处理。
 
+## 开源协议合规（GPL / LGPL / Apache / MIT）
+
+许可证划分与上游 KernelSU 一致：**内核模块 `kernel/` 为 GPL-2.0**
+（[kernel/LICENSE](kernel/LICENSE)），**用户态（`manager/`、`userspace/`、`uapi/`、
+`website/` 等）为 GPL-3.0**（[LICENSE](LICENSE)）。上游 tiann/KernelSU 采用同一划分
+（其根 `LICENSE` 为 GPL-3.0、`kernel/LICENSE` 为 GPL-2.0）；本项目不改变任何上游组件的
+许可条款，也不对其施加任何额外限制。
+
+对 GPL-3.0 素材的实际履约方式：
+
+| 义务（GPL-3.0 条款） | 本项目的做法 |
+|---|---|
+| §4 保留版权声明与许可证 | 根 `LICENSE`、`kernel/LICENSE`、每个 vendored 上游树内的 `LICENSE` 原样保留；本文件与各模块 `NOTICE.md` 逐项署名（项目 / 作者 / 链接 / 固定 commit / 许可证） |
+| §5(a) 修改必须显著声明并给出日期 | 所有源自上游的文件在**文件头**给出"修改版 + 改动清单位置"声明；逐项改动与日期见 `userspace/ksud/builtin/*/NOTICE.md` 的「本地修改」节 |
+| §5(b)(c) 整体以 GPL-3.0 分发、不得附加限制 | 本仓库用户态整体按 GPL-3.0 分发；未对接受者附加 GPL 之外的任何限制 |
+| §6 提供对应源码（Corresponding Source） | 仓库公开于 `github.com/byBOOK10086/XECKernelPro`（分支 `fresh-main`）：vendored 上游源码树（`third_party/`）逐字保留、CI 构建脚本（`.github/scripts/build-builtin-modules.sh`、`.github/workflows/`）、模块脚本与配置全部在树内；Release 中的每个二进制都可由同一提交的源码重建 |
+| §7 附加条款 | 未添加任何 §7 附加条款 |
+
+其他许可证的履约要点：
+
+- **LGPL-3.0**（LSPlt，随 TEESimulator-RS 构建进 `libTEESimulator.so`）：完整源码与构建配方
+  随仓库提供（`third_party/TEESimulator-RS/app/src/main/cpp/external/LSPlt/` + CI 脚本），
+  满足 LGPL-3.0 关于"可替换/可重新链接"的要求——任何接受者都可以用修改过的 LSPlt 源码
+  按同一配方重建该库。
+- **Apache-2.0**（miuix、AOSP libbinder/libutils 头文件子集、aapt、
+  Kyant0/AndroidLiquidGlass、miuix 示例 BgEffect）：保留版权与许可证声明
+  （本文件与各源文件头注释），未使用其商标。
+- **MIT**（resetprop-rs、QWEA0/Liquid-Glass-Android）：保留版权声明与许可证全文
+  （分别见 `third_party/tricky-addon-enhanced/external/resetprop-rs/LICENSE` 等）。
+- **无许可证 / 许可证强于本项目（AGPL-3.0 等）**：不合编译、不分发
+  （见「已移除的内置模块」）。
+
+> 若上游对某一部分的许可证与本文件描述不一致，**以上游仓库同名 LICENSE 文件为准**；
+> 发现不一致请提 issue，我们会按其真实条款修正署名与许可证划分。
+
 ## 基础项目
 
 - **KernelSU** — https://github.com/tiann/KernelSU （作者 weishu / tiann 及社区贡献者）
@@ -89,6 +124,30 @@
   编译也无法合规再分发，已整体移除。
 
 以上每个模块目录内均附有 `NOTICE.md` 说明来源、许可与构建方式。
+
+### 内置模块的本地修改（GPL-3.0 §5(a)）
+
+`userspace/ksud/builtin/` 下的 `*.sh` 与 `common/*.sh` **是修改版**（上游脚本原本服务于
+上游自己的模块目录布局），每个文件头均有"修改版 + 改动清单位置"声明。逐项改动与日期见
+各模块 `NOTICE.md` 的「本地修改」节。最近一批（2026-10-08）：
+
+- `TA_enhanced`：keybox 守护（权限钉回 644、校验失败强制重拉、单向镜像）、
+  `resetprop` 四级解析阶梯与 `-w` 自实现、属性校验两遍 + 记录实际后端。
+- `tricky_store`：引擎启动前密钥取证（sha/年龄/权限）、出厂 keybox 识别、权限修正。
+
+vendored 源码树（`third_party/`）始终**零修改**：上述修复全部落在模块脚本层，
+上游 Rust/Kotlin 源码未被改动。
+
+### 本项目原创代码（无上游来源）
+
+- **透明液态玻璃**：`ui/design/clear/`（AGSL 着色器与组件）为本项目原创；
+  `ui/design/liquid/` 下 XcIndication / WaterDrop / JellyBar 等为本项目实现的按压与
+  过渡动效（使用 miuix/blur 宿主 API 与 Kyant0/AndroidLiquidGlass 的改写基础，
+  已在「移植代码」节署名）。观感参考 Apple 设计语言，未引用其代码。
+- **远程模块助手 · 按键脚本**（`ui/screen/remote/RemoteKeyPlan.kt`、`RemoteEntry`）：
+  发送端把"刷到该模块时按什么音量键、延迟多少"写进分享链接，接收端以 root 注入
+  **真实 input 事件**（`sendevent` + `EV_SYN`），使需要音量键选择的模块可在无人值守下
+  安装。实现为本项目原创，未移植第三方代码。
 
 ## 紫罗兰工具箱资源包（云端分发，不内嵌 APK；「一键隐藏」使用）
 
