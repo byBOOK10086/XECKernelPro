@@ -62,6 +62,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -504,6 +505,7 @@ fun ModulePagerMiuix(
                         showModuleSheet(module)
                     },
                     onOpenHidePack = { navigator.push(Route.HideEnvList) },
+                    onOpenKpm = { navigator.push(Route.Kpm) },
                     contentPadding = PaddingValues(
                         top = 6.dp,
                         start = 0.dp,
@@ -619,6 +621,7 @@ fun ModulePagerMiuix(
                                 showModuleSheet(module)
                             },
                             onOpenHidePack = { navigator.push(Route.HideEnvList) },
+                            onOpenKpm = { navigator.push(Route.Kpm) },
                             contentPadding = contentPadding,
                             listState = listState,
                         )
@@ -772,6 +775,7 @@ private fun ModuleList(
     onModuleAddShortcut: (Module, ShortcutType) -> Unit,
     onLongPressModule: (Module) -> Unit,
     onOpenHidePack: () -> Unit = {},
+    onOpenKpm: () -> Unit = {},
     contentPadding: PaddingValues,
     listState: LazyListState = rememberLazyListState(),
 ) {
@@ -785,6 +789,9 @@ private fun ModuleList(
     ) {
         item(key = "hide_pack_entry", contentType = "hide_pack") {
             HidePackEntryCard(onClick = onOpenHidePack)
+        }
+        item(key = "kpm_entry", contentType = "kpm_entry") {
+            KpmEntryCard(onClick = onOpenKpm)
         }
         items(
             items = modules,
@@ -1088,6 +1095,65 @@ private fun HidePackEntryCard(onClick: () -> Unit) {
             fontSize = 18.sp,
             color = neon.textSub,
         )
+        }
+        Spacer(Modifier.height(14.dp))
+    }
+}
+
+/**
+ * KPM 入口小方框：原底栏第 4 页（KpmScreen）收敛进模块页后的入口，固定在模块列表
+ * 「一键隐藏」之下。卡片本体与 [HidePackEntryCard] 同款玻璃语言。
+ */
+@Composable
+private fun KpmEntryCard(onClick: () -> Unit) {
+    val neon = XcNeon.colors
+    val hapticFeedback = LocalHapticFeedback.current
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .xGlassBody(
+                    backdrop = null,
+                    shape = Xc.shapes.sm,
+                    tint = neon.cardBg,
+                    rim = false,
+                )
+                .border(width = 1.dp, color = neon.cardBorder, shape = Xc.shapes.sm)
+                .combinedClickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onClick()
+                    },
+                )
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Memory,
+                contentDescription = null,
+                tint = neon.accentCyan,
+                modifier = Modifier.size(20.dp),
+            )
+            Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
+                Text(
+                    text = stringResource(R.string.kpm),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = neon.textMain,
+                )
+                Text(
+                    text = stringResource(R.string.kpm_entry_subtitle),
+                    fontSize = 11.sp,
+                    color = neon.textSub,
+                )
+            }
+            Text(
+                text = "›",
+                fontSize = 18.sp,
+                color = neon.textSub,
+            )
         }
         Spacer(Modifier.height(14.dp))
     }

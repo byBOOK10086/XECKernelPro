@@ -80,7 +80,12 @@ private class MainPageState(
 }
 
 object MainPagerConfig {
-    const val PAGE_COUNT = 7
+    /**
+     * 7 → 5（2026-10-06）：底栏收敛——KPM 并入模块页入口卡、终端并入设置页入口卡，
+     * 现为 Home / SuperUser / Module / Detect / Setting 五页。
+     * 旧版本存过的 selected_main_page=5/6 由 [coercePage] 在读取侧夹回范围。
+     */
+    const val PAGE_COUNT = 5
     const val LAST_PAGE_INDEX = PAGE_COUNT - 1
 
     fun coercePage(page: Int): Int = page.coerceIn(0, LAST_PAGE_INDEX)

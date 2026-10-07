@@ -92,9 +92,10 @@ import me.weishu.kernelsu.ui.screen.home.HomePager
 import me.weishu.kernelsu.ui.screen.detect.DetectPager
 import me.weishu.kernelsu.ui.screen.hidepack.HideEnvListScreen
 import me.weishu.kernelsu.ui.screen.hidepack.OneTapHideScreen
+import me.weishu.kernelsu.ui.screen.kpm.KpmScreen
 import me.weishu.kernelsu.ui.screen.remote.RemoteAssistantScreen
+import me.weishu.kernelsu.ui.screen.terminal.TerminalScreen
 import me.weishu.kernelsu.ui.screen.install.InstallScreen
-import me.weishu.kernelsu.ui.screen.kpm.KpmPager
 import me.weishu.kernelsu.ui.screen.module.ModuleActionSheet
 import me.weishu.kernelsu.ui.screen.module.ModulePager
 import me.weishu.kernelsu.ui.screen.module.ModuleSheetState
@@ -289,6 +290,8 @@ class MainActivity : ComponentActivity() {
                                             entry<Route.HideEnvList> { HideEnvListScreen() }
                                             entry<Route.OneTapHide> { OneTapHideScreen() }
                                             entry<Route.RemoteAssistant> { RemoteAssistantScreen() }
+                                            entry<Route.Kpm> { KpmScreen() }
+                                            entry<Route.Terminal> { TerminalScreen() }
                                             entry<Route.Home> { mainScreenEntry() }
                                             entry<Route.SuperUser> { mainScreenEntry() }
                                             entry<Route.Module> { mainScreenEntry() }
@@ -401,7 +404,11 @@ fun MainScreen(
     val enableFloatingBottomBar = LocalEnableFloatingBottomBar.current
     val enableFloatingBottomBarBlur = LocalEnableFloatingBottomBarBlur.current
     val useNavigationRail = useNavigationRail(enableFloatingBottomBar)
-    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { MainPagerConfig.PAGE_COUNT })
+    // 旧版本存过的 selected_main_page 可能越界（7 页时代存了 5/6），读出侧夹回。
+    val pagerState = rememberPagerState(
+        initialPage = initialPage.coerceIn(0, MainPagerConfig.LAST_PAGE_INDEX),
+        pageCount = { MainPagerConfig.PAGE_COUNT },
+    )
     val mainPagerState = rememberMainPagerState(
         pagerState = pagerState,
         animatePageChanges = !useNavigationRail,
@@ -502,10 +509,8 @@ fun MainScreen(
                         0 -> if (contentReady || isCurrentPage) HomePager(navController, bottomInnerPadding, isCurrentPage)
                         1 -> if (contentReady || isCurrentPage) SuperUserPager(navController, bottomInnerPadding, isCurrentPage)
                         2 -> if (contentReady || isCurrentPage) ModulePager(bottomInnerPadding, isCurrentPage)
-                        3 -> if (contentReady || isCurrentPage) KpmPager(bottomInnerPadding, isCurrentPage)
-                        4 -> if (contentReady || isCurrentPage) DetectPager(bottomInnerPadding, isCurrentPage)
-                        5 -> if (contentReady || isCurrentPage) SettingPager(navController, bottomInnerPadding, isCurrentPage)
-                        6 -> if (contentReady || isCurrentPage) TerminalPager(bottomInnerPadding, isCurrentPage)
+                        3 -> if (contentReady || isCurrentPage) DetectPager(bottomInnerPadding, isCurrentPage)
+                        4 -> if (contentReady || isCurrentPage) SettingPager(navController, bottomInnerPadding, isCurrentPage)
                     }
                 }
             }

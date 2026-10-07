@@ -110,18 +110,19 @@ fun XGlassSurface(
  * `innerHighlight` 形参在这条链里没有对应物，保留只为签名兼容。
  *
  * @param backdrop **已废弃，不再消费**（见上）。保留形参兼容既有调用点。
- * @param tint 玻璃上覆色。默认沿用 `glassTint`；语义色卡片可传同色系的低透明度版本，
- *   例如状态卡的 `Xc.colors.success.copy(alpha = 0.22f)` —— 传不透明的 `successTint`
- *   会把折射整个遮死。
+ * @param tint 玻璃介质色。默认 [Xc.colors.clearGlassTint]——浅色档全透（真·透明玻璃），
+ *   深色档黑液态玻璃。语义色卡片可传同色系的低透明度版本，例如状态卡的
+ *   `Xc.colors.success.copy(alpha = 0.22f)`；不透明的 `successTint` 会把折射整个遮死。
+ *   旧的 `glassTint`（55% 磨砂覆色）在透明玻璃语言里太闷，只留给磨砂系组件。
  */
 @Composable
 @Suppress("UNUSED_PARAMETER")
 internal fun Modifier.xGlassBody(
     backdrop: LayerBackdrop?,
     shape: Shape = Xc.shapes.md,
-    tint: Color = Xc.colors.glassTint,
-    blurRadius: Dp = 8.dp,
-    refraction: Dp = 20.dp,
+    tint: Color = Xc.colors.clearGlassTint,
+    blurRadius: Dp = 2.dp,
+    refraction: Dp = 26.dp,
     rimColor: Color = Xc.colors.glassRim,
     rim: Boolean = true,
     innerHighlight: Boolean = true,

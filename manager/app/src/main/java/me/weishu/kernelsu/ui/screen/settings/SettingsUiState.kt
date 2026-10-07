@@ -62,6 +62,7 @@ data class SettingsScreenActions(
     val onOpenTheme: () -> Unit,
     val onOpenProfileTemplate: () -> Unit,
     val onOpenRemoteAssistant: () -> Unit,
+    val onOpenTerminal: () -> Unit,
     val onSetSuCompatMode: (Int) -> Unit,
     val onSetKernelUmountEnabled: (Boolean) -> Unit,
     val onSetSelinuxHideEnabled: (Boolean) -> Unit,

@@ -143,7 +143,9 @@ fun XGlassDialog(
                         .widthIn(max = maxWidth)
                         .heightIn(max = panelMaxHeight),
                     shape = shape,
-                    blurRadius = 12.dp,
+                    // 透明玻璃语言：轻雾度 + 全分辨率记录（半径超限会被钳到
+                    // CLEAR_GLASS_MAX_BLUR_PX），折射才不会出马赛克。
+                    blurRadius = 2.5.dp,
                     refraction = 26.dp,
                 ) {
                     Column(

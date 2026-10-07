@@ -46,6 +46,8 @@
     <string name="hide_env_violet_desc">紫罗兰工具箱 V6.0 · 隐藏环境全套部署（模块 + 应用 + 密钥）</string>
     <string name="hide_one_tap_title">一键隐藏</string>
     <string name="hide_one_tap_subtitle">紫罗兰工具箱 · 隐藏环境一键部署</string>
+    <string name="kpm_entry_subtitle">KPM 内核模块管理</string>
+    <string name="settings_terminal_subtitle">Auto_Trigger 模块的网页控制台</string>
     <string name="hide_pack_step_manifest">获取资源清单…</string>
     <string name="hide_pack_step_download">准备资源包（下载 / 校验）…</string>
     <string name="hide_pack_manifest_fail">获取资源清单失败：%1$s</string>

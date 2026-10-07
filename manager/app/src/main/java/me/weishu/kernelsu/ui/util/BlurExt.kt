@@ -55,10 +55,10 @@ fun rememberBlurBackdrop(enableBlur: Boolean): LayerBackdrop? {
  *
  * @param blurActive 为 `false`（用户关掉模糊、或设备不支持模糊）时玻璃层退化为不透明底色
  *   + 1dp 渐变描边，依旧不是直角色块，也不会让栏体变成半透明。
- * @param tint 有模糊时的玻璃本体染色。默认 [Color.Transparent] —— 透明玻璃不上色，
- *   可读性由着色器内的亮度自适应层负责；需要有色玻璃时在调用点覆盖。
+ * @param tint 有模糊时的玻璃介质色。默认 [Xc.colors.clearGlassTint] —— 浅色档全透、
+ *   深色档黑液态玻璃（与卡体同一套语言）；需要有色玻璃时在调用点覆盖。
  * @param solidTint 不能模糊时的不透明底色。默认取 `surface` 实色 —— 与调用方原本自己画的
- *   `barColor` 完全一致，叠加后看不出差别；覆盖 [tint] 时通常也要一并覆盖它，
+ *   barColor 完全一致，叠加后看不出差别；覆盖 [tint] 时通常也要一并覆盖它，
  *   否则玻璃是白的、关掉模糊后又变回深色。
  */
 @Composable
@@ -68,7 +68,7 @@ fun BlurredBar(
     shape: Shape = Xc.shapes.bar,
     inset: Dp = 12.dp,
     blurActive: Boolean = true,
-    tint: Color = Xc.colors.glassTint,
+    tint: Color = Xc.colors.clearGlassTint,
     solidTint: Color = MiuixTheme.colorScheme.surface.copy(alpha = 1f),
     content: @Composable () -> Unit,
 ) {

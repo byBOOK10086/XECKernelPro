@@ -36,7 +36,6 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import me.weishu.kernelsu.ui.component.liquid.vibrancy
 import me.weishu.kernelsu.ui.design.glass.xGlassRim
 import me.weishu.kernelsu.ui.design.token.Xc
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
@@ -63,7 +62,7 @@ fun ClearGlassSurface(
     modifier: Modifier = Modifier,
     shape: Shape = Xc.shapes.lg,
     tint: Color = Xc.colors.clearGlassTint,
-    blurRadius: Dp = 6.dp,
+    blurRadius: Dp = 2.5.dp,
     refraction: Dp = 26.dp,
     rimColor: Color = Xc.colors.glassRim,
     rim: Boolean = true,
@@ -95,7 +94,15 @@ fun ClearGlassSurface(
  *
  * internal：`XGlassSurface.xGlassBody`（全应用卡体入口，采 [LocalWallpaperBackdrop]）
  * 复用这条链，玻璃观感必须与栏/弹层逐像素同源。
+ *
+ * ⚠️ 模糊半径在着色器档被钳到 [CLEAR_GLASS_MAX_BLUR_PX]：miuix blur 按模糊半径自适应
+ * 降低 backdrop 记录分辨率（σ² ≥ 12.6 就开始 ½、≥ 90.25 到 ¼，BlurEffect.kt 的
+ * downScaleExpFor），低分辨率记录上的折射位移就是肉眼可见的马赛克。σ = 半径px × 0.45，
+ * 钳在 7.5px ⇒ σ² ≈ 11.4 < 12.6，任何密度都吃满全分辨率记录——这同时就是"透明玻璃"
+ * 该有的雾度：几乎不糊，靠折射与亮边塑形，而不是靠磨砂。
  */
+const val CLEAR_GLASS_MAX_BLUR_PX = 7.5f
+
 @Composable
 internal fun Modifier.xClearGlassLayer(
     backdrop: LayerBackdrop?,
@@ -125,11 +132,15 @@ internal fun Modifier.xClearGlassLayer(
                 effects = {
                     val refractPx = refraction.toPx()
                     padding = maxOf(28.dp.toPx(), refractPx)
-                    vibrancy()
-                    blur(blurRadius.toPx(), blurRadius.toPx())
+                    // 不做 vibrancy：透明玻璃不压磨砂底，提高采样饱和度只会把壁纸的
+                    // 颜色噪点推到文字底下。透明感靠"几乎不糊 + 全分辨率折射"。
+                    val blurPx = minOf(blurRadius.toPx(), CLEAR_GLASS_MAX_BLUR_PX)
+                    blur(blurPx, blurPx)
                     clearGlass(
                         refraction = refractPx,
-                        bevel = refractPx * 0.6f,
+                        // 斜面带与最大位移同宽：1.5 次幂剖面下弯折带更宽，
+                        // 是"厚玻璃"而非"软凝胶"的关键（见 ClearGlassShader.kt）。
+                        bevel = refractPx,
                         tint = tint,
                         adaptive = adaptive,
                         specular = specular,
@@ -180,8 +191,8 @@ fun ClearGlassCard(
         modifier = modifier,
         shape = shape,
         tint = tint,
-        blurRadius = 8.dp,
-        refraction = 20.dp,
+        blurRadius = 2.dp,
+        refraction = 26.dp,
         glassEnabled = glassEnabled,
         content = content,
     )
@@ -202,7 +213,7 @@ fun ClearGlassBar(
         modifier = modifier,
         shape = shape,
         tint = tint,
-        blurRadius = 10.dp,
+        blurRadius = 3.dp,
         refraction = 28.dp,
         glassEnabled = glassEnabled,
         content = content,
@@ -238,7 +249,7 @@ fun ClearGlassButton(
                 backdrop = backdrop,
                 shape = shape,
                 tint = tint,
-                blurRadius = 8.dp,
+                blurRadius = 2.dp,
                 refraction = 18.dp,
                 rimColor = Xc.colors.glassRim,
                 rim = true,

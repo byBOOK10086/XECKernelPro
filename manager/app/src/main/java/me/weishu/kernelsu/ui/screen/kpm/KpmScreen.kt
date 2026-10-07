@@ -8,9 +8,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.add
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateBottomPadding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
@@ -27,9 +30,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -49,19 +54,21 @@ import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SnackbarHost
 import top.yukonga.miuix.kmp.basic.SnackbarHostState as MiuixSnackbarHostState
 import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
+/** KPM 管理页（路由页，从模块页入口卡进入；原为底栏第 4 页）。 */
 @Composable
-fun KpmPager(
-    bottomInnerPadding: Dp,
-    isCurrentPage: Boolean = true,
+fun KpmScreen(
 ) {
     val viewModel = viewModel<KpmViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -69,10 +76,9 @@ fun KpmPager(
     val miuixSnackbarHostState = remember { MiuixSnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(isCurrentPage) {
-        if (isCurrentPage) {
-            viewModel.load()
-        }
+    // 路由页每次进入都是全新组合，进页即刷新一次状态。
+    LaunchedEffect(Unit) {
+        viewModel.load()
     }
 
     fun showMessage(message: String) {
@@ -98,22 +104,22 @@ fun KpmPager(
         navigator.push(Route.Flash(FlashIt.FlashBootKpmEmbed))
     }
 
-    KpmPagerMiuix(
+    KpmScreenMiuix(
         uiState = uiState,
         snackbarHostState = miuixSnackbarHostState,
         onFlash = { pickKpmLauncher.launch("*/*") },
         onEmbed = onEmbed,
-        bottomInnerPadding = bottomInnerPadding,
+        onBack = { navigator.pop() },
     )
 }
 
 @Composable
-private fun KpmPagerMiuix(
+private fun KpmScreenMiuix(
     uiState: KpmUiState,
     snackbarHostState: MiuixSnackbarHostState,
     onFlash: () -> Unit,
     onEmbed: () -> Unit,
-    bottomInnerPadding: Dp,
+    onBack: () -> Unit,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
     val enableBlur = LocalEnableBlur.current
@@ -128,6 +134,18 @@ private fun KpmPagerMiuix(
                 TopAppBar(
                     color = barColor,
                     title = stringResource(R.string.kpm),
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            val layoutDirection = LocalLayoutDirection.current
+                            MiuixIcon(
+                                modifier = Modifier.graphicsLayer {
+                                    if (layoutDirection == LayoutDirection.Rtl) scaleX = -1f
+                                },
+                                imageVector = MiuixIcons.Back,
+                                contentDescription = null,
+                            )
+                        }
+                    },
                     scrollBehavior = scrollBehavior,
                 )
             }
@@ -136,7 +154,9 @@ private fun KpmPagerMiuix(
         snackbarHost = {
             SnackbarHost(
                 state = snackbarHostState,
-                modifier = Modifier.padding(bottom = bottomInnerPadding + 20.dp),
+                modifier = Modifier.padding(
+                    bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 20.dp
+                ),
             )
         },
         contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout)
