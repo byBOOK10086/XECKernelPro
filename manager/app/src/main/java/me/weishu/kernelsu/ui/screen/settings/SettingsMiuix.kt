@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.rounded.Rule
 import androidx.compose.material.icons.rounded.Adb
 import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DeveloperMode
@@ -444,6 +445,20 @@ fun SettingPagerMiuix(
                             .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
                         colors = CardDefaults.defaultColors(color = Color.Transparent),
                     ) {
+                        val terminal = stringResource(id = R.string.terminal)
+                        ArrowPreference(
+                            title = terminal,
+                            summary = stringResource(id = R.string.settings_terminal_subtitle),
+                            startAction = {
+                                Icon(
+                                    Icons.Rounded.Code,
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    contentDescription = terminal,
+                                    tint = colorScheme.onBackground
+                                )
+                            },
+                            onClick = actions.onOpenTerminal,
+                        )
                         ArrowPreference(
                             title = stringResource(id = R.string.send_log),
                             startAction = {

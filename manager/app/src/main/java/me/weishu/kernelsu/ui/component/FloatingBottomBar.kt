@@ -362,7 +362,7 @@ fun FloatingBottomBar(
                             effects = {
                                 padding = maxOf(padding, 40.dp.toPx())
                                 vibrancy()
-                                blur(4.dp.toPx(), 4.dp.toPx())
+                                blur(2.dp.toPx(), 2.dp.toPx())
                                 lens(
                                     refractionHeight = 24.dp.toPx(),
                                     refractionAmount = 24.dp.toPx(),
@@ -414,7 +414,7 @@ fun FloatingBottomBar(
                             shape = { pillShape },
                             effects = {
                                 vibrancy()
-                                blur(4.dp.toPx(), 4.dp.toPx())
+                                blur(2.dp.toPx(), 2.dp.toPx())
                                 lens(
                                     refractionHeight = 24.dp.toPx(),
                                     refractionAmount = 24.dp.toPx(),

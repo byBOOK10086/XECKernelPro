@@ -8,10 +8,8 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Cottage
 import androidx.compose.material.icons.rounded.Extension
-import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Verified
@@ -138,6 +136,11 @@ fun BottomBarMiuix(
     }
 }
 
+/**
+ * 底栏目的地。2026-10-06 收敛为 5 页：KPM 并入模块页入口卡（[me.weishu.kernelsu.ui.navigation3.Route.Kpm]）、
+ * 终端并入设置页入口卡（[me.weishu.kernelsu.ui.navigation3.Route.Terminal]）——
+ * 底栏只留高频页，低频工具页一律走各自归属页的入口卡。
+ */
 enum class BottomBarDestination(
     @get:StringRes val label: Int,
     val icon: ImageVector,
@@ -145,10 +148,8 @@ enum class BottomBarDestination(
     Home(R.string.home, Icons.Rounded.Cottage),
     SuperUser(R.string.superuser, Icons.Rounded.Security),
     Module(R.string.module, Icons.Rounded.Extension),
-    Kpm(R.string.kpm, Icons.Rounded.Memory),
     Detect(R.string.detection, Icons.Rounded.Verified),
     Setting(R.string.settings, Icons.Rounded.Settings),
-    Terminal(R.string.terminal, Icons.Rounded.Code),
 }
 
 internal fun navigationBadgeFor(

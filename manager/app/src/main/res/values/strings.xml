@@ -57,6 +57,8 @@
     <string name="hide_env_violet_desc">Violet Toolbox V6.0 · full hidden-environment deploy (modules + apps + keys)</string>
     <string name="hide_one_tap_title">One-Tap Hide</string>
     <string name="hide_one_tap_subtitle">Violet Toolbox · deploy hidden environment</string>
+    <string name="kpm_entry_subtitle">Kernel patch module (KPM) management</string>
+    <string name="settings_terminal_subtitle">Web control console of Auto_Trigger module</string>
     <string name="hide_pack_step_manifest">Fetching resource manifest…</string>
     <string name="hide_pack_step_download">Preparing resource bundle (download / verify)…</string>
     <string name="hide_pack_manifest_fail">Failed to fetch resource manifest: %1$s</string>

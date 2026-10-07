@@ -16,9 +16,12 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.add
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateBottomPadding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
@@ -35,9 +38,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -46,6 +51,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.token.Xc
+import me.weishu.kernelsu.ui.navigation3.LocalNavigator
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.util.BlurredBar
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
@@ -57,6 +63,8 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 
 /**
@@ -90,10 +98,9 @@ private sealed interface TerminalFailure {
  * `127.0.0.1` 的明文流量已经由 `network_security_config.xml` 放行，无需额外配置。
  */
 @Composable
-fun TerminalPager(
-    bottomInnerPadding: Dp,
-    isCurrentPage: Boolean = true,
-) {
+fun TerminalScreen() {
+    val navigator = LocalNavigator.current
+    val onBack = { navigator.pop() }
     val lifecycleOwner = LocalLifecycleOwner.current
     val enableBlur = LocalEnableBlur.current
     val backdrop = rememberBlurBackdrop(enableBlur)
@@ -108,10 +115,9 @@ fun TerminalPager(
     // 自增即触发一次重载（重试按钮 / 顶栏刷新）。
     var reloadToken by remember { mutableIntStateOf(0) }
 
-    // 打开终端页（成为当前页）时自动加载一次；离开后再回来会重新加载。
-    LaunchedEffect(webView, isCurrentPage, reloadToken) {
+    // 进入终端页自动加载一次；重试 / 顶栏刷新通过 reloadToken 触发。
+    LaunchedEffect(webView, reloadToken) {
         val view = webView ?: return@LaunchedEffect
-        if (!isCurrentPage) return@LaunchedEffect
         isLoading = true
         failure = null
         // 先把模块里的二进制补 0777 拉起来（端口本来就在跑则直接返回），
@@ -130,10 +136,8 @@ fun TerminalPager(
         }
     }
 
-    // 先走网页自己的历史，历史到底了再交还给 Pager（回首页）。
-    // 终端页在非当前页时也可能被 Pager 预组合，所以必须再判一次 isCurrentPage，
-    // 否则会隔着好几页把返回手势吃掉。
-    BackHandler(enabled = isCurrentPage && canGoBack) {
+    // 先走网页自己的历史，历史到底了再交还给导航栈（退出终端页）。
+    BackHandler(enabled = canGoBack) {
         webView?.goBack()
     }
 
@@ -168,6 +172,18 @@ fun TerminalPager(
                 TopAppBar(
                     color = barColor,
                     title = stringResource(R.string.terminal),
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            val layoutDirection = LocalLayoutDirection.current
+                            MiuixIcon(
+                                modifier = Modifier.graphicsLayer {
+                                    if (layoutDirection == LayoutDirection.Rtl) scaleX = -1f
+                                },
+                                imageVector = MiuixIcons.Back,
+                                contentDescription = null,
+                            )
+                        }
+                    },
                     actions = {
                         IconButton(onClick = { reloadToken++ }) {
                             MiuixIcon(
@@ -189,8 +205,10 @@ fun TerminalPager(
                 .fillMaxSize()
                 .padding(innerPadding)
                 // 网页是被整块裁剪的，不像列表那样能靠尾部留白把内容顶上来，
-                // 所以直接把可视区域让出底栏高度，免得底部控件永远压在玻璃条下面。
-                .padding(bottom = bottomInnerPadding),
+                // 所以直接把可视区域让出导航条高度，免得底部控件被手势条压住。
+                .padding(
+                    bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                ),
         ) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
