@@ -52,11 +52,11 @@ const INSTALL_MODULE_SCRIPT: &str = concatcp!(
 
 const BUILTIN_XOR_KEY: &[u8] = b"xdcv1";
 
+// susfs4ksu（上游改 AGPL-3.0）与 SelinuxFix（上游无许可证）已按合规要求移除，
+// 内置集合只保留 GPL-3.0 且可从 third_party/ 源码构建的两个模块。
 const BUILTIN_MODULES: &[(&str, &str)] = &[
     ("tricky_store", "0.cfg"),
     ("TA_enhanced", "1.cfg"),
-    ("susfs4ksu", "2.cfg"),
-    ("SelinuxFix", "3.cfg"),
 ];
 
 const BUILTIN_MAGIC: &[u8; 4] = b"BCFG";

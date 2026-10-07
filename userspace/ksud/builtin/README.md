@@ -2,6 +2,12 @@
 
 把需要内置的隐藏模块放在本目录下，每个模块一个子目录，目录名即模块 id。
 
+当前内置：`tricky_store`（TEESimulator-RS）与 `TA_enhanced`（Tricky Addon Enhanced），
+两者均为 GPL-3.0，**二进制产物由 CI 从 `third_party/` 下 vendored 的上游源码构建**
+（见各目录 `NOTICE.md` 与 `third_party/*/UPSTREAM.md`），本目录只提交脚本、配置与
+NOTICE，不提交任何未经源码构建的 GPL 二进制。原内置的 `susfs4ksu`（上游改为
+AGPL-3.0）与 `SelinuxFix`（上游无许可证）已按合规要求移除。
+
 ## 目录结构（与普通模块一致）
 
 ```

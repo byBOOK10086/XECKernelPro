@@ -8,7 +8,6 @@
 - **KernelSU** — https://github.com/tiann/KernelSU （作者 weishu / tiann 及社区贡献者）
   本项目的基础。内核部分 GPL-2.0（[kernel/LICENSE](kernel/LICENSE)），用户态部分 GPL-3.0（[LICENSE](LICENSE)）。
 - **android_bootimg** — https://github.com/5ec1cff/android_bootimg （boot 镜像解析库，许可证以上游仓库为准）
-- **AnyKernel3**（osm0sis 原作；GKI 配方参考 WildKernels 维护分支）— https://github.com/osm0sis/AnyKernel3 （GPL-2.0）
 
 ### KernelSU 上游致谢（原样转引）
 
@@ -31,22 +30,71 @@
 - **应用图标 / Logo** — 作者 **明风ouo**，依 CC 协议授权使用（作者未提供仓库链接）。
   本项目的 launcher 图标、启动屏图标与页内头像均使用该作品，在此致谢。
 
+## GPL-2.0 上游致谢（单独列出）
+
+本项目用户态整体按 GPL-3.0 分发；凡来自 **GPL-2.0** 上游的代码在此单独致谢，
+各许可证均未被改变：
+
+- **KernelSU 内核模块**（`kernel/`）— https://github.com/tiann/KernelSU
+  （作者 weishu / tiann 及社区贡献者，GPL-2.0，见 [kernel/LICENSE](kernel/LICENSE)）
+- **SUSFS 内核补丁**（SUSFS GKI 内核构建使用）— simonpunk/susfs4ksu
+  （https://gitlab.com/simonpunk/susfs4ksu ，GPL-2.0；GitHub 镜像
+  https://github.com/ShirkNeko/susfs4ksu ）。`.github/workflows/build-susfs-gki.yml`
+  直接从上游拉取补丁应用于基础内核源码构建，仓库内不留存补丁正文。
+- **AnyKernel3**（GKI 刷入配方）— osm0sis 原作（https://github.com/osm0sis/AnyKernel3 ，GPL-2.0）；
+  GKI 配方参考 WildKernels 维护分支
+- **Linux 内核 UAPI 头文件子集**（`third_party/TEESimulator-RS/app/src/main/cpp/external/linux-kernel/`）
+  — https://git.kernel.org/ （GPL-2.0）
+
 ## 内置模块（随管理器核心 xudc 内嵌分发，`userspace/ksud/builtin/`）
 
-| 模块目录 | 上游 | 作者 | 许可证 |
-|---|---|---|---|
-| `tricky_store`（TEESimulator-RS） | https://github.com/Enginex0/TEESimulator-RS | JingMatrix、Enginex0 | GPL-3.0（技术源自 5ec1cff 的 TrickyStore，GPL-3.0） |
-| `TA_enhanced`（Tricky Addon Enhanced） | https://github.com/Enginex0/tricky-addon-enhanced | Enginex0 | GPL-3.0 |
-| `susfs4ksu` | https://github.com/sidex15/ksu_module_susfs | sidex15（模块）；SUSFS 内核补丁：simonpunk | GPL-2.0 |
-| `SelinuxFix` | 随包第三方模块 | 有始有终 | 上游未声明许可证，版权归原作者 |
+内置模块均为 **GPL-3.0**，且**不再内嵌任何 GPL 预编译二进制**：二进制产物由 CI 从
+`third_party/` 下 vendored 的上游源码构建（见下节「源码合编译」），模块目录内只
+提交脚本、配置与 NOTICE：
 
-以上每个模块目录内均附有 `NOTICE.md` 说明来源与许可。
+| 模块目录 | 上游 | 作者 | 许可证 | 产物来源 |
+|---|---|---|---|---|
+| `tricky_store`（TEESimulator-RS） | https://github.com/Enginex0/TEESimulator-RS | JingMatrix、Enginex0 | GPL-3.0 | `third_party/TEESimulator-RS`（v6.0.0-162 / commit 5267c9d） |
+| `TA_enhanced`（Tricky Addon Enhanced） | https://github.com/Enginex0/tricky-addon-enhanced | Enginex0 | GPL-3.0 | `third_party/tricky-addon-enhanced`（v5.27.0 / commit 1951ba0） |
+
+### 源码合编译（vendored sources, `third_party/`）
+
+- **TEESimulator-RS** — https://github.com/Enginex0/TEESimulator-RS （GPL-3.0）
+  tag `v6.0.0-162`（commit `5267c9dd0092b69dee4a34eb0c8af8e617b2bc5d`）原样快照；
+  技术源自 5ec1cff/TrickyStore（GPL-3.0）https://github.com/5ec1cff/TrickyStore 。
+  CI 构建产物：`builtin/tricky_store/` 的 `classes.dex`、`libTEESimulator.so`、
+  `libcertgen.so`、`inject`、`supervisor`。
+- **LSPlt**（随 TEESimulator-RS 源码 vendored）— JingMatrix/LSPlt
+  （https://github.com/JingMatrix/LSPlt ，**LGPL-3.0**），commit `3e29437f037cb7d2b9fbb459dcf162f6b8d1d926`。
+- **AOSP libbinder/libutils 头文件子集**（随 TEESimulator-RS 源码 vendored）
+  — https://android.googlesource.com/platform/frameworks/native/ （Apache-2.0）。
+- **tricky-addon-enhanced（rust/ 守护进程源码）** — https://github.com/Enginex0/tricky-addon-enhanced
+  （GPL-3.0）tag `v5.27.0`（commit `1951ba023d100b427ba7b321074808a89106889e`）快照；
+  CI 构建产物：`builtin/TA_enhanced/bin/arm64-v8a/ta-enhanced`。
+- **resetprop-rs**（随 tricky-addon-enhanced 子模块 vendored）— Enginex0/resetprop-rs
+  （https://github.com/Enginex0/resetprop-rs ，**MIT**，Copyright (c) 2026 Enginex0），
+  commit `4646d28a2de49c139025abc5f6d0357cd863320d`；CI 构建产物：
+  `builtin/TA_enhanced/bin/arm64-v8a/resetprop-rs`。
+- **aapt**（AOSP 预编译工具，随上游模块原样分发）—
+  https://android.googlesource.com/platform/frameworks/base/ （Apache-2.0）。
+
+### 已移除的内置模块
+
+- **`susfs4ksu` 模块**（sidex15，原 NOTICE 标注 GPL-2.0）— 上游仓库已更名为
+  https://github.com/sidex15/susfs4ksu-module 且许可证变更为 **AGPL-3.0**（v1.5.2+ 分支
+  LICENSE 全文核验，2026-10-06）。按本项目合规规则（上游许可证强于本项目时不合编译、
+  不分发），已从源码、CI 与内置集合整体移除。SUSFS **内核侧**（simonpunk/susfs4ksu，
+  GPL-2.0）不受影响，仍用于 SUSFS GKI 内核构建（见「GPL-2.0 上游致谢」）。
+- **`SelinuxFix` 模块**（有始有终）— 上游未声明任何许可证、无可用源码，无法源码合
+  编译也无法合规再分发，已整体移除。
+
+以上每个模块目录内均附有 `NOTICE.md` 说明来源、许可与构建方式。
 
 ## 紫罗兰工具箱资源包（云端分发，不内嵌 APK；「一键隐藏」使用）
 
 - **HMA-OSS** — https://github.com/frknkrc44/HMA-OSS （作者 frknkrc44；AGPL-3.0）
 - **LSPosed** — https://github.com/LSPosed/LSPosed （GPL-3.0）
-- **TEESimulator-RS**、**susfs4ksu 模块** — 同上表
+- **TEESimulator-RS** — 同「源码合编译」节
 - **紫罗兰附加模块 / 自动救砖** — 紫罗兰工具箱组件
 - **检测 / 管理 APK**（momo、ruru、Hunter、Luna、紫色放大镜、密钥认证、应用列表检测器、春秋检测、MT管理器）— 版权归各自作者，仅作检测工具随资源包分发；许可证以上游发布页为准。
 

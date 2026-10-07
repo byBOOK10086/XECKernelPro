@@ -391,11 +391,10 @@ pub fn add_sus_path_loop(path: &str) -> anyhow::Result<()> {
 
 /// Boot-time baseline hiding for kernels that actually ship SUSFS.
 ///
-/// The bundled `susfs4ksu` module's scripts handle the bootloader-state
-/// spoofing; this covers the root solution's own footprint so a SUSFS-enabled
-/// kernel hides XEC's paths from non-su callers by default. The probe is a
-/// no-op on kernels without SUSFS (the reboot vector just returns EINVAL), so
-/// it is safe to call on every boot path.
+/// ksud 自己负责根方案足迹的隐藏（/data/adb 等）；原内置的第三方 susfs4ksu
+/// 模块（bootloader 状态伪装等脚本）因上游改为 AGPL-3.0 已按合规要求移除。
+/// The probe is a no-op on kernels without SUSFS (the reboot vector just
+/// returns EINVAL), so it is safe to call on every boot path.
 pub fn provision_baseline() {
     if !get_susfs_status() {
         log::info!("SUSFS: kernel does not provide it, skip baseline");

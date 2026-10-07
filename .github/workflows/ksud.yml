@@ -51,6 +51,32 @@ jobs:
       with:
         ndk-version: r29
 
+    # Builtin modules (tricky_store / TA_enhanced) carry no committed GPL
+    # binaries; they are compiled from the vendored upstream sources in
+    # third_party/ and must be in place before RustEmbed packs ksud.
+    - name: Setup JDK 21 for builtin module build
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+
+    - name: Install Android SDK components for builtin module build
+      run: |
+        yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+        "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+          "platforms;android-36" \
+          "build-tools;36.0.0" \
+          "ndk;27.3.13750724" \
+          "cmake;3.22.1" >/dev/null
+
+    - name: Install cargo-ndk
+      run: cargo install cargo-ndk --locked
+
+    - name: Build builtin modules from vendored source
+      env:
+        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+      run: bash .github/scripts/build-builtin-modules.sh
+
     - name: Build ksud
       env:
         ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}

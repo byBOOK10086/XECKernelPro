@@ -1,6 +1,6 @@
 # XECKernel Pro
 
-基于 [KernelSU](https://github.com/tiann/KernelSU) 修改开发的 Android root 方案与管理器：内核级 su、模块系统、App Profile、内置 TEE / SUSFS 工具链。
+基于 [KernelSU](https://github.com/tiann/KernelSU) 修改开发的 Android root 方案与管理器：内核级 su、模块系统、App Profile、内置 TEE 引擎与 SUSFS 支持。
 
 ## 许可证与上游归属（License & Attribution）
 
@@ -25,6 +25,16 @@
 ### 美术资源
 
 - 应用图标 / Logo：**明风ouo**（依 CC 协议授权使用，在此致谢）
+
+### 源码合编译与 GPL-2.0 单独致谢
+
+- 内置模块（TEESimulator-RS、Tricky Addon Enhanced）为 **GPL-3.0 源码合编译**：
+  上游源码原样 vendor 在 [`third_party/`](third_party/)（每目录附 `UPSTREAM.md`
+  注明仓库 / 作者 / 固定 commit / 许可证），CI 从源码构建全部引擎二进制，
+  仓库与发布渠道不携带任何 GPL 预编译二进制。
+- **GPL-2.0 上游**（KernelSU 内核模块、simonpunk/susfs4ksu 内核补丁、AnyKernel3 等）
+  在 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 的
+  「GPL-2.0 上游致谢」一节单独列出致谢。
 
 第三方组件与内置/分发模块的完整致谢与许可证清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；应用内「关于 → 开发者名单 → 致谢」同样列有上游致谢。
 
