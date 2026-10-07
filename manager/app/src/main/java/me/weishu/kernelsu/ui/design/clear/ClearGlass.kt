@@ -27,13 +27,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import me.weishu.kernelsu.ui.design.glass.xGlassRim
@@ -63,7 +66,7 @@ fun ClearGlassSurface(
     shape: Shape = Xc.shapes.lg,
     tint: Color = Xc.colors.clearGlassTint,
     blurRadius: Dp = 2.5.dp,
-    refraction: Dp = 26.dp,
+    refraction: Dp = 32.dp,
     rimColor: Color = Xc.colors.glassRim,
     rim: Boolean = true,
     glassEnabled: Boolean = true,
@@ -103,6 +106,15 @@ fun ClearGlassSurface(
  */
 const val CLEAR_GLASS_MAX_BLUR_PX = 7.5f
 
+/**
+ * 薄表面的高度阈值（px）：低于它的玻璃补一档描边。
+ *
+ * 约等于 80dp@2.75x。收起的顶栏（52dp）落在这里：着色器已按短边把折射位移
+ * 钳小，此时"这是一块玻璃"的线索主要来自边缘，所以描边要更实一点，
+ * 否则薄栏看起来只是一条半透明的色条。
+ */
+private const val THIN_CLEAR_SURFACE_PX = 220
+
 @Composable
 internal fun Modifier.xClearGlassLayer(
     backdrop: LayerBackdrop?,
@@ -120,12 +132,23 @@ internal fun Modifier.xClearGlassLayer(
     val shaderSupported = remember { isRuntimeShaderSupported() }
     val active = glassEnabled && backdrop != null
 
+    // 实测高度决定是不是"薄表面"（收起的顶栏）。用像素阈值而不是 dp：
+    // 阈值本身是像素量（与着色器里的短边判定同一量纲），换算一次反而更容易读错。
+    var layerHeightPx by remember { mutableIntStateOf(0) }
+    val thin = layerHeightPx in 1 until THIN_CLEAR_SURFACE_PX
+    val effectiveRimColor = if (thin) {
+        rimColor.copy(alpha = (rimColor.alpha * 1.55f).coerceAtMost(1f))
+    } else {
+        rimColor
+    }
+    val sized = this.onSizeChanged { layerHeightPx = it.height }
+
     // 降级档不能直接用半透明 tint（会透出窗口黑底，塌成黑框），
     // 先合成成不透明实色，三档共用。
     val solidTint = if (tint.alpha >= 1f) tint else tint.compositeOver(surface)
 
     return when {
-        active && shaderSupported -> this
+        active && shaderSupported -> sized
             .drawBackdrop(
                 backdrop = backdrop!!,
                 shape = { shape },
@@ -138,8 +161,10 @@ internal fun Modifier.xClearGlassLayer(
                     blur(blurPx, blurPx)
                     clearGlass(
                         refraction = refractPx,
-                        // 斜面带与最大位移同宽：1.5 次幂剖面下弯折带更宽，
-                        // 是"厚玻璃"而非"软凝胶"的关键（见 ClearGlassShader.kt）。
+                        // 斜面带与最大位移同宽。剖面本身（1.15 次幂 + 贴边窄棱面，
+                        // 见 ClearGlassShader.kt）负责"折射角更高"，这里只保证
+                        // 弯折带有足够的宽度承载它。窄条表面的斜面会被着色器按
+                        // 短边钳制，收起的顶栏因此不会变成一整条亮边。
                         bevel = refractPx,
                         tint = tint,
                         adaptive = adaptive,
@@ -151,10 +176,10 @@ internal fun Modifier.xClearGlassLayer(
                 onDrawSurface = { },
             )
             .clip(shape)
-            .xGlassRim(shape, rimColor, rim)
+            .xGlassRim(shape, effectiveRimColor, rim)
 
         // 回退一档：毛玻璃（RenderEffect，API 31-32）
-        active -> this
+        active -> sized
             .textureBlur(
                 backdrop = backdrop!!,
                 shape = shape,
@@ -166,13 +191,13 @@ internal fun Modifier.xClearGlassLayer(
                 ),
             )
             .clip(shape)
-            .xGlassRim(shape, rimColor, rim)
+            .xGlassRim(shape, effectiveRimColor, rim)
 
         // 没有 backdrop（用户关掉模糊 / 设备不支持 / 预览）：实色 + 描边
-        else -> this
+        else -> sized
             .background(solidTint, shape)
             .clip(shape)
-            .xGlassRim(shape, rimColor, rim)
+            .xGlassRim(shape, effectiveRimColor, rim)
     }
 }
 
@@ -192,7 +217,7 @@ fun ClearGlassCard(
         shape = shape,
         tint = tint,
         blurRadius = 2.dp,
-        refraction = 26.dp,
+        refraction = 34.dp,
         glassEnabled = glassEnabled,
         content = content,
     )
@@ -206,6 +231,8 @@ fun ClearGlassBar(
     shape: Shape = Xc.shapes.bar,
     tint: Color = Xc.colors.clearGlassTint,
     glassEnabled: Boolean = true,
+    refraction: Dp = 36.dp,
+    specular: Float = 1f,
     content: @Composable BoxScope.() -> Unit,
 ) {
     ClearGlassSurface(
@@ -214,8 +241,9 @@ fun ClearGlassBar(
         shape = shape,
         tint = tint,
         blurRadius = 3.dp,
-        refraction = 28.dp,
+        refraction = refraction,
         glassEnabled = glassEnabled,
+        specular = specular,
         content = content,
     )
 }
@@ -250,7 +278,7 @@ fun ClearGlassButton(
                 shape = shape,
                 tint = tint,
                 blurRadius = 2.dp,
-                refraction = 18.dp,
+                refraction = 24.dp,
                 rimColor = Xc.colors.glassRim,
                 rim = true,
                 glassEnabled = glassEnabled,

@@ -1,4 +1,6 @@
 #!/system/bin/sh
+# 修改版（GPL-3.0 §5(a)）：本文件由 XECKernel Pro 修改，非上游原样；改动清单与日期见
+# 同目录 NOTICE.md「本地修改」。上游：Enginex0/TEESimulator-RS（GPL-3.0）。
 # Built-in TEESimulator-RS engine init.
 #
 # The bundled classes.dex is kept byte-for-byte compatible with the upstream
@@ -60,6 +62,7 @@ external_engine_active() {
 }
 
 mkdir -p "$RUNTIME" || exit 1
+chmod 755 "$RUNTIME" 2>/dev/null
 touch "$LOG_FILE" 2>/dev/null || exit 1
 label_data_path "$RUNTIME"
 
@@ -154,6 +157,47 @@ if [ ! -f "$DATA/hbk" ]; then
     dd if=/dev/random of="$DATA/hbk" bs=32 count=1 2>/dev/null || exit 1
 fi
 chmod 644 "$DATA/keybox.xml" "$DATA/target.txt" "$DATA/security_patch.txt" "$DATA/hbk" 2>/dev/null
+
+# 引擎启动前的密钥取证。
+#
+# 这一段存在的理由：本模块自带的 keybox.xml 是**出厂静态副本**，一旦被上游
+# 吊销，从引擎启动到 TA 守护进程拉到新 keybox 之间，证明请求只能用软件级证书
+# 链——检测方看到的就是"bootloader 未锁 / 密钥没传过来"。把"当前用的是哪一份、
+# 多旧、权限对不对"三件事在引擎启动那一刻写进 .engine.log，事后排查不用再猜。
+#
+# 权限一并钉住：TA 守护进程每次拉取成功都会把实时 keybox 落成 0600 root
+# （vendor 的 keybox/mod.rs::install_data），而**读**它的 KeyBoxManager 跑在
+# keystore2 进程里（uid=keystore），0600 打不开。TA 侧的常驻守护会在 5s 内
+# 改回 644，这里管的是引擎启动这一瞬间的那一份。
+_kb_sha() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" 2>/dev/null | cut -c1-16
+    elif command -v md5sum >/dev/null 2>&1; then
+        md5sum "$1" 2>/dev/null | cut -c1-16
+    else
+        printf ''
+    fi
+}
+
+if [ -f "$RUNTIME/keybox.xml" ]; then
+    _kb_now=$(date +%s 2>/dev/null)
+    _kb_mtime=$(stat -c %Y "$RUNTIME/keybox.xml" 2>/dev/null || echo "$_kb_now")
+    _kb_age=$(( _kb_now - _kb_mtime ))
+    _kb_mode=$(stat -c %a "$RUNTIME/keybox.xml" 2>/dev/null)
+    if [ "$_kb_mode" != "644" ]; then
+        chmod 644 "$RUNTIME/keybox.xml" 2>/dev/null
+        log_line "INFO keybox: perms $_kb_mode -> 644 before engine start"
+    fi
+    _kb_live=$(_kb_sha "$RUNTIME/keybox.xml")
+    _kb_factory=$(_kb_sha "$MODPATH/keybox.xml")
+    if [ -n "$_kb_live" ] && [ "$_kb_live" = "$_kb_factory" ]; then
+        log_line "WARN keybox: factory copy in use (sha=$_kb_live, age=${_kb_age}s) — attestation stays software-level until TA fetches a fresh keybox"
+    else
+        log_line "INFO keybox: present (age=${_kb_age}s, sha=${_kb_live:-?}, factory=${_kb_factory:-?})"
+    fi
+else
+    log_line "WARN keybox: absent at engine start"
+fi
 
 cd "$RUNTIME" || exit 1
 ./supervisor ./daemon "$RUNTIME" >> "$LOG_FILE" 2>&1 &

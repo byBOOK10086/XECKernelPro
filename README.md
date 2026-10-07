@@ -35,6 +35,10 @@
 - **GPL-2.0 上游**（KernelSU 内核模块、simonpunk/susfs4ksu 内核补丁、AnyKernel3 等）
   在 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 的
   「GPL-2.0 上游致谢」一节单独列出致谢。
+- **协议合规**：GPL-3.0 §4/§5/§6/§7 各项义务（保留声明、修改声明与日期、整体同许可、
+  提供对应源码、不加附加限制）的实际履约方式，以及 LGPL-3.0 / Apache-2.0 / MIT 的
+  履约要点，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 的
+  「开源协议合规」一节；上游文件头与各模块 `NOTICE.md` 均带修改声明与日期。
 
 第三方组件与内置/分发模块的完整致谢与许可证清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；应用内「关于 → 开发者名单 → 致谢」同样列有上游致谢。
 

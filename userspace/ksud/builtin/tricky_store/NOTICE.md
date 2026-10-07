@@ -22,5 +22,23 @@
 内含第三方组件（随上游源码一并构建）：LSPlt（JingMatrix/LSPlt，LGPL-3.0）、
 AOSP libbinder/libutils 头文件子集（Apache-2.0）、Linux 内核 UAPI 头文件子集（GPL-2.0）。
 
+## 本地修改（GPL-3.0 §5(a) 要求的改动声明）
+
+**本目录下的 `service.sh` 是修改版，不是上游原样文件。** 上游对应用户态部分
+（`classes.dex`、`inject`、`supervisor`、`lib*.so`）由 CI 从 vendored 源码构建，
+本项目不改其源码；改动集中在"把引擎作为内置模块跑起来"的启动脚本上。
+改动者：**XECKernel Pro**。
+
+- **2026-10-07 起**：`service.sh` 重写为内置模块形态——引擎资产从模块目录
+  （`/dev/.xudc_hidden/tricky_store`）原子 staging 到运行目录 `/data/adb/tricky_store`，
+  版本标记 `.engine_version` 最后落盘（中途失败下次开机重试）、外部模块在位时主动让位、
+  DEX 里写死的上游兼容目录 `/data/adb/modules/tricky_store` 只放 `libcertgen.so`。
+- **2026-10-08**：`service.sh` 增加启动前密钥取证：记录实时 keybox 的 sha/年龄/权限，
+  识别"当前用的仍是模块自带出厂 keybox"，并在权限不是 644 时修正（读它的
+  `KeyBoxManager` 运行在 keystore2 进程里，0600 打不开）。
+
+许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
+一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。
+
 版权归原作者所有；许可证全文见上游仓库与 `third_party/TEESimulator-RS/LICENSE`。
 本项目按 GPL-3.0 分发本模块，未改变其许可条款；如你是权利人且不希望被分发，请提交 issue，我们会立即处理。

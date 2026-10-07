@@ -242,13 +242,23 @@ fun MiuixKernelSUTheme(
                         }
                     }
                     MonetColorsProvider.UpdateCss()
-                    // 用 XEC 的圆角高光顶掉 miuix 默认那个方块高光。
+                    // 用 XEC 的侧角凹陷反馈顶掉 miuix 默认那个方块高光。
                     // 必须在 MiuixTheme 的 content 里下发——miuix 自己会在
                     // 主题内部重新 provide 一次 LocalIndication，在外面覆盖会被冲掉。
+                    //
+                    // 凹陷强度按明暗档分开给：深色档玻璃本体就是黑的，阴影要更重
+                    // （0.34）才压得住黑液态玻璃；浅色档 0.17 就够，再多会读成一块脏斑。
+                    // 折射亮环反过来——浅色档玻璃亮，亮环要更实才看得见。
                     val indicationColor = Xc.colors.text
                     val pressRadius = Xc.shapes.pressRadius
-                    val indication = remember(indicationColor, pressRadius) {
-                        XcIndication(color = indicationColor, radius = pressRadius)
+                    val indicationDark = Xc.colors.isDark
+                    val indication = remember(indicationColor, pressRadius, indicationDark) {
+                        XcIndication(
+                            color = indicationColor,
+                            radius = pressRadius,
+                            shadeAlpha = if (indicationDark) 0.34f else 0.17f,
+                            sheenAlpha = if (indicationDark) 0.30f else 0.22f,
+                        )
                     }
                     CompositionLocalProvider(
                         LocalIndication provides indication,

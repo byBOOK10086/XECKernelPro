@@ -471,4 +471,10 @@ See the log below for details.</string>
     <string name="remote_recv_warning">Make sure you fully understand who the sender is, what their purpose is, and the risks after flashing. This flashing mode cannot block malicious files sent by the other party, which may cause irreversible damage to your property. We assume no legal responsibility for any loss caused.</string>
     <string name="remote_recv_warning_confirm">Confirm</string>
     <string name="remote_recv_warning_reject">Reject</string>
+    <string name="remote_key_plan_label">Key script (optional)</string>
+    <string name="remote_key_plan_ok">Syntax OK — travels with this link</string>
+    <string name="remote_key_plan_hint">Some modules wait for a volume key during install. Write a script here and the receiving device replays it: up@1500,up@3000 presses volume-up at 1.5s and again at 3s; up~600 waits for the installer\'s key prompt and presses 600ms later. Use the manual buttons below for anything the script misses.</string>
+    <string name="remote_key_force_label">Force script for this batch (optional)</string>
+    <string name="remote_keypad_title">Manual keys (press while the installer waits)</string>
+    <string name="remote_keypad_idle">Injects a real volume-key event as root. Tap one to test this device.</string>
 </resources>

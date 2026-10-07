@@ -6,10 +6,12 @@ import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,6 +59,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.R
@@ -80,31 +84,138 @@ import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.zip.ZipFile
 
 private const val REMOTE_DIR = "remote_modules"
+
+/** `~` 锚点的兜底等待上限：提示一直没出现就跳过这一步，别把整条流水线挂死。 */
+private const val PROMPT_TIMEOUT_MS = 20_000L
 
 private data class DeployOutcome(val flashed: Int, val failedAt: String?)
 
 private fun sanitizeName(name: String): String =
     name.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "module.zip" }
 
-/** 下载单个文件并刷入；返回 null 表示成功，否则返回失败步骤描述。 */
-private fun flashFromUrl(
+/**
+ * 安装脚本的"要我按键"提示特征。
+ *
+ * 只有 `~` 锚点的步骤会用到它：脚本先说"请按音量上选择"，我们等这句话出现再按。
+ * 静默 `sleep` 等待的脚本没有提示，那种情况由 `@` 绝对时间负责。
+ */
+private val PROMPT_HINT = Regex("(?i)(volume|音量|按键|按一下|press|vol\\s*[+-]|选择)")
+
+/** 从 zip 里读 `module.prop` 的 id：按键脚本的"记忆"以它为主键。 */
+private fun readModuleId(file: File): String? = runCatching {
+    ZipFile(file).use { zip ->
+        val entry = zip.getEntry("module.prop") ?: return@use null
+        zip.getInputStream(entry).bufferedReader().useLines { lines ->
+            lines.firstOrNull { it.trimStart().startsWith("id=") }
+                ?.substringAfter('=')
+                ?.trim()
+        }
+    }
+}.getOrNull()
+
+/**
+ * 按键脚本的解析优先级（先命中先用）：
+ *
+ * 1. **发送端带的**（链接 fragment 里的 `#xec=`）——这是"发送端提前设定好"的落点，
+ *    优先级最高，因为它就是这个模块的专用脚本；
+ * 2. **接收端在本次任务里强制的模板**——用户临时对所有模块套一套；
+ * 3. **记忆**（同一个 module id 上次用过的脚本）——全自动化的兜底：第一次之后，
+ *    同一个模块再来就再也不用管。
+ */
+private class KeyPlanResolver(
+    private val context: Context,
+    private val forcedPlanText: String,
+) {
+    fun resolve(entry: RemoteEntry, moduleId: String?): Pair<RemoteKeyPlan, String> {
+        entry.planText.takeIf { it.isNotBlank() }?.let {
+            return RemoteKeyPlan.parse(it).getOrDefault(RemoteKeyPlan.EMPTY) to "发送端脚本"
+        }
+        if (forcedPlanText.isNotBlank()) {
+            return RemoteKeyPlan.parse(forcedPlanText).getOrDefault(RemoteKeyPlan.EMPTY) to "本次模板"
+        }
+        val remembered = moduleId?.let { RemoteKeyPresets.load(context, it) }
+        if (!remembered.isNullOrBlank()) {
+            return RemoteKeyPlan.parse(remembered).getOrDefault(RemoteKeyPlan.EMPTY) to "上次记忆"
+        }
+        return RemoteKeyPlan.EMPTY to ""
+    }
+
+    /** 记住这次实际用的脚本，下次同一个模块自动套用。 */
+    fun remember(moduleId: String?, plan: RemoteKeyPlan) {
+        if (moduleId.isNullOrBlank() || !plan.isNotEmpty) return
+        RemoteKeyPresets.save(context, moduleId, plan.format())
+    }
+}
+
+/**
+ * 按脚本注入按键，直到刷入结束被取消。
+ *
+ * 每按一次都把"相对刷入开始的毫秒数"写进日志：脚本的延迟是否合适一眼可查，
+ * 不合适就直接改发送端的脚本，而不是靠猜。
+ */
+private suspend fun runKeyPlan(
+    plan: RemoteKeyPlan,
+    installStart: Long,
+    promptCount: () -> Int,
+    log: (String) -> Unit,
+) {
+    var consumedPrompts = 0
+    for ((index, step) in plan.steps.withIndex()) {
+        val label = "#${index + 1}/${plan.steps.size} ${step.key.label}"
+        if (step.afterPrompt) {
+            val deadline = SystemClock.elapsedRealtime() + PROMPT_TIMEOUT_MS
+            while (promptCount() <= consumedPrompts && SystemClock.elapsedRealtime() < deadline) {
+                delay(50)
+            }
+            if (promptCount() <= consumedPrompts) {
+                log("  ⌨ $label 没等到按键提示，跳过（改用 @ 绝对时间更稳）")
+                continue
+            }
+            consumedPrompts = promptCount()
+            delay(step.delayMs.toLong())
+        } else {
+            val wait = installStart + step.delayMs - SystemClock.elapsedRealtime()
+            if (wait > 0) delay(wait)
+        }
+        val device = RemoteKeyInjector.inject(step.key, step.holdMs)
+        val elapsed = SystemClock.elapsedRealtime() - installStart
+        if (device != null) {
+            log("  ⌨ ${step.key.label} +${elapsed}ms → $device")
+        } else {
+            log("  ✗ ${step.key.label} 注入失败（没有可写的 input 节点）")
+        }
+    }
+}
+
+/**
+ * 下载单个模块并按脚本刷入；返回 null 表示成功，否则返回失败步骤描述。
+ *
+ * 脚本在这里才真正解析：**模块身份（module.prop 的 id）要等文件落地才知道**，
+ * 而"记忆"就是按模块身份存的，所以顺序必须是 下载 → 认模块 → 定脚本 → 刷入。
+ */
+private suspend fun flashFromUrl(
     dir: File,
-    fileName: String,
+    entry: RemoteEntry,
     resolveUrl: () -> String,
+    forcedPlanText: String,
+    context: Context,
     log: (String) -> Unit,
     onStep: (String) -> Unit,
 ): String? {
-    onStep("下载 $fileName")
+    val name = entry.displayName
+    onStep("下载 $name")
     val url = try {
         resolveUrl()
     } catch (e: Exception) {
-        log("✗ $fileName ${e.message}")
-        return "下载 $fileName"
+        log("✗ $name ${e.message}")
+        return "下载 $name"
     }
-    val target = File(dir, sanitizeName(fileName))
-    log("→ $fileName")
+    val target = File(dir, sanitizeName(name))
+    log("→ $name")
     try {
         var lastMark = 0L
         RemoteDownloader.downloadTo(url, target) { read, total ->
@@ -115,19 +226,56 @@ private fun flashFromUrl(
             }
         }
     } catch (e: Exception) {
-        log("✗ $fileName ${e.message}")
+        log("✗ $name ${e.message}")
         target.delete()
-        return "下载 $fileName"
+        return "下载 $name"
     }
-    onStep("刷入 $fileName")
-    log("→ 刷入 $fileName")
-    val result = flashModule(Uri.fromFile(target), { line -> log(line) }, { line -> log(line) })
+
+    val moduleId = readModuleId(target)
+    val resolver = KeyPlanResolver(context, forcedPlanText)
+    val (plan, planSource) = resolver.resolve(entry, moduleId)
+    if (plan.isNotEmpty) {
+        log("  ⌨ 按键脚本（$planSource）：${plan.format()}")
+    } else if (!moduleId.isNullOrBlank()) {
+        log("  ⌨ 无按键脚本（模块 $moduleId；需要在安装时按键的模块请让发送端带脚本）")
+    }
+
+    onStep("刷入 $name")
+    log("→ 刷入 $name")
+    val installStart = SystemClock.elapsedRealtime()
+    val promptCounter = AtomicInteger(0)
+    // 脚本运行器与安装并发：安装脚本在等按键时是阻塞的，注入必须来自另一条协程。
+    // 用 coroutineScope 而不是全局 scope，刷入一结束子协程自动取消，不会漏一个
+    // 还在 sleep 的注入任务去按到下一个模块身上。
+    val result = coroutineScope {
+        val planJob = if (plan.isNotEmpty) {
+            launch(Dispatchers.Default) {
+                runKeyPlan(plan, installStart, promptCounter::get, log)
+            }
+        } else {
+            null
+        }
+        val flashResult = try {
+            flashModule(
+                Uri.fromFile(target),
+                { line ->
+                    if (PROMPT_HINT.containsMatchIn(line)) promptCounter.incrementAndGet()
+                    log(line)
+                },
+                { line -> log(line) },
+            )
+        } finally {
+            planJob?.cancel()
+        }
+        flashResult
+    }
+    if (result.code == 0) resolver.remember(moduleId, plan)
     target.delete()
     if (result.code != 0) {
-        log("✗ $fileName (code ${result.code}) ${result.err}")
-        return "刷入 $fileName"
+        log("✗ $name (code ${result.code}) ${result.err}")
+        return "刷入 $name"
     }
-    log("✓ $fileName")
+    log("✓ $name")
     return null
 }
 
@@ -138,11 +286,14 @@ private fun flashFromUrl(
  *
  * 失败不再中止整批：一条坏码/坏链接只记失败并继续后面的条目——过去
  * 第 1 条就报废整批，是"高概率出错"体感的主要放大器。
+ *
+ * @param forcedPlanText 本次对所有模块强制的按键脚本（空 = 只用发送端脚本与记忆）。
  */
-private fun runRemoteDeploy(
+private suspend fun runRemoteDeploy(
     context: Context,
     entries: List<String>,
     redeemToken: String?,
+    forcedPlanText: String,
     log: (String) -> Unit,
     onStep: (String) -> Unit,
 ): DeployOutcome {
@@ -182,21 +333,28 @@ private fun runRemoteDeploy(
         log("→ 第 $label 条包含 ${links.size} 个模块")
         for ((li, link) in links.withIndex()) {
             val tag = if (links.size > 1) "$label-${li + 1}" else label
-            if (!link.startsWith("http", ignoreCase = true)) {
-                log("✗ 解出的不是链接: $link")
+            val parsed = RemoteEntry.parse(link)
+            if (!parsed.url.startsWith("http", ignoreCase = true)) {
+                log("✗ 解出的不是链接: ${parsed.url}")
                 failures.add("加密码 $tag")
                 continue
             }
-            if (isPanSharePage(link)) {
+            if (isPanSharePage(parsed.url)) {
                 // 网盘「分享页」是网页不是文件——提前拦截，别下回来一坨 HTML 才报错
                 log("✗ 这是网盘分享页链接（需要网页打开/登录），程序无法直接下载文件")
                 log("  请让分享者改用 zip 的直链（浏览器点开就开始下载的那种）重新生成加密码")
                 failures.add("加密码 $tag")
                 continue
             }
-            val name = link.substringBefore('?').trimEnd('/').substringAfterLast('/')
-                .ifBlank { "module.zip" }
-            val fail = flashFromUrl(dir, name, { link }, log, onStep)
+            val fail = flashFromUrl(
+                dir = dir,
+                entry = parsed,
+                resolveUrl = { parsed.url },
+                forcedPlanText = forcedPlanText,
+                context = context,
+                log = log,
+                onStep = onStep,
+            )
             if (fail != null) {
                 failures.add(fail)
                 continue
@@ -221,7 +379,13 @@ fun RemoteAssistantScreen() {
 
     var tab by remember { mutableIntStateOf(0) }
     val shareInputs = remember { mutableStateListOf("") }
+    // 与 shareInputs 一一对应的按键脚本（每条链接各自一份）。
+    val sharePlans = remember { mutableStateListOf("") }
     val recvInputs = remember { mutableStateListOf("") }
+
+    // 接收端"本次强制套用"的脚本；留空表示只用发送端带的脚本与模块记忆。
+    var forcedPlan by remember { mutableStateOf("") }
+    var keyFeedback by remember { mutableStateOf<String?>(null) }
 
     var uploading by remember { mutableStateOf(false) }
     var uploadStatus by remember { mutableStateOf<String?>(null) }
@@ -306,7 +470,12 @@ fun RemoteAssistantScreen() {
             return
         }
         if (hubBusy) return
-        val links = shareInputs.map { it.trim() }.filter { it.isNotEmpty() }
+        // 出码时把每条链接的按键脚本挂到链接 fragment 上：短码、加密码、直接粘贴
+        // 三种分发方式都不需要服务端参与，脚本就跟着模块走。
+        val links = shareInputs.indices.mapNotNull { i ->
+            val raw = shareInputs[i].trim()
+            if (raw.isEmpty()) null else RemoteEntry.annotate(raw, sharePlans.getOrElse(i) { "" })
+        }
         if (links.isEmpty()) return
         val uses = maxUses.toIntOrNull() ?: 0
         val days = expireDays.toIntOrNull() ?: -1
@@ -376,8 +545,13 @@ fun RemoteAssistantScreen() {
             if (error != null) {
                 uploadStatus = "✗ $error"
             } else if (links.isNotEmpty()) {
-                // 上传成功的直链追加进输入框，与手工粘贴的外链一并出码
-                links.forEach { shareInputs.add(it) }
+                // 上传成功的直链追加进输入框，与手工粘贴的外链一并出码。
+                // 脚本槽位必须同步追加，否则 shareInputs 与 sharePlans 会错位，
+                // 把 A 模块的脚本挂到 B 模块的链接上。
+                links.forEach {
+                    shareInputs.add(it)
+                    sharePlans.add("")
+                }
                 uploadStatus = context.getString(R.string.remote_upload_done, links.size)
             }
             uploading = false
@@ -405,6 +579,7 @@ fun RemoteAssistantScreen() {
                     context = context,
                     entries = codes,
                     redeemToken = account?.token,
+                    forcedPlanText = forcedPlan,
                     log = { line -> mainHandler.post { logLines.add(line) } },
                     onStep = { s -> mainHandler.post { step = s } },
                 )
@@ -413,6 +588,22 @@ fun RemoteAssistantScreen() {
             failedAt = outcome.failedAt
             done = true
             running = false
+        }
+    }
+
+    /**
+     * 手动补按键：脚本没覆盖到的模块、或脚本延迟估错了，用户可以在刷入过程中
+     * 直接按这一排按钮补上——注入的是同一套原始事件，对安装脚本等价于真按键。
+     */
+    fun injectKey(key: RemoteKey) {
+        keyFeedback = "… ${key.label}"
+        scope.launch {
+            val target = withContext(Dispatchers.IO) { RemoteKeyInjector.inject(key) }
+            keyFeedback = if (target != null) {
+                "✓ ${key.label} → $target"
+            } else {
+                "✗ ${key.label} 注入失败（没有可写的 input 节点）"
+            }
         }
     }
 
@@ -617,28 +808,44 @@ fun RemoteAssistantScreen() {
                             )
                         }
                         shareInputs.forEachIndexed { i, _ ->
-                            Row(
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                TextField(
-                                    value = shareInputs[i],
-                                    onValueChange = { shareInputs[i] = it },
-                                    label = stringResource(R.string.remote_link_label, i + 1),
-                                    modifier = Modifier.weight(1f),
-                                )
-                                if (shareInputs.size > 1) {
-                                    MiuixIcon(
-                                        imageVector = Icons.Rounded.Close,
-                                        contentDescription = stringResource(R.string.remote_remove),
-                                        tint = Xc.colors.textSecondary,
-                                        modifier = Modifier
-                                            .padding(start = 8.dp)
-                                            .clickable { shareInputs.removeAt(i) },
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    TextField(
+                                        value = shareInputs[i],
+                                        onValueChange = { shareInputs[i] = it },
+                                        label = stringResource(R.string.remote_link_label, i + 1),
+                                        modifier = Modifier.weight(1f),
                                     )
+                                    if (shareInputs.size > 1) {
+                                        MiuixIcon(
+                                            imageVector = Icons.Rounded.Close,
+                                            contentDescription = stringResource(R.string.remote_remove),
+                                            tint = Xc.colors.textSecondary,
+                                            modifier = Modifier
+                                                .padding(start = 8.dp)
+                                                .clickable {
+                                                    // 两个列表必须一起删，否则脚本槽位会整体前移一格
+                                                    shareInputs.removeAt(i)
+                                                    if (i < sharePlans.size) sharePlans.removeAt(i)
+                                                },
+                                        )
+                                    }
                                 }
+                                KeyPlanField(
+                                    value = sharePlans.getOrElse(i) { "" },
+                                    onValueChange = { text ->
+                                        while (sharePlans.size <= i) sharePlans.add("")
+                                        sharePlans[i] = text
+                                    },
+                                    label = stringResource(R.string.remote_key_plan_label),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 6.dp),
+                                )
                             }
                         }
                         TextButton(
@@ -766,6 +973,28 @@ fun RemoteAssistantScreen() {
                                 .fillMaxWidth()
                                 .padding(top = 8.dp),
                             enabled = !running,
+                        )
+                        Text(
+                            text = stringResource(R.string.remote_key_plan_hint),
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            color = Xc.colors.textSecondary,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                        KeyPlanField(
+                            value = forcedPlan,
+                            onValueChange = { forcedPlan = it },
+                            label = stringResource(R.string.remote_key_force_label),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 6.dp),
+                        )
+                        ManualKeyPad(
+                            feedback = keyFeedback,
+                            onKey = { injectKey(it) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
                         )
                         TextButton(
                             text = stringResource(R.string.remote_recv_start),
@@ -935,5 +1164,104 @@ private fun ResultCard(
             )
             action?.invoke()
         }
+    }
+}
+
+/**
+ * 按键脚本输入：一行文本 + 预置档位 + 即时代码校验。
+ *
+ * 校验放在输入框正下方而不是等提交：脚本语法本身很短（`up@1500,up@3000`），
+ * "看不懂这一步：up@abc" 直接标在写错的地方，比刷入到一半才发现要省事得多。
+ */
+@Composable
+private fun KeyPlanField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    val error = remember(value) {
+        if (value.isBlank()) null else RemoteKeyPlan.parse(value).exceptionOrNull()?.message
+    }
+    Column(modifier = modifier) {
+        TextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = label,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            RemoteKeyPlan.PRESETS.forEach { (title, script) ->
+                TextButton(
+                    text = title,
+                    onClick = { onValueChange(script) },
+                )
+            }
+        }
+        val status = when {
+            error != null -> error
+            value.isBlank() -> null
+            else -> stringResource(R.string.remote_key_plan_ok)
+        }
+        if (status != null) {
+            Text(
+                text = status,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                color = if (error != null) Color(0xFFE0533D) else Xc.colors.textSecondary,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
+
+/**
+ * 手动补按键面板。
+ *
+ * 存在的理由：脚本是"预判"，总有预判不到的情况（模块在脚本之外还等一次按键、
+ * 延迟估早了、发送端没带脚本）。这时用户能在刷入过程中直接补按——注入的是
+ * 同一套原始输入事件，对安装脚本与真按键等价。空闲时也能用它自检这台设备的
+ * input 设备是否可写（结果里的设备节点就是注入目标）。
+ */
+@Composable
+private fun ManualKeyPad(
+    feedback: String?,
+    onKey: (RemoteKey) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = stringResource(R.string.remote_keypad_title),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = Xc.colors.text,
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            RemoteKey.entries.forEach { key ->
+                TextButton(
+                    text = key.label,
+                    onClick = { onKey(key) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        Text(
+            text = feedback ?: stringResource(R.string.remote_keypad_idle),
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
+            color = Xc.colors.textSecondary,
+            modifier = Modifier.padding(top = 4.dp),
+        )
     }
 }

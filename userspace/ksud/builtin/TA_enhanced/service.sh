@@ -1,3 +1,5 @@
+# 修改版（GPL-3.0 §5(a)）：本文件由 XECKernel Pro 修改，非上游原样；改动清单与日期见
+# 同目录 NOTICE.md「本地修改」。上游：Enginex0/tricky-addon-enhanced（GPL-3.0）。
 MODPATH=${0%/*}
 MODDIR="$MODPATH"
 PATH=$MODPATH/common/bin:/data/adb/ap/bin:/data/adb/ksu/bin:/data/adb/magisk:$PATH
@@ -206,6 +208,149 @@ _log "INFO" "Starting ta-enhanced daemon"
 "$BIN" daemon --manager "$MANAGER" &
 _log "INFO" "Daemon launched"
 
+# ---------------------------------------------------------------------------
+# Keybox 守护：从 daemon 启动这一刻就跑，不等 boot 完成
+# ---------------------------------------------------------------------------
+# 为什么不等 boot：拉取动作由刚启动的 daemon 的第一个周期就发起（KeyboxTask
+# 在 boot 未完成时也会先 wait_for_network 再连拉 boot_retries 次），而下面
+# 修的权限问题正是在"每次成功拉取之后"出现的——等到 boot 完成再修，中间这段
+# 恰好是 attestation 最容易失败的窗口。
+#
+# 守护的三件事：
+#
+#  1) **DAC 权限（这条是"密钥有时传不过来"的直接修复）**
+#     ta-enhanced 守护进程每次成功拉取都走 vendor 的
+#     `keybox/mod.rs::install_data`：atomic_write 之后显式
+#     `set_permissions(TARGET_KEYBOX, 0o600)`，即 /data/adb/tricky_store/
+#     keybox.xml 变成 **0600 root**。
+#     而**读**它的 `KeyBoxManager.parseKeyStoreFile`（vendor app/src/.../pki/
+#     KeyBoxManager.kt）运行在 **keystore2 进程内**（TEESimulator 的注入点就在
+#     该进程里，uid=keystore），这个 uid 打不开 0600 root 的文件。SELinux 是
+#     放行的（本模块 sepolicy.rule 里的 `allow keystore adb_data_file file *`），
+#     卡住的是 UNIX 权限位——于是每次拉取成功之后，engine 反而读不到这份更新
+#     鲜的 keybox，只能退回软件级证书链，检测方看到的就是"bootloader 未锁"。
+#     这里按本项目既有的 644 约定把权限钉回去（内置 tricky_store 的 service.sh
+#     播种时也是 644，两处必须一致），并把目录补到 755 保证可穿越。
+#     vendor 源码零修改，所以修在模块脚本这一层。
+#
+#  2) **有效性**：`keybox validate` 失败（截断/坏格式）时强制拉一次（带冷却，
+#     不会把四路源打爆），拉完再验一次并把结论写进日志。
+#
+#  3) **镜像**：把实时 keybox 同步到 TA 的兼容目录 $TS_DIR/keybox.xml（老版本
+#     与第三方工具读这一份），只在内容确实不同时覆盖。方向固定为
+#     「实时 -> 兼容副本」：反过来的方向会把模块里那份出厂静态 keybox 倒灌
+#     到实时路径上，那正是"密钥一直传不过来"的另一种形态。
+(
+    _KB=/data/adb/tricky_store/keybox.xml
+    _KB_DIR=/data/adb/tricky_store
+    _last_sha=""
+    _validate_fail=0
+    _fetch_cooldown=0
+
+    _kb_sha() {
+        command -v sha256sum >/dev/null 2>&1 || return 1
+        sha256sum "$1" 2>/dev/null | cut -c1-16
+    }
+
+    while :; do
+        sleep 5
+
+        # --- 1) 权限 ---
+        if [ -d "$_KB_DIR" ]; then
+            _dirmode=$(stat -c %a "$_KB_DIR" 2>/dev/null)
+            case "$_dirmode" in
+                7[0-9][0-9]|75[0-9]) ;;
+                *) chmod 755 "$_KB_DIR" 2>/dev/null ;;
+            esac
+        fi
+        if [ -f "$_KB" ]; then
+            _mode=$(stat -c %a "$_KB" 2>/dev/null)
+            if [ "$_mode" != "644" ]; then
+                if chmod 644 "$_KB" 2>/dev/null; then
+                    _log "INFO" "keybox perms $_mode -> 644 (engine in keystore2 uid must be able to read it)"
+                else
+                    _log "WARN" "keybox chmod 644 failed (mode=$_mode); engine may fail to read it"
+                fi
+            fi
+        fi
+
+        # --- 2) 内容变化 / 有效性 ---
+        _sha=$(_kb_sha "$_KB")
+        if [ -n "$_sha" ] && [ "$_sha" != "$_last_sha" ]; then
+            if [ -n "$_last_sha" ]; then
+                _log "INFO" "keybox changed: $_last_sha -> $_sha (engine FileObserver reloads it on next request)"
+            else
+                _log "INFO" "keybox watchdog: sha=$_sha"
+            fi
+            _last_sha="$_sha"
+            _validate_fail=0
+        fi
+
+        if [ -n "$BIN" ] && [ -x "$BIN" ] && [ -f "$_KB" ]; then
+            if ! timeout 20 "$BIN" keybox validate >/dev/null 2>&1; then
+                _now=$(date +%s 2>/dev/null || echo 0)
+                if [ "$_validate_fail" = "0" ]; then
+                    _validate_fail=1
+                    _log "WARN" "keybox validate failed — scheduling a forced fetch"
+                fi
+                if [ "$_now" -ge "$_fetch_cooldown" ]; then
+                    _fetch_cooldown=$(( _now + 300 ))
+                    _log "WARN" "forcing keybox fetch after validation failure"
+                    if "$BIN" keybox fetch >> "$LOG_BASE_DIR/main.log" 2>&1; then
+                        _sha=$(_kb_sha "$_KB")
+                        _last_sha="$_sha"
+                        if timeout 20 "$BIN" keybox validate >/dev/null 2>&1; then
+                            _validate_fail=0
+                            _log "INFO" "keybox recovered by forced fetch (sha=${_sha:-?})"
+                        else
+                            _log "ERROR" "keybox still invalid after fetch; attestation will fall back to software certs"
+                        fi
+                    else
+                        _log "ERROR" "forced keybox fetch failed (all sources unreachable?)"
+                    fi
+                fi
+            fi
+        elif [ -d "$_KB_DIR" ] && [ ! -f "$_KB" ]; then
+            _now=$(date +%s 2>/dev/null || echo 0)
+            if [ -n "$BIN" ] && [ -x "$BIN" ] && [ "$_now" -ge "$_fetch_cooldown" ]; then
+                _fetch_cooldown=$(( _now + 300 ))
+                _log "WARN" "keybox missing at $_KB — forcing one fetch"
+                "$BIN" keybox fetch >> "$LOG_BASE_DIR/main.log" 2>&1 \
+                    || _log "ERROR" "keybox fetch failed and no local keybox exists"
+            fi
+        fi
+
+        # 开机很久之后仍没换过（四路源全挂时守护进程只保旧文件不出声）
+        if [ "$(getprop sys.boot_completed)" = "1" ] && [ -f "$_KB" ] && [ -n "$BIN" ] && [ -x "$BIN" ]; then
+            _age=$(( $(date +%s 2>/dev/null || echo 0) - $(stat -c %Y "$_KB" 2>/dev/null || echo 0) ))
+            if [ "$_age" -gt 93600 ]; then
+                _now=$(date +%s 2>/dev/null || echo 0)
+                if [ "$_now" -ge "$_fetch_cooldown" ]; then
+                    _fetch_cooldown=$(( _now + 1800 ))
+                    _log "WARN" "keybox stale (${_age}s old) — forcing one fetch"
+                    "$BIN" keybox fetch >> "$LOG_BASE_DIR/main.log" 2>&1 \
+                        || _log "WARN" "forced keybox fetch failed (all sources unreachable?)"
+                fi
+            fi
+        fi
+
+        # --- 3) 镜像到 TA 兼容目录（单向：实时 -> 副本） ---
+        if [ -f "$_KB" ] && [ -d "$TS_DIR" ]; then
+            _dst="$TS_DIR/keybox.xml"
+            if [ ! -f "$_dst" ] || ! cmp -s "$_KB" "$_dst" 2>/dev/null; then
+                _tmp="${_dst}.mirror.$$"
+                if cp -f "$_KB" "$_tmp" 2>/dev/null && chmod 644 "$_tmp" 2>/dev/null && \
+                   sync && mv -f "$_tmp" "$_dst" 2>/dev/null; then
+                    _log "INFO" "keybox mirrored to $_dst"
+                else
+                    rm -f "$_tmp" 2>/dev/null
+                    _log "WARN" "keybox mirror failed"
+                fi
+            fi
+        fi
+    done
+) &
+
 # Post-boot maintenance, bounded and fully backgrounded: a hung boot skips
 # these tasks with a warning instead of stalling this script.
 (
@@ -237,28 +382,7 @@ _log "INFO" "Daemon launched"
     # Xposed Detection (background)
     "$BIN" status xposed-scan >> "$LOG_BASE_DIR/main.log" 2>&1 &
 
-    # 密钥镜像：守护进程只写 $TS_DIR/keybox.xml（内置 TEERS 读这里）；资源包
-    # 形态的 TEERS 走标准 TrickyStore 目录 /data/adb/tricky_store/keybox.xml。
-    # 后台循环只在源更新且内容确实不同时覆盖（-nt + cmp），避免用旧文件倒灌
-    # 新目录。
-    (
-        while :; do
-            sleep 60
-            src="$TS_DIR/keybox.xml"
-            dst="/data/adb/tricky_store/keybox.xml"
-            if [ -f "$src" ] && [ -d "/data/adb/tricky_store" ] && \
-               { [ ! -f "$dst" ] || [ "$src" -nt "$dst" ]; }; then
-                if [ ! -f "$dst" ] || ! cmp -s "$src" "$dst" 2>/dev/null; then
-                    tmp="${dst}.tmp.$$"
-                    if cp -f "$src" "$tmp" 2>/dev/null && chmod 644 "$tmp" 2>/dev/null && \
-                       sync && mv -f "$tmp" "$dst" 2>/dev/null; then
-                        _log "INFO" "keybox mirrored to /data/adb/tricky_store/keybox.xml"
-                    else
-                        rm -f "$tmp" 2>/dev/null
-                        _log "WARN" "keybox mirror failed"
-                    fi
-                fi
-            fi
-        done
-    ) &
+    # Keybox 相关（权限守护 / 有效性 / 镜像）已移到 daemon 启动处独立运行：
+    # 那条守护必须早于 boot 完成，才能盖住"拉取成功 -> 权限变 0600 -> engine
+    # 读不到"这个窗口。这里不再重复做一遍，避免两个循环同时写兼容副本。
 ) &

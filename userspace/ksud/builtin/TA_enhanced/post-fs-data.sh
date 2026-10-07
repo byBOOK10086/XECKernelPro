@@ -1,3 +1,5 @@
+# 修改版（GPL-3.0 §5(a)）：本文件由 XECKernel Pro 修改，非上游原样；改动清单与日期见
+# 同目录 NOTICE.md「本地修改」。上游：Enginex0/tricky-addon-enhanced（GPL-3.0）。
 MODPATH=${0%/*}
 TS="/dev/.xudc_hidden/tricky_store"
 LOG_BASE_DIR="/data/adb/.xudc_secure/ta-enhanced/logs"
