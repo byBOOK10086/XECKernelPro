@@ -28,9 +28,10 @@ jobs:
           ignore_names: gradlew
           # 说明：
           #   1) installer.sh / setup-rust-build.sh 是上游既有的豁免脚本。
-          #   2) builtin/ 下的 susfs4ksu、TA_enhanced、SelinuxFix 是第三方随包脚本
-          #      （simonpunk/susfs4ksu 等），不由本项目维护，保持原样以免后续合并冲突。
-          #   3) 本项目自有的脚本（kernel/**、scripts/**、builtin/tricky_store）仍全部纳入检查。
+          #   2) builtin/ 下的 TA_enhanced、third_party/ 下的上游源码树是第三方
+          #      随包内容，不由本项目维护，保持原样以免后续合并冲突。
+          #   3) 本项目自有的脚本（kernel/**、scripts/**、builtin/tricky_store）仍全部纳入检查；
+          #      .github/scripts 下的 CI 辅助脚本沿用既有整目录豁免约定。
           #
           # 格式约定（重要，勿改成带前导 "./" 的写法）：
           #   action 内部把每个条目展开成三条 find 条件：
@@ -42,6 +43,6 @@ jobs:
           ignore_paths: >-
             .github/scripts
             userspace/ksud/src
-            userspace/ksud/builtin/susfs4ksu
             userspace/ksud/builtin/TA_enhanced
-            userspace/ksud/builtin/SelinuxFix
+            third_party/TEESimulator-RS
+            third_party/tricky-addon-enhanced

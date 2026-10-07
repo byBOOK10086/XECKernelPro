@@ -1,0 +1,12 @@
+[package]
+name = "resetprop-cli"
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+
+[[bin]]
+name = "resetprop"
+path = "src/main.rs"
+
+[dependencies]
+resetprop = { path = "../resetprop" }
