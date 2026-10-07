@@ -2,10 +2,18 @@ name: Update keybox mirror
 
 # yurikey 原源 raw.githubusercontent.com 在国内直连不可达，ta-enhanced 的 custom
 # 源又不做 base64 解码（原文直存）。这里在 Actions 里解码好 yurikey 的 key，
-# 把明文 keybox.xml 维护在专用 keybox 分支上，供设备端经 jsdelivr 镜像拉取：
-#   https://cdn.jsdelivr.net/gh/byBOOK10086/XECKernelPro@keybox/keybox.xml
-# yurikey 密钥实测数天一轮换，jsdelivr 分支引用 ~12h 缓存完全覆盖；3 分钟一次
-# 的设备端轮询在缓存过期后自动拿到新箱。
+# 把明文 keybox.xml 维护在专用 keybox 分支上，供设备端经国内镜像拉取：
+#   https://ghfast.top/https://raw.githubusercontent.com/<repo>/keybox/keybox.xml
+#   https://fastly.jsdelivr.net/gh/<repo>@keybox/keybox.xml
+# yurikey 密钥实测数天一轮换（DeviceID 形如 "Yurikey58"，代次即版本），
+# 设备端镜像清单里这一档是"最新鲜"的一路。
+#
+# ⚠️ 两个必须知道的运行约束（否则本工作流静默不跑，设备端就只剩内置副本）：
+#   1) `schedule` 触发器**只在仓库默认分支上生效**。本仓库默认分支是 main，
+#      所以要把本文件保持在 main 上（或用 workflow_dispatch 手动跑）。
+#   2) 除定时任务外，`build-xecpro.yml` 构建 ksud 时也会调用
+#      .github/scripts/refresh-keybox.sh，在构建产物里植入当时最新的箱子——
+#      设备端"刷入即拿到"这条路不依赖本工作流的定时任务。
 
 on:
   schedule:
@@ -25,24 +33,48 @@ jobs:
     steps:
       - name: Fetch and decode yurikey keybox
         run: |
-          set -e
-          curl -fsSL --retry 3 --connect-timeout 20 \
-            https://raw.githubusercontent.com/Yurii0307/yurikey/main/key -o key.b64
-          base64 -d key.b64 > keybox.xml
-          grep -q '<AndroidAttestation>' keybox.xml
-          grep -q 'PrivateKey' keybox.xml
-          echo "decoded $(wc -c < keybox.xml) bytes"
+          set -eu
+          OK=0
+          for URL in \
+            "https://raw.githubusercontent.com/Yurii0307/yurikey/main/key" \
+            "https://raw.gitmirror.com/Yurii0307/yurikey/main/key" \
+            "https://fastly.jsdelivr.net/gh/Yurii0307/yurikey@main/key"; do
+            echo "==> trying $URL"
+            if curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 60 \
+                 "$URL" -o key.b64; then
+              if base64 -d key.b64 > keybox.xml 2>/dev/null \
+                 && grep -q '<AndroidAttestation>' keybox.xml \
+                 && grep -q '<Keybox' keybox.xml \
+                 && [ "$(grep -c 'BEGIN CERTIFICATE' keybox.xml)" -ge 2 ]; then
+                echo "==> decoded $(wc -c < keybox.xml) bytes from $URL"
+                OK=1
+                break
+              fi
+              echo "::warning::$URL decoded to something that is not a keybox"
+            fi
+          done
+          if [ "$OK" != "1" ]; then
+            echo "::warning::no upstream keybox source reachable; leaving the keybox branch untouched"
+            exit 0
+          fi
+          echo "DeviceID=$(sed -n 's/.*DeviceID=\"\([^\"]*\)\".*/\1/p' keybox.xml | head -n1)"
+          sha256sum keybox.xml
 
-      - name: Push to keybox branch (skip when unchanged)
+      - name: Push to keybox branch (skip when unchanged or older)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -e
+          set -eu
+          [ -s keybox.xml ] || { echo "no fresh keybox fetched this run"; exit 0; }
           git config --global user.name "XECKernelPro"
           git config --global user.email "xec@localhost"
+
+          generation() { sed -n 's/.*Yurikey\([0-9][0-9]*\).*/\1/p' "$1" 2>/dev/null | head -n1; }
+          NEW_GEN="$(generation keybox.xml)"
+
           if ! git clone --depth 1 --branch keybox \
               "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo; then
-            echo "keybox branch missing, recreating"
+            echo "==> keybox branch missing, recreating"
             git init -b keybox repo
             cd repo
             git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
@@ -52,9 +84,16 @@ jobs:
             git push -u origin keybox
             exit 0
           fi
+
           cd repo
           if [ -f keybox.xml ] && cmp -s keybox.xml ../keybox.xml; then
-            echo "unchanged, skipping commit"
+            echo "==> unchanged, skipping commit"
+            exit 0
+          fi
+          # 代次保护：镜像回源到旧快照时不要把它当"新箱子"提交，否则设备端会被降级
+          OLD_GEN="$(generation keybox.xml)"
+          if [ -n "$NEW_GEN" ] && [ -n "$OLD_GEN" ] && [ "$NEW_GEN" -lt "$OLD_GEN" ]; then
+            echo "::warning::fetched Yurikey$NEW_GEN is older than branch Yurikey$OLD_GEN; skipping commit"
             exit 0
           fi
           cp ../keybox.xml .

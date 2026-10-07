@@ -22,6 +22,15 @@ https://android.googlesource.com/platform/frameworks/base/ ），按上游模块
 其余 `*.sh`、`common/`、`more-exclude.json`、`webui/` 为本目录内可读源文件/配置
 （`service.sh` 等为适配本仓库内置模块具体化机制的重写版）。
 
+本目录下列文件为**本项目新增**（上游没有对应文件，不含上游代码，随本模块一并按
+GPL-3.0 分发；版权归 XECKernel Pro，新增日期 2026-10-08）：
+
+- `common/keybox.sh` —— 面向中国大陆的 keybox 自动获取 / 可信核验 / 防退化自愈
+- `common/keybox_mirrors.txt` —— 国内优先的 keybox 镜像清单（可被用户覆盖）
+- `common/keybox_trust.txt` —— Google Hardware Attestation 根/中间证书指纹表
+- `common/bootstate.sh` —— bootloader 回锁态伪装（最早生效 + 看护 + 取证）
+- `post-mount.sh` —— late-load 路径（不经过 post-fs-data）下的锁态补位
+
 原随包的 `common/vbhash_extractor.apk`（无源码、无许可证声明、脚本亦无引用）已移除；
 vbhash 提取功能由源码构建的 ta-enhanced 守护进程（`rust/src/vbhash/`）承担。
 
@@ -49,6 +58,25 @@ vbhash 提取功能由源码构建的 ta-enhanced 守护进程（`rust/src/vbhas
   按"实时 → 兼容副本"单向镜像。**vendor 源码保持零修改。**
 - **2026-10-08**：`prop.sh` 的收尾校验改为两遍（不一致先补写再复查）并记录实际使用的
   `resetprop` 后端；ZeroMount 豁免由 INFO 升为 WARN 并写明"此开机不伪装 bootloader 状态"。
+- **2026-10-08（中国大陆可用性 + 回锁态，本文件列入的改动范围最大的一次）**：
+  1. `service.sh` 的 keybox 守护换实现：删掉内联的 5s 循环（其"刷新"只调 vendor 的
+     `keybox fetch`，而 vendor 的四路源在国内基本全灭），改为 `common/keybox.sh` 的
+     1s 权限看护 + 15s 可信度巡检 + 多镜像刷新；`custom_url` 改指本项目 keybox 分支的
+     国内代理（明文 XML），并顺手把 daemon 的 `logging.log_dir` 统一到
+     `/data/adb/.xudc_secure/ta-enhanced/logs`（此前 shell 层日志目录根本不存在，
+     `_log` 的文件写入全部落空，只在 logcat 里）。
+  2. 新增 `common/keybox.sh` + `keybox_mirrors.txt` + `keybox_trust.txt`：国内可达镜像
+     清单（yurikey 原源经国内代理 → 本项目镜像分支 → jsDelivr → 直连）、base64 源自动
+     解码、Google 链指纹核验、按 `YurikeyNN` 代次防降级、无效/低级别副本自动回退到
+     上次可信副本、WebUI 粘贴的自定义 keybox 双向对账。
+  3. 锁态逻辑拆到新增的 `common/bootstate.sh`：`prop.sh` 不再在脚本开头
+     `resetprop -w sys.boot_completed 0` 之后才伪装 bootloader 状态，而是由
+     `post-fs-data.sh`（正常开机最早时机）与新增的 `post-mount.sh`（late-load 路径）
+     提前落笔，`prop.sh` 保留第二次落笔与两遍校验，`service.sh` 再起一个 30s 看护循环
+     补写被系统改回的 `sys.oem_unlock_allowed` 等属性；并把 `/proc/cmdline`、
+     `/proc/bootconfig` 里仍暴露的真实启动状态写进日志。
+  4. `service.sh` 在开机完成后追加一行总览日志（keybox 级别/DeviceID/权限/sha + 锁态
+     属性 + 运行形态 LKM/内置/late-load），作为用户自查的单一入口。
 
 许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
 一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。

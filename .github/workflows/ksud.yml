@@ -72,6 +72,12 @@ jobs:
     - name: Install cargo-ndk
       run: cargo install cargo-ndk --locked
 
+    # 构建时把上游最新的 keybox 打进内置 tricky_store 模块（RustEmbed 之后会把它
+    # 一起打包进 ksud）。这样"刷入模块"本身就是一次密钥刷新，中国大陆用户不需要
+    # 设备端能连上 GitHub 也能拿到可信密钥。脚本拿不到源时不失败，保留仓库里那份。
+    - name: Refresh embedded keybox
+      run: bash .github/scripts/refresh-keybox.sh
+
     - name: Build builtin modules from vendored source
       env:
         ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
