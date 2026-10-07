@@ -13,11 +13,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.addRoundRect
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -305,8 +303,12 @@ class XcIndication(
          * - 两轴都在中段（按在控件中央）→ 取较近的那条边，锚点沿该边跟随手指。
          *
          * 返回 `null` 表示控件太小、画不出可辨认的凹陷，此时整层跳过。
+         *
+         * 注意这里是 `DrawScope` 的扩展：`size` 必须是绘制作用域里的 `Size`
+         * （Float 尺寸），不能用 `Modifier.Node` 自己的 `size`（IntSize）——
+         * 那样下面的 `when` 会推出 `Number`，`Offset(x, y)` 直接编译不过。
          */
-        private fun dentCenter(): Offset? {
+        private fun DrawScope.dentCenter(): Offset? {
             val w = size.width
             val h = size.height
             if (w <= 1f || h <= 1f) return null
