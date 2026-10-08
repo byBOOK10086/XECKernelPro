@@ -211,7 +211,13 @@ bootstate_spoof_vbmeta() {
     esac
 
     if [ "$_teesim_ok" = "true" ] && [ -f "$TS_DIR/boot_hash.bin" ]; then
-        hash_value=$(od -A n -t x1 "$TS_DIR/boot_hash.bin" 2>/dev/null | tr -d ' \n')
+        # 必须带 -v：od 默认把重复行折叠成 `*`（32 字节全同的哈希会被读成
+        # "abab…ab*"，正则不匹配 → 属性回写静默失效，检测方 getprop 与证书不一致）。
+        hash_value=$(od -v -A n -t x1 "$TS_DIR/boot_hash.bin" 2>/dev/null | tr -d ' \n' | tr 'A-F' 'a-f')
+        case "$hash_value" in *'*'*) hash_value="" ;; esac
+        if [ -z "$hash_value" ] && command -v hexdump >/dev/null 2>&1; then
+            hash_value=$(hexdump -v -e '1/1 "%02x"' "$TS_DIR/boot_hash.bin" 2>/dev/null | tr 'A-F' 'a-f')
+        fi
         if echo "$hash_value" | grep -qE '^[a-f0-9]{64}$'; then
             _hash_src="teesim"
         else

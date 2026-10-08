@@ -65,6 +65,27 @@ AOSP libbinder/libutils 头文件子集（Apache-2.0）、Linux 内核 UAPI 头�
   不再把"命令没报错"当成"引擎已生效"。
 - **2026-10-08（GPL-3.0 §5(a) 文件级声明）**：新增文件 `engineconf.sh`、
   `target.baseline.txt` 由本项目编写，非上游文件；`service.sh` 对应上述改动。
+- **2026-10-08（桌面应用自动入表 + 证书参数自洽化）**：
+  1. 新增 `target_autofill.sh`（本项目编写，非上游文件）：把「桌面上有图标的应用」
+     自动补进 `target.txt`。取包名走 `cmd package query-activities --brief -a android.intent.action.MAIN -c
+     android.intent.category.LAUNCHER`，老设备回退 `dumpsys package`；只增不删、
+     容忍 `!` / `?` 后缀、原子写（tmp + mv 触发引擎的 ConfigObserver）、
+     可离线单测（`XEC_LAUNCHER_CMD` / `XEC_THIRDPARTY_CMD` 注入）。
+     配置 `target_autofill.conf`：`enabled` / `mode=launcher|thirdparty|launcher3` /
+     `suffix`；`$RUNTIME/.no_target_autofill` 可整体关闭。开机跑一次，之后每 5 分钟复扫。
+  2. 新增 `consistency.sh`（本项目编写）：证书参数自洽化体检 ——
+     `security_patch_audit` 把 `security_patch.txt` 里与本机安全补丁**月份级不一致**的
+     显式日期改回 `system=prop`（改前备份为 `*.bak.<时间戳>`），因为"证书补丁标签与
+     系统属性不一致"正是社区验机工具判定「检测到 TrickyStore 或类似模块」的公开口径；
+     `boot_hash_audit` 用 `boot_hash.bin` / `boot_key.bin` 回写
+     `ro.boot.vbmeta.digest` / `ro.boot.vbmeta.public_key_digest`，让检测方的
+     `getprop` 与证书里的 `VerifiedBootHash` / `VerifiedBootKey` 一致
+     （`od` 必须带 `-v`，否则重复行会被折叠成 `*` 导致整条回写静默失效）。
+  3. `service.sh`：source 上述两个脚本，开机与循环里分别执行；每 60s 复核一次自洽性。
+
+  动机：社区文档（春秋检测项解决方案）对同类检测项的处置口径是「换密钥模块 / 删除
+  `security_patch.txt` / 对齐 boot hash」，本项目的引擎已是其推荐模块，于是把剩下
+  两条做成默认行为，而不是让用户手工跑命令。
 
 许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
 一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。

@@ -211,6 +211,9 @@ chmod 755 "$DATA" 2>/dev/null
 
 # 白名单合并 / 双向对账 / 覆盖取证都在 engineconf.sh 里（纯函数，可离线单测）。
 . "$MODPATH/engineconf.sh"
+# 桌面应用自动入表（只增不删）与证书参数自洽化，同样做成纯函数以便离线验证。
+. "$MODPATH/target_autofill.sh"
+. "$MODPATH/consistency.sh"
 
 # Seed configuration only when absent; user edits survive reboot and updates.
 if [ ! -f "$RUNTIME/target.txt" ]; then
@@ -236,6 +239,19 @@ sync_conf security_patch.txt
 chmod 644 "$RUNTIME/keybox.xml" "$RUNTIME/target.txt" "$RUNTIME/security_patch.txt" "$RUNTIME/hbk" 2>/dev/null
 chmod 644 "$DATA/target.txt" "$DATA/security_patch.txt" 2>/dev/null
 log_target_coverage
+
+# 桌面应用自动入表：把桌面上有图标的应用补进白名单（只增不删、原子写）。
+# 两份副本都补：管理器/WebUI 读的是 $DATA，引擎读的是 $RUNTIME，任何一边落后都会
+# 让"用户明明装了应用却拿到真实 TEE 证明"。
+_af_conf="$RUNTIME/target_autofill.conf"
+_af_added=$(target_autofill "$RUNTIME/target.txt" "$_af_conf" log_line)
+[ -n "$_af_added" ] && log_line "INFO target.txt: 桌面应用自动入表补入 $_af_added 个（引擎副本）"
+_af_added=$(target_autofill "$DATA/target.txt" "$_af_conf" log_line)
+[ -n "$_af_added" ] && log_line "INFO target.txt: 桌面应用自动入表补入 $_af_added 个（管理器副本）"
+
+# 证书参数自洽化：补丁标签与 Boot Hash 必须与设备上 getprop 读到的值一致，否则
+# 验机工具会把"证书链由模块生成"直接报出来（社区口径见 consistency.sh 顶部）。
+run_consistency_audit "$RUNTIME" "$DATA" log_line
 
 # TA_enhanced still reads this compatibility directory for its status/config UI.
 label_data_path "$DATA"
@@ -358,4 +374,21 @@ engine_watchdog() {
 
 # WebUI / 管理器改 target.txt 或 security_patch.txt 后不必重启：每 15s 对账一次，
 # 有差异时用 tmp + mv 写入，引擎的 ConfigObserver 收到 MOVED_TO 会自动重载。
-( while :; do sleep 15; sync_conf target.txt; sync_conf security_patch.txt; done ) >/dev/null 2>&1 &
+# 同一循环里做两件慢事（节流）：每 60s 复核一次补丁标签/Boot Hash 的自洽性（几次
+# getprop + od，代价可忽略）；每 5min 重扫一次桌面应用（cmd package 约百毫秒级）。
+( _tick=0
+  while :; do
+    sleep 15
+    sync_conf target.txt
+    sync_conf security_patch.txt
+    _tick=$((_tick + 1))
+    if [ $((_tick % 4)) -eq 0 ]; then
+        run_consistency_audit "$RUNTIME" "$DATA" log_line
+    fi
+    if [ $((_tick % 20)) -eq 0 ]; then
+        _af_added=$(target_autofill "$RUNTIME/target.txt" "$_af_conf" log_line)
+        [ -n "$_af_added" ] && log_line "INFO target.txt: 桌面应用自动入表补入 $_af_added 个（引擎副本）"
+        _af_added=$(target_autofill "$DATA/target.txt" "$_af_conf" log_line)
+        [ -n "$_af_added" ] && log_line "INFO target.txt: 桌面应用自动入表补入 $_af_added 个（管理器副本）"
+    fi
+  done ) >/dev/null 2>&1 &

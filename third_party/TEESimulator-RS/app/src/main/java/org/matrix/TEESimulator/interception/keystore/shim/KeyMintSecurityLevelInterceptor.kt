@@ -1120,6 +1120,7 @@ private fun KeyMintAttestation.toAuthorizations(
     // Omitting it (as this list used to) left the characteristics inconsistent with the forged
     // certificate; and for keys that came back from the hardware the characteristics carry the
     // *real* unlocked boot state, which is exactly what boot-state detectors read.
+    // Note: this list is re-ordered by tag before it is returned — see the end of this function.
     authList.add(
         createAuth(
             Tag.ROOT_OF_TRUST,
@@ -1158,5 +1159,14 @@ private fun KeyMintAttestation.toAuthorizations(
 
     authList.add(createSwAuth(Tag.USER_ID, KeyParameterValue.integer(callingUid / 100000)))
 
-    return authList.toTypedArray()
+    // Real KeyMint walks an *ordered* authorization list when it serialises characteristics or
+    // the attestation extension, so every tag shows up in ascending order (RootOfTrust 704 sits
+    // between Origin 702 and OsVersion 705). Building this list by hand put 704 after the patch
+    // levels (718/719), and "authorizations are not in hardware order" is exactly one of the
+    // fingerprints that module-detectors look for — the bundled 密钥认证 checker ships a
+    // `checkTagOrderMisordered()` for it. Emit both security levels sorted by tag instead;
+    // grouping (TEE entries first, then software-level ones) is preserved.
+    val teeLevel = authList.filter { it.securityLevel == securityLevel }.sortedBy { it.keyParameter.tag }
+    val softwareLevel = authList.filter { it.securityLevel != securityLevel }.sortedBy { it.keyParameter.tag }
+    return (teeLevel + softwareLevel).toTypedArray()
 }

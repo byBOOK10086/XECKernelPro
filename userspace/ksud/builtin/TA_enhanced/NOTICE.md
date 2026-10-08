@@ -97,6 +97,13 @@ vbhash 提取功能由源码构建的 ta-enhanced 守护进程（`rust/src/vbhas
   锁态 + vbmeta + 身份三组属性并复核（判定只看"ZeroMount 生效且窗口未打开"，
   不依赖跨进程传递的标记）；`bootstate_verify` 相应改为"窗口未关则推迟"，
   `post-fs-data.sh` 的计数行打印 `DEFERRED (ZeroMount mount window)`。
+- **2026-10-08（boot_hash 读取的静默失效：`od` 重复行折叠）**：`common/bootstate.sh`
+  读引擎落盘的 `boot_hash.bin` 时改为 `od -v`，并在读到 `*` 或失败时回退 `hexdump -v`。
+  原因：`od`（GNU / toybox / busybox 都是这个行为）默认把**重复行折叠成一行 `*`**，
+  32 字节全同的哈希会被读成 `abab…ab*`，于是 `^[a-f0-9]{64}$` 校验不过、属性回写被
+  **静默跳过**——检测方 `getprop ro.boot.vbmeta.digest` 与证书里的 `VerifiedBootHash`
+  对不上，就会被判成"证书链由模块生成"。这是本次"检测到 TrickyStore 或类似模块"
+  修复里同源的第一环（第二环见 tricky_store/NOTICE.md 的 `consistency.sh`）。
 
 许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
 一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。
