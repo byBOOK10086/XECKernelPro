@@ -77,6 +77,16 @@ vbhash 提取功能由源码构建的 ta-enhanced 守护进程（`rust/src/vbhas
      `/proc/bootconfig` 里仍暴露的真实启动状态写进日志。
   4. `service.sh` 在开机完成后追加一行总览日志（keybox 级别/DeviceID/权限/sha + 锁态
      属性 + 运行形态 LKM/内置/late-load），作为用户自查的单一入口。
+- **2026-10-08（总览补三项"是否真的生效"、跳过不再静默）**：
+  1. `service.sh` 的开机后总览追加 `zeromount=`、拦截列表条目数与"内置验机工具是否
+     被覆盖"、引擎进程 `engine=`。原因是本次用户报的故障（验机工具报"未知认证根证书 /
+     无效的信任根状态"）根因在**引擎的穷举白名单没覆盖那个包**，与 keybox / 锁态属性
+     无关；总览里没有这两项时，日志读起来一切正常。
+  2. `common/bootstate.sh` 新增 `BOOTSTATE_SKIPPED` 标记（`bs_zeromount_skip`），
+     ZeroMount 豁免不再与"属性本来就正确"混为一谈；`post-fs-data.sh` 的计数行会显式
+     打印 `SKIPPED (ZeroMount deferral active)`。
+  3. `common/common.sh` 的 `read_config` 在 `$BIN` 缺失/不可执行时记一次 WARN（此前只
+     静默返回默认值，配置项全部落到默认分支且日志无一字）。
 
 许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
 一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。

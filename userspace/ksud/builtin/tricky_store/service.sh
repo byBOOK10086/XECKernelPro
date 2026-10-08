@@ -195,6 +195,23 @@ if [ -f "$_KB_LIVE" ] && ! _kb_looks_valid "$_KB_LIVE"; then
     log_line "WARN keybox: live copy failed structural check (sha=$(_kb_sha "$_KB_LIVE")) — engine will fall back to software-level certs until TA fetches a fresh one"
 fi
 
+# ---------------------------------------------------------------------------
+# target.txt 覆盖合并 + 配置与"管理器副本"对账
+# ---------------------------------------------------------------------------
+# 详见同目录 target.baseline.txt 顶部：引擎的白名单是**穷举**的，不在
+# /data/adb/tricky_store/target.txt 里的 UID 会被完全跳过、原样拿到真实 TEE 证明，
+# 而管理器 / WebUI 写的却是另一个路径（$DATA）。两边从未对账，于是"刷了新版本、
+# 验机工具依旧报未知认证根证书 / 无效的信任根状态"。
+#
+# 这里做四件事：缺失才播种（保留用户既有列表）→ 把 baseline 缺失项只增不删地追加
+# → $DATA（用户意图）与 $RUNTIME（引擎实际读取）双向对账 → 权限与覆盖取证。
+DATA=/data/adb/.xudc_secure
+mkdir -p "$DATA" 2>/dev/null
+chmod 755 "$DATA" 2>/dev/null
+
+# 白名单合并 / 双向对账 / 覆盖取证都在 engineconf.sh 里（纯函数，可离线单测）。
+. "$MODPATH/engineconf.sh"
+
 # Seed configuration only when absent; user edits survive reboot and updates.
 if [ ! -f "$RUNTIME/target.txt" ]; then
     stage_file "$MODPATH/target.txt" "$RUNTIME/target.txt" 644 || exit 1
@@ -205,12 +222,22 @@ fi
 if [ ! -f "$RUNTIME/hbk" ]; then
     dd if=/dev/random of="$RUNTIME/hbk" bs=32 count=1 2>/dev/null || exit 1
 fi
+if [ ! -f "$DATA/target.txt" ]; then
+    stage_file "$MODPATH/target.txt" "$DATA/target.txt" 644 || exit 1
+fi
+if [ ! -f "$DATA/security_patch.txt" ]; then
+    printf 'system=prop\n' > "$DATA/security_patch.txt" || exit 1
+fi
+
+merge_baseline "$RUNTIME/target.txt" "$MODPATH/target.baseline.txt"
+merge_baseline "$DATA/target.txt" "$MODPATH/target.baseline.txt"
+sync_conf target.txt
+sync_conf security_patch.txt
 chmod 644 "$RUNTIME/keybox.xml" "$RUNTIME/target.txt" "$RUNTIME/security_patch.txt" "$RUNTIME/hbk" 2>/dev/null
+chmod 644 "$DATA/target.txt" "$DATA/security_patch.txt" 2>/dev/null
+log_target_coverage
 
 # TA_enhanced still reads this compatibility directory for its status/config UI.
-DATA=/data/adb/.xudc_secure
-mkdir -p "$DATA" || exit 1
-chmod 755 "$DATA" 2>/dev/null
 label_data_path "$DATA"
 # 注意：**这里不再播种 $DATA/keybox.xml**。
 # 这一份是 TA 侧的"兼容副本"，而 TA 的 keybox.sh 会把"兼容副本被外部改动"
@@ -219,16 +246,10 @@ label_data_path "$DATA"
 # 实时副本是比较新的拉取结果 -> 兼容副本被删/缺失 -> 这里回填旧的内置副本 ->
 # TA 判定"用户改过" -> 把旧箱子装回实时路径。宁可不回填：TA 的守护会在 15s 内
 # 把实时副本镜像过来，WebUI 的显示与自定义写入都不受影响。
-if [ ! -f "$DATA/target.txt" ]; then
-    stage_file "$MODPATH/target.txt" "$DATA/target.txt" 644 || exit 1
-fi
-if [ ! -f "$DATA/security_patch.txt" ]; then
-    printf 'system=prop\n' > "$DATA/security_patch.txt" || exit 1
-fi
 if [ ! -f "$DATA/hbk" ]; then
     dd if=/dev/random of="$DATA/hbk" bs=32 count=1 2>/dev/null || exit 1
 fi
-chmod 644 "$DATA/target.txt" "$DATA/security_patch.txt" "$DATA/hbk" 2>/dev/null
+chmod 644 "$DATA/hbk" 2>/dev/null
 
 # 引擎启动前的密钥取证（用上面已定义好的 _kb_sha / _kb_device_id / _kb_looks_valid）。
 #
@@ -268,4 +289,36 @@ fi
 
 cd "$RUNTIME" || exit 1
 ./supervisor ./daemon "$RUNTIME" >> "$LOG_FILE" 2>&1 &
-log_line "INFO TEESimulator supervisor started"
+log_line "INFO TEESimulator supervisor launched (pid=$!)"
+
+# 引擎状态取证：启动成功与否必须**回读**，不能靠"启动命令没报错"。
+#
+# 之前的写法是无条件写一行 "supervisor started"，于是引擎注入失败、进程五连败退出
+# 时日志里同样写着"已启动"，排查时等于没有信息。这里延迟一段时间后回读三件事：
+#   1) 进程是否真的活着；
+#   2) 引擎自己的 logcat（keybox 是否解析成功、注入是否成功）；
+#   3) 白名单覆盖数（不在列表里的包根本不会被拦截）。
+capture_engine_state() {
+    local pid dump
+    pid=$(pidof TEESimulator 2>/dev/null)
+    if [ -n "$pid" ]; then
+        log_line "INFO engine: TEESimulator alive (pid=$pid)"
+    else
+        log_line "WARN engine: TEESimulator NOT running — keystore is not intercepted, attestation stays the real TEE one (untrusted key + unlocked bootloader)"
+    fi
+    dump=$(/system/bin/logcat -d -s TEESimulator:* 2>/dev/null \
+        | grep -E "Finished parsing|Key store file not found|Fatal error parsing|Injection process failed|Interceptors initialized|Backdoor not found|Successfully rebuilt" \
+        | tail -n 6)
+    if [ -n "$dump" ]; then
+        printf 'INFO engine logcat:\n%s\n' "$dump" >> "$LOG_FILE" 2>/dev/null
+    else
+        log_line "WARN engine: no TEESimulator logcat lines yet — engine has not handled an attestation request (or never started)"
+    fi
+    log_target_coverage
+}
+
+( sleep 45; capture_engine_state ) >/dev/null 2>&1 &
+
+# WebUI / 管理器改 target.txt 或 security_patch.txt 后不必重启：每 15s 对账一次，
+# 有差异时用 tmp + mv 写入，引擎的 ConfigObserver 收到 MOVED_TO 会自动重载。
+( while :; do sleep 15; sync_conf target.txt; sync_conf security_patch.txt; done ) >/dev/null 2>&1 &

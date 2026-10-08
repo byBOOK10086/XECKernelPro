@@ -1,0 +1,33 @@
+# XEC baseline coverage —— 由 builtin/tricky_store/service.sh 以**只增不删**的方式
+# 并入 /data/adb/tricky_store/target.txt。
+#
+# 为什么需要它：引擎的拦截是**穷举白名单**。不在 target.txt 里的 UID 会被完全跳过
+# （ConfigurationManager.kt 的 shouldSkipUid），原样拿到真实 TEE 证明——也就是
+# "没列进来"等于"完全没生效"。而本模块历史上只在 target.txt 缺失时才播种，于是：
+#   * 老版本留下的列表永远不会补上新工具；
+#   * 管理器 / WebUI 改的是 /data/adb/.xudc_secure/target.txt，引擎读的是
+#     /data/adb/tricky_store/target.txt，两边从未对账。
+# 表现就是：刷了新版本，验机工具依旧报"未知认证根证书 / 无效的信任根状态"。
+#
+# 语义速查（引擎的解析规则）：
+#   包名        自动：真实 TEE 可用就补丁，不可用就按 keybox 生成
+#   包名!       强制按 keybox 生成新链
+#   包名?       只补丁真实 TEE 链
+#   [xxx.xml]   切换后续条目使用的 keybox（默认 keybox.xml）
+#
+# 只增不删：用户自己的条目、模式后缀与 [xxx.xml] 分组头都不会被改动或删除；
+# 这里的条目若已存在（含带 !/? 后缀的写法）也不会重复追加。
+
+# XEC 管理器内置的验机工具（密钥链完整性检测，wu.keyChain.test）。
+# 必须覆盖：它正是我们自己的验机入口，不覆盖时它看到的是未经模拟的真实 TEE 链，
+# 界面必然报"未知认证根证书 / 不完整的根证书 / 无效的信任根状态"。
+wu.keyChain.test
+
+# Play Integrity / 完整性与证明检测器（社区常用）
+gr.nikolasspyr.integritycheck
+com.henrikherzig.playintegritychecker
+krypton.tbsafetychecker
+
+# AOSP / GMS 侧的证明入口
+com.google.android.gsf
+com.android.keyattestation

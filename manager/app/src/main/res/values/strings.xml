@@ -499,4 +499,21 @@ See the log below for details.</string>
     <string name="wallpaper_import_failed">Could not import the image: %1$s</string>
     <string name="wallpaper_note_title">How it works</string>
     <string name="wallpaper_note">The image is written to this app\'s private directory only: no storage permission, no upload, and it is removed together with the app when you uninstall it.\nLight and dark are configured separately — leave one alone and it keeps using the built-in random pool.\nEvery liquid-glass surface refracts the image you pick. The AMOLED black theme still covers the background to keep true black.\nOn import the image is re-encoded to JPEG with a 2560 px long edge; the original in your gallery is never modified.</string>
+    <!-- TEE 引擎实测看板（验机页）：决定"模拟是否真的生效"的四项事实。 -->
+    <string name="detect_tee_title">TEE engine &amp; interception</string>
+    <string name="detect_tee_engine">Engine</string>
+    <string name="detect_tee_keybox">Keybox</string>
+    <string name="detect_tee_coverage">Intercept list</string>
+    <string name="detect_tee_bootstate">Boot state</string>
+    <string name="detect_tee_running">running</string>
+    <string name="detect_tee_not_running">NOT running</string>
+    <string name="detect_tee_covered_fmt">%1$d entries · bundled checker covered</string>
+    <string name="detect_tee_not_covered_fmt">%1$d entries · bundled checker NOT covered</string>
+    <string name="detect_tee_add">Add the checker to the list</string>
+    <string name="detect_tee_add_done">Intercept list updated</string>
+    <string name="detect_tee_add_failed">Could not update the intercept list</string>
+    <string name="detect_tee_refresh">Refresh</string>
+    <string name="detect_tee_note">Detectors only receive a simulated TEE when their package is in the engine\'s list — the list is exhaustive and has no wildcard. Anything unlisted gets the real TEE attestation, which reads as an unknown root plus an unlocked state.</string>
+    <string name="detect_tee_engine_down_note">The engine is not running, so nothing is intercepted and every app sees the real TEE. Reboot so the builtin module can start it again, then check /data/adb/tricky_store/.engine.log.</string>
+    <string name="detect_tee_zeromount_note">ZeroMount is active: the bootloader-state props are skipped for this boot by design, so property-based detectors still read the real state.</string>
 </resources>

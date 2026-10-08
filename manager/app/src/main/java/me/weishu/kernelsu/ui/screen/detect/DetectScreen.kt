@@ -217,6 +217,12 @@ private fun DetectPagerMiuix(
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // 实测看板放在最前：验机工具报"密钥不可信 / bootloader 解锁"时，第一个
+            // 要回答的问题不是"箱子对不对"，而是"引擎到底拦没拦这个包"。
+            item {
+                TeeStatusCard(backdrop = backdrop)
+            }
+
             item {
                 Card(
                     modifier = Modifier.xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),

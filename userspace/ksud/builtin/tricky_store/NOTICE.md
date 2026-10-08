@@ -47,6 +47,24 @@ AOSP libbinder/libutils 头文件子集（Apache-2.0）、Linux 内核 UAPI 头�
 - **2026-10-08（诊断可见性）**：`service.sh` 的启动取证改为记录 `DeviceID`
   （yurikey 代次，如 `Yurikey58`）、结构核验结论与"是否仍为构建时那份"，
   便于把"密钥没传过来"定位到具体是哪一份、多旧。
+- **2026-10-08（拦截白名单：本次"刷入后依然不可信/解锁"的直接修复）**：新增
+  `engineconf.sh`（可离线单测的纯函数）与 `target.baseline.txt`，`service.sh` 改为
+  source 前者并在启动引擎前做四件事：
+  1. 缺失才播种（保留用户既有列表）；
+  2. 把 baseline 里缺失的包**只增不删**地追加进 `$RUNTIME/target.txt`；
+  3. 让 `$DATA/target.txt`、`$DATA/security_patch.txt`（管理器/WebUI 写入的路径）
+     与引擎实际读取的 `$RUNTIME/*` **双向对账**，并在启动后每 15s 复检一次；
+  4. 记录覆盖取证（条目数 + 内置验机工具是否在表内）。
+
+  根因：引擎的拦截是**穷举白名单**（`config/ConfigurationManager.kt` 的
+  `shouldSkipUid`：UID 不在表里直接跳过），而本模块内置的验机工具
+  `wu.keyChain.test` 从来不在默认 11 条里，管理器/WebUI 改的又是另一个路径——
+  于是验机工具拿到的是**真实 TEE 证明**，界面必然报"未知认证根证书 /
+  无效的信任根状态"。另外 `service.sh` 末尾那句无条件的
+  "supervisor started" 改为启动后回读（进程是否活着 + 引擎 logcat + 覆盖数），
+  不再把"命令没报错"当成"引擎已生效"。
+- **2026-10-08（GPL-3.0 §5(a) 文件级声明）**：新增文件 `engineconf.sh`、
+  `target.baseline.txt` 由本项目编写，非上游文件；`service.sh` 对应上述改动。
 
 许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
 一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。

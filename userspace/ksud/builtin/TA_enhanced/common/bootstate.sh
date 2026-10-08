@@ -48,11 +48,23 @@ ensure_prop() {
 }
 
 BOOTSTATE_ZEROMOUNT_ACTIVE=false
+#: 本次开机是否**整组跳过**了锁态伪装（ZeroMount 生效时是设计行为，但必须留痕，
+#: 否则调用方只会看到 "0 spoofed, 0 failed"，读起来像"一切正常"）。
+BOOTSTATE_SKIPPED=false
 _bs_zm_dir="/data/adb/modules/meta-zeromount"
 if [ -d "$_bs_zm_dir" ] && [ ! -f "$_bs_zm_dir/disable" ] && [ ! -f "$_bs_zm_dir/remove" ]; then
     BOOTSTATE_ZEROMOUNT_ACTIVE=true
     _log "WARN" "ZeroMount active — deferring overlapping props (bootloader-state props NOT spoofed this boot; detectors will see the real state)"
 fi
+
+# ZeroMount 生效时，下面四个伪装函数与最终校验都会直接跳过。跳过本身是设计如此
+# （属性写入与 ZeroMount 的挂载期重叠会互相破坏），但**必须留下痕迹**：这正是
+# "刷入后依然显示 bootloader 解锁"最常见的形态——伪装一项都没写，日志却写着
+# "0 spoofed, 0 failed"。
+bs_zeromount_skip() {
+    BOOTSTATE_SKIPPED=true
+    return 0
+}
 
 # 运行形态取证：LKM / 内置 / late-load。
 # 权威来源是 ksud 自己（`ksud debug info` 直接打印内核上报的 flags），拿不到时
@@ -100,7 +112,7 @@ bootstate_detect_mode() {
 # 锁态属性（最早生效的那组）
 # ---------------------------------------------------------------------------
 bootstate_spoof_lock() {
-    [ "$BOOTSTATE_ZEROMOUNT_ACTIVE" = "true" ] && return 0
+    [ "$BOOTSTATE_ZEROMOUNT_ACTIVE" = "true" ] && bs_zeromount_skip
     check_reset_prop "ro.boot.vbmeta.device_state" "locked"
     check_reset_prop "ro.boot.verifiedbootstate" "green"
     check_reset_prop "ro.boot.flash.locked" "1"
@@ -124,7 +136,7 @@ bootstate_spoof_lock() {
 # 构建身份类属性（保持原时机：prop.sh 在 boot 完成后调用）
 # ---------------------------------------------------------------------------
 bootstate_spoof_identity() {
-    [ "$BOOTSTATE_ZEROMOUNT_ACTIVE" = "true" ] && return 0
+    [ "$BOOTSTATE_ZEROMOUNT_ACTIVE" = "true" ] && bs_zeromount_skip
     check_reset_prop "ro.debuggable" "0"
     check_reset_prop "ro.force.debuggable" "0"
     check_reset_prop "ro.secure" "1"
@@ -158,7 +170,7 @@ bootstate_spoof_identity() {
 # vbmeta 相关属性（digest/size/avb 版本）——保持原时机
 # ---------------------------------------------------------------------------
 bootstate_spoof_vbmeta() {
-    [ "$BOOTSTATE_ZEROMOUNT_ACTIVE" = "true" ] && return 0
+    [ "$BOOTSTATE_ZEROMOUNT_ACTIVE" = "true" ] && bs_zeromount_skip
     local _hash_src="" hash_value="" _ts_mod _ts_mp _teesim_ok=false slot_suffix candidate VBMETA_SIZE
 
     # 只有本项目的 TEESimulator 变体在位时才用它的 boot_hash.bin
@@ -243,6 +255,7 @@ bootstate_leak_report() {
 # ZeroMount 豁免、属性被拒写都能从上下文立刻定位）。
 bootstate_verify() {
     if [ "$BOOTSTATE_ZEROMOUNT_ACTIVE" = "true" ]; then
+        BOOTSTATE_SKIPPED=true
         _log "WARN" "final boot-state check skipped (ZeroMount deferral active) — detectors will read the real unlocked/orange state this boot"
         return 0
     fi

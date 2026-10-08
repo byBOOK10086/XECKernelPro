@@ -311,6 +311,21 @@ _log "INFO" "Keybox guardian started (state=$KB_STATE live级别=$(kb_trust_leve
     #            2 = 无效（此时守护已经尝试用副本恢复，见上面 WARN）
     if [ -f "$MODPATH/common/keybox.sh" ]; then
         bootstate_leak_report
-        _log "INFO" "boot 后总览：keybox live级别=$(kb_trust_level "$KB_LIVE") DeviceID=$(kb_device_id "$KB_LIVE") 权限=$(stat -c %a "$KB_LIVE" 2>/dev/null) sha=$(kb_short "$(kb_sha "$KB_LIVE")") | 锁态 verifiedboot=$(getprop ro.boot.verifiedbootstate) flash.locked=$(getprop ro.boot.flash.locked) device_state=$(getprop ro.boot.vbmeta.device_state) | mode=$BOOTSTATE_MODE"
+        # 除 keybox / 锁态之外，再加三项"能不能生效"的前置事实——它们决定了
+        # 引擎到底有没有替检测方伪造证明：
+        #   zeromount  生效时整组锁态伪装被豁免（属性类检测方读到真实解锁态）
+        #   拦截条目   /data/adb/tricky_store/target.txt 的条目数（引擎是穷举白名单，
+        #              不在表里的包**完全不被拦截**，原样拿到真实 TEE 证明）
+        #   验机工具覆盖 内置验机工具（wu.keyChain.test）是否在表内
+        #   engine     引擎进程是否活着（不在 = keystore 完全没被接管）
+        _zm=no
+        [ -d /data/adb/modules/meta-zeromount ] && \
+            [ ! -f /data/adb/modules/meta-zeromount/disable ] && \
+            [ ! -f /data/adb/modules/meta-zeromount/remove ] && _zm=yes
+        _tgt=/data/adb/tricky_store/target.txt
+        _tgt_n=$(grep -cvE '^[[:space:]]*(#|$)' "$_tgt" 2>/dev/null)
+        _tgt_ck=no
+        grep -qxF -e 'wu.keyChain.test' "$_tgt" 2>/dev/null && _tgt_ck=yes
+        _log "INFO" "boot 后总览：keybox live级别=$(kb_trust_level "$KB_LIVE") DeviceID=$(kb_device_id "$KB_LIVE") 权限=$(stat -c %a "$KB_LIVE" 2>/dev/null) sha=$(kb_short "$(kb_sha "$KB_LIVE")") | 锁态 verifiedboot=$(getprop ro.boot.verifiedbootstate) flash.locked=$(getprop ro.boot.flash.locked) device_state=$(getprop ro.boot.vbmeta.device_state) | zeromount=$_zm | 拦截 target=${_tgt_n:-0} 验机工具覆盖=$_tgt_ck engine=$(pidof TEESimulator 2>/dev/null || echo none) | mode=$BOOTSTATE_MODE"
     fi
 ) &
