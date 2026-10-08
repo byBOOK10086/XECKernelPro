@@ -95,8 +95,9 @@ kb_sha() {
 kb_short() { printf '%.16s' "$1"; }
 
 # yurikey 的 DeviceID 里带着代次（当前实测形如 "Yurikey58. Valid keybox. ..."）。
-# 这是**唯一**能从盒子本身判断新旧的信号：代次更高才算更新，避免被镜像里的旧
-# 副本倒灌（那正是"密钥一直传不过来"的另一种形态）。
+# ⚠️ 代次**不是**严格递增的版本号：实测同一代次（Yurikey58）会被上游换掉整箱内容，
+# 所以代次只能用来拦"明确更旧"，不能用来判"是否更新"——同代次按内容（sha）比较，
+# 不同就采纳（见 kb_try_candidate）。
 kb_generation() {
     sed -n 's/.*Yurikey\([0-9][0-9]*\).*/\1/p' "$1" 2>/dev/null | head -n 1
 }
@@ -285,11 +286,20 @@ kb_try_candidate() {
         if [ "$_lvl" = "$_live_lvl" ]; then
             _cand_gen=$(kb_generation "$_src")
             _live_gen=$(kb_generation "$KB_LIVE")
+            # 只在"候选代次确实更低"时拒绝；**同代次必须接受**。
+            # 2026-10-08 实测：yurikey 会在 DeviceID 标签完全不变（仍是 "Yurikey58"）
+            # 的情况下换掉整箱内容——当时 yurikey 原源给的是 sha a0a3da9c…，而设备/
+            # 仓库里躺着的是 10-05 镜像下来的 dc847feb…。若按"代次必须更高"来判，
+            # 这种更新会被永久拒收，"箱子被吊销后换不掉"就成了死结；而镜像源本来就
+            # 比设备上那份新（我们正是刚从那里下载的），所以同代次 = 内容更新，采纳。
+            if [ -n "$_cand_gen" ] && [ -n "$_live_gen" ] && [ "$_cand_gen" -lt "$_live_gen" ]; then
+                _log "INFO" "keybox: $_label 代次更旧（Yurikey$_cand_gen < Yurikey$_live_gen），拒绝降级"
+                return 1
+            fi
             if [ -n "$_cand_gen" ] && [ -n "$_live_gen" ] && [ "$_cand_gen" -gt "$_live_gen" ]; then
                 _log "INFO" "keybox: $_label 代次更新 Yurikey$_live_gen -> Yurikey$_cand_gen"
             else
-                _log "INFO" "keybox: $_label 与当前同级别且代次不更新（候选=${_cand_gen:-?} 当前=${_live_gen:-?}），跳过"
-                return 1
+                _log "INFO" "keybox: $_label 同代次但内容不同（候选=${_cand_gen:-?} 当前=${_live_gen:-?}），按更新采纳"
             fi
         fi
     fi

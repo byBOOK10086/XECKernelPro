@@ -23,14 +23,20 @@ TARGET="$ROOT/userspace/ksud/builtin/tricky_store/keybox.xml"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# 上游源（明文 XML 直链）与 yurikey 原始源（base64，需要解码）
-PLAIN_SOURCES=(
-    "https://raw.gitmirror.com/byBOOK10086/XECKernelPro/keybox/keybox.xml"
-    "https://raw.githubusercontent.com/byBOOK10086/XECKernelPro/keybox/keybox.xml"
-)
+# 源按"新鲜度"排序，而不是按"可达性"排序：
+#   1) yurikey 原源（base64）—— 唯一的一手来源，永远最新；
+#   2) yurikey 经镜像（base64）；
+#   3) 本项目 keybox 分支（明文，由 update-keybox.yml 每 15 分钟从 1) 镜像过来）。
+# 顺序不能反：先试本项目分支的话，一旦定时镜像停摆，构建会**安静地**嵌进旧箱子
+# （下面的代次保护只能拦住"代次更低"，拦不住"停在原地"）。
 B64_SOURCES=(
     "https://raw.githubusercontent.com/Yurii0307/yurikey/main/key"
     "https://raw.gitmirror.com/Yurii0307/yurikey/main/key"
+    "https://fastly.jsdelivr.net/gh/Yurii0307/yurikey@main/key"
+)
+PLAIN_SOURCES=(
+    "https://raw.githubusercontent.com/byBOOK10086/XECKernelPro/keybox/keybox.xml"
+    "https://raw.gitmirror.com/byBOOK10086/XECKernelPro/keybox/keybox.xml"
 )
 
 log() { printf '==> %s\n' "$*"; }
@@ -61,23 +67,23 @@ fetch() {
 CANDIDATE="$WORK/keybox.xml"
 FOUND=""
 
-for url in "${PLAIN_SOURCES[@]}"; do
-    log "trying plain source: $url"
-    if fetch "$url" "$CANDIDATE" && looks_like_keybox "$CANDIDATE"; then
-        FOUND="$url"
-        break
+for url in "${B64_SOURCES[@]}"; do
+    log "trying base64 source: $url"
+    if fetch "$url" "$WORK/key.b64"; then
+        if base64 -d "$WORK/key.b64" > "$CANDIDATE" 2>/dev/null && looks_like_keybox "$CANDIDATE"; then
+            FOUND="$url (base64)"
+            break
+        fi
     fi
     rm -f "$CANDIDATE"
 done
 
 if [ -z "$FOUND" ]; then
-    for url in "${B64_SOURCES[@]}"; do
-        log "trying base64 source: $url"
-        if fetch "$url" "$WORK/key.b64"; then
-            if base64 -d "$WORK/key.b64" > "$CANDIDATE" 2>/dev/null && looks_like_keybox "$CANDIDATE"; then
-                FOUND="$url (base64)"
-                break
-            fi
+    for url in "${PLAIN_SOURCES[@]}"; do
+        log "trying plain source: $url"
+        if fetch "$url" "$CANDIDATE" && looks_like_keybox "$CANDIDATE"; then
+            FOUND="$url"
+            break
         fi
         rm -f "$CANDIDATE"
     done
