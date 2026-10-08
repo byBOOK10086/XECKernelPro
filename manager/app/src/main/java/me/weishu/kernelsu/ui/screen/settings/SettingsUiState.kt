@@ -21,6 +21,10 @@ data class SettingsUiState(
     val pageScale: Float = 1.0f,
     val enableWebDebugging: Boolean = false,
 
+    /** 自定义背景文件名，空串 = 使用内置随机池（见 WallpaperStore）。 */
+    val wallpaperLight: String = "",
+    val wallpaperDark: String = "",
+
     // Su Compat
     val suCompatStatus: String = "",
     val suCompatMode: Int = 0, // 0: enable default, 1: disable until reboot, 2: disable always
@@ -60,6 +64,7 @@ data class SettingsScreenActions(
     val onSetCheckUpdate: (Boolean) -> Unit,
     val onSetCheckModuleUpdate: (Boolean) -> Unit,
     val onOpenTheme: () -> Unit,
+    val onOpenWallpaper: () -> Unit,
     val onOpenProfileTemplate: () -> Unit,
     val onOpenRemoteAssistant: () -> Unit,
     val onOpenTerminal: () -> Unit,

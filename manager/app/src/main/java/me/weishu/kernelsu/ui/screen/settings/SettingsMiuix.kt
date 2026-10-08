@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
+import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -168,6 +169,32 @@ fun SettingPagerMiuix(
                                 )
                             },
                             onClick = actions.onOpenTheme
+                        )
+                        // 自定义背景与主题是同一层的决定：主题决定玻璃令牌，背景决定玻璃折射谁。
+                        // 摘要直接说清"哪几档被换掉了"，避免用户进去才发现只改了浅色档。
+                        val wallpaperLightCustom = uiState.wallpaperLight.isNotEmpty()
+                        val wallpaperDarkCustom = uiState.wallpaperDark.isNotEmpty()
+                        val wallpaperSummary = when {
+                            wallpaperLightCustom && wallpaperDarkCustom ->
+                                stringResource(id = R.string.wallpaper_summary_both)
+
+                            wallpaperLightCustom -> stringResource(id = R.string.wallpaper_summary_light)
+                            wallpaperDarkCustom -> stringResource(id = R.string.wallpaper_summary_dark)
+                            else -> stringResource(id = R.string.wallpaper_summary_builtin)
+                        }
+                        val wallpaperTitle = stringResource(id = R.string.settings_wallpaper)
+                        ArrowPreference(
+                            title = wallpaperTitle,
+                            summary = wallpaperSummary,
+                            startAction = {
+                                Icon(
+                                    Icons.Rounded.Wallpaper,
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    contentDescription = wallpaperTitle,
+                                    tint = colorScheme.onBackground
+                                )
+                            },
+                            onClick = actions.onOpenWallpaper
                         )
                     }
 

@@ -15,6 +15,16 @@ interface SettingsRepository {
     var enableNavigationBadge: Boolean
     var navigationRailExpanded: Boolean
     var pageScale: Float
+
+    /**
+     * 自定义背景的文件名（空串 = 使用内置随机池）。
+     *
+     * 存的是 `filesDir/wallpapers/` 下的文件名而不是布尔开关：文件才是唯一事实来源，
+     * 名字对不上（比如被清理、被换过）时读出来就是不存在的文件，调用侧自然回落内置池，
+     * 不需要额外的一致性检查。
+     */
+    var wallpaperLight: String
+    var wallpaperDark: String
     var enableWebDebugging: Boolean
     var moduleSortEnabledFirst: Boolean
     var moduleSortActionFirst: Boolean

@@ -48,6 +48,17 @@ sealed interface Route : NavKey, Parcelable {
     @Serializable
     data object ColorPalette : Route
 
+    /**
+     * 自定义背景：本机私有目录里的浅/深两档壁纸。
+     *
+     * 单独一条路由而不是塞进调色屏，是因为这两件事的"生效面"不同——主题改的是玻璃令牌，
+     * 背景改的是全应用玻璃的折射源，且要跑相册选图 + 重编码，塞在一起会让调色屏
+     * 背一个它不需要的 ActivityResult 生命周期。
+     */
+    @Parcelize
+    @Serializable
+    data object Wallpaper : Route
+
     @Parcelize
     @Serializable
     data object AppProfileTemplate : Route
