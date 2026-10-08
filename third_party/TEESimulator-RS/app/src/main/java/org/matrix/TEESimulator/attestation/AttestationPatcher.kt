@@ -55,7 +55,14 @@ object AttestationPatcher {
                 // 1. Attempt to parse the existing attestation extension. If it doesn't exist,
                 // there's nothing to patch.
                 val parsedAttestation =
-                    parseAttestationExtension(originalLeafHolder) ?: return originalChain
+                    parseAttestationExtension(originalLeafHolder)
+                        ?: run {
+                            SystemLogger.error(
+                                "Leaf certificate for UID $uid carries no attestation extension — " +
+                                    "the REAL TEE chain is served as-is (real boot state, real chain)."
+                            )
+                            return originalChain
+                        }
 
                 // 2. Get the appropriate keybox for the given algorithm to sign the new
                 // certificate.
@@ -84,7 +91,9 @@ object AttestationPatcher {
             }
             .getOrElse {
                 SystemLogger.error(
-                    "Failed to patch and rebuild certificate chain for UID $uid.",
+                    "Failed to patch and rebuild the certificate chain for UID $uid — serving the " +
+                        "REAL TEE chain instead: its keybox is genuine (so tools report the key as " +
+                        "trusted) but its RootOfTrust is the device's true unlocked boot state.",
                     it,
                 )
                 originalChain // Return the original chain on any error.
@@ -160,6 +169,34 @@ object AttestationPatcher {
                 .setProvider(BouncyCastleProvider.PROVIDER_NAME)
                 .build(keybox.keyPair.private)
         val newCertificate = JcaX509CertificateConverter().getCertificate(builder.build(signer))
+
+        // Read the boot state back out of the certificate we are about to hand to the caller.
+        // This is the only place that can prove, at runtime, which RootOfTrust the detector will
+        // parse — a silent failure here looks exactly like "the keybox works but the bootloader
+        // is still reported unlocked".
+        val servedState =
+            runCatching {
+                rootOfTrustState(
+                    parseAttestationExtension(X509CertificateHolder(newCertificate.encoded))?.rootOfTrust
+                )
+            }.getOrNull()
+        if (servedState != null) {
+            SystemLogger.info(
+                "Served RootOfTrust: deviceLocked=${servedState.first} " +
+                    "verifiedBootState=${servedState.second} (0=Verified) for UID $uid"
+            )
+            if (servedState.first != true || servedState.second != 0) {
+                SystemLogger.error(
+                    "Forged certificate still reports the real boot state " +
+                        "(deviceLocked=${servedState.first}, verifiedBootState=${servedState.second}) — " +
+                        "detectors will keep saying the bootloader is unlocked."
+                )
+            }
+        } else {
+            SystemLogger.error(
+                "Could not read a RootOfTrust back from the forged certificate (UID $uid)."
+            )
+        }
 
         // Log the signature of the newly created certificate to observe its non-deterministic
         // nature.
@@ -279,12 +316,31 @@ object AttestationPatcher {
                 teeEnforcedMap[taggedObject.tagNo] = taggedObject
             }
         }
-        return ParsedAttestation(allFields, teeEnforcedMap, originalRootOfTrust)
+
+        // The software-enforced list can carry a RootOfTrust of its own (software-level
+        // attestation, or vendor implementations that write it into both lists). Only the
+        // TEE-enforced copy was rewritten before, so detectors that read the software copy —
+        // or that merge both lists — kept seeing the real deviceLocked/verifiedBootState.
+        val softwareEnforced =
+            allFields[AttestationConstants.KEY_DESCRIPTION_SOFTWARE_ENFORCED_INDEX] as? ASN1Sequence
+
+        return ParsedAttestation(allFields, teeEnforcedMap, originalRootOfTrust, softwareEnforced)
+    }
+
+    /** Returns `deviceLocked to verifiedBootState` for a RootOfTrust sequence, or null. */
+    internal fun rootOfTrustState(rootOfTrust: ASN1Encodable?): Pair<Boolean, Int>? {
+        val sequence = rootOfTrust as? ASN1Sequence ?: return null
+        if (sequence.size() < 3) return null
+        val locked = (sequence.getObjectAt(AttestationConstants.ROOT_OF_TRUST_DEVICE_LOCKED_INDEX)
+            as? ASN1Boolean)?.isTrue ?: return null
+        val state = (sequence.getObjectAt(AttestationConstants.ROOT_OF_TRUST_VERIFIED_BOOT_STATE_INDEX)
+            as? ASN1Enumerated)?.value?.toInt() ?: return null
+        return locked to state
     }
 
     /** Constructs a new, patched attestation extension using simulated device properties. */
     private fun createPatchedAttestationExtension(parsed: ParsedAttestation, uid: Int): Extension {
-        val (allFields, teeEnforcedMap, originalRootOfTrust) = parsed
+        val (allFields, teeEnforcedMap, originalRootOfTrust, softwareEnforced) = parsed
 
         SystemLogger.verbose {
             val formattedString = allFields.joinToString(separator = ", ") { formatAsn1Primitive(it) }
@@ -295,6 +351,36 @@ object AttestationPatcher {
         val newRootOfTrust = AttestationBuilder.buildRootOfTrust(originalRootOfTrust)
         teeEnforcedMap[AttestationConstants.TAG_ROOT_OF_TRUST] =
             DERTaggedObject(true, AttestationConstants.TAG_ROOT_OF_TRUST, newRootOfTrust)
+
+        // Mirror the same forged RootOfTrust into the software-enforced list when that list has
+        // one. Leaving the real value there means a detector that prefers (or merges) the
+        // software list still reports "bootloader unlocked" while the certificate chain — and
+        // therefore the keybox verdict — looks perfectly fine.
+        if (softwareEnforced != null) {
+            var softwareRotRewritten = false
+            val rebuiltSoftware =
+                softwareEnforced.map { element ->
+                    val tagged = element as? ASN1TaggedObject
+                    if (tagged?.tagNo == AttestationConstants.TAG_ROOT_OF_TRUST) {
+                        softwareRotRewritten = true
+                        DERTaggedObject(
+                            true,
+                            AttestationConstants.TAG_ROOT_OF_TRUST,
+                            newRootOfTrust,
+                        )
+                    } else {
+                        element
+                    }
+                }
+            if (softwareRotRewritten) {
+                allFields[AttestationConstants.KEY_DESCRIPTION_SOFTWARE_ENFORCED_INDEX] =
+                    DERSequence(rebuiltSoftware.toTypedArray())
+                SystemLogger.info(
+                    "Rewrote the software-enforced RootOfTrust as well (UID $uid) — otherwise the " +
+                        "real unlocked boot state stayed readable next to a forged keybox chain."
+                )
+            }
+        }
 
         // Get the desired state for simulated properties.
         val simulatedProperties = AttestationBuilder.getSimulatedHardwareProperties(uid)
@@ -330,5 +416,6 @@ object AttestationPatcher {
         val allFields: Array<ASN1Encodable>,
         val teeEnforcedMap: MutableMap<Int, ASN1TaggedObject>,
         val rootOfTrust: ASN1Encodable?,
+        val softwareEnforced: ASN1Sequence?,
     )
 }

@@ -8,6 +8,7 @@ import android.os.Parcelable
 import android.security.KeyStore
 import android.security.keystore.KeystoreResponse
 import android.system.keystore2.Authorization
+import org.matrix.TEESimulator.attestation.AttestationBuilder
 import org.matrix.TEESimulator.interception.core.BinderInterceptor
 import org.matrix.TEESimulator.logging.SystemLogger
 import org.matrix.TEESimulator.util.AndroidDeviceUtils
@@ -150,32 +151,64 @@ object InterceptorUtils {
         val vendorPatch = AndroidDeviceUtils.getVendorPatchLevelLong(callingUid)
         val bootPatch = AndroidDeviceUtils.getBootPatchLevelLong(callingUid)
 
-        return authorizations
+        // The key characteristics carry a *second* copy of the RootOfTrust, straight from the
+        // real TEE. Patching only the certificate left this copy untouched, so a detector that
+        // reads getKeyCharacteristics instead of (or in addition to) the certificate still saw
+        // deviceLocked=false / verifiedBootState=Unverified while the chain looked trustworthy.
+        val forgedRootOfTrust =
+            runCatching { AttestationBuilder.buildRootOfTrust(null).encoded }.getOrNull()
+        var rootOfTrustRewritten = false
+
+        val patched = authorizations
             .map { auth ->
-                val replacement =
-                    when (auth.keyParameter.tag) {
-                        Tag.OS_PATCHLEVEL ->
-                            if (osPatch != AndroidDeviceUtils.DO_NOT_REPORT) osPatch else null
-                        Tag.VENDOR_PATCHLEVEL ->
-                            if (vendorPatch != AndroidDeviceUtils.DO_NOT_REPORT) vendorPatch
-                            else null
-                        Tag.BOOT_PATCHLEVEL ->
-                            if (bootPatch != AndroidDeviceUtils.DO_NOT_REPORT) bootPatch else null
-                        else -> null
-                    }
-                if (replacement != null) {
-                    Authorization().apply {
-                        keyParameter =
-                            KeyParameter().apply {
-                                tag = auth.keyParameter.tag
-                                value = KeyParameterValue.integer(replacement)
-                            }
-                        securityLevel = auth.securityLevel
+                if (auth.keyParameter.tag == Tag.ROOT_OF_TRUST) {
+                    if (forgedRootOfTrust == null) {
+                        auth
+                    } else {
+                        rootOfTrustRewritten = true
+                        Authorization().apply {
+                            keyParameter =
+                                KeyParameter().apply {
+                                    tag = Tag.ROOT_OF_TRUST
+                                    value = KeyParameterValue.blob(forgedRootOfTrust)
+                                }
+                            securityLevel = auth.securityLevel
+                        }
                     }
                 } else {
-                    auth
+                    val replacement =
+                        when (auth.keyParameter.tag) {
+                            Tag.OS_PATCHLEVEL ->
+                                if (osPatch != AndroidDeviceUtils.DO_NOT_REPORT) osPatch else null
+                            Tag.VENDOR_PATCHLEVEL ->
+                                if (vendorPatch != AndroidDeviceUtils.DO_NOT_REPORT) vendorPatch
+                                else null
+                            Tag.BOOT_PATCHLEVEL ->
+                                if (bootPatch != AndroidDeviceUtils.DO_NOT_REPORT) bootPatch else null
+                            else -> null
+                        }
+                    if (replacement != null) {
+                        Authorization().apply {
+                            keyParameter =
+                                KeyParameter().apply {
+                                    tag = auth.keyParameter.tag
+                                    value = KeyParameterValue.integer(replacement)
+                                }
+                            securityLevel = auth.securityLevel
+                        }
+                    } else {
+                        auth
+                    }
                 }
             }
             .toTypedArray()
+
+        if (rootOfTrustRewritten) {
+            SystemLogger.verbose {
+                "Rewrote the RootOfTrust inside the key characteristics for UID $callingUid " +
+                    "(deviceLocked=true, verifiedBootState=Verified)."
+            }
+        }
+        return patched
     }
 }

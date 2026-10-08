@@ -23,6 +23,11 @@
 # 界面必然报"未知认证根证书 / 不完整的根证书 / 无效的信任根状态"。
 wu.keyChain.test
 
+# vvb2060 的「密钥认证」——中文社区最常用的锁态/keybox 检测工具，界面首行就是
+# "引导加载程序已锁定 / 已解锁"。不在名单里时它拿到的是真实 TEE 链：
+# 根证书是 Google 的（看起来"密钥没问题"），但 RootOfTrust 是真实解锁态。
+io.github.vvb2060.keyattestation
+
 # Play Integrity / 完整性与证明检测器（社区常用）
 gr.nikolasspyr.integritycheck
 com.henrikherzig.playintegritychecker
