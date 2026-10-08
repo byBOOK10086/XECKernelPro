@@ -124,6 +124,15 @@ if [ -f "$TARGET" ] && cmp -s "$CANDIDATE" "$TARGET"; then
     exit 0
 fi
 
+# Windows/CRLF 检出：内容相同、只有换行差异时**不要**当成更新。否则日志会撒谎
+# （说"updated"而 git blob 其实没变），而且会把工作区文件从 CRLF 改写成 LF，
+# 让下一次 diff 看起来像有改动。（这个坑真的骗到过一次分析：sha256 一个 dc847feb
+# 一个 a0a3da9c，看着像上游同代次换箱，实际只是 CRLF vs LF。）
+if [ -f "$TARGET" ] && cmp -s <(tr -d '\r' < "$CANDIDATE") <(tr -d '\r' < "$TARGET"); then
+    log "bundled keybox content identical (line-ending only difference); leaving file untouched"
+    exit 0
+fi
+
 install -m 644 "$CANDIDATE" "$TARGET"
 log "bundled keybox updated: $TARGET"
 log "embedded copy: DeviceID=$(device_id "$TARGET") sha256=$(sha256sum "$TARGET" | cut -c1-16)"
