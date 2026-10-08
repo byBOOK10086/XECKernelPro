@@ -44,6 +44,8 @@ class SettingsViewModel(
             val enableNavigationBadge = repo.enableNavigationBadge
             val pageScale = repo.pageScale
             val enableWebDebugging = repo.enableWebDebugging
+            val wallpaperLight = repo.wallpaperLight
+            val wallpaperDark = repo.wallpaperDark
             val colorStyle = repo.colorStyle
             val colorSpec = repo.colorSpec
             val isLkmMode = repo.isLkmMode()
@@ -82,6 +84,8 @@ class SettingsViewModel(
                     enableNavigationBadge = enableNavigationBadge,
                     pageScale = pageScale,
                     enableWebDebugging = enableWebDebugging,
+                    wallpaperLight = wallpaperLight,
+                    wallpaperDark = wallpaperDark,
                     colorStyle = colorStyle,
                     colorSpec = colorSpec,
                     suCompatStatus = suCompatStatus,
@@ -191,6 +195,23 @@ class SettingsViewModel(
     fun setEnableWebDebugging(enabled: Boolean) {
         repo.enableWebDebugging = enabled
         _uiState.update { it.copy(enableWebDebugging = enabled) }
+    }
+
+    /**
+     * 切到自定义背景（[name] 为 [WallpaperStore] 落盘后的文件名）。
+     *
+     * 传空串即"恢复内置随机池"。这里只改设置项，不动文件——文件的生命周期由
+     * [WallpaperStore] 负责（导入成功才写设置，清空时先改设置再删文件，任何一步
+     * 中断最坏结果都只是回落到内置池，不会出现"设置指向不存在的图"这种状态）。
+     */
+    fun setWallpaperLight(name: String) {
+        repo.wallpaperLight = name
+        _uiState.update { it.copy(wallpaperLight = name) }
+    }
+
+    fun setWallpaperDark(name: String) {
+        repo.wallpaperDark = name
+        _uiState.update { it.copy(wallpaperDark = name) }
     }
 
     fun setSuCompatMode(mode: Int) {

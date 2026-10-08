@@ -44,6 +44,7 @@ fun SettingPager(
         onSetCheckUpdate = viewModel::setCheckUpdate,
         onSetCheckModuleUpdate = viewModel::setCheckModuleUpdate,
         onOpenTheme = { navigator.push(Route.ColorPalette) },
+        onOpenWallpaper = { navigator.push(Route.Wallpaper) },
         onOpenProfileTemplate = { navigator.push(Route.AppProfileTemplate) },
         onOpenRemoteAssistant = { navigator.push(Route.RemoteAssistant) },
         onOpenTerminal = { navigator.push(Route.Terminal) },

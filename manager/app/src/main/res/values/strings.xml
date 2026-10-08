@@ -477,4 +477,26 @@ See the log below for details.</string>
     <string name="remote_key_force_label">Force script for this batch (optional)</string>
     <string name="remote_keypad_title">Manual keys (press while the installer waits)</string>
     <string name="remote_keypad_idle">Injects a real volume-key event as root. Tap one to test this device.</string>
+    <!-- 自定义背景：本机私有目录里的浅/深两档壁纸，作为全应用液态玻璃的折射源。 -->
+    <string name="settings_wallpaper">Custom background</string>
+    <string name="settings_wallpaper_summary">Use your own image behind the whole app.</string>
+    <string name="wallpaper_title">Custom background</string>
+    <string name="wallpaper_summary_builtin">Built-in pool · random each cold start</string>
+    <string name="wallpaper_summary_light">Light mode · custom image</string>
+    <string name="wallpaper_summary_dark">Dark mode · custom image</string>
+    <string name="wallpaper_summary_both">Light and dark · custom images</string>
+    <string name="wallpaper_light_title">Light mode</string>
+    <string name="wallpaper_dark_title">Dark mode</string>
+    <string name="wallpaper_builtin_short">Built-in</string>
+    <string name="wallpaper_slot_builtin">Using the built-in pool: a random one each cold start.</string>
+    <string name="wallpaper_slot_custom">Using your own image for this mode.</string>
+    <string name="wallpaper_pick">Choose image</string>
+    <string name="wallpaper_replace">Replace image</string>
+    <string name="wallpaper_clear">Restore built-in</string>
+    <string name="wallpaper_clear_all">Restore the built-in pool for both modes</string>
+    <string name="wallpaper_importing">Processing the image…</string>
+    <string name="wallpaper_applied">Background updated</string>
+    <string name="wallpaper_import_failed">Could not import the image: %1$s</string>
+    <string name="wallpaper_note_title">How it works</string>
+    <string name="wallpaper_note">The image is written to this app\'s private directory only: no storage permission, no upload, and it is removed together with the app when you uninstall it.\nLight and dark are configured separately — leave one alone and it keeps using the built-in random pool.\nEvery liquid-glass surface refracts the image you pick. The AMOLED black theme still covers the background to keep true black.\nOn import the image is re-encoded to JPEG with a 2560 px long edge; the original in your gallery is never modified.</string>
 </resources>

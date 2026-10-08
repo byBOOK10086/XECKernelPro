@@ -27,6 +27,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.CompositionLocalProvider
@@ -37,6 +39,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -106,6 +109,7 @@ import me.weishu.kernelsu.ui.screen.sulog.SulogScreen
 import me.weishu.kernelsu.ui.screen.superuser.SuperUserPager
 import me.weishu.kernelsu.ui.screen.template.AppProfileTemplateScreen
 import me.weishu.kernelsu.ui.screen.templateeditor.TemplateEditorScreen
+import me.weishu.kernelsu.ui.screen.wallpaper.WallpaperScreen
 import me.weishu.kernelsu.ui.theme.KernelSUTheme
 import me.weishu.kernelsu.ui.theme.isInDarkTheme
 
@@ -119,6 +123,7 @@ import me.weishu.kernelsu.ui.util.getSuperuserCount
 import me.weishu.kernelsu.ui.util.install
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
 import me.weishu.kernelsu.ui.util.rememberContentReady
+import me.weishu.kernelsu.ui.util.WallpaperStore
 import me.weishu.kernelsu.ui.viewmodel.MainActivityViewModel
 import me.weishu.kernelsu.ui.viewmodel.MainPagerConfig
 import me.weishu.kernelsu.ui.viewmodel.ModuleViewModel
@@ -162,6 +167,9 @@ class MainActivity : ComponentActivity() {
         val splashScreen = installSplashScreen()
         splashStartedAt = SystemClock.uptimeMillis()
         super.onCreate(savedInstanceState)
+        // 自定义背景的解码只用到应用上下文：拿 Activity 会让 produceState 的闭包
+        // 跨重组持有 Activity 引用，转屏时白留一份窗口。
+        val appContext = applicationContext
         splashScreen.setKeepOnScreenCondition {
             !contentReady || SystemClock.uptimeMillis() - splashStartedAt < splashAnimationDurationMs
         }
@@ -232,6 +240,32 @@ class MainActivity : ComponentActivity() {
                                 BG_LIGHT_DRAWABLES[wallpaperIndex.intValue]
                             }
                         }
+                        // 自定义背景：按当前深浅档取对应槽位，空串表示该档仍然走内置随机池。
+                        // 抽签结果 wallpaperIndex 与"用不用自定义图"是两个独立决定——切深浅模式
+                        // 只换调色档，内置池抽中的那张不变，这一点对自定义图同样成立（两档各一张）。
+                        val customWallpaperName = if (wallpaperDark) {
+                            uiState.wallpaperDark
+                        } else {
+                            uiState.wallpaperLight
+                        }
+                        // 解码放在 IO 线程：produceState 的初始值是 null，也就是先显示内置壁纸，
+                        // 解码完成后换成自定义图。冷启动时这一跳被 splash 盖住；页面内换图
+                        // 也只是瞬间切换，不会卡住主线程。
+                        val customWallpaper by produceState<ImageBitmap?>(
+                            initialValue = null,
+                            key1 = customWallpaperName,
+                        ) {
+                            value = if (customWallpaperName.isEmpty()) {
+                                null
+                            } else {
+                                withContext(Dispatchers.IO) {
+                                    WallpaperStore.decode(
+                                        WallpaperStore.fileOf(appContext, customWallpaperName),
+                                        WallpaperStore.DISPLAY_MAX_EDGE,
+                                    )?.asImageBitmap()
+                                }
+                            }
+                        }
                         // 壁纸采样源：挂在下面壁纸 Image 上的独立 backdrop。卡体、按钮、面板
                         // 都通过 [LocalWallpaperBackdrop] 采它——壁纸的录制子树里只有壁纸，
                         // 谁采都不会自采样成环（页面级 backdrop 录的是滚动内容，卡体在里面，
@@ -278,6 +312,7 @@ class MainActivity : ComponentActivity() {
                                             entry<Route.About> { AboutScreen() }
                                             entry<Route.Sulog> { SulogScreen() }
                                             entry<Route.ColorPalette> { ColorPaletteScreen() }
+                                            entry<Route.Wallpaper> { WallpaperScreen() }
                                             entry<Route.AppProfileTemplate> { AppProfileTemplateScreen() }
                                             entry<Route.TemplateEditor> { key -> TemplateEditorScreen(key.template, key.readOnly) }
                                             entry<Route.AppProfile> { key -> AppProfileScreen(key.uid) }
@@ -313,20 +348,35 @@ class MainActivity : ComponentActivity() {
                                             }
                                         ),
                                 ) {
-                                    Image(
-                                        painter = painterResource(wallpaperRes),
-                                        contentDescription = null,
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .then(
-                                                if (wallpaperBackdrop != null) {
-                                                    Modifier.layerBackdrop(wallpaperBackdrop)
-                                                } else {
-                                                    Modifier
-                                                }
-                                            ),
-                                        contentScale = ContentScale.Crop,
-                                    )
+                                    // 壁纸这一张就是全应用液态玻璃的折射源（下面挂的
+                                    // wallpaperBackdrop 由 LocalWallpaperBackdrop 下发）。
+                                    // 自定义图与内置图只换"画哪张"，采样源、缩放方式、
+                                    // 底的 0.80 半透明叠加全部沿用，玻璃观感不会两套逻辑。
+                                    val wallpaperModifier = Modifier
+                                        .fillMaxSize()
+                                        .then(
+                                            if (wallpaperBackdrop != null) {
+                                                Modifier.layerBackdrop(wallpaperBackdrop)
+                                            } else {
+                                                Modifier
+                                            }
+                                        )
+                                    val customWallpaperBitmap = customWallpaper
+                                    if (customWallpaperBitmap != null) {
+                                        Image(
+                                            bitmap = customWallpaperBitmap,
+                                            contentDescription = null,
+                                            modifier = wallpaperModifier,
+                                            contentScale = ContentScale.Crop,
+                                        )
+                                    } else {
+                                        Image(
+                                            painter = painterResource(wallpaperRes),
+                                            contentDescription = null,
+                                            modifier = wallpaperModifier,
+                                            contentScale = ContentScale.Crop,
+                                        )
+                                    }
                                     Scaffold(containerColor = Color.Transparent) {
                                         navDisplay()
                                     }

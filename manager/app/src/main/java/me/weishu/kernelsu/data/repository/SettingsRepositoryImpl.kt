@@ -117,6 +117,16 @@ class SettingsRepositoryImpl : SettingsRepository {
         get() = prefs.getFloat("page_scale", 1.0f)
         set(value) = prefs.edit { putFloat("page_scale", value) }
 
+    // 自定义背景：只存文件名，字节放在 filesDir/wallpapers/（见 WallpaperStore）。
+    // 默认空串 = 走内置的 bg_light_1..4 / bg_dark_1..4 随机池，保持原行为不变。
+    override var wallpaperLight: String
+        get() = prefs.getString("wallpaper_light", "").orEmpty()
+        set(value) = prefs.edit { putString("wallpaper_light", value) }
+
+    override var wallpaperDark: String
+        get() = prefs.getString("wallpaper_dark", "").orEmpty()
+        set(value) = prefs.edit { putString("wallpaper_dark", value) }
+
     override var enableWebDebugging: Boolean
         get() = prefs.getBoolean("enable_web_debugging", false)
         set(value) = prefs.edit { putBoolean("enable_web_debugging", value) }
