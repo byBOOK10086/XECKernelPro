@@ -490,4 +490,21 @@ XEC 项目组
     <string name="wallpaper_import_failed">图片导入失败：%1$s</string>
     <string name="wallpaper_note_title">说明</string>
     <string name="wallpaper_note">图片只写入本机应用私有目录：不申请存储权限、不上传，卸载应用时随应用一起删除。\n浅色、深色两档分别指定——只改一档时，另一档继续用内置随机池。\n全应用的液态玻璃都采你选的这张图作为折射源；AMOLED 纯黑档为了保住纯黑底，仍然会把背景盖住。\n导入时会按最长边 2560 重编码为 JPEG，相册里的原图不会被改动。</string>
+    <!-- TEE 引擎实测看板（验机页）：决定"模拟是否真的生效"的四项事实。 -->
+    <string name="detect_tee_title">TEE 引擎与拦截</string>
+    <string name="detect_tee_engine">引擎</string>
+    <string name="detect_tee_keybox">当前 keybox</string>
+    <string name="detect_tee_coverage">拦截列表</string>
+    <string name="detect_tee_bootstate">锁态属性</string>
+    <string name="detect_tee_running">运行中</string>
+    <string name="detect_tee_not_running">未运行</string>
+    <string name="detect_tee_covered_fmt">%1$d 条 · 内置验机工具已覆盖</string>
+    <string name="detect_tee_not_covered_fmt">%1$d 条 · 内置验机工具未覆盖</string>
+    <string name="detect_tee_add">把内置验机工具加入拦截列表</string>
+    <string name="detect_tee_add_done">拦截列表已更新</string>
+    <string name="detect_tee_add_failed">拦截列表更新失败</string>
+    <string name="detect_tee_refresh">刷新</string>
+    <string name="detect_tee_note">只有被列进引擎拦截名单的包才会拿到模拟的 TEE 证明——这份名单是穷举的，没有通配符。不在名单里的包会原样拿到真实 TEE 证明，检测方看到的就是"未知根证书 + 真实解锁态"。</string>
+    <string name="detect_tee_engine_down_note">引擎未运行：拦截完全没生效，所有应用拿到的都是真实 TEE。重启设备让内置模块重新拉起，然后看 /data/adb/tricky_store/.engine.log。</string>
+    <string name="detect_tee_zeromount_note">ZeroMount 生效：本次开机按设计跳过锁态属性，属性类检测方读到的仍是真实状态。</string>
 </resources>

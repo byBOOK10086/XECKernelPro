@@ -118,6 +118,18 @@ detect_manager() {
 read_config() {
     local key="$1" default="${2:-}"
     local val
+    # $BIN 缺失/不可执行时必须留下痕迹。以前这里只会返回默认值，于是
+    # keybox.enabled / keybox.source / keybox.custom_url 的判定会静默落到默认分支，
+    # 表现是"配置改了却毫无反应"，而日志里一个字都没有。
+    # read_config 基本都在 $( ) 里调用（子 shell），所以用哨兵文件而不是变量去重。
+    if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
+        if [ ! -f "$TS_DIR/.read_config_warned" ]; then
+            : > "$TS_DIR/.read_config_warned" 2>/dev/null
+            _log "WARN" "read_config: BIN='$BIN' is missing or not executable — every config read falls back to its default value"
+        fi
+        printf '%s' "$default"
+        return 0
+    fi
     val=$("$BIN" config get "$key" 2>/dev/null)
     printf '%s' "${val:-$default}"
 }
