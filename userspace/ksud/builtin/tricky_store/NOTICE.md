@@ -86,6 +86,23 @@ AOSP libbinder/libutils 头文件子集（Apache-2.0）、Linux 内核 UAPI 头�
   动机：社区文档（春秋检测项解决方案）对同类检测项的处置口径是「换密钥模块 / 删除
   `security_patch.txt` / 对齐 boot hash」，本项目的引擎已是其推荐模块，于是把剩下
   两条做成默认行为，而不是让用户手工跑命令。
+- **2026-10-08（引擎状态取证：`consistency.sh` 增补 `engine_log_snapshot`）**：
+  在 `run_consistency_audit` 末尾加一段只读取证的逻辑——用
+  `logcat -d -t 400 -s TEESimulator:V` 抓引擎自己写的两条 info 级判定（release 版也有）：
+  「`TEE functionality check successful/failed`」决定 `target.txt` 里不带后缀的条目在
+  AUTO 下会被解析成 PATCH（真机 TEE 签发）还是 GENERATE（链由模块 + 内置 keybox 合成）；
+  「`Attestation patch levels for uid=N: …`」则是该 uid 的证书里实际报出的补丁标签。
+  归纳结果写进模块日志（内容未变时不重复写，digest 存 `$RUNTIME/.engine_snapshot.digest`），
+  TEE 不可用时额外给出「`包名?` 强制 PATCH / 整行移除不再拦截」两条可选对策；取不到
+  `logcat` 时静默跳过，不做任何写入。
+
+  动机：用户反馈「装了 v31026 后验机工具依旧报『检测到 TS 或类似模块』」。反编译内置
+  验机工具（`wu.keyChain.test`）后确认它的判据分两层：证书内容层（补丁标签、boot hash、
+  认证序列、根证书类型）与包裹层（`com.wuying.ErrCheck` 直接抓 keystore binder 应答
+  包裹做指纹，见 `createDiagnosticServiceProxy` / `wrapSecurityLevelWithTransactCapture` /
+  `captureGenerateKeyReply`）。前者我们能改，后者改不动；而"当前是哪种模式在给验机工具
+  出证"必须能从设备上直接看到，否则无从判断该修哪一层。这段取证就是为此，且不需要
+  用户在设备上敲命令。
 
 许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
 一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。

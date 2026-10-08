@@ -18,6 +18,9 @@
 # 本文件只做「体检 + 纠正」，不做任何破坏性动作：动过的文件一律先备份成
 # *.bak.<时间戳>；纯函数、可离线单测（见 _scratch/test_consistency.sh）。
 
+# 内置验机工具的包名（管理器自带的「密钥认证」）。可在 source 前覆盖。
+CS_CHECKER_PKG="${CS_CHECKER_PKG:-wu.keyChain.test}"
+
 # 把文件读成小写十六进制字符串（失败输出空）。
 #
 # 必须带 `od -v`：GNU / toybox / busybox 的 od 默认会把**重复行折叠成一行 `*`**
@@ -161,6 +164,81 @@ boot_hash_audit() {
     return 0
 }
 
+# --- 引擎日志快照 --------------------------------------------------------
+# 引擎自己会把两条关键判定写到 logcat（tag=TEESimulator，info 级，release 版也有）：
+#   1. 「TEE functionality check successful / failed」
+#      → target.txt 里不带后缀的条目走 AUTO，AUTO 的解析结果就是：
+#        可用 → PATCH（真机 TEE 签发、只改内容）；不可用 → GENERATE（整条链模块合成）
+#   2. 「Attestation patch levels for uid=N: os=.., vendor=.., boot=..」
+#      → 该 uid 的证书里到底报了哪几个补丁标签
+# 这两条决定了验机工具在「证书内容」这一层能抓到什么，所以固定抓进模块日志，
+# 出问题时截图即可，不需要在设备上敲命令。
+
+# 取引擎日志（拿不到就返回 1，调用方静默跳过）。
+es_engine_lines() {
+    _n="${1:-400}"
+    command -v logcat >/dev/null 2>&1 || return 1
+    _out=$(logcat -d -v brief -t "$_n" -s TEESimulator:V 2>/dev/null) || _out=""
+    if [ -z "$_out" ]; then
+        _out=$(logcat -d -v brief -t "$_n" 2>/dev/null | grep -F 'TEESimulator')
+    fi
+    [ -n "$_out" ] || return 1
+    printf '%s\n' "$_out"
+}
+
+# 取某个包名的 uid（拿不到输出空）。
+es_uid_of() {
+    command -v pm >/dev/null 2>&1 || return 0
+    pm list packages -U "$1" 2>/dev/null | sed -n 's/.*uid:\([0-9][0-9]*\).*/\1/p' | head -n 1
+}
+
+# engine_log_snapshot <runtime_dir> [log_fn]
+# 归纳上面两条判定；内容没变就不重复写（digest 存 runtime 目录）。
+# 验机工具包名取 CS_CHECKER_PKG。
+engine_log_snapshot() {
+    _dir="$1"
+    _log="${2:-:}"
+    _pkg="$CS_CHECKER_PKG"
+    [ -d "$_dir" ] || return 0
+
+    _lines=$(es_engine_lines 400) || return 0
+
+    _tee=$(printf '%s\n' "$_lines" | grep -F 'TEE functionality check' | tail -n 1)
+    case "$_tee" in
+        *successful*) _state="TEE可用→AUTO解析为PATCH（真机TEE签发，仅改写内容层）" ;;
+        *failed*)     _state="TEE不可用→AUTO解析为GENERATE（链由模块+内置keybox合成）" ;;
+        *)            _state="未见TEE判定（引擎还没被请求过出证）" ;;
+    esac
+
+    _uid=$(es_uid_of "$_pkg")
+    _patch=""
+    if [ -n "$_uid" ]; then
+        _patch=$(printf '%s\n' "$_lines" | grep -F "Attestation patch levels for uid=$_uid" | tail -n 1)
+    fi
+
+    _sum="$_state|$_uid|$_patch"
+    _digest=$(printf '%s' "$_sum" | cksum 2>/dev/null | tr -d ' \t')
+    [ -n "$_digest" ] || _digest=$(printf '%s' "$_sum" | wc -c | tr -d ' \t')
+    _stamp="$_dir/.engine_snapshot.digest"
+    if [ -f "$_stamp" ] && [ "$(cat "$_stamp" 2>/dev/null)" = "$_digest" ]; then
+        return 0
+    fi
+    printf '%s' "$_digest" > "$_stamp" 2>/dev/null
+
+    "$_log" "INFO 引擎状态：$_state"
+    if [ -n "$_patch" ]; then
+        "$_log" "INFO 验机工具(${_pkg}${_uid:+ uid=$_uid})的证书补丁标签：$(printf '%s' "$_patch" | sed 's/.*Attestation patch levels for uid=[0-9]*: //')"
+    elif [ -n "$_uid" ]; then
+        "$_log" "INFO 验机工具(${_pkg} uid=$_uid)：引擎日志里还没有它的出证记录——先在验机工具里跑一次完整检测，本行会自动出现。"
+    fi
+    case "$_state" in
+        *GENERATE*)
+            "$_log" "WARN 该状态下证书链是模块合成的，社区验机工具报「检测到 TrickyStore 或类似模块」基本不可避免。可选对策：把拦截表里的 ${_pkg} 改成 ${_pkg}? 强制 PATCH（需 TEE 可用）、或整行删掉不再拦截（验机工具改按真机状态报告）。"
+            ;;
+    esac
+    return 0
+}
+
 # run_consistency_audit <runtime_dir> <data_dir> <log_fn>
 # 两份 security_patch.txt 一起纠正：只改一份会被 sync_conf 用另一份覆盖回去。
 run_consistency_audit() {
@@ -172,5 +250,6 @@ run_consistency_audit() {
         security_patch_audit "$_d/security_patch.txt" "$_log"
     fi
     boot_hash_audit "$_r" "$_log"
+    engine_log_snapshot "$_r" "$_log"
     return 0
 }
