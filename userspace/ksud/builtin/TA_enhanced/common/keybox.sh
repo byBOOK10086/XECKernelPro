@@ -95,9 +95,9 @@ kb_sha() {
 kb_short() { printf '%.16s' "$1"; }
 
 # yurikey 的 DeviceID 里带着代次（当前实测形如 "Yurikey58. Valid keybox. ..."）。
-# ⚠️ 代次**不是**严格递增的版本号：实测同一代次（Yurikey58）会被上游换掉整箱内容，
-# 所以代次只能用来拦"明确更旧"，不能用来判"是否更新"——同代次按内容（sha）比较，
-# 不同就采纳（见 kb_try_candidate）。
+# 代次用作"新旧"的判据：更低一律拒绝；更高直接采纳；**同代次默认跳过**（换箱通常
+# 同时抬代次，同代次不同内容更可能是镜像缓存差异），仅当实时副本已超期时才采纳
+# 同代次的新内容（见 kb_try_candidate）。
 kb_generation() {
     sed -n 's/.*Yurikey\([0-9][0-9]*\).*/\1/p' "$1" 2>/dev/null | head -n 1
 }
@@ -264,7 +264,7 @@ kb_install() {
 # 第 4 个参数为 force 时跳过"级别/代次"这两道闸：只用于**用户显式动作**
 # （WebUI 里粘贴自定义 keybox），此时用户意图优先，但仍要求结构合法。
 kb_try_candidate() {
-    local _src="$1" _label="$2" _url="${3:-}" _force="${4:-}" _lvl _live_lvl _cand_gen _live_gen _cand_sha _live_sha
+    local _src="$1" _label="$2" _url="${3:-}" _force="${4:-}" _lvl _live_lvl _cand_gen _live_gen _cand_sha _live_sha _age
     _lvl=$(kb_trust_level "$_src")
     if [ "$_lvl" = "2" ]; then
         _log "WARN" "keybox: $_label 内容无效（结构核验未通过）——丢弃"
@@ -286,20 +286,43 @@ kb_try_candidate() {
         if [ "$_lvl" = "$_live_lvl" ]; then
             _cand_gen=$(kb_generation "$_src")
             _live_gen=$(kb_generation "$KB_LIVE")
-            # 只在"候选代次确实更低"时拒绝；**同代次必须接受**。
-            # 2026-10-08 实测：yurikey 会在 DeviceID 标签完全不变（仍是 "Yurikey58"）
-            # 的情况下换掉整箱内容——当时 yurikey 原源给的是 sha a0a3da9c…，而设备/
-            # 仓库里躺着的是 10-05 镜像下来的 dc847feb…。若按"代次必须更高"来判，
-            # 这种更新会被永久拒收，"箱子被吊销后换不掉"就成了死结；而镜像源本来就
-            # 比设备上那份新（我们正是刚从那里下载的），所以同代次 = 内容更新，采纳。
-            if [ -n "$_cand_gen" ] && [ -n "$_live_gen" ] && [ "$_cand_gen" -lt "$_live_gen" ]; then
-                _log "INFO" "keybox: $_label 代次更旧（Yurikey$_cand_gen < Yurikey$_live_gen），拒绝降级"
-                return 1
-            fi
-            if [ -n "$_cand_gen" ] && [ -n "$_live_gen" ] && [ "$_cand_gen" -gt "$_live_gen" ]; then
-                _log "INFO" "keybox: $_label 代次更新 Yurikey$_live_gen -> Yurikey$_cand_gen"
+            # 同级别时的判据是代次：
+            #   - 候选代次更低 -> 拒绝（防降级，镜像回源到旧快照时最常见）
+            #   - 候选代次更高 -> 采纳
+            #   - 代次相同/都识别不出 -> 默认跳过。上游换箱时通常同时抬代次
+            #     （DeviceID 形如 "Yurikey58"，代次即版本），同代次却内容不同更可能是
+            #     镜像缓存或本地检出差异，拿它覆盖本地没有收益。
+            #     **例外**：实时副本已经超期（>KB_MAX_AGE）。此时"最新镜像给的那一份"
+            #     就是手上最好的东西——继续留着旧箱子只有坏处（一旦被吊销，
+            #     attestation 全灭），所以同代次也采纳；该例外只在 kb_need_refresh
+            #     判定超期后触发，天然限流（同一份副本 26h 内只会触发一次扫描）。
+            #
+            # 比较用的是 sha256（内容），不受换行影响。注意：早前一次"上游同代次换箱"
+            # 的结论是把 Windows 检出的 CRLF 字节当成了内容差异（git blob 的 sha 从头
+            # 到尾没变），已在交接文档里更正——所以这里也一并核对代次与超期，而不是
+            # 见到 sha 不同就换。
+            if [ -n "$_cand_gen" ] && [ -n "$_live_gen" ]; then
+                if [ "$_cand_gen" -lt "$_live_gen" ]; then
+                    _log "INFO" "keybox: $_label 代次更旧（Yurikey$_cand_gen < Yurikey$_live_gen），拒绝降级"
+                    return 1
+                fi
+                if [ "$_cand_gen" -gt "$_live_gen" ]; then
+                    _log "INFO" "keybox: $_label 代次更新 Yurikey$_live_gen -> Yurikey$_cand_gen"
+                else
+                    _age=$(( $(kb_now) - $(stat -c %Y "$KB_LIVE" 2>/dev/null || echo 0) ))
+                    if [ "$_age" -le "$KB_MAX_AGE" ]; then
+                        _log "INFO" "keybox: $_label 同代次（Yurikey$_live_gen）且实时副本仅 ${_age}s，跳过以免被镜像缓存覆盖"
+                        return 1
+                    fi
+                    _log "WARN" "keybox: $_label 同代次但实时副本已超期（${_age}s > ${KB_MAX_AGE}s），采纳这份内容"
+                fi
             else
-                _log "INFO" "keybox: $_label 同代次但内容不同（候选=${_cand_gen:-?} 当前=${_live_gen:-?}），按更新采纳"
+                _age=$(( $(kb_now) - $(stat -c %Y "$KB_LIVE" 2>/dev/null || echo 0) ))
+                if [ "$_age" -le "$KB_MAX_AGE" ]; then
+                    _log "INFO" "keybox: $_label 代次不可识别且实时副本仅 ${_age}s，跳过"
+                    return 1
+                fi
+                _log "WARN" "keybox: $_label 代次不可识别且实时副本已超期（${_age}s），采纳这份内容"
             fi
         fi
     fi
