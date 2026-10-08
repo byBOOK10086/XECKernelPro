@@ -78,10 +78,11 @@ if [ -f "$MODPATH/common/bootstate.sh" ]; then
     _PROP_FAIL_COUNT=0
     _pfd_log "boot-state spoof (early) starting"
     bootstate_spoof_lock
-    # 0/0 有两种截然不同的含义：属性本来就已经正确（无事可做），或者整组被
-    # ZeroMount 豁免跳过了。后者必须显式写出来，否则这行日志会被读成"一切正常"。
-    if [ "$BOOTSTATE_SKIPPED" = "true" ]; then
-        _pfd_log "boot-state spoof (early) SKIPPED (ZeroMount deferral active): $_PROP_SPOOF_COUNT spoofed, $_PROP_FAIL_COUNT failed"
+    # 0/0 有两种截然不同的含义：属性本来就已经正确（无事可做），或者这一轮被
+    # ZeroMount 的挂载窗口推迟了（推迟 ≠ 放弃：挂载结束后看护循环会补写并复核）。
+    # 后者必须显式写出来，否则这行日志会被读成"一切正常"。
+    if [ "$BOOTSTATE_DEFERRED" = "true" ]; then
+        _pfd_log "boot-state spoof (early) DEFERRED (ZeroMount mount window): $_PROP_SPOOF_COUNT spoofed, $_PROP_FAIL_COUNT failed — the watchdog re-writes and verifies these after the window closes"
     else
         _pfd_log "boot-state spoof (early) done: $_PROP_SPOOF_COUNT spoofed, $_PROP_FAIL_COUNT failed"
     fi

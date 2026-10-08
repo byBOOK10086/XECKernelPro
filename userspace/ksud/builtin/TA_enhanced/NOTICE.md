@@ -88,6 +88,16 @@ vbhash 提取功能由源码构建的 ta-enhanced 守护进程（`rust/src/vbhas
   3. `common/common.sh` 的 `read_config` 在 `$BIN` 缺失/不可执行时记一次 WARN（此前只
      静默返回默认值，配置项全部落到默认分支且日志无一字）。
 
+- **2026-10-08（ZeroMount 豁免由"整组跳过"改为"窗口后补写"）**：用户报"密钥没问题了、
+  引导加载程序依旧已解锁"。属性这条路径上，唯一能让**所有**锁态属性一个都不写的，
+  就是 `bs_zeromount_skip` 的整组永久豁免（ZeroMount 生效时 `post-fs-data` / `post-mount`
+  与它的挂载期重叠，上一版选择彻底放弃）。本次改为：窗口期内**推迟**并留痕
+  （`BOOTSTATE_DEFERRED` / `bs_lock_write_allowed` / `bs_defer_or_proceed`），
+  `service.sh` 的 30s 看护循环在挂载窗口结束后（第 2 个周期）一次性补写
+  锁态 + vbmeta + 身份三组属性并复核（判定只看"ZeroMount 生效且窗口未打开"，
+  不依赖跨进程传递的标记）；`bootstate_verify` 相应改为"窗口未关则推迟"，
+  `post-fs-data.sh` 的计数行打印 `DEFERRED (ZeroMount mount window)`。
+
 许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
 一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。
 

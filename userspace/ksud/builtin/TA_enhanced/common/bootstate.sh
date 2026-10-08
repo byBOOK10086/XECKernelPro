@@ -28,6 +28,13 @@
 #    的 verifiedbootstate / flash.locked 真实取值写进日志——检测方如果去读它们，
 #    日志里就能直接看到，不用再猜（SUSFS 的 cmdline/bootconfig 伪装是本仓库
 #    内核侧可选项，Kconfig 里有开关但当前用户态没有调用入口，见交接文档）。
+#
+# 5) **ZeroMount 生效时只能"推迟"，不能"放弃"。** 上一版在检测到 meta-zeromount
+#    时把四组伪装全部永久跳过（`bs_zeromount_skip`），理由是属性写入会与它的挂载期
+#    互相破坏——但代价是**这一整次开机里锁态属性一个都没写**，任何读属性的检测方
+#    都必然看到"bootloader 已解锁"，而日志只有一行 0/0。现在改为窗口期内推迟
+#    （`bs_lock_write_allowed` / `bs_defer_or_proceed`），看护循环在窗口结束后
+#    一次性补写锁态 + vbmeta + 身份三组并复核。
 # ============================================================================
 
 # 该模块需要的日志/属性助手来自 common.sh（_log / check_reset_prop / resetprop）
@@ -48,20 +55,42 @@ ensure_prop() {
 }
 
 BOOTSTATE_ZEROMOUNT_ACTIVE=false
-#: 本次开机是否**整组跳过**了锁态伪装（ZeroMount 生效时是设计行为，但必须留痕，
-#: 否则调用方只会看到 "0 spoofed, 0 failed"，读起来像"一切正常"）。
+#: 本次开机是否出现过"被推迟"的轮次（`bs_defer_or_proceed` 置 true）。**不再表示
+#: 整组永久跳过**——挂载窗口结束后看护循环会把这一组属性补上并复核，这里只用于
+#: 日志与取证，免得调用方看到 "0 spoofed, 0 failed" 就以为"一切正常"。
 BOOTSTATE_SKIPPED=false
+#: 是否有某一轮因为 ZeroMount 的挂载窗口而被**推迟**（推迟 ≠ 放弃：挂载窗口结束后
+#: 看护循环会把这一组属性补上并复核）。上一版实现是"整组永久跳过"，于是装了
+#: ZeroMount 的机器上"bootloader 已解锁"永远修不掉——这正是本轮要修的东西。
+BOOTSTATE_DEFERRED=false
+#: 挂载窗口是否已结束（由看护循环在第一个 30s 周期后打开）。
+BOOTSTATE_ZM_WINDOW_OPEN=false
 _bs_zm_dir="/data/adb/modules/meta-zeromount"
 if [ -d "$_bs_zm_dir" ] && [ ! -f "$_bs_zm_dir/disable" ] && [ ! -f "$_bs_zm_dir/remove" ]; then
     BOOTSTATE_ZEROMOUNT_ACTIVE=true
-    _log "WARN" "ZeroMount active — deferring overlapping props (bootloader-state props NOT spoofed this boot; detectors will see the real state)"
+    _log "WARN" "ZeroMount active — lock-state props are deferred until its mount window closes (they are NOT dropped this boot)"
 fi
 
-# ZeroMount 生效时，下面四个伪装函数与最终校验都会直接跳过。跳过本身是设计如此
-# （属性写入与 ZeroMount 的挂载期重叠会互相破坏），但**必须留下痕迹**：这正是
-# "刷入后依然显示 bootloader 解锁"最常见的形态——伪装一项都没写，日志却写着
-# "0 spoofed, 0 failed"。
+# ZeroMount 生效时，post-fs-data / post-mount 阶段与它的挂载期重叠，此时写属性会被
+# 互相破坏——但**跳过不等于放弃**：这次不写，看护循环在挂载窗口结束后补写并复核。
+# 返回 0 = 允许此刻写；返回 1 = 本轮推迟（并留痕）。
+bs_lock_write_allowed() {
+    [ "$BOOTSTATE_ZEROMOUNT_ACTIVE" != "true" ] && return 0
+    [ "$BOOTSTATE_ZM_WINDOW_OPEN" = "true" ] && return 0
+    return 1
+}
+
+bs_defer_or_proceed() {
+    bs_lock_write_allowed && return 0
+    BOOTSTATE_DEFERRED=true
+    BOOTSTATE_SKIPPED=true
+    _log "WARN" "ZeroMount 挂载窗口内：本轮伪装推迟（挂载结束后由看护循环补写，不会永久跳过）"
+    return 1
+}
+
+# 兼容旧调用点（语义已由 bs_defer_or_proceed 取代）。
 bs_zeromount_skip() {
+    BOOTSTATE_DEFERRED=true
     BOOTSTATE_SKIPPED=true
     return 0
 }
@@ -112,7 +141,7 @@ bootstate_detect_mode() {
 # 锁态属性（最早生效的那组）
 # ---------------------------------------------------------------------------
 bootstate_spoof_lock() {
-    [ "$BOOTSTATE_ZEROMOUNT_ACTIVE" = "true" ] && bs_zeromount_skip
+    bs_defer_or_proceed || return 0
     check_reset_prop "ro.boot.vbmeta.device_state" "locked"
     check_reset_prop "ro.boot.verifiedbootstate" "green"
     check_reset_prop "ro.boot.flash.locked" "1"
@@ -136,7 +165,7 @@ bootstate_spoof_lock() {
 # 构建身份类属性（保持原时机：prop.sh 在 boot 完成后调用）
 # ---------------------------------------------------------------------------
 bootstate_spoof_identity() {
-    [ "$BOOTSTATE_ZEROMOUNT_ACTIVE" = "true" ] && bs_zeromount_skip
+    bs_defer_or_proceed || return 0
     check_reset_prop "ro.debuggable" "0"
     check_reset_prop "ro.force.debuggable" "0"
     check_reset_prop "ro.secure" "1"
@@ -170,7 +199,7 @@ bootstate_spoof_identity() {
 # vbmeta 相关属性（digest/size/avb 版本）——保持原时机
 # ---------------------------------------------------------------------------
 bootstate_spoof_vbmeta() {
-    [ "$BOOTSTATE_ZEROMOUNT_ACTIVE" = "true" ] && bs_zeromount_skip
+    bs_defer_or_proceed || return 0
     local _hash_src="" hash_value="" _ts_mod _ts_mp _teesim_ok=false slot_suffix candidate VBMETA_SIZE
 
     # 只有本项目的 TEESimulator 变体在位时才用它的 boot_hash.bin
@@ -254,9 +283,10 @@ bootstate_leak_report() {
 # 伪装链断了；两遍都过不去才记 ERROR，此时证据是确凿的（resetprop 全缺、
 # ZeroMount 豁免、属性被拒写都能从上下文立刻定位）。
 bootstate_verify() {
-    if [ "$BOOTSTATE_ZEROMOUNT_ACTIVE" = "true" ]; then
+    if ! bs_lock_write_allowed; then
         BOOTSTATE_SKIPPED=true
-        _log "WARN" "final boot-state check skipped (ZeroMount deferral active) — detectors will read the real unlocked/orange state this boot"
+        BOOTSTATE_DEFERRED=true
+        _log "WARN" "final boot-state check deferred (ZeroMount mount window still open) — the watchdog writes and verifies it once the window closes"
         return 0
     fi
     local _bs_failed="" _p _name _want
@@ -291,7 +321,23 @@ bootstate_watchdog_loop() {
     while :; do
         sleep 30
         _tick=$((_tick + 1))
-        [ "$BOOTSTATE_ZEROMOUNT_ACTIVE" = "true" ] && continue
+
+        # ZeroMount 补偿：挂载窗口内那几轮被推迟过，这里一次性补写并复核。
+        # 判定只依赖"ZeroMount 生效且窗口还没打开"——不能依赖 BOOTSTATE_DEFERRED：
+        # post-fs-data.sh / prop.sh 各自是独立进程，那个标记不会传到这里。
+        # 只做一轮；check_reset_prop 自身幂等，重复调用不会造成写放大。
+        if [ "$BOOTSTATE_ZEROMOUNT_ACTIVE" = "true" ] && \
+           [ "$BOOTSTATE_ZM_WINDOW_OPEN" != "true" ] && [ "$_tick" -ge 2 ]; then
+            BOOTSTATE_ZM_WINDOW_OPEN=true
+            BOOTSTATE_SKIPPED=false
+            _log "INFO" "ZeroMount 挂载窗口已过，补写此前被推迟的锁态/身份属性（第 ${_tick} 个 30s 周期）"
+            bootstate_spoof_lock
+            bootstate_spoof_vbmeta
+            bootstate_spoof_identity
+            bootstate_verify
+            _log "INFO" "ZeroMount 补写完成：device_state=$(getprop ro.boot.vbmeta.device_state) verifiedboot=$(getprop ro.boot.verifiedbootstate) flash.locked=$(getprop ro.boot.flash.locked)"
+        fi
+
         # ro.* 属性是写一次就定型的，这里只读回来核对（不产生写放大）
         if [ "$_tick" -le 20 ]; then
             if [ "$(getprop sys.oem_unlock_allowed)" = "1" ]; then
