@@ -496,6 +496,15 @@ XEC 项目组
     <string name="detect_tee_keybox">当前 keybox</string>
     <string name="detect_tee_coverage">拦截列表</string>
     <string name="detect_tee_bootstate">锁态属性</string>
+    <string name="detect_tee_engine_files">引擎文件</string>
+    <string name="detect_tee_files_ok">已就位</string>
+    <string name="detect_tee_files_missing">缺失——引擎起不来</string>
+    <string name="detect_tee_served_rot">引擎给出的锁态</string>
+    <string name="detect_tee_served_rot_none">还没有处理过证明请求</string>
+    <string name="detect_tee_patch_errors">补丁失败次数</string>
+    <string name="detect_tee_patch_errors_none">无</string>
+    <string name="detect_tee_vvb_missing">vvb2060「密钥认证」(io.github.vvb2060.keyattestation) 不在拦截名单里——它的启动状态一行读到的还是真实 TEE。名单每次开机会重新合并，装上本版本后重启一次即可。</string>
+    <string name="detect_tee_patch_failed_note">出现补丁失败时，引擎交出去的其实是**真实 TEE 证书链**：它的 keybox 是真的（所以检测方说"密钥没问题"），但 RootOfTrust 里仍是真实的解锁态。</string>
     <string name="detect_tee_running">运行中</string>
     <string name="detect_tee_not_running">未运行</string>
     <string name="detect_tee_covered_fmt">%1$d 条 · 内置验机工具已覆盖</string>

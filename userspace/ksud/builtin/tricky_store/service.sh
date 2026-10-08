@@ -307,8 +307,8 @@ capture_engine_state() {
         log_line "WARN engine: TEESimulator NOT running — keystore is not intercepted, attestation stays the real TEE one (untrusted key + unlocked bootloader)"
     fi
     dump=$(/system/bin/logcat -d -s TEESimulator:* 2>/dev/null \
-        | grep -E "Finished parsing|Key store file not found|Fatal error parsing|Injection process failed|Interceptors initialized|Backdoor not found|Successfully rebuilt" \
-        | tail -n 6)
+        | grep -E "Finished parsing|Key store file not found|Fatal error parsing|Injection process failed|Interceptors initialized|Backdoor not found|Successfully rebuilt|Served RootOfTrust|Failed to patch|No keybox found|Rewrote the software-enforced" \
+        | tail -n 8)
     if [ -n "$dump" ]; then
         printf 'INFO engine logcat:\n%s\n' "$dump" >> "$LOG_FILE" 2>/dev/null
     else
@@ -318,6 +318,43 @@ capture_engine_state() {
 }
 
 ( sleep 45; capture_engine_state ) >/dev/null 2>&1 &
+
+# 引擎看护：45s 那次回读只回答"开机时起没起来"。注入链一旦在运行期断掉（进程被杀、
+# 崩溃、被别的模块顶掉），keystore 就重新变回"没被接管"，检测方又拿到真实 TEE 证明；
+# 而本机原厂证书链的根是 Google 的，于是表现成**"密钥没问题、引导加载程序却是解锁的"**
+# ——最容易被误判成"keybox 好了但锁态没伪装"，实际上整条引擎都不在了，且没有任何界面提示。
+# 这里每 5 分钟确认一次，必要时重启 supervisor，连续失败则退避到每小时一次，
+# 全程写进 .engine.log（管理器的 TEE 卡片读的就是这份日志）。
+engine_watchdog() {
+    local _pid _now _attempts=0 _last_try=0
+    while :; do
+        sleep 300
+        _pid=$(pidof TEESimulator 2>/dev/null)
+        if [ -n "$_pid" ]; then
+            _attempts=0
+            continue
+        fi
+        _now=$(date +%s 2>/dev/null || echo 0)
+        # 连续 3 次重启失败后：一小时才再试一次，避免刷爆日志。
+        if [ "$_attempts" -ge 3 ] && [ "$_last_try" != "0" ] && \
+           [ $(( _now - _last_try )) -lt 3600 ]; then
+            continue
+        fi
+        _attempts=$((_attempts + 1))
+        _last_try=$_now
+        log_line "ERROR engine: TEESimulator 未运行 —— keystore 未被接管，检测方会看到真实 TEE 证明（密钥可信但引导加载程序解锁）；第 $_attempts 次尝试重启 supervisor"
+        log_target_coverage
+        ( cd "$RUNTIME" && ./supervisor ./daemon "$RUNTIME" >> "$LOG_FILE" 2>&1 & )
+        sleep 30
+        if [ -n "$(pidof TEESimulator 2>/dev/null)" ]; then
+            log_line "INFO engine: supervisor 重启成功，引擎已恢复接管"
+            _attempts=0
+        else
+            log_line "ERROR engine: 重启后仍未看到 TEESimulator 进程（注入失败）"
+        fi
+    done
+}
+( sleep 90; engine_watchdog ) >/dev/null 2>&1 &
 
 # WebUI / 管理器改 target.txt 或 security_patch.txt 后不必重启：每 15s 对账一次，
 # 有差异时用 tmp + mv 写入，引擎的 ConfigObserver 收到 MOVED_TO 会自动重载。

@@ -505,6 +505,15 @@ See the log below for details.</string>
     <string name="detect_tee_keybox">Keybox</string>
     <string name="detect_tee_coverage">Intercept list</string>
     <string name="detect_tee_bootstate">Boot state</string>
+    <string name="detect_tee_engine_files">Engine files</string>
+    <string name="detect_tee_files_ok">staged</string>
+    <string name="detect_tee_files_missing">MISSING — the engine cannot start</string>
+    <string name="detect_tee_served_rot">Served boot state</string>
+    <string name="detect_tee_served_rot_none">no attestation handled yet</string>
+    <string name="detect_tee_patch_errors">Patch failures</string>
+    <string name="detect_tee_patch_errors_none">none</string>
+    <string name="detect_tee_vvb_missing">vvb2060 KeyAttestation (io.github.vvb2060.keyattestation) is not in the intercept list — its bootloader row still reads the real TEE. The list is merged on every boot, so reboot once after installing this build.</string>
+    <string name="detect_tee_patch_failed_note">Patch failures mean the engine handed out the REAL TEE chain: its keybox is genuine, so detectors call the key trusted, while its RootOfTrust still carries the device\'s true unlocked state.</string>
     <string name="detect_tee_running">running</string>
     <string name="detect_tee_not_running">NOT running</string>
     <string name="detect_tee_covered_fmt">%1$d entries · bundled checker covered</string>

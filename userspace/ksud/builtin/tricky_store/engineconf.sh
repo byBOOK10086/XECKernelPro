@@ -129,9 +129,16 @@ _target_count() {
     grep -cvE '^[[:space:]]*(#|$)' "$RUNTIME/target.txt" 2>/dev/null
 }
 
-# 覆盖取证：条目数 + 内置验机工具是否在表内。这两项是"引擎到底会不会拦"的直接答案。
+# 覆盖取证：条目数 + 常见验机工具是否在表内。这两项是"引擎到底会不会拦"的直接答案。
+# 匹配要容忍模式后缀（`包名!` / `包名?`）与行尾空白：名单里写着 `wu.keyChain.test!`
+# 时，逐字比较会误报"未覆盖"，而它其实已经被拦住了。
+_target_covers() {
+    grep -qE "^[[:space:]]*$1[!?]?[[:space:]]*$" "$RUNTIME/target.txt" 2>/dev/null
+}
+
 log_target_coverage() {
-    local covered=no
-    grep -qxF -e 'wu.keyChain.test' "$RUNTIME/target.txt" 2>/dev/null && covered=yes
-    log_line "INFO target.txt: $(_target_count) entr(y/ies), bundled checker covered=$covered"
+    local covered=no vvb=no
+    _target_covers 'wu\.keyChain\.test' && covered=yes
+    _target_covers 'io\.github\.vvb2060\.keyattestation' && vvb=yes
+    log_line "INFO target.txt: $(_target_count) entr(y/ies), bundled checker covered=$covered, vvb2060 keyattestation covered=$vvb"
 }

@@ -56,11 +56,20 @@ private const val BUNDLED_CHECKER = "wu.keyChain.test"
 /** 一次 root shell 取回全部事实，按 KEY=VALUE 逐行解析（避免多条命令的往返开销）。 */
 private val STATUS_SCRIPT = listOf(
     "TK=$TRICKY_RUNTIME",
+    // 引擎只往 logcat 写（tag=TEESimulator），.engine.log 只有 service.sh 的快照；
+    // 想要"引擎到底交出了什么锁态"必须读 logcat。这里只取一次，后面复用。
+    "LC=\$(/system/bin/logcat -d -s TEESimulator:* 2>/dev/null | tail -n 500)",
     "echo engine=\$(pidof TEESimulator 2>/dev/null || echo none)",
+    "echo enginefiles=\$([ -f \$TK/daemon ] && [ -f \$TK/classes.dex ] && [ -f \$TK/libTEESimulator.so ] && [ -x \$TK/inject ] && echo ok || echo missing)",
     "echo deviceid=\$(sed -n 's/.*DeviceID=\"\\([^\"]*\\)\".*/\\1/p' \$TK/keybox.xml 2>/dev/null | head -n 1)",
     "echo kbperm=\$(stat -c %a \$TK/keybox.xml 2>/dev/null)",
     "echo target=\$(grep -cvE '^[[:space:]]*(#|\$)' \$TK/target.txt 2>/dev/null)",
-    "echo checker=\$(grep -qxF -e $BUNDLED_CHECKER \$TK/target.txt 2>/dev/null && echo yes || echo no)",
+    // 覆盖检查容忍 `包名!` / `包名?` 与行尾空白：引擎把模式后缀当同一目标，逐字比较会误报。
+    "echo checker=\$(grep -qE '^[[:space:]]*wu\\.keyChain\\.test[!?]?[[:space:]]*\$' \$TK/target.txt 2>/dev/null && echo yes || echo no)",
+    "echo vvb=\$(grep -qE '^[[:space:]]*io\\.github\\.vvb2060\\.keyattestation[!?]?[[:space:]]*\$' \$TK/target.txt 2>/dev/null && echo yes || echo no)",
+    "echo servrot=\$(printf '%s\\n' \"\$LC\" | grep -o 'Served RootOfTrust:.*' | tail -n 1)",
+    "echo patcherr=\$(printf '%s\\n' \"\$LC\" | grep -c -E 'Failed to patch|No keybox found|Failed to modify hardware')",
+    "echo lasterr=\$(printf '%s\\n' \"\$LC\" | grep -E ' E TEESimulator' | tail -n 1)",
     "echo vbs=\$(getprop ro.boot.verifiedbootstate)",
     "echo locked=\$(getprop ro.boot.flash.locked)",
     "echo devstate=\$(getprop ro.boot.vbmeta.device_state)",
@@ -73,26 +82,34 @@ private val ADD_CHECKER_SCRIPT = listOf(
     "T=\$TK/target.txt",
     "mkdir -p \$TK " + TRICKY_DATA,
     "[ -f \$T ] || : > \$T",
-    "if ! grep -qxF -e $BUNDLED_CHECKER \$T; then",
+    "if ! grep -qE '^[[:space:]]*wu\\.keyChain\\.test[!?]?[[:space:]]*\$' \$T; then",
     "  cp -f \$T \$T.new.\$\$ && printf '\\n[keybox.xml]\\n$BUNDLED_CHECKER\\n' >> \$T.new.\$\$ && chmod 644 \$T.new.\$\$ && mv -f \$T.new.\$\$ \$T",
     "fi",
     "cp -f \$T " + TRICKY_DATA + "/target.txt 2>/dev/null",
     "chmod 644 \$T " + TRICKY_DATA + "/target.txt 2>/dev/null",
-    "grep -qxF -e $BUNDLED_CHECKER \$T && echo added=yes || echo added=no",
+    "grep -qE '^[[:space:]]*wu\\.keyChain\\.test[!?]?[[:space:]]*\$' \$T && echo added=yes || echo added=no",
 ).joinToString("\n")
 
 private data class TeeStatus(
     val engine: String = "",
+    val engineFilesOk: Boolean = false,
     val deviceId: String = "",
     val kbPerm: String = "",
     val targetCount: Int = 0,
     val checkerCovered: Boolean = false,
+    val vvbCovered: Boolean = false,
+    val servedRootOfTrust: String = "",
+    val patchErrors: Int = 0,
+    val lastEngineError: String = "",
     val verifiedBoot: String = "",
     val flashLocked: String = "",
     val deviceState: String = "",
     val zeroMount: Boolean = false,
 ) {
     val engineAlive: Boolean get() = engine.isNotEmpty() && engine != "none"
+    /** 引擎日志里那句 "Served RootOfTrust: deviceLocked=true verifiedBootState=0 …"。 */
+    val servedLocked: Boolean get() = servedRootOfTrust.contains("deviceLocked=true")
+    val servedVerified: Boolean get() = servedRootOfTrust.contains("verifiedBootState=0")
 }
 
 @Composable
@@ -116,10 +133,15 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
         }.toMap()
         status = TeeStatus(
             engine = map["engine"].orEmpty(),
+            engineFilesOk = map["enginefiles"] == "ok",
             deviceId = map["deviceid"].orEmpty(),
             kbPerm = map["kbperm"].orEmpty(),
             targetCount = map["target"].orEmpty().toIntOrNull() ?: 0,
             checkerCovered = map["checker"] == "yes",
+            vvbCovered = map["vvb"] == "yes",
+            servedRootOfTrust = map["servrot"].orEmpty(),
+            patchErrors = map["patcherr"].orEmpty().toIntOrNull() ?: 0,
+            lastEngineError = map["lasterr"].orEmpty(),
             verifiedBoot = map["vbs"].orEmpty(),
             flashLocked = map["locked"].orEmpty(),
             deviceState = map["devstate"].orEmpty(),
@@ -213,6 +235,47 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                         "device_state=${current.deviceState.ifEmpty { "?" }}",
                 bad = current.verifiedBoot != "green" || current.flashLocked != "1",
             )
+            // 引擎资产是否真的落到运行时目录：缺一个文件引擎就起不来，而模块本体在
+            // tmpfs（/dev/.xudc_hidden）里，模块页看不到任何异常。
+            StatusRow(
+                label = stringResource(R.string.detect_tee_engine_files),
+                value = if (current.engineFilesOk) {
+                    stringResource(R.string.detect_tee_files_ok)
+                } else {
+                    stringResource(R.string.detect_tee_files_missing)
+                },
+                bad = !current.engineFilesOk,
+            )
+            // 引擎自己写下的"我给出的锁态"——证书里 RootOfTrust 的真实取值。
+            // 检测方报"密钥正常但引导加载程序已解锁"时，这一行是分辨两种原因的关键：
+            // 这里是 true/0 = 引擎确实伪造成功，问题在检测方读了别的地方；
+            // 这里是 false/2 或根本没有记录 = 引擎没接管过这个包。
+            StatusRow(
+                label = stringResource(R.string.detect_tee_served_rot),
+                value = current.servedRootOfTrust.ifEmpty {
+                    stringResource(R.string.detect_tee_served_rot_none)
+                },
+                bad = current.servedRootOfTrust.isNotEmpty() &&
+                        (!current.servedLocked || !current.servedVerified),
+            )
+            StatusRow(
+                label = stringResource(R.string.detect_tee_patch_errors),
+                value = if (current.patchErrors == 0) {
+                    stringResource(R.string.detect_tee_patch_errors_none)
+                } else {
+                    current.patchErrors.toString() + " · " + current.lastEngineError.take(120)
+                },
+                bad = current.patchErrors > 0,
+            )
+            if (!current.vvbCovered) {
+                Text(
+                    text = stringResource(R.string.detect_tee_vvb_missing),
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    color = Xc.colors.textSecondary,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
             if (current.zeroMount) {
                 Text(
                     text = stringResource(R.string.detect_tee_zeromount_note),
@@ -225,10 +288,10 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
 
             Spacer(Modifier.height(8.dp))
             Text(
-                text = if (current.engineAlive) {
-                    stringResource(R.string.detect_tee_note)
-                } else {
-                    stringResource(R.string.detect_tee_engine_down_note)
+                text = when {
+                    !current.engineAlive -> stringResource(R.string.detect_tee_engine_down_note)
+                    current.patchErrors > 0 -> stringResource(R.string.detect_tee_patch_failed_note)
+                    else -> stringResource(R.string.detect_tee_note)
                 },
                 fontSize = 12.sp,
                 lineHeight = 18.sp,

@@ -1116,6 +1116,17 @@ private fun KeyMintAttestation.toAuthorizations(
         authList.add(createAuth(Tag.BOOT_PATCHLEVEL, KeyParameterValue.integer(bootPatch)))
     }
 
+    // A real TEE always reports the RootOfTrust among the TEE-enforced key characteristics.
+    // Omitting it (as this list used to) left the characteristics inconsistent with the forged
+    // certificate; and for keys that came back from the hardware the characteristics carry the
+    // *real* unlocked boot state, which is exactly what boot-state detectors read.
+    authList.add(
+        createAuth(
+            Tag.ROOT_OF_TRUST,
+            KeyParameterValue.blob(AttestationBuilder.buildRootOfTrust(null).encoded),
+        )
+    )
+
     fun createSwAuth(tag: Int, value: KeyParameterValue): Authorization {
         val param = KeyParameter().apply {
             this.tag = tag
