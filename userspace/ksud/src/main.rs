@@ -21,6 +21,8 @@ mod assets;
 mod boot_patch;
 #[cfg(target_os = "android")]
 mod boot_txn;
+
+mod bootstate;
 #[cfg(target_os = "android")]
 mod cli;
 #[cfg(not(target_os = "android"))]

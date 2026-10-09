@@ -15,6 +15,10 @@ mod android {
 
     pub const KSURC_PATH: &str = concatcp!(WORKING_DIR, ".ksurc");
     pub const DAEMON_PATH: &str = concatcp!(ADB_DIR, "xudc");
+
+    // Switch for the boot-state consistency pass (see bootstate.rs): the file
+    // is absent on a fresh install, which means "enabled".
+    pub const BOOTSTATE_FLAG_PATH: &str = concatcp!(WORKING_DIR, ".bootstate");
     pub const LIBADBROOT_PATH: &str = concatcp!(LIBRARY_DIR, "libadbroot.so");
 
     pub const DAEMON_LINK_PATH: &str = concatcp!(BINARY_DIR, "xudc");

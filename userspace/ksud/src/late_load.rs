@@ -112,6 +112,11 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
     // previously failed daemon start cannot keep Zygisk disabled this boot.
     crate::module::clear_zygisk_failure_markers();
 
+    // Late-load activates the kernel without a patched init_boot, so the
+    // boot-state pass has to run here as well (it is idempotent).
+    crate::bootstate::apply();
+    crate::bootstate::harden_readability();
+
     // SUSFS baseline (kernel-support probe; no-op on kernels without SUSFS).
     #[cfg(target_arch = "aarch64")]
     crate::susfs::provision_baseline();
