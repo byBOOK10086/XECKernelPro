@@ -116,6 +116,7 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
     // boot-state pass has to run here as well (it is idempotent).
     crate::bootstate::apply();
     crate::bootstate::harden_readability();
+    crate::bootstate::apply_bootparam_overlay();
 
     // SUSFS baseline (kernel-support probe; no-op on kernels without SUSFS).
     #[cfg(target_arch = "aarch64")]

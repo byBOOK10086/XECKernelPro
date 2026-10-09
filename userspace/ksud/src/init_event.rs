@@ -80,6 +80,7 @@ pub fn on_post_data_fs() -> Result<()> {
     // property area once post-fs-data returns.
     crate::bootstate::apply();
     crate::bootstate::harden_readability();
+    crate::bootstate::apply_bootparam_overlay();
 
     // Re-assert the KernelSU-compatibility daemon links before anything else
     // touches the module tree. Zygisk Next / ReZygisk identify the root
