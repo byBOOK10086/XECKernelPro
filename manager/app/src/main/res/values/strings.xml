@@ -175,6 +175,7 @@ API support
 疑问小猫 (3301237007)
 IV. Acknowledgements
 This project is based on tiann/KernelSU. Thanks to KernelSU author weishu (tiann) and the upstream community; thanks to HMA-OSS (frknkrc44), TEESimulator-RS (JingMatrix, Enginex0), Tricky Addon (Enginex0), susfs4ksu (sidex15, simonpunk) and LSPosed for their upstream work.
+Thanks to DuckDetector (Eltavine and the Duck Apps contributors, https://github.com/eltavine/Duck-Detector-Refactoring , Apache-2.0): this project audited its public detector semantics and evidence model as the calibration baseline for the environment-hiding work shipped here.
 Project developer XEC sincerely thanks all the above members for their contributions in development, design, testing and module support.
 We hereby announce and express our gratitude.
 

@@ -12,7 +12,7 @@
     <uses-sdk tools:overrideLibrary="top.yukonga.miuix.kmp.blur" />
 
     <application
-        android:name=".KernelSUApplication"
+        android:name="com.xecpro.kernel.XecApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:directBootAware="true"
@@ -23,9 +23,9 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
         android:theme="@style/Theme.XecPro"
-        android:zygotePreloadName="me.weishu.kernelsu.magica.AppZygotePreload">
+        android:zygotePreloadName="com.xecpro.kernel.XecPreload">
         <activity
-            android:name=".ui.MainActivity"
+            android:name="com.xecpro.kernel.XecMainActivity"
             android:exported="true"
             android:theme="@style/Theme.XecPro.Starting"
             android:windowSoftInputMode="adjustResize">
@@ -64,7 +64,7 @@
         </activity>
 
         <activity
-            android:name=".ui.webui.WebUIActivity"
+            android:name="com.xecpro.kernel.XecWebUIActivity"
             android:autoRemoveFromRecents="true"
             android:configChanges="density|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|locale|layoutDirection|fontScale|keyboard|keyboardHidden"
             android:documentLaunchMode="intoExisting"
@@ -83,19 +83,19 @@
         </provider>
 
         <service
-            android:name=".magica.MagicaService"
+            android:name="com.xecpro.kernel.XecMagicaService"
             android:directBootAware="true"
             android:exported="false"
             android:isolatedProcess="true"
             android:useAppZygote="true" />
 
         <service
-            android:name=".ui.util.DownloadService"
+            android:name="com.xecpro.kernel.XecDownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
         <receiver
-            android:name=".magica.BootCompletedReceiver"
+            android:name="com.xecpro.kernel.XecBootReceiver"
             android:directBootAware="true"
             android:enabled="false"
             android:exported="true"

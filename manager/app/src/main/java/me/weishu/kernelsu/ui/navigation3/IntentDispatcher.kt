@@ -23,7 +23,7 @@ import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.screen.flash.FlashIt
 import me.weishu.kernelsu.ui.util.DownloadService
 import me.weishu.kernelsu.ui.util.getFileName
-import me.weishu.kernelsu.ui.webui.WebUIActivity
+import com.xecpro.kernel.XecWebUIActivity
 
 private const val SCHEME_KSU = "ksu"
 private const val HOST_ACTION = "action"
@@ -197,7 +197,7 @@ fun IntentDispatcher(intentChannel: ReceiveChannel<Intent>) {
             }
 
             is PendingAction.OpenWebUI -> {
-                val webIntent = Intent(context, WebUIActivity::class.java)
+                val webIntent = Intent(context, XecWebUIActivity::class.java)
                     .setData(buildInternalWebUiUri(action.moduleId))
                 context.startActivity(webIntent)
             }

@@ -30,7 +30,7 @@ import me.weishu.kernelsu.ui.screen.flash.FlashIt
 import me.weishu.kernelsu.ui.util.download
 import me.weishu.kernelsu.ui.util.module.Shortcut
 import me.weishu.kernelsu.ui.viewmodel.ModuleViewModel
-import me.weishu.kernelsu.ui.webui.WebUIActivity
+import com.xecpro.kernel.XecWebUIActivity
 
 @Composable
 fun ModulePager(
@@ -139,7 +139,7 @@ fun ModulePager(
         },
         onOpenWebUi = { module ->
             webUILauncher.launch(
-                Intent(context, WebUIActivity::class.java)
+                Intent(context, XecWebUIActivity::class.java)
                     .setData(
                         Shortcut.buildShortcutUri(module.id, ShortcutType.WebUI)
                     )

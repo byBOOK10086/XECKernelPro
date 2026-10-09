@@ -156,7 +156,7 @@ private val BG_DARK_DRAWABLES = intArrayOf(
     R.drawable.bg_dark_4,
 )
 
-class MainActivity : ComponentActivity() {
+open class MainActivity : ComponentActivity() {
 
     private val intentChannel = Channel<Intent>(capacity = Channel.BUFFERED)
     private var contentReady = false

@@ -10,7 +10,7 @@ import com.materialkolor.dynamiccolor.ColorSpec
 import com.topjohnwu.superuser.ShellUtils
 import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.ksuApp
-import me.weishu.kernelsu.magica.BootCompletedReceiver
+import com.xecpro.kernel.XecBootReceiver
 import me.weishu.kernelsu.ui.screen.modulerepo.RepoSort
 import me.weishu.kernelsu.ui.theme.ColorMode
 import me.weishu.kernelsu.ui.util.execKsud
@@ -171,7 +171,7 @@ class SettingsRepositoryImpl : SettingsRepository {
         set(value) {
             runCatching {
                 ksuApp.packageManager.setComponentEnabledSetting(
-                    ComponentName(ksuApp, BootCompletedReceiver::class.java),
+                    ComponentName(ksuApp, XecBootReceiver::class.java),
                     if (value) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                     PackageManager.DONT_KILL_APP
                 )

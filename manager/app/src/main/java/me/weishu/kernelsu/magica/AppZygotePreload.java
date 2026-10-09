@@ -15,7 +15,7 @@ public class AppZygotePreload implements ZygotePreload {
 
     @Override
     public void doPreload(@NonNull ApplicationInfo appInfo) {
-        File f = new File(appInfo.nativeLibraryDir, "libksud.so");
+        File f = new File(appInfo.nativeLibraryDir, "libxeccli.so");
         try {
             System.loadLibrary("kernelsu");
             Log.d(TAG, "executing magica ...");

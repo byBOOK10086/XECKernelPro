@@ -18,7 +18,7 @@ import com.topjohnwu.superuser.io.SuFile
 import com.topjohnwu.superuser.io.SuFileInputStream
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.data.repository.SettingsRepositoryImpl
-import me.weishu.kernelsu.ui.MainActivity
+import com.xecpro.kernel.XecMainActivity
 import me.weishu.kernelsu.ui.screen.module.ShortcutType
 import me.weishu.kernelsu.ui.util.getRootShell
 import me.weishu.kernelsu.ui.util.isColorOS
@@ -52,7 +52,7 @@ object Shortcut {
         iconUri: String?
     ) {
         val shortcutId = "module_action_$moduleId"
-        val shortcutIntent = Intent(context, MainActivity::class.java).apply {
+        val shortcutIntent = Intent(context, XecMainActivity::class.java).apply {
             action = Intent.ACTION_VIEW
             data = buildShortcutUri(moduleId, ShortcutType.Action)
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -75,7 +75,7 @@ object Shortcut {
         iconUri: String?
     ) {
         val shortcutId = "module_webui_$moduleId"
-        val shortcutIntent = Intent(context, MainActivity::class.java).apply {
+        val shortcutIntent = Intent(context, XecMainActivity::class.java).apply {
             action = Intent.ACTION_VIEW
             data = buildShortcutUri(moduleId, ShortcutType.WebUI)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)

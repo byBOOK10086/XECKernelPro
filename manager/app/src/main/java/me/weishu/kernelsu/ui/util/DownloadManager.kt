@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import com.xecpro.kernel.XecDownloadService
 
 object DownloadManager {
 
@@ -53,7 +54,7 @@ object DownloadManager {
             completionCallbacks[id] = onCompleted
         }
 
-        val intent = Intent(context, DownloadService::class.java).apply {
+        val intent = Intent(context, XecDownloadService::class.java).apply {
             action = DownloadService.ACTION_DOWNLOAD
             putExtra(DownloadService.EXTRA_DOWNLOAD_ID, id)
             putExtra(DownloadService.EXTRA_URL, url)

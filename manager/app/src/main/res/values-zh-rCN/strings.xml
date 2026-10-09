@@ -159,6 +159,7 @@ API支持
 疑问小猫 (3301237007)
 四、致谢
 本项目基于 tiann/KernelSU 修改开发，感谢 KernelSU 作者 weishu（tiann）与上游社区；感谢 HMA-OSS（frknkrc44）、TEESimulator-RS（JingMatrix、Enginex0）、Tricky Addon（Enginex0）、susfs4ksu（sidex15、simonpunk）、LSPosed 等上游项目的贡献。
+感谢 DuckDetector（Eltavine 与 Duck Apps 贡献者，https://github.com/eltavine/Duck-Detector-Refactoring ，Apache-2.0）：本项目对其公开的检测器语义与证据模型做了完整的对抗性审计，本项目的环境隐蔽能力以该项目的检测项为校准基准。
 项目开发者 XEC 谨向以上所有人员致以诚挚感谢。感谢各位在开发、设计、测试与模块支持等环节所作出的贡献。
 特此公示，并致谢忱。
 

@@ -38,7 +38,7 @@ import java.util.zip.ZipFile
 private const val TAG = "KsuCli"
 
 internal fun getKsuDaemonPath(): String {
-    return ksuApp.applicationInfo.nativeLibraryDir + File.separator + "libksud.so"
+    return ksuApp.applicationInfo.nativeLibraryDir + File.separator + "libxeccli.so"
 }
 
 data class FlashResult(val code: Int, val err: String, val showReboot: Boolean) {

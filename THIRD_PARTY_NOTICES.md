@@ -183,6 +183,15 @@ vendored 源码树（`third_party/`）始终**零修改**：上述修复全部�
 - **QWEA0/Liquid-Glass-Android** — https://github.com/QWEA0/Liquid-Glass-Android （MIT）
   `Lens.kt` 中 XC_LENS_SHADER 着色器的移植来源。
 
+## 环境检测审计引用（Adversarial detection audit）
+
+- **DuckDetector**（`eltavine/Duck-Detector-Refactoring`，Apache-2.0，作者 Eltavine 与 Duck Apps 贡献者）
+  — 本项目对其 18 个检测器的判定层、采集层与原生探针做了离线静态审计，用来校准本项目的环境隐蔽能力
+  （内核超级调用收敛、管理器身份锚点、启动状态一致性等）。**未复制该项目的任何源代码**；
+  引用范围限于公开的检测项语义、可观测信号与证据模型，许可证为 Apache-2.0。
+- 审计同时参考了各检测器的 `EVIDENCE.md`（其自述的依据、适用版本与已知盲区）。
+- 相关对抗性审计与隐蔽策略的分项记录，见仓库内 `docs/`（如随版本发布）与提交历史。
+
 ## 内嵌检测工具
 
 - **密钥链验机**（`manager/app/src/main/assets/detect/keychain-check.apk`，包名 `wu.keyChain.test`）— 第三方验机工具，版权归原作者。

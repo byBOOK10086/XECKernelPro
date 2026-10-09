@@ -21,14 +21,15 @@ import kotlinx.coroutines.launch
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.data.repository.SettingsRepositoryImpl
 import me.weishu.kernelsu.ksuApp
-import me.weishu.kernelsu.ui.MainActivity
+import com.xecpro.kernel.XecMainActivity
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import com.xecpro.kernel.XecDownloadService
 
-class DownloadService : Service() {
+open class DownloadService : Service() {
 
     companion object {
         const val CHANNEL_ID = "download_channel"
@@ -226,7 +227,7 @@ class DownloadService : Service() {
             .setAutoCancel(true)
 
         // Add "Install" action button
-        val installIntent = Intent(this, MainActivity::class.java).apply {
+        val installIntent = Intent(this, XecMainActivity::class.java).apply {
             action = ACTION_INSTALL_MODULE
             putExtra(EXTRA_MODULE_URI, uri.toString())
             putExtra(EXTRA_DOWNLOAD_ID, id)
@@ -247,7 +248,7 @@ class DownloadService : Service() {
         builder.setContentIntent(installPendingIntent)
 
         // Add "Cancel" action button
-        val dismissIntent = Intent(this, DownloadService::class.java).apply {
+        val dismissIntent = Intent(this, XecDownloadService::class.java).apply {
             action = ACTION_DISMISS_DOWNLOAD
             putExtra(EXTRA_DOWNLOAD_ID, id)
             putExtra(EXTRA_FILE_PATH, uri.path)
@@ -275,7 +276,7 @@ class DownloadService : Service() {
         .build()
 
     private fun createCancelPendingIntent(downloadId: Int): PendingIntent {
-        val intent = Intent(this, DownloadService::class.java).apply {
+        val intent = Intent(this, XecDownloadService::class.java).apply {
             action = ACTION_CANCEL
             putExtra(EXTRA_DOWNLOAD_ID, downloadId)
         }

@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.util.Log;
 
 import me.weishu.kernelsu.ui.util.KsuCliKt;
+import com.xecpro.kernel.XecMagicaService;
 
 public class BootCompletedReceiver extends BroadcastReceiver {
 
@@ -24,7 +25,7 @@ public class BootCompletedReceiver extends BroadcastReceiver {
         }
         if (KsuCliKt.rootAvailable()) return;
         try {
-            context.startService(new Intent(context, MagicaService.class));
+            context.startService(new Intent(context, XecMagicaService.class));
             Log.i(TAG, "MagicaService started from boot action: " + action);
         } catch (Throwable e) {
 
