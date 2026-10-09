@@ -22,6 +22,9 @@ mod boot_patch;
 #[cfg(target_os = "android")]
 mod boot_txn;
 
+// Android-only: the host-side boot-image patcher has no property area and no
+// sepolicy engine, so the module is gated exactly like its call sites.
+#[cfg(target_os = "android")]
 mod bootstate;
 #[cfg(target_os = "android")]
 mod cli;
