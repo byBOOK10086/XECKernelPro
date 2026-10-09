@@ -21,9 +21,12 @@ data class SettingsUiState(
     val pageScale: Float = 1.0f,
     val enableWebDebugging: Boolean = false,
 
-    /** 自定义背景文件名，空串 = 使用内置随机池（见 WallpaperStore）。 */
+    /** 自定义背景文件名，空串 = 使用内置随机池；纯色档是 `WallpaperStore.SOLID_*` 哨兵。 */
     val wallpaperLight: String = "",
     val wallpaperDark: String = "",
+
+    /** 背景模糊强度，百分比 0..100（0 = 关）。 */
+    val wallpaperBlur: Int = 0,
 
     // Su Compat
     val suCompatStatus: String = "",

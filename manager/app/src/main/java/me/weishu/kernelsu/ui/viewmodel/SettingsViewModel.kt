@@ -46,6 +46,7 @@ class SettingsViewModel(
             val enableWebDebugging = repo.enableWebDebugging
             val wallpaperLight = repo.wallpaperLight
             val wallpaperDark = repo.wallpaperDark
+            val wallpaperBlur = repo.wallpaperBlur
             val colorStyle = repo.colorStyle
             val colorSpec = repo.colorSpec
             val isLkmMode = repo.isLkmMode()
@@ -86,6 +87,7 @@ class SettingsViewModel(
                     enableWebDebugging = enableWebDebugging,
                     wallpaperLight = wallpaperLight,
                     wallpaperDark = wallpaperDark,
+                    wallpaperBlur = wallpaperBlur,
                     colorStyle = colorStyle,
                     colorSpec = colorSpec,
                     suCompatStatus = suCompatStatus,
@@ -212,6 +214,13 @@ class SettingsViewModel(
     fun setWallpaperDark(name: String) {
         repo.wallpaperDark = name
         _uiState.update { it.copy(wallpaperDark = name) }
+    }
+
+    /** 背景模糊强度（百分比 0..100）。拖动结束才落盘，拖动过程只改本地状态。 */
+    fun setWallpaperBlur(percent: Int) {
+        val clamped = percent.coerceIn(0, 100)
+        repo.wallpaperBlur = clamped
+        _uiState.update { it.copy(wallpaperBlur = clamped) }
     }
 
     fun setSuCompatMode(mode: Int) {

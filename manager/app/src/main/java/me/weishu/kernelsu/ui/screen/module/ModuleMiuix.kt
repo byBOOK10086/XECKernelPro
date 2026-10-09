@@ -976,9 +976,21 @@ fun ModuleItem(
                     onCheckedChange = {
                         if (it != module.enabled) onCheckChanged(it)
                     },
+                    // 四种状态色全部显式给：此前只覆盖了两个 thumb，轨道沿用 Miuix 默认的
+                    // primary / secondary，在深色霓虹卡片（半透明藏青）上几乎与卡片同色，
+                    // 用户报「深色模式看不清开关」就是这个原因。
+                    // 取色规则：轨道比卡片亮/暗一档（深档 34% 白，浅档 34% 的 #5B6478）；
+                    // 滑块与轨道反相（深档近白 #E0E7FF、浅档近黑 #1E1B4B）；开启态用青色轨道
+                    // + 纯白滑块。这样开/关两态在两种主题下都一眼可辨。
                     colors = SwitchDefaults.switchColors(
-                        checkedThumbColor = neon.accentCyan,
-                        uncheckedThumbColor = neon.textSub,
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = neon.accentCyan,
+                        uncheckedThumbColor = neon.textMain,
+                        uncheckedTrackColor = neon.textSub.copy(alpha = 0.34f),
+                        disabledCheckedThumbColor = Color.White.copy(alpha = 0.70f),
+                        disabledCheckedTrackColor = neon.accentCyan.copy(alpha = 0.45f),
+                        disabledUncheckedThumbColor = neon.textMain.copy(alpha = 0.55f),
+                        disabledUncheckedTrackColor = neon.textSub.copy(alpha = 0.20f),
                     ),
                 )
             }

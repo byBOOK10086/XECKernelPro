@@ -51,6 +51,7 @@ class MainActivityViewModel(
             enableNavigationBadge = settingRepo.enableNavigationBadge,
             wallpaperLight = settingRepo.wallpaperLight,
             wallpaperDark = settingRepo.wallpaperDark,
+            wallpaperBlur = settingRepo.wallpaperBlur,
         )
     }
 
@@ -68,6 +69,8 @@ class MainActivityViewModel(
             // 自定义背景：选完图要立刻换掉根层壁纸（内置池的随机抽签结果不受影响）。
             "wallpaper_light",
             "wallpaper_dark",
+            // 背景模糊拖动条：松手即生效，同样不需要重启。
+            "wallpaper_blur",
         )
     }
 }

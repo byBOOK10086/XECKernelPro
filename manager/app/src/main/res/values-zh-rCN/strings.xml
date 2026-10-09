@@ -488,6 +488,12 @@ XEC 项目组
     <string name="wallpaper_importing">正在处理图片…</string>
     <string name="wallpaper_applied">背景已更新</string>
     <string name="wallpaper_import_failed">图片导入失败：%1$s</string>
+    <string name="wallpaper_solid_white">纯白</string>
+    <string name="wallpaper_solid_black">纯黑</string>
+    <string name="wallpaper_slot_solid_white">当前使用纯白（固定，不再参与内置随机池轮换）。</string>
+    <string name="wallpaper_slot_solid_black">当前使用纯黑（固定，不再参与内置随机池轮换）。</string>
+    <string name="wallpaper_blur_title">背景模糊</string>
+    <string name="wallpaper_blur_summary">模糊壁纸本身，参照 iOS 桌面壁纸的观感：玻璃材质折射到的也是模糊后的图。</string>
     <string name="wallpaper_note_title">说明</string>
     <string name="wallpaper_note">图片只写入本机应用私有目录：不申请存储权限、不上传，卸载应用时随应用一起删除。\n浅色、深色两档分别指定——只改一档时，另一档继续用内置随机池。\n全应用的液态玻璃都采你选的这张图作为折射源；AMOLED 纯黑档为了保住纯黑底，仍然会把背景盖住。\n导入时会按最长边 2560 重编码为 JPEG，相册里的原图不会被改动。</string>
     <!-- TEE 引擎实测看板（验机页）：决定"模拟是否真的生效"的四项事实。 -->

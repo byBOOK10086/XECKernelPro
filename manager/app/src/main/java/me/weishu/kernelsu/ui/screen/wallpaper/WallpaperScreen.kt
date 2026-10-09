@@ -75,12 +75,26 @@ fun WallpaperScreen() {
     }
     val imageOnly = remember { PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly) }
 
+    // 切到纯色档：先把上一张自定义图从私有目录删掉再改设置。纯色档没有文件，
+    // 旧图留着就是孤儿；顺序反过来会短暂出现"设置指向纯色、旧图仍在磁盘上"的中间态。
+    val applySolid: (String, String) -> Unit = { slot, solid ->
+        val previous = if (slot == WallpaperStore.LIGHT) uiState.wallpaperLight else uiState.wallpaperDark
+        if (slot == WallpaperStore.LIGHT) {
+            viewModel.setWallpaperLight(solid)
+        } else {
+            viewModel.setWallpaperDark(solid)
+        }
+        WallpaperStore.discard(context, previous)
+    }
+
     WallpaperScreenMiuix(
         uiState = uiState,
         busySlot = busySlot,
         onBack = dropUnlessResumed { navigator.pop() },
         onPickLight = { lightPicker.launch(imageOnly) },
         onPickDark = { darkPicker.launch(imageOnly) },
+        onSolidLight = { solid -> applySolid(WallpaperStore.LIGHT, solid) },
+        onSolidDark = { solid -> applySolid(WallpaperStore.DARK, solid) },
         onClearLight = {
             val previous = uiState.wallpaperLight
             viewModel.setWallpaperLight("")
@@ -96,5 +110,6 @@ fun WallpaperScreen() {
             viewModel.setWallpaperDark("")
             WallpaperStore.clearAll(context)
         },
+        onBlurChange = viewModel::setWallpaperBlur,
     )
 }

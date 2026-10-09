@@ -25,6 +25,15 @@ interface SettingsRepository {
      */
     var wallpaperLight: String
     var wallpaperDark: String
+
+    /**
+     * 背景模糊强度，百分比 0..100（0 = 关）。
+     *
+     * 只作用于**根层壁纸**：模糊后的壁纸同时是液态玻璃的采样源，观感接近 iOS 桌面壁纸
+     * 被模糊后透出图标层。与 [enableBlur]（玻璃本身的模糊开关）互相独立——用户可能想要
+     * 模糊的壁纸 + 不透明的卡片，也可能反过来。
+     */
+    var wallpaperBlur: Int
     var enableWebDebugging: Boolean
     var moduleSortEnabledFirst: Boolean
     var moduleSortActionFirst: Boolean

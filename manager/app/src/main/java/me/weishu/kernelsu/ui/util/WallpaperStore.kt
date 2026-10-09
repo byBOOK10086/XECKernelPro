@@ -34,6 +34,33 @@ object WallpaperStore {
     /** 深色档槽位 id，同时是文件名前缀。 */
     const val DARK = "dark"
 
+    /**
+     * 纯色档的哨兵"文件名"。
+     *
+     * 用 `@` 前缀是为了和真实文件名（`light-<时间戳>.jpg`）在结构上不可能撞车——这两个档位
+     * 不落盘、不解码，只是"这一档固定用某个纯色"的标记。放在同一个设置项里，是为了让
+     * "有没有自定义背景""要不要走内置随机池"这些已有判断一次都不用改。
+     */
+    const val SOLID_WHITE = "@white"
+
+    /** 纯黑档哨兵，见 [SOLID_WHITE]。 */
+    const val SOLID_BLACK = "@black"
+
+    /** 该档位是不是纯色档（纯白 / 纯黑）。 */
+    fun isSolid(name: String): Boolean = name == SOLID_WHITE || name == SOLID_BLACK
+
+    /**
+     * 纯色档对应的 ARGB 颜色；不是纯色档返回 null。
+     *
+     * 返回 Int 而不是 Compose 的 `Color`：这个文件是纯工具层（不依赖 Compose），
+     * 调用侧用 `Color(argb)` 包一层即可。
+     */
+    fun solidArgb(name: String): Int? = when (name) {
+        SOLID_WHITE -> 0xFFFFFFFF.toInt()
+        SOLID_BLACK -> 0xFF000000.toInt()
+        else -> null
+    }
+
     /** 落盘最长边：2K 屏横屏放大也够，同时把原图压到几百 KB。 */
     private const val STORE_MAX_EDGE = 2560
 
@@ -52,9 +79,9 @@ object WallpaperStore {
 
     fun fileOf(context: Context, name: String): File = File(dir(context), name)
 
-    /** 名字为空或文件已被清掉都算"没有自定义背景"，调用侧据此回落到内置随机池。 */
+    /** 名字为空、纯色档标记、或文件已被清掉都算"没有自定义图"，但前两者各自另有渲染路径。 */
     fun exists(context: Context, name: String): Boolean =
-        name.isNotEmpty() && fileOf(context, name).isFile
+        name.isNotEmpty() && (isSolid(name) || fileOf(context, name).isFile)
 
     /** 解码一张本地壁纸；文件不存在、格式不支持时返回 null（调用方回落到内置池）。 */
     fun decode(file: File, maxEdge: Int): Bitmap? {
@@ -88,9 +115,9 @@ object WallpaperStore {
         target.name
     }
 
-    /** 丢弃一张壁纸（切回内置池时调用）。 */
+    /** 丢弃一张壁纸（切回内置池或换成纯色档时调用）。纯色档没有文件，直接忽略。 */
     fun discard(context: Context, name: String) {
-        if (name.isEmpty()) return
+        if (name.isEmpty() || isSolid(name)) return
         fileOf(context, name).delete()
     }
 

@@ -497,6 +497,12 @@ See the log below for details.</string>
     <string name="wallpaper_importing">Processing the image…</string>
     <string name="wallpaper_applied">Background updated</string>
     <string name="wallpaper_import_failed">Could not import the image: %1$s</string>
+    <string name="wallpaper_solid_white">Pure white</string>
+    <string name="wallpaper_solid_black">Pure black</string>
+    <string name="wallpaper_slot_solid_white">Pure white · fixed, no longer rotating with the built-in pool.</string>
+    <string name="wallpaper_slot_solid_black">Pure black · fixed, no longer rotating with the built-in pool.</string>
+    <string name="wallpaper_blur_title">Wallpaper blur</string>
+    <string name="wallpaper_blur_summary">Blurs the wallpaper itself, the way iOS blurs the home-screen image: the glass surfaces refract the blurred picture too.</string>
     <string name="wallpaper_note_title">How it works</string>
     <string name="wallpaper_note">The image is written to this app\'s private directory only: no storage permission, no upload, and it is removed together with the app when you uninstall it.\nLight and dark are configured separately — leave one alone and it keeps using the built-in random pool.\nEvery liquid-glass surface refracts the image you pick. The AMOLED black theme still covers the background to keep true black.\nOn import the image is re-encoded to JPEG with a 2560 px long edge; the original in your gallery is never modified.</string>
     <!-- TEE 引擎实测看板（验机页）：决定"模拟是否真的生效"的四项事实。 -->

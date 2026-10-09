@@ -20,4 +20,11 @@ data class MainActivityUiState(
      */
     val wallpaperLight: String,
     val wallpaperDark: String,
+    /**
+     * 背景模糊强度，百分比 0..100（0 = 关）。
+     *
+     * 同样放在根层：模糊挂在壁纸那一层（且在 `layerBackdrop` 之内），玻璃采样到的就是
+     * 模糊后的壁纸，观感接近 iOS 桌面——壁纸被糊掉，图标与材质浮在上面。
+     */
+    val wallpaperBlur: Int,
 )

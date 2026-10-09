@@ -9,6 +9,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -29,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.CompositionLocalProvider
@@ -140,6 +142,14 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  */
 private const val WALLPAPER_COUNT = 4
 
+/**
+ * 背景模糊拖动条 100% 对应的模糊半径。
+ *
+ * 25dp 是照 iOS 桌面壁纸糊化的观感取的：再大就只剩色块、玻璃材质也失去可折射的细节，
+ * 而"能看出是一张图但明显被糊掉"正是那条线的下方。拖动条是百分比，换算在这里做。
+ */
+private const val MAX_WALLPAPER_BLUR_DP = 25f
+
 private val BG_LIGHT_DRAWABLES = intArrayOf(
     R.drawable.bg_light_1,
     R.drawable.bg_light_2,
@@ -248,6 +258,14 @@ class MainActivity : ComponentActivity() {
                         } else {
                             uiState.wallpaperLight
                         }
+                        // 纯色档（纯白 / 纯黑）：不落盘也不解码，直接铺一层纯色。选了纯色就是
+                        // "这一档固定住"——内置池的抽签结果仍然存在，但不再参与绘制，也就是
+                        // 用户要的"不再在背景池里轮换"。
+                        val solidWallpaper = remember(customWallpaperName) {
+                            WallpaperStore.solidArgb(customWallpaperName)?.let { Color(it) }
+                        }
+                        // 背景模糊：百分比 → dp。0 时下面完全不挂 Modifier.blur（不建图层，零开销）。
+                        val wallpaperBlurRadius = (uiState.wallpaperBlur / 100f * MAX_WALLPAPER_BLUR_DP).dp
                         // 解码放在 IO 线程：produceState 的初始值是 null，也就是先显示内置壁纸，
                         // 解码完成后换成自定义图。冷启动时这一跳被 splash 盖住；页面内换图
                         // 也只是瞬间切换，不会卡住主线程。
@@ -255,7 +273,7 @@ class MainActivity : ComponentActivity() {
                             initialValue = null,
                             key1 = customWallpaperName,
                         ) {
-                            value = if (customWallpaperName.isEmpty()) {
+                            value = if (customWallpaperName.isEmpty() || WallpaperStore.isSolid(customWallpaperName)) {
                                 null
                             } else {
                                 withContext(Dispatchers.IO) {
@@ -352,6 +370,10 @@ class MainActivity : ComponentActivity() {
                                     // wallpaperBackdrop 由 LocalWallpaperBackdrop 下发）。
                                     // 自定义图与内置图只换"画哪张"，采样源、缩放方式、
                                     // 底的 0.80 半透明叠加全部沿用，玻璃观感不会两套逻辑。
+                                    // 背景模糊挂在 layerBackdrop **之内**（链上排在它后面）：
+                                    // 这样玻璃采样到的也是模糊后的壁纸，而不是"糊的壁纸 + 清晰
+                                    // 折射源"这种自相矛盾的组合。写在 layerBackdrop 之前则相反，
+                                    // 糊的只是最终画面、玻璃仍折射原图。
                                     val wallpaperModifier = Modifier
                                         .fillMaxSize()
                                         .then(
@@ -361,16 +383,29 @@ class MainActivity : ComponentActivity() {
                                                 Modifier
                                             }
                                         )
+                                        .then(
+                                            if (uiState.wallpaperBlur > 0) {
+                                                Modifier.blur(wallpaperBlurRadius)
+                                            } else {
+                                                Modifier
+                                            }
+                                        )
+                                    val currentSolid = solidWallpaper
                                     val customWallpaperBitmap = customWallpaper
-                                    if (customWallpaperBitmap != null) {
-                                        Image(
+                                    when {
+                                        // 纯色档优先：它就是"这一档的最终答案"，内置池不再参与。
+                                        currentSolid != null -> Box(
+                                            modifier = wallpaperModifier.background(currentSolid)
+                                        )
+
+                                        customWallpaperBitmap != null -> Image(
                                             bitmap = customWallpaperBitmap,
                                             contentDescription = null,
                                             modifier = wallpaperModifier,
                                             contentScale = ContentScale.Crop,
                                         )
-                                    } else {
-                                        Image(
+
+                                        else -> Image(
                                             painter = painterResource(wallpaperRes),
                                             contentDescription = null,
                                             modifier = wallpaperModifier,

@@ -127,6 +127,13 @@ class SettingsRepositoryImpl : SettingsRepository {
         get() = prefs.getString("wallpaper_dark", "").orEmpty()
         set(value) = prefs.edit { putString("wallpaper_dark", value) }
 
+    // 背景模糊：百分比 0..100，默认 0（= 不模糊，保持原有观感）。
+    // 夹一次范围是必要的：SharedPreferences 里的值可能是旧版本写的、也可能被外部改坏，
+    // 而下游会把它换算成 dp 交给 RenderEffect，越界值没有意义。
+    override var wallpaperBlur: Int
+        get() = prefs.getInt("wallpaper_blur", 0).coerceIn(0, 100)
+        set(value) = prefs.edit { putInt("wallpaper_blur", value.coerceIn(0, 100)) }
+
     override var enableWebDebugging: Boolean
         get() = prefs.getBoolean("enable_web_debugging", false)
         set(value) = prefs.edit { putBoolean("enable_web_debugging", value) }

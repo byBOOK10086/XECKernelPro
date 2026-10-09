@@ -24,7 +24,10 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.R
@@ -59,6 +63,8 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.Slider
+import top.yukonga.miuix.kmp.basic.SliderDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
@@ -84,9 +90,12 @@ fun WallpaperScreenMiuix(
     onBack: () -> Unit,
     onPickLight: () -> Unit,
     onPickDark: () -> Unit,
+    onSolidLight: (String) -> Unit,
+    onSolidDark: (String) -> Unit,
     onClearLight: () -> Unit,
     onClearDark: () -> Unit,
     onClearAll: () -> Unit,
+    onBlurChange: (Int) -> Unit,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
     val enableBlur = LocalEnableBlur.current
@@ -140,26 +149,35 @@ fun WallpaperScreenMiuix(
                     WallpaperSlotCard(
                         title = stringResource(R.string.wallpaper_light_title),
                         summary = slotSummary(
-                            custom = lightCustom,
+                            name = uiState.wallpaperLight,
                             slotBusy = busySlot == WallpaperStore.LIGHT,
                         ),
                         name = uiState.wallpaperLight,
                         enabled = !busy,
                         onPick = onPickLight,
+                        onSolid = onSolidLight,
                         onClear = onClearLight,
                         backdrop = backdrop,
                     )
                     WallpaperSlotCard(
                         title = stringResource(R.string.wallpaper_dark_title),
                         summary = slotSummary(
-                            custom = darkCustom,
+                            name = uiState.wallpaperDark,
                             slotBusy = busySlot == WallpaperStore.DARK,
                         ),
                         name = uiState.wallpaperDark,
                         enabled = !busy,
                         onPick = onPickDark,
+                        onSolid = onSolidDark,
                         onClear = onClearDark,
                         backdrop = backdrop,
+                    )
+
+                    WallpaperBlurCard(
+                        percent = uiState.wallpaperBlur,
+                        enabled = true,
+                        backdrop = backdrop,
+                        onChange = onBlurChange,
                     )
 
                     Card(
@@ -212,11 +230,18 @@ fun WallpaperScreenMiuix(
     }
 }
 
-/** 槽位摘要：空闲说"当前用的是哪一档"，处理中就把这句话换成进度提示，避免按钮看起来没反应。 */
+/**
+ * 槽位摘要：空闲说"当前用的是哪一档"，处理中就把这句话换成进度提示，避免按钮看起来没反应。
+ *
+ * 纯色档要单独说清楚"固定"这件事——它和"选了张图"在界面上是同一行文案的位置，
+ * 但语义不同：图会被内置池的抽签挤掉吗？不会；纯色同理，而且它就是用户要的"别再轮换"。
+ */
 @Composable
-private fun slotSummary(custom: Boolean, slotBusy: Boolean): String = when {
+private fun slotSummary(name: String, slotBusy: Boolean): String = when {
     slotBusy -> stringResource(R.string.wallpaper_importing)
-    custom -> stringResource(R.string.wallpaper_slot_custom)
+    name == WallpaperStore.SOLID_WHITE -> stringResource(R.string.wallpaper_slot_solid_white)
+    name == WallpaperStore.SOLID_BLACK -> stringResource(R.string.wallpaper_slot_solid_black)
+    name.isNotEmpty() -> stringResource(R.string.wallpaper_slot_custom)
     else -> stringResource(R.string.wallpaper_slot_builtin)
 }
 
@@ -228,6 +253,7 @@ private fun WallpaperSlotCard(
     name: String,
     enabled: Boolean,
     onPick: () -> Unit,
+    onSolid: (String) -> Unit,
     onClear: () -> Unit,
     backdrop: LayerBackdrop?,
 ) {
@@ -277,6 +303,31 @@ private fun WallpaperSlotCard(
                     )
                 }
             }
+            Spacer(Modifier.height(6.dp))
+            // 纯色档与选图并排：两者是"这一档用什么"的两种答案，放在同一张卡里才能一眼比出来。
+            // 当前生效的那个用主色按钮，未生效的保持默认样式——不用文字标注也能看出选中的是哪个。
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    text = stringResource(R.string.wallpaper_solid_white),
+                    onClick = { onSolid(WallpaperStore.SOLID_WHITE) },
+                    enabled = enabled,
+                    colors = if (name == WallpaperStore.SOLID_WHITE) {
+                        ButtonDefaults.textButtonColorsPrimary()
+                    } else {
+                        ButtonDefaults.textButtonColors()
+                    },
+                )
+                TextButton(
+                    text = stringResource(R.string.wallpaper_solid_black),
+                    onClick = { onSolid(WallpaperStore.SOLID_BLACK) },
+                    enabled = enabled,
+                    colors = if (name == WallpaperStore.SOLID_BLACK) {
+                        ButtonDefaults.textButtonColorsPrimary()
+                    } else {
+                        ButtonDefaults.textButtonColors()
+                    },
+                )
+            }
         }
     }
 }
@@ -290,8 +341,9 @@ private fun WallpaperSlotCard(
 @Composable
 private fun WallpaperThumbnail(name: String) {
     val context = LocalContext.current
+    val solidArgb = WallpaperStore.solidArgb(name)
     val bitmap by produceState<ImageBitmap?>(initialValue = null, name) {
-        value = if (name.isEmpty()) {
+        value = if (name.isEmpty() || solidArgb != null) {
             null
         } else {
             withContext(Dispatchers.IO) {
@@ -307,24 +359,92 @@ private fun WallpaperThumbnail(name: String) {
         modifier = Modifier
             .size(width = 96.dp, height = 64.dp)
             .clip(Xc.shapes.sm)
-            .background(Xc.colors.surfaceMuted.copy(alpha = 0.55f)),
+            // 纯色档直接把缩略图本身画成那个颜色——比"写两个字"更接近用户点下去会看到的结果。
+            .background(solidArgb?.let { Color(it) } ?: Xc.colors.surfaceMuted.copy(alpha = 0.55f)),
         contentAlignment = Alignment.Center,
     ) {
         val current = bitmap
-        if (current != null) {
-            Image(
-                bitmap = current,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
-        } else {
-            Text(
-                text = stringResource(R.string.wallpaper_builtin_short),
-                fontSize = 11.sp,
-                color = Xc.colors.textMuted,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 4.dp),
+        // 纯色档：色块已由 Box 的 background 画好，内容一律不画（既不解码也不出占位文字）。
+        // 两种情况分开写而不是空 if 分支：空分支在 Kotlin 里合法但读起来像漏写。
+        if (solidArgb == null) {
+            if (current != null) {
+                Image(
+                    bitmap = current,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.wallpaper_builtin_short),
+                    fontSize = 11.sp,
+                    color = Xc.colors.textMuted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 背景模糊卡片：一条拖动条 + 一行百分比。
+ *
+ * 百分比而不是 dp：用户脑子里没有"25dp 是糊到什么程度"，但"糊一半"是直觉。
+ * 拖动过程中只改本地状态、松手才写设置（[onValueChangeFinished]）——写设置会触发
+ * SharedPreferences 监听 → 根层重组 → 整屏重新录制 backdrop，跟着每一帧拖会明显掉帧。
+ */
+@Composable
+private fun WallpaperBlurCard(
+    percent: Int,
+    enabled: Boolean,
+    backdrop: LayerBackdrop?,
+    onChange: (Int) -> Unit,
+) {
+    var local by remember(percent) { mutableFloatStateOf(percent / 100f) }
+
+    Card(
+        modifier = Modifier
+            .padding(top = 12.dp)
+            .fillMaxWidth()
+            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
+        colors = CardDefaults.defaultColors(color = Color.Transparent),
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.wallpaper_blur_title),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Xc.colors.text,
+                    )
+                    Text(
+                        text = stringResource(R.string.wallpaper_blur_summary),
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        color = Xc.colors.textSecondary,
+                    )
+                }
+                Text(
+                    text = "${(local * 100).roundToInt()}%",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Xc.colors.text,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Slider(
+                value = local,
+                onValueChange = { local = it },
+                onValueChangeFinished = { onChange((local * 100).roundToInt()) },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = enabled,
+                valueRange = 0f..1f,
+                showKeyPoints = true,
+                keyPoints = listOf(0f, 0.25f, 0.5f, 0.75f, 1f),
+                magnetThreshold = 0.02f,
+                hapticEffect = SliderDefaults.SliderHapticEffect.Step,
             )
         }
     }
