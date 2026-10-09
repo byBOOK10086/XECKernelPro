@@ -2,6 +2,7 @@ package me.weishu.kernelsu.ui.util
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
@@ -70,6 +71,12 @@ object WallpaperStore {
     /** 设置页缩略图的最长边：没必要为了一个小方块解码整张图。 */
     const val PREVIEW_MAX_EDGE = 512
 
+    /** 背景模糊 100% 对应的降采样倍率上限（1 + 15 = 16 倍，2048 → 128px）。 */
+    private const val BLUR_MAX_SHRINK = 15f
+
+    /** 降采样步长：量化到 64px 一档，拖动条每动 1% 不至于重新解码一次。 */
+    private const val BLUR_EDGE_STEP = 64
+
     private const val DIR_NAME = "wallpapers"
     private const val JPEG_QUALITY = 92
 
@@ -78,6 +85,49 @@ object WallpaperStore {
         File(context.filesDir, DIR_NAME).apply { if (!exists()) mkdirs() }
 
     fun fileOf(context: Context, name: String): File = File(dir(context), name)
+
+    /**
+     * 背景模糊百分比 → 根层壁纸的解码最长边。
+     *
+     * 模糊不用 `Modifier.blur` 实现，而是"解码时就解小、绘制时放大"：根层壁纸同时是全应用
+     * 玻璃的采样源，在它上面挂 RenderEffect 会让每一次采样都重跑一遍全屏模糊，滚动时肉眼
+     * 可见掉帧；而把 2048px 的图解成 128px 再放大，只在换图/松手时算一次，之后每帧零开销，
+     * 观感正是 iOS 那种糊化壁纸。
+     *
+     * 0% 返回 [DISPLAY_MAX_EDGE]（与原行为完全一致，不多解一次小图）；
+     * 其余按 1+15×p 倍降采样并量化到 [BLUR_EDGE_STEP] 一档，下限 128px。
+     */
+    fun displayEdgeFor(blurPercent: Int): Int {
+        val percent = blurPercent.coerceIn(0, 100)
+        if (percent == 0) return DISPLAY_MAX_EDGE
+        val shrink = 1f + percent / 100f * BLUR_MAX_SHRINK
+        val edge = (DISPLAY_MAX_EDGE / shrink / BLUR_EDGE_STEP).roundToInt() * BLUR_EDGE_STEP
+        return edge.coerceIn(128, DISPLAY_MAX_EDGE)
+    }
+
+    /**
+     * 把内置池的 drawable 按最长边 [maxEdge] 解成位图（模糊档专用）。
+     *
+     * 用 [BitmapFactory] 而不是 `ImageDecoder`：这里要的正是"粗糙的降采样"，
+     * `inSampleSize` 的 2 的幂次步进足够，且不必再走一遍 ImageDecoder 的开销。
+     * 解码失败返回 null，调用方回落到原来的 `painterResource` 路径。
+     */
+    fun decodeResource(context: Context, resId: Int, maxEdge: Int): Bitmap? = runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeResource(context.resources, resId, bounds)
+        val longest = maxOf(bounds.outWidth, bounds.outHeight)
+        if (longest <= 0) return@runCatching null
+        var sample = 1
+        while (longest / (sample * 2) >= maxEdge) sample *= 2
+        BitmapFactory.decodeResource(
+            context.resources,
+            resId,
+            BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            },
+        )
+    }.getOrNull()
 
     /** 名字为空、纯色档标记、或文件已被清掉都算"没有自定义图"，但前两者各自另有渲染路径。 */
     fun exists(context: Context, name: String): Boolean =

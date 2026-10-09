@@ -30,7 +30,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.CompositionLocalProvider
@@ -142,13 +141,6 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  */
 private const val WALLPAPER_COUNT = 4
 
-/**
- * 背景模糊拖动条 100% 对应的模糊半径。
- *
- * 25dp 是照 iOS 桌面壁纸糊化的观感取的：再大就只剩色块、玻璃材质也失去可折射的细节，
- * 而"能看出是一张图但明显被糊掉"正是那条线的下方。拖动条是百分比，换算在这里做。
- */
-private const val MAX_WALLPAPER_BLUR_DP = 25f
 
 private val BG_LIGHT_DRAWABLES = intArrayOf(
     R.drawable.bg_light_1,
@@ -264,14 +256,17 @@ class MainActivity : ComponentActivity() {
                         val solidWallpaper = remember(customWallpaperName) {
                             WallpaperStore.solidArgb(customWallpaperName)?.let { Color(it) }
                         }
-                        // 背景模糊：百分比 → dp。0 时下面完全不挂 Modifier.blur（不建图层，零开销）。
-                        val wallpaperBlurRadius = (uiState.wallpaperBlur / 100f * MAX_WALLPAPER_BLUR_DP).dp
+                        // 背景模糊：百分比 → 解码最长边（见 WallpaperStore.displayEdgeFor）。
+                        // 刻意不用 Modifier.blur：根层壁纸是全应用玻璃的采样源，RenderEffect
+                        // 会让每次采样都重跑全屏模糊，滚动直接掉帧；降采样只在换图/松手时算一次。
+                        val wallpaperEdge = WallpaperStore.displayEdgeFor(uiState.wallpaperBlur)
                         // 解码放在 IO 线程：produceState 的初始值是 null，也就是先显示内置壁纸，
                         // 解码完成后换成自定义图。冷启动时这一跳被 splash 盖住；页面内换图
                         // 也只是瞬间切换，不会卡住主线程。
                         val customWallpaper by produceState<ImageBitmap?>(
                             initialValue = null,
                             key1 = customWallpaperName,
+                            key2 = wallpaperEdge,
                         ) {
                             value = if (customWallpaperName.isEmpty() || WallpaperStore.isSolid(customWallpaperName)) {
                                 null
@@ -279,7 +274,26 @@ class MainActivity : ComponentActivity() {
                                 withContext(Dispatchers.IO) {
                                     WallpaperStore.decode(
                                         WallpaperStore.fileOf(appContext, customWallpaperName),
-                                        WallpaperStore.DISPLAY_MAX_EDGE,
+                                        wallpaperEdge,
+                                    )?.asImageBitmap()
+                                }
+                            }
+                        }
+                        // 内置池那张同样按模糊强度降采样解码；不模糊时保持 null，继续走
+                        // painterResource（省掉一张全尺寸位图，行为与改动前一致）。
+                        val builtinWallpaper by produceState<ImageBitmap?>(
+                            initialValue = null,
+                            key1 = wallpaperRes,
+                            key2 = wallpaperEdge,
+                        ) {
+                            value = if (wallpaperEdge >= WallpaperStore.DISPLAY_MAX_EDGE) {
+                                null
+                            } else {
+                                withContext(Dispatchers.IO) {
+                                    WallpaperStore.decodeResource(
+                                        appContext,
+                                        wallpaperRes,
+                                        wallpaperEdge,
                                     )?.asImageBitmap()
                                 }
                             }
@@ -370,10 +384,9 @@ class MainActivity : ComponentActivity() {
                                     // wallpaperBackdrop 由 LocalWallpaperBackdrop 下发）。
                                     // 自定义图与内置图只换"画哪张"，采样源、缩放方式、
                                     // 底的 0.80 半透明叠加全部沿用，玻璃观感不会两套逻辑。
-                                    // 背景模糊挂在 layerBackdrop **之内**（链上排在它后面）：
-                                    // 这样玻璃采样到的也是模糊后的壁纸，而不是"糊的壁纸 + 清晰
-                                    // 折射源"这种自相矛盾的组合。写在 layerBackdrop 之前则相反，
-                                    // 糊的只是最终画面、玻璃仍折射原图。
+                                    // 壁纸这一层就是全应用玻璃的采样源；模糊已经在解码阶段做完
+                                    // （解小 + 放大绘制），所以这里不再挂任何 RenderEffect——
+                                    // 采样端每帧拿到的就是"看起来糊掉"的那张图。
                                     val wallpaperModifier = Modifier
                                         .fillMaxSize()
                                         .then(
@@ -383,15 +396,9 @@ class MainActivity : ComponentActivity() {
                                                 Modifier
                                             }
                                         )
-                                        .then(
-                                            if (uiState.wallpaperBlur > 0) {
-                                                Modifier.blur(wallpaperBlurRadius)
-                                            } else {
-                                                Modifier
-                                            }
-                                        )
                                     val currentSolid = solidWallpaper
                                     val customWallpaperBitmap = customWallpaper
+                                    val builtinWallpaperBitmap = builtinWallpaper
                                     when {
                                         // 纯色档优先：它就是"这一档的最终答案"，内置池不再参与。
                                         currentSolid != null -> Box(
@@ -400,6 +407,14 @@ class MainActivity : ComponentActivity() {
 
                                         customWallpaperBitmap != null -> Image(
                                             bitmap = customWallpaperBitmap,
+                                            contentDescription = null,
+                                            modifier = wallpaperModifier,
+                                            contentScale = ContentScale.Crop,
+                                        )
+
+                                        // 模糊档的内置图：小图放大绘制，边缘由双线性插值抹平。
+                                        builtinWallpaperBitmap != null -> Image(
+                                            bitmap = builtinWallpaperBitmap,
                                             contentDescription = null,
                                             modifier = wallpaperModifier,
                                             contentScale = ContentScale.Crop,
