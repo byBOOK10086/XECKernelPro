@@ -13,6 +13,7 @@
 
 #include "uapi/supercall.h"
 #include "supercall/internal.h"
+#include "policy/allowlist.h"
 #include "arch.h"
 #include "util.h"
 #include "klog.h" // IWYU pragma: keep
@@ -147,6 +148,17 @@ static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
 
     if (magic1 == KSU_INSTALL_MAGIC1 && magic2 == KSU_INSTALL_MAGIC2) {
         struct ksu_install_fd_tw *tw;
+
+#ifndef CONFIG_KSU_OPEN_LEGACY_ABI
+        /*
+         * Do not hand a driver descriptor to an unprivileged process: with it
+         * the caller can probe the supercall ioctls, which both proves the
+         * root implementation and hands out privileged commands.
+         */
+        if (!ksu_is_trusted_abi_client()) {
+            return 0;
+        }
+#endif
         unsigned long arg4 = (unsigned long)PT_REGS_SYSCALL_PARM4(real_regs);
 
         tw = kzalloc(sizeof(*tw), GFP_ATOMIC);

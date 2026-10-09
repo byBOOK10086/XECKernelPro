@@ -606,8 +606,15 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user 
         }
     }
 
-    if (magic2 == KSU_INSTALL_MAGIC2)
+    if (magic2 == KSU_INSTALL_MAGIC2) {
+#ifndef CONFIG_KSU_OPEN_LEGACY_ABI
+        /* Same gate as the kprobe route in supercall.c. */
+        if (!ksu_is_trusted_abi_client()) {
+            return -EINVAL;
+        }
+#endif
         return ksu_supercall_reboot_handler(arg);
+    }
 
     return -EINVAL;
 }

@@ -15,6 +15,7 @@
 #include <asm/syscall.h>
 #include <linux/compiler.h>
 #include <linux/cred.h>
+#include <linux/errno.h>
 #include <linux/printk.h>
 #include <linux/ptrace.h>
 #include <linux/types.h>
@@ -149,6 +150,18 @@ long __nocfi ksu_hook_prctl(int orig_nr, const struct pt_regs *regs)
     if (option != KERNEL_SU_OPTION) {
         return ksu_syscall_table[orig_nr](regs);
     }
+
+#ifndef CONFIG_KSU_OPEN_LEGACY_ABI
+    /*
+     * Answer the magic only to privileged clients. A probe that calls
+     * prctl(0xdeadbeef, 2) or any other command number and gets -EINVAL sees
+     * exactly what a stock kernel returns for an unknown option, instead of a
+     * version, a zero-sized success, or an unexpected errno.
+     */
+    if (!ksu_is_trusted_abi_client()) {
+        return -EINVAL;
+    }
+#endif
 
     arg2 = (unsigned long)PT_REGS_PARM2(regs);
     arg3 = (unsigned long)PT_REGS_PARM3(regs);

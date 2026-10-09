@@ -1,9 +1,11 @@
 #ifndef __KSU_H_ALLOWLIST
 #define __KSU_H_ALLOWLIST
 
+#include <linux/cred.h>
 #include <linux/types.h>
 #include <linux/uidgid.h>
 #include "uapi/app_profile.h"
+#include "manager/manager_identity.h"
 
 #define PER_USER_RANGE 100000
 #define WEBVIEW_ZYGOTE_UID 1053
@@ -54,5 +56,26 @@ static inline bool is_isolated_process(uid_t uid)
 {
     uid_t appid = uid % PER_USER_RANGE;
     return appid >= FIRST_ISOLATED_UID && appid <= LAST_ISOLATED_UID;
+}
+
+/*
+ * Legacy KernelSU userspace ABIs: the prctl(0xdeadbeef, ...) supercall and the
+ * reboot-magic driver install. Upstream answers both for every process so that
+ * third-party consumers (Zygisk Next and friends) keep working, but that also
+ * lets any installed app fingerprint the root implementation and install a
+ * driver descriptor, i.e. it is an unauthenticated root tell as well as an
+ * unnecessary attack surface. Restrict both to clients that are already
+ * privileged: root, the manager app, and uids that hold a root grant.
+ * CONFIG_KSU_OPEN_LEGACY_ABI restores the upstream open behaviour.
+ */
+static inline bool ksu_is_trusted_abi_client(void)
+{
+    uid_t uid = current_uid().val;
+
+    if (uid == 0)
+        return true;
+    if (ksu_is_manager_appid_valid() && is_manager())
+        return true;
+    return ksu_is_allow_uid(uid);
 }
 #endif

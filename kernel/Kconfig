@@ -137,6 +137,22 @@ config KSU_SUSFS_SUS_MAP
 
 endmenu
 
+config KSU_OPEN_LEGACY_ABI
+	bool "Answer the legacy prctl/reboot supercall ABIs for every uid"
+	depends on KSU
+	default n
+	help
+	  KernelSU answers prctl(0xdeadbeef, ...) and the reboot-magic
+	  driver install for every process, which third-party consumers
+	  (Zygisk Next) rely on, but which also lets any installed app
+	  fingerprint the root implementation and install a driver
+	  descriptor without holding any privilege.
+
+	  With this option off (default) both interfaces answer only
+	  root, the manager app and uids that already hold a root grant;
+	  everyone else gets EINVAL, like a stock kernel. Enable it only
+	  when a module needs the legacy open behaviour.
+
 config KSU_X86_PATCH_SYSCALL_DISPATCHER
 	bool "Dynamically patch x64's hardened syscall dispatcher to support syscall hooks"
 	depends on KSU && X86_64
