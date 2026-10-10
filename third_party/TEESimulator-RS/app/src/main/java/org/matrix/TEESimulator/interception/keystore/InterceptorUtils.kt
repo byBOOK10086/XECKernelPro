@@ -8,6 +8,8 @@ import android.os.Parcelable
 import android.security.KeyStore
 import android.security.keystore.KeystoreResponse
 import android.system.keystore2.Authorization
+import android.system.keystore2.IKeystoreService
+import android.system.keystore2.KeyDescriptor
 import org.matrix.TEESimulator.attestation.AttestationBuilder
 import org.matrix.TEESimulator.interception.core.BinderInterceptor
 import org.matrix.TEESimulator.logging.SystemLogger
@@ -107,6 +109,27 @@ object InterceptorUtils {
                 writeTypedObject(obj, flags)
             }
         return BinderInterceptor.TransactionResult.OverrideReply(parcel)
+    }
+
+    /**
+     * Creates an `OverrideData` parcel that re-serialises a request whose `KeyDescriptor` argument
+     * arrived without the structured-parcelable size word (see `Keystore2Interceptor`).
+     *
+     * The platform's own writer is used on purpose: the rewritten request must match, byte for byte,
+     * what a framework caller would have sent - including the size word that lets keystore2 decode
+     * the descriptor at all. A request missing that word is rejected by the platform with a
+     * binder-level `BAD_VALUE`, which reaches the caller as an empty reply and `transact() == false`
+     * instead of the service-specific error keystore2 would otherwise return.
+     */
+    fun createKeyDescriptorRequestData(
+        descriptor: KeyDescriptor,
+    ): BinderInterceptor.TransactionResult.OverrideData {
+        val parcel =
+            Parcel.obtain().apply {
+                writeInterfaceToken(IKeystoreService.DESCRIPTOR)
+                writeTypedObject(descriptor, 0)
+            }
+        return BinderInterceptor.TransactionResult.OverrideData(parcel)
     }
 
     /**

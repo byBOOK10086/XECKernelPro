@@ -133,14 +133,16 @@ class KeyMintSecurityLevelInterceptor(
             val keyDescriptor =
                 data.readTypedObject(KeyDescriptor.CREATOR)
                     ?: return TransactionResult.SkipTransaction
-            // Evict generated key data but retain patched chains so detectors
-            // can't use importKey to force unpatched getKeyEntry responses.
+            // The alias now names the imported key, so every cached artefact of the key that was
+            // stored there before the import - software key material, the cached KeyEntryResponse and
+            // the patched chain - describes a key that no longer exists. Evicting only the generated
+            // key left the cached response behind, and the Keystore2 interceptor then answered later
+            // getKeyEntry calls with the pre-import generated chain and its ORIGIN=GENERATED
+            // authorizations: the "stale generated after import" narrative an overwrite probe looks
+            // for. Drop the whole entry instead; the imported chain is cached fresh below when it is
+            // worth patching.
             val keyId = KeyIdentifier(callingUid, keyDescriptor.alias)
-            if (generatedKeys.remove(keyId) != null) {
-                SystemLogger.debug("Remove generated key on importKey $keyId")
-                GeneratedKeyPersistence.delete(keyId)
-            }
-            attestationKeys.remove(keyId)
+            cleanupKeyData(keyId)
             importedKeys.add(keyId)
             SystemLogger.trace { "[TRACE-$txId] post-importKey $keyId: added to importedKeys, skipUid=${ConfigurationManager.shouldSkipUid(callingUid)}" }
 
@@ -1003,6 +1005,24 @@ class KeyMintSecurityLevelInterceptor(
         }
 
         fun getPatchedChain(keyId: KeyIdentifier): Array<Certificate>? = patchedChains[keyId]
+
+        /**
+         * Forgets the certificate narrative cached for a key whose certificate or chain the platform
+         * has just replaced - an `importKey` or an `updateSubcomponent` naming that key.
+         *
+         * The chain in question was issued for the key that used to live under the alias, so serving
+         * it for the replacement key reports a certificate that no longer exists. Key material is
+         * deliberately left alone here: a software key stays usable, only the stale certificate and
+         * the stale response around it are dropped.
+         */
+        fun forgetCachedChain(keyId: KeyIdentifier) {
+            if (teeResponses.remove(keyId) != null) {
+                SystemLogger.debug("Remove cached response for ${keyId}")
+            }
+            if (patchedChains.remove(keyId) != null) {
+                SystemLogger.debug("Remove patched chain for ${keyId}")
+            }
+        }
 
         fun isAttestationKey(keyId: KeyIdentifier): Boolean = attestationKeys.contains(keyId)
 

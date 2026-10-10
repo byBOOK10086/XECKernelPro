@@ -79,6 +79,16 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
 
     private val grantedKeys = ConcurrentHashMap<Long, GrantedKeyAccess>()
 
+    /**
+     * A `KeyDescriptor` decoded from a request, together with the layout it arrived in. Requests
+     * that carry the descriptor without the structured-parcelable size word have to be re-serialised
+     * before they are forwarded; see [readKeyDescriptor].
+     */
+    private data class ParsedKeyDescriptor(
+        val descriptor: KeyDescriptor,
+        val legacyLayout: Boolean,
+    )
+
     override val serviceName = "android.system.keystore2.IKeystoreService/default"
     override val processName = "keystore2"
     override val injectionCommand = "exec ./inject `pidof keystore2` libTEESimulator.so entry"
@@ -198,9 +208,9 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
                 return handleUpdateSubcomponent(callingUid, data)
 
             data.enforceInterface(IKeystoreService.DESCRIPTOR)
-            val descriptor =
-                data.readTypedObject(KeyDescriptor.CREATOR)
-                    ?: return TransactionResult.ContinueAndSkipPost
+            val parsedDescriptor =
+                readKeyDescriptor(data) ?: return TransactionResult.ContinueAndSkipPost
+            val descriptor = parsedDescriptor.descriptor
 
             if (
                 code == GET_KEY_ENTRY_TRANSACTION &&
@@ -251,6 +261,18 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
                 if (deletedSoftwareKeys.remove(keyId)) {
                     SystemLogger.info("[TX_ID: $txId] Returning KEY_NOT_FOUND for deleted key ${descriptor.alias}")
                     return InterceptorUtils.createErrorReply(RESPONSE_KEY_NOT_FOUND)
+                }
+                if (parsedDescriptor.legacyLayout) {
+                    // The descriptor arrived without the parcelable size word keystore2 needs to
+                    // decode it, so forwarding the request as-is would make the real service fail
+                    // the whole transaction with a binder-level error: the caller then sees an empty
+                    // reply and no service-specific code at all, which is a far louder fingerprint
+                    // than the ordinary KEY_NOT_FOUND it asked for. Re-serialise the descriptor with
+                    // the platform's own writer and let the real service answer normally.
+                    SystemLogger.debug(
+                        "[TX_ID: $txId] Forwarding a hand-built getKeyEntry request for ${descriptor.alias} in the platform layout."
+                    )
+                    return InterceptorUtils.createKeyDescriptorRequestData(descriptor)
                 }
                 return TransactionResult.Continue
             }
@@ -407,21 +429,18 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
                     SystemLogger.trace { "[TRACE-$txId] getKeyEntry $keyId: isImport=${parsedParameters.isImportKey()} origin=${parsedParameters.origin} inImportedKeys=${KeyMintSecurityLevelInterceptor.importedKeys.contains(keyId)} hasPatchedChain=${KeyMintSecurityLevelInterceptor.getPatchedChain(keyId) != null} isAttestKey=${parsedParameters.isAttestKey()}" }
 
                     if (parsedParameters.isImportKey()) {
-                        val retainedChain = KeyMintSecurityLevelInterceptor.getPatchedChain(keyId)
-                        if (retainedChain == null) {
-                            SystemLogger.trace { "[TRACE-$txId] getKeyEntry $keyId: imported, no retained chain, skip" }
-                            SystemLogger.info("[TX_ID: $txId] Skip patching for imported key (no prior attestation).")
-                            return TransactionResult.SkipTransaction
-                        }
-                        SystemLogger.trace { "[TRACE-$txId] getKeyEntry $keyId: imported, SERVING RETAINED CHAIN (detection vector!)" }
-                        SystemLogger.info("[TX_ID: $txId] Imported key overwrote attested alias, serving retained chain for $keyId")
-                        CertificateHelper.updateCertificateChain(response.metadata, retainedChain).getOrThrow()
-                        response.metadata.authorizations =
-                            InterceptorUtils.patchAuthorizations(
-                                response.metadata.authorizations,
-                                callingUid,
-                            )
-                        return InterceptorUtils.createTypedObjectReply(response)
+                        // The reply describes an imported key, so the chain the real service returned
+                        // *is* the imported one. A chain cached under this alias belongs to whatever
+                        // key was stored there before the import: splicing it into this reply would
+                        // describe a key that no longer exists, and "leaf does not match the imported
+                        // certificate while the old chain is still served" is exactly the stale
+                        // retained narrative an overwrite probe looks for. Forget it and serve the
+                        // real reply.
+                        KeyMintSecurityLevelInterceptor.forgetCachedChain(keyId)
+                        SystemLogger.debug(
+                            "[TX_ID: $txId] Imported key $keyId: serving the imported chain, cached chain forgotten."
+                        )
+                        return TransactionResult.SkipTransaction
                     }
 
                     if (KeyMintSecurityLevelInterceptor.importedKeys.contains(keyId)) {
@@ -531,6 +550,57 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
     }
 
     /**
+     * Decodes the `KeyDescriptor` argument of a `getKeyEntry`, `deleteKey` or `updateSubcomponent`
+     * request.
+     *
+     * AIDL serialises a structured parcelable as `[presence marker][size][domain][nspace][alias]
+     * [blob]`. The size word is what lets a newer reader skip fields it does not know, and keystore2
+     * refuses the whole transaction when it is absent: the caller then gets a binder-level failure -
+     * an *empty* reply and `transact() == false` - instead of the service-specific error the method
+     * would normally return. Requests assembled by hand (a detector probing the binder surface, or
+     * an older Java-level hook that writes the parcel itself) omit that word, so they are recognised
+     * here by looking at what sits where the size belongs: a value that cannot cover the descriptor
+     * means the fields start there. Such a request is then re-serialised with
+     * [InterceptorUtils.createKeyDescriptorRequestData] before it is forwarded, which is what turns
+     * the caller's empty reply back into the ordinary native `KEY_NOT_FOUND`.
+     *
+     * The decision is made on the header alone, so it does not depend on how a particular platform
+     * version reacts to the missing word.
+     */
+    private fun readKeyDescriptor(data: Parcel): ParsedKeyDescriptor? {
+        val start = data.dataPosition()
+        val marker = runCatching { data.readInt() }.getOrDefault(0)
+        if (marker == 0) return null
+
+        val sizeOrDomain = runCatching { data.readInt() }.getOrDefault(-1)
+        val coversDescriptor = sizeOrDomain >= 4 && sizeOrDomain <= data.dataSize() - (start + 4)
+        if (coversDescriptor) {
+            data.setDataPosition(start)
+            runCatching { data.readTypedObject(KeyDescriptor.CREATOR) }
+                .getOrNull()
+                ?.let { return ParsedKeyDescriptor(it, false) }
+        }
+
+        // Hand-built layout: the same fields in the same order, without the size word. The domain is
+        // checked against the known values so that arbitrary bytes are not mistaken for a descriptor.
+        data.setDataPosition(start + 4)
+        return runCatching {
+                val domain = data.readInt()
+                if (domain < Domain.APP || domain > Domain.KEY_ID) return null
+                ParsedKeyDescriptor(
+                    KeyDescriptor().apply {
+                        this.domain = domain
+                        nspace = data.readLong()
+                        alias = data.readString()
+                        blob = data.createByteArray()
+                    },
+                    true,
+                )
+            }
+            .getOrNull()
+    }
+
+    /**
      * Answers a `Domain.GRANT` getKeyEntry (`alias == null`, `nspace == grantId`) from the owner's
      * cached response.
      *
@@ -598,6 +668,31 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
         }
     }
 
+    /**
+     * Maps an `updateSubcomponent` descriptor back to the key it names. `Domain.APP` carries the
+     * alias; `Domain.KEY_ID` carries the key id the framework received from an earlier
+     * `getKeyEntry`, which is how the Keystore SPI rewrites `setKeyEntry()` on an existing key;
+     * `Domain.GRANT` carries a grant handle, and an update through it rewrites the granting owner's
+     * certificate as well.
+     *
+     * Only the caller's own key is ever resolved: a foreign namespace must not let one caller evict
+     * another app's cached chain, because falling back to the real service would hand that app the
+     * unpatched hardware chain.
+     */
+    private fun resolveUpdatedKeyIdentifier(
+        callingUid: Int,
+        descriptor: KeyDescriptor,
+    ): KeyIdentifier? {
+        return when (descriptor.domain) {
+            Domain.APP -> descriptor.alias?.let { KeyIdentifier(callingUid, it) }
+            Domain.KEY_ID ->
+                KeyMintSecurityLevelInterceptor.findKeyIdentifierByNspace(descriptor.nspace)
+                    ?.takeIf { it.uid == callingUid }
+            Domain.GRANT -> grantedKeys[descriptor.nspace]?.keyId?.takeIf { it.uid == callingUid }
+            else -> null
+        }
+    }
+
     private fun handleUpdateSubcomponent(callingUid: Int, data: Parcel): TransactionResult {
         data.enforceInterface(IKeystoreService.DESCRIPTOR)
         val descriptor = data.readTypedObject(KeyDescriptor.CREATOR)
@@ -617,10 +712,21 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
             }
 
         if (generatedKeyInfo == null) {
-            descriptor.alias?.let {
-                val kid = KeyIdentifier(callingUid, it)
-                userUpdatedKeys.add(kid)
-                SystemLogger.trace { "[TRACE] updateSubcomponent $kid: not generated key, added to userUpdatedKeys" }
+            // The engine does not own this key's certificate: the real service is about to store the
+            // new certificate and chain, so every response and chain cached for the key describes a
+            // certificate that is disappearing. Drop them, otherwise the next getKeyEntry is answered
+            // from the cache and still reports the pre-update chain - the "stale TEE response after a
+            // key id update" narrative an update probe looks for. The key is remembered as
+            // user-updated too, so a certificate the user installed is never patched afterwards.
+            val updatedKeyId =
+                resolveUpdatedKeyIdentifier(callingUid, descriptor)
+                    ?: descriptor.alias?.let { KeyIdentifier(callingUid, it) }
+            if (updatedKeyId != null) {
+                KeyMintSecurityLevelInterceptor.forgetCachedChain(updatedKeyId)
+                userUpdatedKeys.add(updatedKeyId)
+                SystemLogger.trace {
+                    "[TRACE] updateSubcomponent $updatedKeyId: dropped the cached certificate narrative"
+                }
             }
             return TransactionResult.ContinueAndSkipPost
         }
