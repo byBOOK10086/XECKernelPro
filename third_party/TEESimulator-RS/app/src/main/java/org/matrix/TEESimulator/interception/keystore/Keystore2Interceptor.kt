@@ -38,6 +38,8 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
         InterceptorUtils.getTransactCode(stubBinderClass, "getKeyEntry")
     private val DELETE_KEY_TRANSACTION =
         InterceptorUtils.getTransactCode(stubBinderClass, "deleteKey")
+    private val GRANT_TRANSACTION = InterceptorUtils.getTransactCode(stubBinderClass, "grant")
+    private val UNGRANT_TRANSACTION = InterceptorUtils.getTransactCode(stubBinderClass, "ungrant")
     private val UPDATE_SUBCOMPONENT_TRANSACTION =
         InterceptorUtils.getTransactCode(stubBinderClass, "updateSubcomponent")
     private val LIST_ENTRIES_TRANSACTION =
@@ -62,6 +64,21 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
     private val deletedSoftwareKeys: MutableSet<KeyIdentifier> = ConcurrentHashMap.newKeySet()
     private val userUpdatedKeys = ConcurrentHashMap.newKeySet<KeyIdentifier>()
 
+    // KeyStore2 stores a single certificate chain per key, so a grantee is supposed to observe
+    // exactly the chain the owner observes. The real service can only hand back the raw hardware
+    // chain, which no longer matches the APP path once the owner's chain has been patched, so every
+    // grant issued through this process is remembered and its Domain.GRANT reads are answered from
+    // the owner's cached response.
+    private const val KEY_PERMISSION_GET_INFO = 4
+
+    private data class GrantedKeyAccess(
+        val keyId: KeyIdentifier,
+        val granteeUid: Int,
+        val accessVector: Int,
+    )
+
+    private val grantedKeys = ConcurrentHashMap<Long, GrantedKeyAccess>()
+
     override val serviceName = "android.system.keystore2.IKeystoreService/default"
     override val processName = "keystore2"
     override val injectionCommand = "exec ./inject `pidof keystore2` libTEESimulator.so entry"
@@ -70,6 +87,8 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
         listOfNotNull(
                 GET_KEY_ENTRY_TRANSACTION,
                 DELETE_KEY_TRANSACTION,
+                GRANT_TRANSACTION,
+                UNGRANT_TRANSACTION,
                 UPDATE_SUBCOMPONENT_TRANSACTION,
                 LIST_ENTRIES_TRANSACTION,
                 LIST_ENTRIES_BATCHED_TRANSACTION,
@@ -169,7 +188,10 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
         ) {
             logTransaction(txId, transactionNames[code]!!, callingUid, callingPid)
 
-            if (ConfigurationManager.shouldSkipUid(callingUid))
+            // A Domain.GRANT read is resolved before the skip gate: an isolated grantee is not a
+            // package uid, so shouldSkipUid() would otherwise drop it to the real service.
+            val skipUid = ConfigurationManager.shouldSkipUid(callingUid)
+            if (skipUid && code != GET_KEY_ENTRY_TRANSACTION)
                 return TransactionResult.ContinueAndSkipPost
 
             if (code == UPDATE_SUBCOMPONENT_TRANSACTION)
@@ -179,6 +201,16 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
             val descriptor =
                 data.readTypedObject(KeyDescriptor.CREATOR)
                     ?: return TransactionResult.ContinueAndSkipPost
+
+            if (
+                code == GET_KEY_ENTRY_TRANSACTION &&
+                    descriptor.alias == null &&
+                    descriptor.domain == Domain.GRANT
+            ) {
+                resolveGrantedKeyEntry(txId, callingUid, descriptor)?.let { return it }
+            }
+
+            if (skipUid) return TransactionResult.ContinueAndSkipPost
 
             if (code == DELETE_KEY_TRANSACTION) {
                 val keyId =
@@ -231,6 +263,23 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
                 KeyMintParameterLogger.logParameter(it.keyParameter)
             }
             return InterceptorUtils.createTypedObjectReply(response)
+        } else if (code == GRANT_TRANSACTION || code == UNGRANT_TRANSACTION) {
+            logTransaction(
+                txId,
+                transactionNames[code] ?: "unknown code=$code",
+                callingUid,
+                callingPid,
+            )
+
+            // grant is left to the real service; its reply carries the grant id this interceptor
+            // needs, and that id is only known once the real call has been made.
+            if (code == UNGRANT_TRANSACTION) {
+                data.enforceInterface(IKeystoreService.DESCRIPTOR)
+                val descriptor = data.readTypedObject(KeyDescriptor.CREATOR)
+                val granteeUid = data.readInt()
+                if (descriptor != null) forgetGrant(callingUid, descriptor, granteeUid)
+            }
+            return TransactionResult.Continue
         } else {
             logTransaction(
                 txId,
@@ -258,6 +307,36 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
     ): TransactionResult {
         if (target != keystoreService || reply == null || InterceptorUtils.hasException(reply))
             return TransactionResult.SkipTransaction
+
+        if (code == GRANT_TRANSACTION) {
+            logTransaction(
+                txId,
+                "post-${transactionNames[code] ?: "unknown code=$code"}",
+                callingUid,
+                callingPid,
+            )
+            return runCatching {
+                    data.enforceInterface(IKeystoreService.DESCRIPTOR)
+                    val keyDescriptor = data.readTypedObject(KeyDescriptor.CREATOR)
+                    val granteeUid = data.readInt()
+                    val accessVector = data.readInt()
+                    val grantDescriptor = reply.readTypedObject(KeyDescriptor.CREATOR)
+
+                    val keyId = resolveGrantedKeyIdentifier(callingUid, keyDescriptor)
+                    val grantId = grantDescriptor?.nspace
+                    if (keyId != null && grantId != null && grantId != 0L) {
+                        grantedKeys[grantId] = GrantedKeyAccess(keyId, granteeUid, accessVector)
+                        SystemLogger.debug(
+                            "[TX_ID: $txId] Remembered grant $grantId for $keyId (grantee=$granteeUid, accessVector=$accessVector)."
+                        )
+                    }
+                    TransactionResult.SkipTransaction
+                }
+                .getOrElse {
+                    SystemLogger.error("[TX_ID: $txId] Failed to track the granted key.", it)
+                    TransactionResult.SkipTransaction
+                }
+        }
 
         if (code == GET_NUMBER_OF_ENTRIES_TRANSACTION) {
             logTransaction(txId, "post-${transactionNames[code]!!}", callingUid, callingPid)
@@ -449,6 +528,74 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
                 }
         }
         return TransactionResult.SkipTransaction
+    }
+
+    /**
+     * Answers a `Domain.GRANT` getKeyEntry (`alias == null`, `nspace == grantId`) from the owner's
+     * cached response.
+     *
+     * The real service only knows the raw hardware chain, so a grantee that reads the grant handle
+     * observes a different ordered chain than the owner once the owner's chain has been patched or
+     * generated. KeyStore2 itself keeps one chain per key and exposes it to both domains, so serving
+     * the cached owner response is what keeps the two domains byte-identical.
+     *
+     * Deliberately conservative: the handle must be a grant this process issued, the caller must be
+     * the recorded grantee, the recorded access vector must include GET_INFO (KeyStore2 answers
+     * getKeyEntry with PERMISSION_DENIED otherwise), and the owner's response must still be cached.
+     * Everything else returns null and falls through to the real service, which keeps grant caller
+     * binding, revocation and access-vector enforcement exactly as the platform implements them.
+     */
+    private fun resolveGrantedKeyEntry(
+        txId: Long,
+        callingUid: Int,
+        descriptor: KeyDescriptor,
+    ): TransactionResult.OverrideReply? {
+        val grant = grantedKeys[descriptor.nspace] ?: return null
+        if (grant.granteeUid != callingUid) return null
+        if ((grant.accessVector and KEY_PERMISSION_GET_INFO) == 0) return null
+
+        val response =
+            KeyMintSecurityLevelInterceptor.getGeneratedKeyResponse(grant.keyId) ?: return null
+        SystemLogger.debug(
+            "[TX_ID: $txId] Serving the cached chain of ${grant.keyId} for grant ${descriptor.nspace} to uid=$callingUid."
+        )
+        return InterceptorUtils.createTypedObjectReply(response)
+    }
+
+    /**
+     * Maps a grant request descriptor back to the key it names. `Domain.APP` carries the alias;
+     * `Domain.KEY_ID` carries a namespace the framework received from an earlier response.
+     */
+    private fun resolveGrantedKeyIdentifier(
+        callingUid: Int,
+        descriptor: KeyDescriptor?,
+    ): KeyIdentifier? {
+        descriptor ?: return null
+        return when (descriptor.domain) {
+            Domain.APP -> descriptor.alias?.let { KeyIdentifier(callingUid, it) }
+            Domain.KEY_ID ->
+                KeyMintSecurityLevelInterceptor.findKeyIdentifierByNspace(descriptor.nspace)
+            else -> null
+        }
+    }
+
+    /**
+     * Drops remembered grants when the owner revokes them, so a revoked handle is never answered
+     * from the cache. Revocation names the key (an APP alias, or the grant handle itself) plus the
+     * grantee it applied to.
+     */
+    private fun forgetGrant(callingUid: Int, descriptor: KeyDescriptor, granteeUid: Int) {
+        if (descriptor.domain == Domain.GRANT) {
+            grantedKeys.remove(descriptor.nspace)
+            return
+        }
+        val alias = descriptor.alias ?: return
+        val keyId = KeyIdentifier(callingUid, alias)
+        for (entry in grantedKeys.entries) {
+            if (entry.value.keyId == keyId && entry.value.granteeUid == granteeUid) {
+                grantedKeys.remove(entry.key)
+            }
+        }
     }
 
     private fun handleUpdateSubcomponent(callingUid: Int, data: Parcel): TransactionResult {

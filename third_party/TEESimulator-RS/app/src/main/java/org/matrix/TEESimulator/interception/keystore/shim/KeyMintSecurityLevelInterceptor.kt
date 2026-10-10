@@ -988,6 +988,20 @@ class KeyMintSecurityLevelInterceptor(
                 ?.value
         }
 
+        /**
+         * Resolves a `Domain.KEY_ID` namespace back to the key it names. Software keys keep the
+         * namespace this interceptor assigned; hardware keys keep the namespace the real service
+         * reported in the metadata it returned, which is the one the framework reuses for later
+         * `Domain.KEY_ID` calls.
+         */
+        fun findKeyIdentifierByNspace(nspace: Long): KeyIdentifier? {
+            if (nspace == 0L) return null
+            generatedKeys.entries.firstOrNull { it.value.nspace == nspace }?.let { return it.key }
+            return teeResponses.entries
+                .firstOrNull { it.value.metadata?.key?.nspace == nspace }
+                ?.key
+        }
+
         fun getPatchedChain(keyId: KeyIdentifier): Array<Certificate>? = patchedChains[keyId]
 
         fun isAttestationKey(keyId: KeyIdentifier): Boolean = attestationKeys.contains(keyId)
