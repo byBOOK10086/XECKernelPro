@@ -104,6 +104,31 @@ AOSP libbinder/libutils 头文件子集（Apache-2.0）、Linux 内核 UAPI 头�
   出证"必须能从设备上直接看到，否则无从判断该修哪一层。这段取证就是为此，且不需要
   用户在设备上敲命令。
 
+- **2026-10-11（引擎本该更新却没有更新：本轮"刷入新版本仍旧解锁"的根因）**：
+  `service.sh` 的资产刷新判据从上游 `module.prop` 的 `versionCode` 改为**资产内容戳**
+  （对将写入的 `daemon`/`inject`/`supervisor`/`classes.dex`/`libTEESimulator.so`/
+  `libcertgen.so` 取 sha256 前 16 位）。原因：`versionCode` 是引擎自己的版本号
+  （162），我们改引擎源码不会改它，于是第一次把某一版引擎写进
+  `/data/adb/tricky_store` 之后，此后每一次刷入新版都被判成"已是最新"——引擎侧的
+  全部修复（grant 链一致性、RootOfTrust 多份伪造、`STALE_*` 覆盖、keystore2 原生
+  回复形状）都停在仓库里，设备上跑的一直是第一次那份 `classes.dex`。现在内容一变
+  就替换，并在每次开机把内容戳记进 `.engine.log`。
+- **2026-10-11（stand-down 判定的 shell 优先级缺陷）**：`service.sh` 改为调用
+  `external_engine_active()`。旧写法把六个 `test` 串成
+  `A && B && C || D && E && F`，`&&`/`||` 左结合，等价于 `((A&&B&&C) || D) && E && F`
+  ——外部 `tricky_store` 存在但**已被用户停用**（`disable` 文件在）时整体为假，
+  本模块不 stand down，于是两个引擎同时向 keystore2 注入：两套 grant ledger、两套
+  证书缓存互相打架。
+- **2026-10-11（检测工具显式入表）**：`target.baseline.txt` 显式加入
+  `com.eltavine.duckdetector`（本仓库做环境检测审计时的判定基准）与其它常见完整性
+  检测器，不再依赖"桌面应用自动入表"能否正确解析 `cmd package query-activities`。
+- **2026-10-11（引擎源码三处修改，见 `third_party/TEESimulator-RS/NOTICE`）**：
+  `Keystore2Interceptor.kt` 的 `getKeyEntry` 后置钩子改为按 `shouldSkipUid()` 而非
+  `shouldPatch()` 放行（原写法让 GENERATE 模式、以及"TEE 探测失败而降级成 GENERATE"
+  的 AUTO 包完全拿不到实时补丁）；实时补丁结果只在**叶证书确实被重写过**时才写入
+  缓存（`AttestationPatcher` 在 keybox 缺失/无 attestation 扩展时是 fail-open，
+  会把真实链原样返回，缓存它等于永久钉死真实的（解锁态）RootOfTrust）。
+
 许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
 一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。
 

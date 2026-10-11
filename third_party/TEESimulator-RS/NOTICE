@@ -31,3 +31,30 @@ Third-party components:
        GNU General Public License v2.0 WITH Linux-syscall-note exception.
    Information about the exception:
        https://spdx.org/licenses/Linux-syscall-note.html
+
+Modifications by XECKernelPro (GPL-3.0 section 5(a) notice):
+----------------------------------------------------------
+This tree is NOT a pristine upstream snapshot. XECKernelPro modifies the
+following Java sources in place; the complete corresponding source of each
+modified file is this repository, and each file keeps its upstream license
+header. Upstream remains Enginex0/TEESimulator-RS.
+
+  * app/src/main/java/org/matrix/TEESimulator/attestation/AttestationPatcher.kt
+      - rewrite the software-enforced RootOfTrust copy as well as the
+        TEE-enforced one.
+  * app/src/main/java/org/matrix/TEESimulator/interception/keystore/InterceptorUtils.kt
+      - keep the patched key characteristics (tag 704) consistent with the
+        certificate copy.
+  * app/src/main/java/org/matrix/TEESimulator/interception/keystore/shim/KeyMintSecurityLevelInterceptor.kt
+      - cache invalidation helpers (forgetCachedChain, findKeyIdentifierByNspace,
+        cleanupKeyData on import).
+  * app/src/main/java/org/matrix/TEESimulator/interception/keystore/Keystore2Interceptor.kt
+      - grant ledger so a Domain.GRANT read resolves to the owner's chain,
+        key-descriptor re-serialisation for the native reply shape, and (2026-10-11)
+        a getKeyEntry post-hook gate on shouldSkipUid() plus a cache guard that
+        refuses to cache a chain whose leaf was not actually rewritten.
+
+See userspace/ksud/builtin/tricky_store/NOTICE.md for the built-in module
+modifications (service.sh, engineconf.sh, target_autofill.sh, consistency.sh,
+target.baseline.txt).
+
