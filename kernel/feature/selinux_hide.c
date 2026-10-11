@@ -93,8 +93,13 @@ static void (*context_struct_compute_av_fn)(struct policydb *policydb, struct co
 /* SUSFS 模式下老 KMI（<6.6）的 50_add_susfs selinux hunk 会以
      * `extern struct selinux_state fake_state;` 从基线内核对象引用它，
      * 所以这里不能是 static（与 KSU_SUSFS_LINKAGE 的其它符号同理）；
-     * 初始化在 ksu_selinux_hide_enable()：initialized + backup_sepolicy。 */
-KSU_SUSFS_LINKAGE struct selinux_state fake_state;
+     * 初始化在 ksu_selinux_hide_enable()：initialized + backup_sepolicy。
+     *
+     * 上游把 <6.6 的调用路径改成了 backup_sepolicy 版 *_with_policy，本文件里
+     * 已经不再引用它，只有 SUSFS 的 hunk 会引用；LKM 模式下它退化成 static，
+     * 于是 -Wunused-variable（内核用 -Werror）会把编译打断。加 __maybe_unused
+     * 只影响警告，不改变链接属性。 */
+KSU_SUSFS_LINKAGE struct selinux_state fake_state __maybe_unused;
 #endif
 
 static write_op_fn *context_write, *access_write;

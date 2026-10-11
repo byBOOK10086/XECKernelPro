@@ -33,12 +33,6 @@ class SuperUserRepositoryImpl : SuperUserRepository {
 
     override suspend fun getAppList(): Result<Pair<List<AppInfo>, List<Int>>> = withContext(Dispatchers.IO) {
         runCatching {
-            if (!KsuCli.SHELL.isRoot) {
-                return@withContext Result.failure(
-                    IllegalStateException("Root access is required")
-                )
-            }
-
             val result = connectKsuService {
                 Log.w(TAG, "KsuService disconnected")
             }
