@@ -794,14 +794,30 @@ kb_ensure_from_module() {
     kb_write_root_status "$KB_LIVE"
 }
 
-# 常驻看护：1s 权限钉住，15s 可信度巡检 + 刷新判定。
+# 常驻看护：1s 权限钉住 + **内容一变就复核**，15s 一次可信度巡检 + 刷新判定。
+#
+# 为什么要按"内容变化"触发，而不只按 15s 周期：vendor 的 daemon 自带 keybox 任务
+# （`keybox.enabled` / `keybox.interval`，默认 180s），它调的是
+# `keybox/mod.rs::fetch` —— 我们给的 URL 失败后它会继续试自己的三路源，并且
+# `install_data()` 把结果**直接写进实时路径**。检测方可能在一两秒后就来取证；
+# 只靠 15s 巡检会留下一个"能签链、根不认"的窗口（设备上就是"bootloader 已锁定 +
+# 未知根证书"）。这里把窗口压到 ≤1s：比对实时副本的内容指纹，一变就复核 +
+# 重写 .keybox_root（管理器那一行同步刷新）。
 kb_guardian_loop() {
-    local _tick=0
+    local _tick=0 _last_sha _cur_sha
     kb_prepare
+    _last_sha=$(kb_sha "$KB_LIVE")
     while :; do
         sleep "$KB_TICK"
         _tick=$((_tick + 1))
         kb_fix_perms
+        _cur_sha=$(kb_sha "$KB_LIVE")
+        if [ "$_cur_sha" != "$_last_sha" ]; then
+            _last_sha=$_cur_sha
+            _log "INFO" "keybox 实时副本内容变化（sha=$(kb_short "$_cur_sha")）——立即复核（级别=$(kb_trust_level "$KB_LIVE")）"
+            kb_check_live
+            kb_write_root_status "$KB_LIVE"
+        fi
         if [ $((_tick % KB_CHECK_EVERY)) -eq 0 ]; then
             kb_check_live
             kb_maybe_refresh

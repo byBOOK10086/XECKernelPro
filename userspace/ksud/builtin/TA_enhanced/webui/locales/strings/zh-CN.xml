@@ -14,7 +14,7 @@
     <string name="help_add_system_app">添加系统应用</string>
     <string name="help_add_system_app_description">添加特定系统应用到应用列表。</string>
     <string name="help_set_keybox">设置 AOSP &amp; 有效密钥</string>
-    <string name="help_set_keybox_description">替换 Tricky Store 的密钥（keybox.xml）。有效密钥选项需连网使用，不保证能一直提供。</string>
+    <string name="help_set_keybox_description">替换 Tricky Store 的密钥（keybox.xml）。有效密钥选项需连网使用，不保证能一直提供。注意：「AOSP」是软件认证根、「未知」是自签根——检测方对这两者分别报「软件认证根证书」和「未知根证书」，只有「有效」与随包内置的可信密钥才会被判成 Google 硬件根；本项目只服务挂 Google 根的链，开机会把非 Google 根的密钥换回内置可信副本。</string>
     <string name="help_set_custom_keybox">设置自定义密钥</string>
     <string name="help_set_custom_keybox_description">从设备存储导入自定义密钥。仅支持 xml 文件。</string>
     <string name="help_set_security_patch">设置安全补丁</string>
@@ -45,8 +45,8 @@
     <string name="menu_deselect_unnecessary">取消选择非必要应用</string>
     <string name="menu_add_system_app">添加系统应用</string>
     <string name="menu_keybox">密钥</string>
-    <string name="menu_keybox_aosp">AOSP</string>
-    <string name="menu_keybox_unknown">未知</string>
+    <string name="menu_keybox_aosp">AOSP（软件根）</string>
+    <string name="menu_keybox_unknown">未知（自签根）</string>
     <string name="menu_keybox_valid">有效</string>
     <string name="menu_keybox_custom">自定义</string>
     <string name="menu_set_verified_boot_hash">设置哈希值</string>
@@ -69,10 +69,10 @@
     <string name="about_acknowledgment">特别鸣谢</string>
     <!-- Prompt -->
     <string name="prompt_no_internet">请检查您的网络连接</string>
-    <string name="prompt_aosp_key_set">成功设置 AOSP 密钥</string>
+    <string name="prompt_aosp_key_set">已设置为 AOSP 软件认证密钥：链末是 AOSP 软件根，检测方会报「软件认证根证书」，不是 Google 硬件根；本项目开机会把非 Google 根的密钥换回内置可信副本</string>
     <string name="prompt_key_set_error">更新密钥失败</string>
-    <string name="prompt_unknown_key_set">成功设置未知密钥</string>
-    <string name="prompt_valid_key_set">成功设置有效密钥</string>
+    <string name="prompt_unknown_key_set">已设置为自签密钥：链末不是任何已知根，检测方会报「未知根证书」（而链仍能签，所以 bootloader 那行看起来还是已锁定）；本项目开机会把非 Google 根的密钥换回内置可信副本</string>
+    <string name="prompt_valid_key_set">成功设置为有效密钥（挂 Google 证明根）</string>
     <string name="prompt_no_valid">未找到有效密钥。</string>
     <string name="prompt_boot_hash_set">哈希值重置成功</string>
     <string name="prompt_boot_hash_set_error">哈希值重置失败</string>

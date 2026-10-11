@@ -138,6 +138,30 @@ vbhash 提取功能由源码构建的 ta-enhanced 守护进程（`rust/src/vbhas
      导致指纹永远不命中、级别永远判成 1 这类**静默降级**。
      `kb_check_live` 里"级别 1 只提示不处置"的旧行为已删除（它正是靠"中间证书轮换也
      会表现为级别 1"这条推断写下的，改口径后该推断不再成立）。
+  5. **第三方源可用性的实测结论（2026-10-12 离线复核，脚本见交接文档）**：vendor 的
+     `fetch_upstream()` 指向 KOWX712 的 `.extra`，实测 **HTTP 404**；
+     `fetch_integritybox()` 指向 MeowDump 的 `ShockWave.tar`，按 vendor 自己的解码链
+     （base64 ×10 → hex → rot13 → 去 5 个过滤词）解出来是 **`NICE TRY DIDDY`** 的占位
+     内容，不是 keybox（`validate::validate` 会拒）。也就是说：**"链末不是 Google 根"
+     的实时副本不可能来自这两个源**，剩下的现实来源只有两个都由本项目/本模块 UI 触发：
+     - TA WebUI 的「未知」按钮 → `ta-enhanced keybox generate`：自签 `CN=Android Keybox`，
+       DeviceID=`sw`，EC 只有 1 张证书、RSA 连证书都没有（`kb_trust_level` 直接判级别 2：
+       连"≥2 张证书"的结构底线都不到）；
+     - TA WebUI 的「AOSP」按钮 → `common/.default`（同一份 AOSP 软件认证箱子，
+       DeviceID 也是 `sw`，每把钥匙 2 张证书：叶 + AOSP 软件根）。
+     两者都会被验机工具判成"非 Google 硬件根"（前者 UNKNOWN_ROOT、后者
+     AOSP_SOFTWARE_ROOT），而链都能签 —— 这正是"bootloader 已锁定 + 未知根证书"的来源。
+  6. **两个按钮的文案改为如实描述**（`webui/locales/strings/{zh-CN,en}.xml`）：
+     菜单项改成「AOSP（软件根）」「未知（自签根）」，并把成功提示改成
+     "检测方会报「软件认证根证书」/「未知根证书」……本项目开机会把非 Google 根的密钥
+     换回内置可信副本"。原因：旧文案「未知」+「成功设置未知密钥」只说了"未知"两个字，
+     用户看不出这一步的后果，而它恰好制造了本次故障的形态。WebUI 直接 fetch
+     `locales/strings/<lang>.xml`（`assets/index-migrated.min.js::dl/xi`，无版本缓存），
+     所以改文案不需要动 `locales/version`。
+  7. **看护窗口从 15s 压到 ≤1s**：`kb_guardian_loop` 每秒比对实时副本内容指纹，一变就
+     复核 + 重写 `.keybox_root`。起因：vendor 的 daemon 自带 keybox 任务
+     （`keybox.enabled` / `keybox.interval` 默认 180s）会**直接写实时路径**，而检测方
+     可能一两秒后就来取证；只按 15s 周期巡检会留下"能签链、根不认"的窗口。
 
 许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
 一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。

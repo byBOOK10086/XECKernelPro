@@ -14,7 +14,7 @@
     <string name="help_add_system_app">Add System App</string>
     <string name="help_add_system_app_description">Add specific system app to app list.</string>
     <string name="help_set_keybox">Set AOSP &amp; Valid Keybox</string>
-    <string name="help_set_keybox_description">Replace tricky store keybox.xml. Valid keybox option requires Internet connection and not always available.</string>
+    <string name="help_set_keybox_description">Replace tricky store keybox.xml. Valid keybox option requires Internet connection and not always available. Note: "AOSP" is the software attestation root and "Unknown" is a self-signed root - detectors report those as an AOSP software root and an unknown root certificate respectively; only "Valid" and the keybox bundled with this build read as a Google hardware root. This project only serves Google-rooted chains, so a non-Google-rooted keybox is replaced with the bundled trusted copy on boot.</string>
     <string name="help_set_custom_keybox">Set Custom Keybox</string>
     <string name="help_set_custom_keybox_description">Import keybox from your device storage. Only support xml file.</string>
     <string name="help_set_security_patch">Set Security Patch</string>
@@ -46,8 +46,8 @@
     <string name="menu_add_system_app">Add System App</string>
     <string name="menu_show_system_apps">Show System Apps</string>
     <string name="menu_keybox">Keybox</string>
-    <string name="menu_keybox_aosp">AOSP</string>
-    <string name="menu_keybox_unknown">Unknown</string>
+    <string name="menu_keybox_aosp">AOSP (software root)</string>
+    <string name="menu_keybox_unknown">Unknown (self-signed)</string>
     <string name="menu_keybox_valid">Valid</string>
     <string name="menu_keybox_custom">Custom</string>
     <string name="menu_set_verified_boot_hash">Set Verified Boot Hash</string>
@@ -68,10 +68,10 @@
     <string name="about_acknowledgment">Acknowledgment</string>
     <!-- Prompt -->
     <string name="prompt_no_internet">Please check your Internet connection</string>
-    <string name="prompt_aosp_key_set">AOSP keybox set successfully</string>
+    <string name="prompt_aosp_key_set">AOSP software keybox installed: its chain ends at the AOSP software root, so detectors report an AOSP software root instead of a Google hardware root; this project replaces a non-Google-rooted keybox with the bundled trusted copy on boot</string>
     <string name="prompt_key_set_error">Failed to update keybox</string>
-    <string name="prompt_unknown_key_set">Unknown keybox set successfully</string>
-    <string name="prompt_valid_key_set">Valid keybox set successfully</string>
+    <string name="prompt_unknown_key_set">Self-signed keybox installed: its chain ends at no known root, so detectors report an unknown root certificate (the chain still signs, which is why the bootloader row can still read locked); this project replaces a non-Google-rooted keybox with the bundled trusted copy on boot</string>
+    <string name="prompt_valid_key_set">Valid keybox installed (chains to a Google attestation root)</string>
     <string name="prompt_no_valid">No valid keybox found.</string>
     <string name="prompt_boot_hash_set">Verified Boot Hash saved successfully</string>
     <string name="prompt_boot_hash_set_error">Failed to update Verified Boot Hash</string>
