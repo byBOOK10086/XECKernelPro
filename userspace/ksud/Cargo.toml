@@ -1,5 +1,5 @@
 [package]
-name = "xudc"
+name = "ksud"
 version = "0.1.0"
 edition.workspace = true
 
@@ -54,7 +54,7 @@ nom = "8"
 derive-new = "0.7"
 getopts = "0.2"
 ksuinit = { path = "../ksuinit" }
-adb_client = { git = "https://github.com/KernelSU2/adb_client", rev = "d97a966435bebaa55017834869dec08150826aa7" }
+adb_client = { git = "https://github.com/KernelSU2/adb_client" }
 prop-rs-android = { git = "https://github.com/KernelSU2/ksu_props", rev = "ddb6ee7294467f7f25bad2118e9e24eee104144b" }
 
 [build-dependencies]

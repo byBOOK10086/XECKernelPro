@@ -34,6 +34,9 @@ interface ConfirmDialogVisuals : Parcelable {
     val isHtml: Boolean
     val confirm: String?
     val dismiss: String?
+
+    /** Registry-hosted content: rendered with JavaScript off and network locked to the registry. */
+    val isRestricted: Boolean get() = false
 }
 
 @Parcelize
@@ -44,6 +47,7 @@ private data class ConfirmDialogVisualsImpl(
     override val isHtml: Boolean,
     override val confirm: String?,
     override val dismiss: String?,
+    override val isRestricted: Boolean = false,
 ) : ConfirmDialogVisuals {
     companion object {
         val Empty: ConfirmDialogVisuals = ConfirmDialogVisualsImpl("", "", isMarkdown = false, isHtml = false, confirm = null, dismiss = null)
@@ -76,7 +80,8 @@ interface ConfirmDialogHandle : DialogHandle {
         markdown: Boolean = false,
         html: Boolean = false,
         confirm: String? = null,
-        dismiss: String? = null
+        dismiss: String? = null,
+        restricted: Boolean = false,
     )
 
     suspend fun awaitConfirm(
@@ -85,7 +90,8 @@ interface ConfirmDialogHandle : DialogHandle {
         markdown: Boolean = false,
         html: Boolean = false,
         confirm: String? = null,
-        dismiss: String? = null
+        dismiss: String? = null,
+        restricted: Boolean = false,
     ): ConfirmResult
 }
 
@@ -247,10 +253,11 @@ private class ConfirmDialogHandleImpl(
         markdown: Boolean,
         html: Boolean,
         confirm: String?,
-        dismiss: String?
+        dismiss: String?,
+        restricted: Boolean,
     ) {
         coroutineScope.launch {
-            updateVisuals(ConfirmDialogVisualsImpl(title, content, markdown, html, confirm, dismiss))
+            updateVisuals(ConfirmDialogVisualsImpl(title, content, markdown, html, confirm, dismiss, restricted))
             show()
         }
     }
@@ -261,10 +268,11 @@ private class ConfirmDialogHandleImpl(
         markdown: Boolean,
         html: Boolean,
         confirm: String?,
-        dismiss: String?
+        dismiss: String?,
+        restricted: Boolean,
     ): ConfirmResult {
         coroutineScope.launch {
-            updateVisuals(ConfirmDialogVisualsImpl(title, content, markdown, html, confirm, dismiss))
+            updateVisuals(ConfirmDialogVisualsImpl(title, content, markdown, html, confirm, dismiss, restricted))
             show()
         }
         return awaitResult()

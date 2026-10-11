@@ -15,12 +15,14 @@ mod android {
     pub fn ensure_binaries(ignore_if_exist: bool) -> anyhow::Result<()> {
         for file in Asset::iter() {
             if file == "ksuinit"
+                || file == "waitsys"
                 || file == "kpmd"
                 || file == "kptd"
                 || file == "kpim"
                 || file.ends_with(".ko")
             {
-                // don't extract ksuinit, the on-demand patch assets, and kernel modules
+                // don't extract internal executables (ksuinit, waitsys), the
+                // on-demand patch assets, and kernel modules
                 continue;
             }
             let asset =
@@ -50,7 +52,12 @@ struct Asset;
 #[folder = "bin/aarch64"]
 struct Asset;
 
-// If not Android, ie. macos, linux, windows, include both
+#[cfg(all(target_arch = "riscv64", target_os = "android"))]
+#[derive(RustEmbed)]
+#[folder = "bin/riscv64"]
+struct Asset;
+
+// If not Android, ie. macos, linux, windows, include all architectures.
 #[cfg(not(target_os = "android"))]
 #[derive(RustEmbed)]
 #[folder = "bin"]

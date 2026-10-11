@@ -1,17 +1,12 @@
-use crate::module::{handle_updated_modules, prune_modules};
-use crate::utils::{is_safe_mode, switch_mnt_ns};
+use crate::module::{ScriptWait, handle_updated_modules, prune_modules};
+use crate::utils::is_safe_mode;
 use crate::{
     assets, defs, ksucalls, metamodule, restorecon,
     utils::{self},
 };
 use anyhow::{Context, Result};
-use libc::_exit;
 use log::{error, info, warn};
-use prop_rs_android::resetprop::ResetProp;
-use prop_rs_android::sys_prop;
-use rustix::process::chdir;
-use std::path::Path;
-use std::process::Command;
+use std::{path::Path, time::Instant};
 
 /// Provision the built-in modules: extract the bundled binaries they are
 /// executed with, materialize them into the RAM-only module dir and apply their
@@ -47,17 +42,17 @@ fn provision_builtin_modules() {
 /// because an external Magisk installation was detected. Built-in modules are
 /// shipped by this kernel itself, so leaving them on that skip path silently
 /// disables Zygisk whenever a stray `magisk` binary happens to be in PATH.
-fn exec_builtin_stage(stage: &str, block: bool) {
+fn exec_builtin_stage(stage: &str, wait: ScriptWait) {
     if stage == "post-fs-data" {
         provision_builtin_modules();
     }
 
-    if let Err(e) = crate::module::exec_builtin_stage_script(stage, block) {
+    if let Err(e) = crate::module::exec_builtin_stage_script(stage, wait) {
         warn!("Failed to exec built-in {stage} scripts: {e}");
     }
 }
 
-pub fn on_post_data_fs() -> Result<()> {
+pub fn on_post_fs_data() -> Result<()> {
     // Resolve a pending direct-flash transaction before any module, built-in
     // engine, SELinux, or SUSFS work can run. A successful rollback owns this
     // boot and must return immediately.
@@ -65,7 +60,6 @@ pub fn on_post_data_fs() -> Result<()> {
         warn!("boot transaction rollback completed; skipping module startup");
         return Ok(());
     }
-
     if let Err(e) = ksucalls::ensure_uapi_version_matched() {
         error!("{e:#}, skip on_post_fs_data");
         return Ok(());
@@ -100,9 +94,7 @@ pub fn on_post_data_fs() -> Result<()> {
         warn!("clear temp configs failed: {e}");
     }
 
-    #[cfg(unix)]
     let _ = catch_bootlog("logcat", &["logcat", "-b", "all"]);
-    #[cfg(unix)]
     let _ = catch_bootlog("dmesg", &["dmesg", "-w", "-r"]);
 
     if utils::has_magisk_installed() {
@@ -111,12 +103,13 @@ pub fn on_post_data_fs() -> Result<()> {
         // to be provisioned and started, otherwise a stray `magisk` binary in
         // PATH silently disables Zygisk for the whole boot.
         if !crate::utils::is_safe_mode() {
-            exec_builtin_stage("post-fs-data", true);
+            exec_builtin_stage("post-fs-data", ScriptWait::Until(Instant::now() + defs::BOOT_STAGE_TIMEOUT));
         }
         return Ok(());
     }
 
     let safe_mode = crate::utils::is_safe_mode();
+    let wait = ScriptWait::Until(Instant::now() + defs::BOOT_STAGE_TIMEOUT);
 
     if safe_mode {
         // we should still ensure module directory exists in safe mode
@@ -124,7 +117,7 @@ pub fn on_post_data_fs() -> Result<()> {
         warn!("safe mode, skip common post-fs-data.d scripts");
     } else {
         // Then exec common post-fs-data scripts
-        if let Err(e) = crate::module::exec_common_scripts("post-fs-data.d", true) {
+        if let Err(e) = crate::module::exec_common_scripts("post-fs-data.d", wait) {
             warn!("exec common post-fs-data scripts failed: {e}");
         }
     }
@@ -184,6 +177,8 @@ pub fn on_post_data_fs() -> Result<()> {
         warn!("apply root profile sepolicy failed: {e}");
     }
 
+    crate::feature::init_forced_features();
+
     // load feature config
     if is_safe_mode() {
         warn!("safe mode, skip load feature config");
@@ -192,13 +187,12 @@ pub fn on_post_data_fs() -> Result<()> {
     }
 
     // execute metamodule post-fs-data script first (priority)
-    if let Err(e) = metamodule::exec_stage_script("post-fs-data", true) {
+    if let Err(e) = metamodule::exec_stage_script("post-fs-data", wait) {
         warn!("exec metamodule post-fs-data script failed: {e}");
     }
 
     // exec modules post-fs-data scripts
-    // TODO: Add timeout
-    if let Err(e) = crate::module::exec_stage_script("post-fs-data", true) {
+    if let Err(e) = crate::module::exec_stage_script("post-fs-data", wait) {
         warn!("exec post-fs-data scripts failed: {e}");
     }
 
@@ -212,14 +206,14 @@ pub fn on_post_data_fs() -> Result<()> {
         warn!("execute metamodule mount failed: {e}");
     }
 
-    run_stage("post-mount", true);
+    run_stage("post-mount", wait);
 
     std::env::set_current_dir("/").with_context(|| "failed to chdir to /")?;
 
     Ok(())
 }
 
-pub fn run_stage(stage: &str, block: bool) {
+pub fn run_stage(stage: &str, wait: ScriptWait) {
     utils::umask(0);
 
     if crate::utils::is_safe_mode() {
@@ -231,21 +225,21 @@ pub fn run_stage(stage: &str, block: bool) {
         warn!("Magisk detected, skip {stage}");
         // Built-in modules ship with this kernel and must not be skipped along
         // with the external Magisk module pipeline (see `exec_builtin_stage`).
-        exec_builtin_stage(stage, block);
+        exec_builtin_stage(stage, wait);
         return;
     }
 
-    if let Err(e) = crate::module::exec_common_scripts(&format!("{stage}.d"), block) {
+    if let Err(e) = crate::module::exec_common_scripts(&format!("{stage}.d"), wait) {
         warn!("Failed to exec common {stage} scripts: {e}");
     }
 
     // execute metamodule stage script first (priority)
-    if let Err(e) = metamodule::exec_stage_script(stage, block) {
+    if let Err(e) = metamodule::exec_stage_script(stage, wait) {
         warn!("Failed to exec metamodule {stage} script: {e}");
     }
 
     // execute regular modules stage scripts
-    if let Err(e) = crate::module::exec_stage_script(stage, block) {
+    if let Err(e) = crate::module::exec_stage_script(stage, wait) {
         warn!("Failed to exec {stage} scripts: {e}");
     }
 }
@@ -256,8 +250,20 @@ pub fn on_services() {
         return;
     }
 
+    match ksucalls::report_services() {
+        Ok(true) => {}
+        Ok(false) => {
+            info!("services already started, skipping");
+            return;
+        }
+        Err(e) => {
+            error!("Failed to report services: {e:#}");
+            return;
+        }
+    }
+
     info!("on_services triggered!");
-    run_stage("service", false);
+    run_stage("service", ScriptWait::NoWait);
 }
 
 pub fn on_boot_completed() {
@@ -274,40 +280,9 @@ pub fn on_boot_completed() {
     ksucalls::report_boot_complete();
     info!("on_boot_completed triggered!");
 
-    run_stage("boot-completed", false);
+    run_stage("boot-completed", ScriptWait::NoWait);
 }
 
-const fn resetprop() -> ResetProp {
-    ResetProp {
-        skip_svc: true,
-        persistent: false,
-        persist_only: false,
-        verbose: false,
-        show_context: false,
-        rebuild: false,
-    }
-}
-
-fn reset_boot_completed() -> Result<()> {
-    sys_prop::init().context("Failed to initialize system property API")?;
-    let rp = resetprop();
-    // Set prop value to 0 in advance to ensure resetprop -w works
-    info!("reset boot complete prop to 0");
-    rp.set("sys.boot_completed", "0")
-        .context("Failed to set sys.boot_completed to 0")?;
-    Ok(())
-}
-
-fn wait_for_boot_completed() -> Result<()> {
-    sys_prop::init().context("Failed to initialize system property API")?;
-    let rp = resetprop();
-    info!("waiting for boot complete");
-    rp.wait("sys.boot_completed", Some("0"), None)
-        .context("wait for sys.boot_completed failed")?;
-    Ok(())
-}
-
-#[cfg(unix)]
 fn catch_bootlog(logname: &str, command: &[&str]) -> Result<()> {
     use std::os::unix::process::CommandExt;
     use std::process::Stdio;
@@ -323,7 +298,7 @@ fn catch_bootlog(logname: &str, command: &[&str]) -> Result<()> {
 
     let bootlog = std::fs::File::create(bootlog)?;
 
-    let mut args = vec!["-s", "9", "30s"];
+    let mut args = vec!["-s", "9", defs::BOOTLOG_TIMEOUT];
     args.extend_from_slice(command);
     // timeout -s 9 30s logcat > boot.log
     let result = unsafe {
@@ -343,46 +318,4 @@ fn catch_bootlog(logname: &str, command: &[&str]) -> Result<()> {
     }
 
     Ok(())
-}
-
-pub fn soft_reboot() -> Result<()> {
-    // check it avoid user click "soft_reboot" in manager when version mismatch
-    if let Err(e) = ksucalls::ensure_uapi_version_matched() {
-        error!("{e:#}, skip soft_reboot");
-        return Ok(());
-    }
-
-    utils::daemonize_with(true, || -> Result<()> {
-        switch_mnt_ns(1)?;
-        chdir("/")?;
-        Ok(())
-    })?;
-
-    info!("emulating soft_reboot!");
-    if let Err(e) = reset_boot_completed() {
-        warn!("reset boot completed failed: {e}");
-    }
-    run_stage("emulated-soft-reboot", true);
-    info!("stop");
-    let status = Command::new("stop").status().context("stop failed")?;
-    if !status.success() {
-        warn!("stop exited with status: {status}");
-    }
-    info!("post-fs-data");
-    on_post_data_fs()?;
-    info!("start");
-    let status = Command::new("start").status().context("start failed")?;
-    if !status.success() {
-        warn!("start exited with status: {status}");
-    }
-    info!("services");
-    on_services();
-    if let Err(e) = wait_for_boot_completed() {
-        warn!("wait for boot completed failed: {e}");
-    }
-    on_boot_completed();
-
-    unsafe {
-        _exit(0);
-    }
 }
