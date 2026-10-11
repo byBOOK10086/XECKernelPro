@@ -116,9 +116,9 @@ object ModuleBackgrounds {
                         val maxDim = maxOf(w, h)
                         if (maxDim > TARGET_WIDTH * 2) {
                             val ratio = (TARGET_WIDTH * 2f) / maxDim
-                            // ImageInfo 只有 setTargetSize 没有 getter，Kotlin
-                            // 合成属性不可用，必须显式调 setter。
-                            info.setTargetSize(
+                            // setTargetSize(int,int) 挂在 ImageDecoder 上，
+                            // 不在 ImageInfo 上（官方回调内用法 decoder.setTargetSize）。
+                            decoder.setTargetSize(
                                 (w * ratio).toInt().coerceAtLeast(1),
                                 (h * ratio).toInt().coerceAtLeast(1),
                             )
