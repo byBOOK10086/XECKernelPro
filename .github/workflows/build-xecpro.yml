@@ -44,8 +44,12 @@ jobs:
     needs: generate-key
     uses: ./.github/workflows/build-lkm.yml
     with:
-      expected_size2: ""
-      expected_hash2: ""
+      # Upstream replaced the expected_size2/expected_hash2 inputs with the
+      # KSU_IS_PR_BUILD mechanism, so the call must use the current contract or
+      # Actions fails the run at startup ("not defined in the referenced
+      # workflow"). kernel/Kbuild already defaults EXPECTED_SIZE/HASH to our
+      # release key, and the package name is pinned here explicitly.
+      package_name: com.xecpro.kernel
     secrets: inherit
 
   build-ksuinit:

@@ -96,8 +96,9 @@ jobs:
     needs: generate-key
     uses: ./.github/workflows/build-lkm.yml
     with:
-      expected_size2: ${{ needs.generate-key.outputs.expected_size || '' }}
-      expected_hash2: ${{ needs.generate-key.outputs.expected_hash || '' }}
+      package_name: com.xecpro.kernel
+      expected_size: ${{ needs.generate-key.outputs.expected_size || '' }}
+      expected_hash: ${{ needs.generate-key.outputs.expected_hash || '' }}
     secrets: inherit
 
   build-ksuinit:
