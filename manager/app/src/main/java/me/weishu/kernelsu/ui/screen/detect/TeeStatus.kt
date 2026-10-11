@@ -62,31 +62,6 @@ private val STATUS_SCRIPT = listOf(
     "echo enginefiles=\$([ -f \$TK/daemon ] && [ -f \$TK/classes.dex ] && [ -f \$TK/libTEESimulator.so ] && [ -x \$TK/inject ] && echo ok || echo missing)",
     "echo deviceid=\$(sed -n 's/.*DeviceID=\"\\([^\"]*\\)\".*/\\1/p' \$TK/keybox.xml 2>/dev/null | head -n 1)",
     "echo kbperm=\$(stat -c %a \$TK/keybox.xml 2>/dev/null)",
-    "echo target=\$(grep -cvE '^[[:space:]]*(#|\$)' \$TK/target.txt 2>/dev/null)",
-    // 覆盖检查容忍 `包名!` / `包名?` 与行尾空白：引擎把模式后缀当同一目标，逐字比较会误报。
-    "echo checker=\$(grep -qE '^[[:space:]]*wu\\.keyChain\\.test[!?]?[[:space:]]*\$' \$TK/target.txt 2>/dev/null && echo yes || echo no)",
-    "echo vvb=\$(grep -qE '^[[:space:]]*io\\.github\\.vvb2060\\.keyattestation[!?]?[[:space:]]*\$' \$TK/target.txt 2>/dev/null && echo yes || echo no)",
-    "echo servrot=\$(printf '%s\\n' \"\$LC\" | grep -o 'Served RootOfTrust:.*' | tail -n 1)",
-    "echo patcherr=\$(printf '%s\\n' \"\$LC\" | grep -c -E 'Failed to patch|No keybox found|Failed to modify hardware')",
-    "echo lasterr=\$(printf '%s\\n' \"\$LC\" | grep -E ' E TEESimulator' | tail -n 1)",
-    "echo vbs=\$(getprop ro.boot.verifiedbootstate)",
-    "echo locked=\$(getprop ro.boot.flash.locked)",
-    "echo devstate=\$(getprop ro.boot.vbmeta.device_state)",
-    "echo zeromount=\$([ -d /data/adb/modules/meta-zeromount ] && [ ! -f /data/adb/modules/meta-zeromount/disable ] && echo yes || echo no)",
-).joinToString("\n")
-
-private val TRICKY_RUNTIME = DetectTargets.TRICKY_RUNTIME
-
-/** 一次 root shell 取回全部事实，按 KEY=VALUE 逐行解析（避免多条命令的往返开销）。 */
-private val STATUS_SCRIPT = listOf(
-    "TK=$TRICKY_RUNTIME",
-    // 引擎只往 logcat 写（tag=TEESimulator），.engine.log 只有 service.sh 的快照；
-    // 想要"引擎到底交出了什么锁态"必须读 logcat。这里只取一次，后面复用。
-    "LC=\$(/system/bin/logcat -d -s TEESimulator:* 2>/dev/null | tail -n 500)",
-    "echo engine=\$(pidof TEESimulator 2>/dev/null || echo none)",
-    "echo enginefiles=\$([ -f \$TK/daemon ] && [ -f \$TK/classes.dex ] && [ -f \$TK/libTEESimulator.so ] && [ -x \$TK/inject ] && echo ok || echo missing)",
-    "echo deviceid=\$(sed -n 's/.*DeviceID=\"\\([^\"]*\\)\".*/\\1/p' \$TK/keybox.xml 2>/dev/null | head -n 1)",
-    "echo kbperm=\$(stat -c %a \$TK/keybox.xml 2>/dev/null)",
     // 链末（根）证书判定：由 tricky_store 的 service.sh 与 TA_enhanced 的看护循环写进
     // .keybox_root（格式 "google|other|missing|unknown <命中>/<总数> <DeviceID> <sha16>"）。
     // 管理器不自己算哈希：root shell 里拼 awk/sha256sum 出错是静默的。
