@@ -17,12 +17,7 @@ use memmap2::{Mmap, MmapOptions};
 use regex_lite::Regex;
 
 use crate::assets;
-
-// KPM patching only exists on Android/aarch64 (see `main.rs`): the module reaches
-// into `crate::utils`, libc and the susfs helpers, which the host-side boot-image
-// patcher builds (macOS / musl) do not provide.
-#[cfg(all(target_arch = "aarch64", target_os = "android"))]
-use crate::kpm_patch::{BootPatchKpmArgs, patch_kpm};
+use crate::feature_id::{FeatureId, parse_feature_id};
 
 #[cfg(target_os = "android")]
 mod android {
@@ -36,6 +31,7 @@ mod android {
     use std::fs::{File, OpenOptions};
     use std::io::Write;
     use std::os::fd::AsRawFd;
+    use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
     use std::process::Command;
 
@@ -160,22 +156,6 @@ mod android {
         bail!("Both /data/adb/ksu and {backup_dir} are not accessible!")
     }
 
-    pub(super) fn legacy_stock_backup(cpio: &Cpio) -> Result<Option<PathBuf>> {
-        let Some(backup_file) = cpio.entry_by_name(BACKUP_FILENAME) else {
-            return Ok(None);
-        };
-        let sha = String::from_utf8(backup_file.data().unwrap_or_default().to_vec())?;
-        let sha = sha.trim();
-        ensure!(!sha.is_empty(), "empty legacy stock backup marker");
-        let path = PathBuf::from(KSU_BACKUP_DIR).join(format!("{KSU_BACKUP_FILE_PREFIX}{sha}"));
-        ensure!(
-            path.is_file(),
-            "legacy stock backup is missing: {}",
-            path.display()
-        );
-        Ok(Some(path))
-    }
-
     pub(super) fn do_backup(cpio: &mut Cpio, image: &Path) -> Result<()> {
         let sha1 = calculate_sha1(image)?;
         let (mut target_file, target) = find_backup_location(&sha1)?;
@@ -220,7 +200,7 @@ mod android {
         Ok(())
     }
 
-    pub fn flash_partition(partition: &str, data: &[u8]) -> Result<()> {
+    pub(super) fn flash_partition(partition: &str, data: &[u8]) -> Result<()> {
         let mut blk = std::fs::OpenOptions::new()
             .write(true)
             .truncate(false)
@@ -239,16 +219,17 @@ mod android {
         Ok(())
     }
 
-    pub fn choose_boot_partition_for_suffix(
+    pub fn choose_boot_partition(
         kmi: &str,
         is_replace_kernel: bool,
         partition: &Option<String>,
-        slot_suffix: &str,
     ) -> String {
+        let slot_suffix = get_slot_suffix(false);
         let skip_init_boot = kmi.starts_with("android12-");
         let init_boot_exist =
             Path::new(&format!("/dev/block/by-name/init_boot{slot_suffix}")).exists();
 
+        // if specific partition is specified, use it
         if let Some(part) = partition {
             return match part.as_str() {
                 "boot" | "init_boot" | "vendor_boot" => part.clone(),
@@ -256,20 +237,12 @@ mod android {
             };
         }
 
+        // if init_boot exists and not skipping it, use it
         if !is_replace_kernel && init_boot_exist && !skip_init_boot {
             return "init_boot".to_string();
         }
 
         "boot".to_string()
-    }
-
-    pub fn choose_boot_partition(
-        kmi: &str,
-        is_replace_kernel: bool,
-        partition: &Option<String>,
-    ) -> String {
-        let slot_suffix = get_slot_suffix(false);
-        choose_boot_partition_for_suffix(kmi, is_replace_kernel, partition, &slot_suffix)
     }
 
     pub fn get_slot_suffix(ota: bool) -> String {
@@ -301,13 +274,13 @@ mod android {
         partition: &Option<String>,
     ) -> PathBuf {
         let slot_suffix = get_slot_suffix(ota);
-        let name =
-            choose_boot_partition_for_suffix(kmi, is_replace_kernel, partition, &slot_suffix);
+        let name = choose_boot_partition(kmi, is_replace_kernel, partition);
         PathBuf::from(format!("/dev/block/by-name/{name}{slot_suffix}"))
     }
 
     pub(super) fn post_ota() -> Result<()> {
         use crate::assets::BOOTCTL_PATH;
+        use crate::defs::ADB_DIR;
         let status = Command::new(BOOTCTL_PATH).arg("hal-info").status()?;
         if !status.success() {
             return Ok(());
@@ -321,13 +294,25 @@ mod android {
         let current_slot = current_slot.trim();
         let target_slot = i32::from(current_slot == "0");
 
-        let status = Command::new(BOOTCTL_PATH)
+        Command::new(BOOTCTL_PATH)
             .arg(format!("set-active-boot-slot {target_slot}"))
             .status()?;
-        ensure!(status.success(), "failed to select OTA boot slot");
 
-        // Do not mark the slot successful here. boot_txn::commit_boot_success
-        // performs that operation only after sys.boot_completed reaches 1.
+        let post_fs_data = Path::new(ADB_DIR).join("post-fs-data.d");
+        utils::ensure_dir_exists(&post_fs_data)?;
+        let post_ota_sh = post_fs_data.join("post_ota.sh");
+
+        let sh_content = format!(
+            r"
+{BOOTCTL_PATH} mark-boot-successful
+rm -f {BOOTCTL_PATH}
+rm -f /data/adb/post-fs-data.d/post_ota.sh
+"
+        );
+
+        std::fs::write(&post_ota_sh, sh_content)?;
+        std::fs::set_permissions(post_ota_sh, std::fs::Permissions::from_mode(0o755))?;
+
         Ok(())
     }
 }
@@ -501,9 +486,8 @@ pub struct BootPatchArgs {
     #[arg(long, default_value = None)]
     pub cmdline: Option<String>,
 
-    /// Always allow shell to get root permission
-    #[arg(long, default_value = "false")]
-    allow_shell: bool,
+    #[command(flatten)]
+    config: KsuConfigArgs,
 
     /// Force enable adbd and disable adbd auth
     #[arg(long, default_value = "false")]
@@ -517,10 +501,6 @@ pub struct BootPatchArgs {
     #[arg(long, default_value = "false")]
     no_install: bool,
 
-    /// Do not load custom rc
-    #[arg(long, default_value = "false")]
-    no_custom_rc: bool,
-
     #[cfg(not(target_os = "android"))]
     #[arg(long, default_value = "aarch64")]
     arch: String,
@@ -528,11 +508,66 @@ pub struct BootPatchArgs {
     /// Patching ramdisk instead of boot image. This is used for AVD ramdisk
     #[arg(long, default_value = "false")]
     ramdisk: bool,
+}
 
-    /// Also apply the KPatch-Next (KPM) kernel patch on top of the patched image
-    #[cfg(all(target_arch = "aarch64", target_os = "android"))]
+/// KernelSU module params, stored in ramdisk `/ksu_config` (boot-patch) or the
+/// injected capsule (boot-patch-v2).
+#[derive(clap::Args, Debug, Default)]
+pub struct KsuConfigArgs {
+    /// Always allow shell to get root permission
     #[arg(long, default_value = "false")]
-    kpm: bool,
+    allow_shell: bool,
+
+    /// Do not load custom rc
+    #[arg(long, default_value = "false")]
+    no_custom_rc: bool,
+
+    /// Force a kernel feature to a value at boot, e.g. `su_compat=0`.
+    /// Forced features can not be changed or loaded by userspace. Can be repeated.
+    #[arg(long, value_name = "FEATURE=VALUE", value_parser = parse_force_feature)]
+    force_feature: Vec<(FeatureId, u64)>,
+}
+
+impl KsuConfigArgs {
+    /// Set the full state of these options in `config`, other entries are kept.
+    pub fn apply(&self, config: &mut Vec<String>) {
+        set_config_flag(config, "no custom rc", "norc=1", self.no_custom_rc);
+        set_config_flag(config, "allow shell", "allow_shell=1", self.allow_shell);
+
+        config.retain(|v| !v.starts_with("force_feature="));
+        if !self.force_feature.is_empty() {
+            let mut entries = Vec::with_capacity(self.force_feature.len());
+            for (feature_id, value) in &self.force_feature {
+                println!("- Forcing feature {} to {value}", feature_id.name());
+                entries.push(format!("{}:{value}", feature_id.name()));
+            }
+            config.push(format!("force_feature={}", entries.join(",")));
+        }
+    }
+}
+
+fn set_config_flag(config: &mut Vec<String>, name: &str, value: &str, add: bool) {
+    let has_value = config.iter().any(|v| v == value);
+
+    if add {
+        println!("- Adding {name} config");
+        if !has_value {
+            config.push(value.to_owned());
+        }
+    } else if has_value {
+        println!("- Removing {name} config");
+        config.retain(|v| v != value);
+    }
+}
+
+fn parse_force_feature(s: &str) -> Result<(FeatureId, u64)> {
+    let (name, value) = s
+        .split_once('=')
+        .context("expected FEATURE=VALUE, e.g. su_compat=0")?;
+    let value = value
+        .parse()
+        .with_context(|| format!("invalid value for feature {name}: {value}"))?;
+    Ok((parse_feature_id(name)?, value))
 }
 
 pub fn patch(args: BootPatchArgs) -> Result<()> {
@@ -546,7 +581,7 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
             kmi,
             out_name,
             cmdline,
-            allow_shell,
+            config,
             enable_adbd,
             adb_debug_prop,
             no_install,
@@ -558,12 +593,9 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
             backup,
             #[cfg(target_os = "android")]
             partition,
-            no_custom_rc,
             #[cfg(not(target_os = "android"))]
             arch,
             ramdisk,
-            #[cfg(all(target_arch = "aarch64", target_os = "android"))]
-            kpm,
         } = args;
 
         println!(include_str!("banner"));
@@ -599,10 +631,6 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
 
         let kmi = kmi.map_or_else(
             || -> Result<_> {
-                // A config-only patch (--no-install with an image) never adds
-                // our LKM, so KMI probing is pointless and its failure must
-                // not block the operation. Ported from ReSukiSU commit
-                // 63268b9 (tiann/KernelSU#3803, by fhgffy), GPL-3.0.
                 if kmod.is_some() || (no_install && image.is_some()) {
                     return Ok(String::new());
                 }
@@ -731,33 +759,6 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
                 (Cpio::new(), None)
             };
 
-        let is_kernelsu_patched = cpio.exists("kernelsu.ko");
-
-        #[cfg(target_os = "android")]
-        {
-            let direct_flash = flash
-                && boot_image_file
-                    .to_string_lossy()
-                    .starts_with("/dev/block/by-name/");
-            if direct_flash {
-                let slot_suffix = get_slot_suffix(ota);
-                let target_partition = partition.clone().unwrap_or_else(|| {
-                    choose_boot_partition_for_suffix(
-                        &kmi,
-                        is_replace_kernel,
-                        &partition,
-                        &slot_suffix,
-                    )
-                });
-                if is_kernelsu_patched {
-                    println!(
-                        "- Target already carries our kernel; rollback keeps the current state"
-                    );
-                }
-                crate::boot_txn::prepare(&slot_suffix, &target_partition, ota)?;
-            }
-        }
-
         if !no_install {
             ensure!(
                 !cpio.is_magisk_patched(),
@@ -765,6 +766,8 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
             );
 
             println!("- Adding KernelSU LKM");
+            let is_kernelsu_patched = cpio.exists("kernelsu.ko");
+
             if !is_kernelsu_patched && cpio.exists("init") {
                 cpio.mv("init", "init.real")?;
             }
@@ -773,16 +776,10 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
             cpio.add("kernelsu.ko", CpioEntry::regular(0o755, kernelsu_ko))?;
 
             #[cfg(target_os = "android")]
-            if !is_kernelsu_patched && (backup || flash) {
-                do_backup(&mut cpio, &boot_image_file)?;
-            } else if backup && is_kernelsu_patched {
-                ensure!(
-                    legacy_stock_backup(&cpio)?.is_some(),
-                    "cannot back up an already-patched image without its legacy stock backup"
-                );
-                println!(
-                    "- Existing legacy stock backup retained; patched bytes were not backed up as stock"
-                );
+            if (backup || (!is_kernelsu_patched && flash))
+                && let Err(e) = do_backup(&mut cpio, &boot_image_file)
+            {
+                println!("- Backup stock image failed: {e:?}");
             }
         }
 
@@ -793,24 +790,9 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
             .map(|v| v.split(' ').map(std::borrow::ToOwned::to_owned).collect())
             .unwrap_or_default();
 
-        let mut apply_config = |name: &str, value: &str, add: bool| {
-            let has_value = ksu_config.iter().any(|v| v == value);
-
-            if add {
-                println!("- Adding {name} config");
-                if !has_value {
-                    ksu_config.push(value.to_owned());
-                }
-            } else if has_value {
-                println!("- Removing {name} config");
-                ksu_config.retain(|v| v != value);
-            }
-        };
-
-        apply_config("no custom rc", "norc=1", no_custom_rc);
-        apply_config("allow shell", "allow_shell=1", allow_shell);
+        config.apply(&mut ksu_config);
         if let Some(bundled) = bundled_lkm {
-            apply_config("bundled LKM", "bundled=1", bundled);
+            set_config_flag(&mut ksu_config, "bundled LKM", "bundled=1", bundled);
         }
 
         if ksu_config.is_empty() {
@@ -872,19 +854,8 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
         drop(boot_image);
         drop(boot_image_data);
 
-        #[cfg(all(target_arch = "aarch64", target_os = "android"))]
-        if kpm && flash {
-            bail!("--kpm requires a boot image file to patch and cannot be combined with --flash");
-        }
-
         #[cfg(target_os = "android")]
         if flash {
-            let direct_flash = boot_image_file
-                .to_string_lossy()
-                .starts_with("/dev/block/by-name/");
-            if direct_flash {
-                crate::boot_txn::arm(&new_boot_bytes)?;
-            }
             println!("- Flashing new boot image");
             let bootdevice = boot_image_file.display().to_string();
             flash_partition(&bootdevice, &new_boot_bytes)?;
@@ -902,23 +873,10 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
             let output_dir = out.unwrap_or(std::env::current_dir()?);
             let name = out_name.unwrap_or_else(|| {
                 let now = chrono::Utc::now();
-                format!("XECkernelPro_patched_{}.img", now.format("%Y%m%d_%H%M%S"))
+                format!("kernelsu_patched_{}.img", now.format("%Y%m%d_%H%M%S"))
             });
             let output_image = output_dir.join(name);
             std::fs::write(&output_image, &new_boot_bytes).context("write out new boot failed")?;
-
-            #[cfg(all(target_arch = "aarch64", target_os = "android"))]
-            if kpm {
-                println!("- Applying KPM kernel patch");
-                patch_kpm(&BootPatchKpmArgs {
-                    boot: Some(output_image.clone()),
-                    output: Some(output_image.clone()),
-                    force: true,
-                    #[cfg(target_os = "android")]
-                    flash: false,
-                })?;
-            }
-
             println!("- Output file is written to");
             println!("- {}", output_image.display().to_string().trim_matches('"'));
         }

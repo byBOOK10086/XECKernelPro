@@ -35,6 +35,11 @@ mod debug;
 mod defs;
 #[cfg(target_os = "android")]
 mod feature;
+// Upstream's ksu_config support: `feature.rs` imports `crate::feature_id`, and
+// `cli.rs` reaches `crate::soft_reboot`, so both must be declared here even
+// though this file is otherwise our side of the merge.
+#[cfg(target_os = "android")]
+mod feature_id;
 #[cfg(target_os = "android")]
 mod init_event;
 // KPM / SuSFS are Android-only: they reach into `crate::utils`,
@@ -67,6 +72,8 @@ mod resetprop;
 mod restorecon;
 #[cfg(target_os = "android")]
 mod sepolicy;
+#[cfg(target_os = "android")]
+mod soft_reboot;
 #[cfg(target_os = "android")]
 mod su;
 #[cfg(target_os = "android")]
