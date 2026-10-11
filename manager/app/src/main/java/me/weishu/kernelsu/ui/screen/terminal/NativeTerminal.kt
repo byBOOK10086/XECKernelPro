@@ -176,8 +176,8 @@ private fun parseAnsi(raw: String): List<TermSpan> {
                 else -> { i += 2; continue }
             }
         }
-        if (c == '
-') { i++; continue }
+
+if (c == '\r') { i++; continue }
         plain.append(c)
         i++
     }
@@ -542,7 +542,7 @@ private fun extractPathToken(text: String, cwd: String): String? {
 }
 
 private fun completeInput(current: String, session: TerminalSession, apply: (String) -> Unit) {
-    val text = current.text
+    val text = current
     val token = text.substringAfterLast(' ')
     if (token.isEmpty()) return
     session.complete(token) { matches ->
@@ -739,18 +739,16 @@ private fun PermissionDialog(
                 value = octal,
                 onValueChange = { octal = it.filter { c -> c.isDigit() }.take(4) },
                 modifier = Modifier.fillMaxWidth(),
-                fontSize = 13.sp,
-                singleLine = true,
                 label = stringResource(R.string.terminal_perm_octal),
+                maxLines = 1,
             )
             Spacer(Modifier.height(8.dp))
             TextField(
                 value = owner,
                 onValueChange = { owner = it },
                 modifier = Modifier.fillMaxWidth(),
-                fontSize = 13.sp,
-                singleLine = true,
                 label = stringResource(R.string.terminal_perm_owner_field),
+                maxLines = 1,
             )
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -119,7 +119,7 @@ Aborted — the device was NOT rebooted.</string>
     <string name="module_long_press_hint">Long press a module banner for 1 second to view details</string>
     <string name="module_sheet_capability_hint">Action and WebUi are available only when the module provides them</string>
     <string name="module_sheet_background">Photo</string>
-    <string name="module_sheet_background_clear_hint">Long-press the Photo button to clear this card's background</string>
+    <string name="module_sheet_background_clear_hint">Long-press the Photo button to clear this card\'s background</string>
     <string name="module_sheet_version_label">Version</string>
     <string name="show_system_apps">Show system apps</string>
     <string name="send_log">Send logs</string>

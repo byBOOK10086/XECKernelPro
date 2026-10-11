@@ -11,7 +11,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -89,7 +88,7 @@ object ModuleBackgrounds {
     // ---- 位图解码与缓存 ----------------------------------------------------
 
     private const val TARGET_WIDTH = 1024
-    private val bitmapCache = object : LruCache<String, Bitmap>(maxSizeKb()) {
+    internal val bitmapCache = object : LruCache<String, Bitmap>(maxSizeKb()) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount / 1024
     }
 
@@ -98,23 +97,31 @@ object ModuleBackgrounds {
         return (heapKb / 8).coerceAtLeast(8 * 1024)
     }
 
-    private suspend fun decode(context: Context, uri: String): Bitmap? = withContext(Dispatchers.IO) {
+    internal suspend fun decode(context: Context, uri: String): Bitmap? = withContext(Dispatchers.IO) {
         runCatching {
             val src = Uri.parse(uri)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 val source = ImageDecoder.createSource(context.contentResolver, src)
-                ImageDecoder.decodeBitmap(source) { info, _, _ ->
-                    // 以 1024px 宽为上限等比降采样（ImageDecoder 的 allocator 默认硬件位图，
-                    // 这里强制软位图，便于后续可能的像素操作与低内存设备兼容）。
-                    val maxOf = maxOf(info.size.width, info.size.height)
-                    if (maxOf > TARGET_WIDTH * 2) {
-                        val ratio = (TARGET_WIDTH * 2f) / maxOf
-                        info.targetSize = android.util.Size(
-                            (info.size.width * ratio).toInt().coerceAtLeast(1),
-                            (info.size.height * ratio).toInt().coerceAtLeast(1),
-                        )
+                // 以 1024px 宽为上限等比降采样（ImageDecoder 的 allocator 默认硬件位图，
+                // 这里强制软位图，便于后续可能的像素操作与低内存设备兼容）。
+                ImageDecoder.decodeBitmap(source, object : ImageDecoder.OnHeaderDecodedListener {
+                    override fun onHeaderDecoded(
+                        info: ImageDecoder.ImageInfo,
+                        decoderSource: ImageDecoder.Source,
+                        decoder: ImageDecoder,
+                    ) {
+                        val w = info.size.width
+                        val h = info.size.height
+                        val maxDim = maxOf(w, h)
+                        if (maxDim > TARGET_WIDTH * 2) {
+                            val ratio = (TARGET_WIDTH * 2f) / maxDim
+                            info.targetSize = android.util.Size(
+                                (w * ratio).toInt().coerceAtLeast(1),
+                                (h * ratio).toInt().coerceAtLeast(1),
+                            )
+                        }
                     }
-                }
+                })
             } else {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 context.contentResolver.openInputStream(src)?.use {
@@ -152,7 +159,7 @@ fun ModuleCardBackdrop(uri: String?, shape: Shape, modifier: Modifier = Modifier
     }
     val bm = bitmap ?: return
 
-    Box(modifier = modifier.matchParentSize()) {
+    Box(modifier = modifier) {
         Image(
             bitmap = bm.asImageBitmap(),
             contentDescription = null,

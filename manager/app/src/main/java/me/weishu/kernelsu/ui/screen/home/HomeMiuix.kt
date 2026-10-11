@@ -38,7 +38,7 @@ import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.VolunteerActivism
-import androidx.compose.material.icons.automirrored.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CheckCircleOutline
 import androidx.compose.material.icons.rounded.ErrorOutline
@@ -519,7 +519,7 @@ private fun PrivilegeEntryCard(
             },
             endActions = {
                 Icon(
-                    Icons.AutoMirrored.Rounded.ChevronRight,
+                    Icons.Rounded.ChevronRight,
                     contentDescription = null,
                     tint = colorScheme.onSurfaceVariantSummary,
                 )
