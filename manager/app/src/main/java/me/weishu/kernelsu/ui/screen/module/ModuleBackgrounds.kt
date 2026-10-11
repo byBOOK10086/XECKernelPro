@@ -116,9 +116,13 @@ object ModuleBackgrounds {
                         val maxDim = maxOf(w, h)
                         if (maxDim > TARGET_WIDTH * 2) {
                             val ratio = (TARGET_WIDTH * 2f) / maxDim
-                            info.targetSize = android.util.Size(
-                                (w * ratio).toInt().coerceAtLeast(1),
-                                (h * ratio).toInt().coerceAtLeast(1),
+                            // ImageInfo 只有 setTargetSize 没有 getter，Kotlin
+                            // 合成属性不可用，必须显式调 setter。
+                            info.setTargetSize(
+                                android.util.Size(
+                                    (w * ratio).toInt().coerceAtLeast(1),
+                                    (h * ratio).toInt().coerceAtLeast(1),
+                                ),
                             )
                         }
                     }
