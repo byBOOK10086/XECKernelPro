@@ -68,21 +68,58 @@ label_data_path "$RUNTIME"
 
 # Any active external module owns the same injection surface. Do not start a
 # second engine or overwrite its files.
-if [ -f /data/adb/modules/tricky_store/module.prop ] && \
-   [ ! -f /data/adb/modules/tricky_store/disable ] && \
-   [ ! -f /data/adb/modules/tricky_store/remove ] || \
-   [ -f /data/adb/modules/.tricky_store/module.prop ] && \
-   [ ! -f /data/adb/modules/.tricky_store/disable ] && \
-   [ ! -f /data/adb/modules/.tricky_store/remove ]; then
+#
+# 注意：这里**必须**用 external_engine_active()。旧实现把六个 test 直接串成
+# `A && B && C || D && E && F`，shell 里 `&&`/`||` 左结合，等价于
+# `((A&&B&&C) || D) && E && F`——当 /data/adb/modules/tricky_store 存在并**已被
+# 用户停用**（disable 文件在）时整体为假，本模块不但不 stand down，还会和那个外部
+# 模块同时向 keystore2 注入两个引擎：两套 grant ledger、两套证书缓存互相打架，
+# 检测方看到的就是"密钥行为异常"。
+if external_engine_active; then
     log_line "INFO builtin TEERS stand down: external module directory is present"
     exit 0
 fi
 
 VER=$(sed -n 's/^versionCode=//p' "$MODPATH/module.prop" 2>/dev/null)
 [ -n "$VER" ] || VER=0
+
+# ---------------------------------------------------------------------------
+# 刷新判据 = 资产**内容戳**，不是上游的 versionCode
+# ---------------------------------------------------------------------------
+# 上游 module.prop 的 versionCode（162）描述的是引擎自己的版本；我们修引擎源码
+# （grant 链一致性、RootOfTrust 多份伪造、STALE_* 覆盖、keystore2 原生回复形状…）
+# 并不会改它。旧实现把"要不要把 $MODPATH 下的引擎资产同步进 $RUNTIME"挂在
+# "$VER != $CUR" 上，于是第一次开机把某一版的 classes.dex/libTEESimulator.so
+# 写进 /data/adb/tricky_store 之后，versionCode 永远还是 162，之后每一次刷入
+# 新版本都被判成"已是最新"——设备上永远跑着第一次那一份引擎，引擎侧的修复
+# 根本到不了设备。表现就是：刷了新版本，验机工具依旧报"引导加载程序已解锁 /
+# 密钥行为异常"。改成对"即将写入的资产内容"取戳：内容一变就替换。
+_engine_sources() {
+    printf '%s\n' \
+        "$MODPATH/daemon" \
+        "$MODPATH/inject" \
+        "$MODPATH/supervisor" \
+        "$MODPATH/classes.dex" \
+        "$MODPATH/libTEESimulator.so" \
+        "$MODPATH/libcertgen.so"
+}
+
+_asset_stamp() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        _engine_sources | while IFS= read -r _f; do cat "$_f" 2>/dev/null; done | sha256sum | cut -c1-16
+    elif command -v md5sum >/dev/null 2>&1; then
+        _engine_sources | while IFS= read -r _f; do cat "$_f" 2>/dev/null; done | md5sum | cut -c1-16
+    else
+        printf 'size-%s' "$(_engine_sources | while IFS= read -r _f; do cat "$_f" 2>/dev/null; done | wc -c | tr -d ' ')"
+    fi
+}
+
+STAMP=$(_asset_stamp)
+[ -n "$STAMP" ] || STAMP="ver-$VER"
 CUR=$(cat "$RUNTIME/.engine_version" 2>/dev/null)
-if [ "$VER" != "$CUR" ] || [ ! -f "$RUNTIME/daemon" ] || \
+if [ "$STAMP" != "$CUR" ] || [ ! -f "$RUNTIME/daemon" ] || \
    [ ! -f "$RUNTIME/classes.dex" ] || [ ! -x "$RUNTIME/inject" ]; then
+    log_line "INFO engine: staging assets (stamp ${CUR:-none} -> $STAMP, module versionCode $VER)"
     STAGE_DIR="$RUNTIME/.engine.$$.tmp"
     rm -rf "$STAGE_DIR"
     mkdir -p "$STAGE_DIR" || exit 1
@@ -94,7 +131,7 @@ if [ "$VER" != "$CUR" ] || [ ! -f "$RUNTIME/daemon" ] || \
     stage_file "$MODPATH/libcertgen.so" "$STAGE_DIR/libcertgen.so" 644 || { rm -rf "$STAGE_DIR"; exit 1; }
     stage_file "$MODPATH/module.prop" "$STAGE_DIR/module.prop" 644 || { rm -rf "$STAGE_DIR"; exit 1; }
 
-    # Replace each asset atomically. The version marker is written last, so a
+    # Replace each asset atomically. The content stamp is written last, so a
     # partial update is retried on the next boot instead of being accepted.
     for f in daemon inject supervisor classes.dex libTEESimulator.so libcertgen.so module.prop; do
         mv -f "$STAGE_DIR/$f" "$RUNTIME/$f" || {
@@ -103,7 +140,7 @@ if [ "$VER" != "$CUR" ] || [ ! -f "$RUNTIME/daemon" ] || \
             exit 1
         }
     done
-    printf '%s\n' "$VER" > "$STAGE_DIR/.engine_version" || {
+    printf '%s\n' "$STAMP" > "$STAGE_DIR/.engine_version" || {
         rm -rf "$STAGE_DIR"
         exit 1
     }
@@ -112,7 +149,10 @@ if [ "$VER" != "$CUR" ] || [ ! -f "$RUNTIME/daemon" ] || \
         exit 1
     }
     rm -rf "$STAGE_DIR"
+    log_line "INFO engine: assets committed (stamp=$STAMP)"
     sync
+else
+    log_line "INFO engine: assets already current (stamp=$STAMP, module versionCode $VER)"
 fi
 
 # The bundled DEX still names this absolute upstream path. This directory has

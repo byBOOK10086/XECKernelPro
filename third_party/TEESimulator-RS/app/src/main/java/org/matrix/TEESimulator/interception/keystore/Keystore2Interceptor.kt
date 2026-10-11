@@ -407,7 +407,20 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
                 callingPid,
             )
 
-            if (!ConfigurationManager.shouldPatch(callingUid))
+            // Gate on "is this UID intercepted at all", not on "is this UID in PATCH mode".
+            //
+            // The old gate was `!shouldPatch(uid)`, i.e. PATCH *or* AUTO. A package configured
+            // as `pkg!` (GENERATE) — and, more importantly, any AUTO package whose TEE probe
+            // failed, which is what AUTO degrades to — therefore skipped the post hook
+            // completely. Keys that already exist in keystore2 (generated before the engine
+            // took over, or while it was restarting) were then returned verbatim: real Google
+            // root plus the real RootOfTrust, i.e. "the key looks trustworthy but the
+            // bootloader is reported unlocked", with no live patch to fix it.
+            //
+            // An untargeted UID never reaches this point (the pre hook returns
+            // ContinueAndSkipPost for it), so this only widens the behaviour to the
+            // GENERATE-mode packages, which is exactly the intent.
+            if (ConfigurationManager.shouldSkipUid(callingUid))
                 return TransactionResult.SkipTransaction
 
             runCatching {
@@ -523,9 +536,31 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
                         SystemLogger.info(
                             "[TX_ID: $txId] No cached chain for $keyId. Performing live patch as a fallback."
                         )
-                        finalChain =
+                        val patched =
                             AttestationPatcher.patchCertificateChain(originalChain, callingUid)
-                        KeyMintSecurityLevelInterceptor.patchedChains[keyId] = finalChain
+                        // Only cache a chain whose leaf was really rewritten.
+                        //
+                        // AttestationPatcher fails open: when the keybox is missing/invalid or the
+                        // leaf carries no attestation extension it hands the *real* TEE chain back.
+                        // Caching that pins the genuine root of trust — Google root, so the key
+                        // "looks trustworthy", plus the real (unlocked) RootOfTrust — for this key
+                        // until the keybox file happens to change, i.e. exactly the
+                        // "bootloader still reports unlocked" symptom a keybox hiccup should never
+                        // be able to cause permanently.
+                        if (
+                            patched.isNotEmpty() &&
+                                originalChain.isNotEmpty() &&
+                                !patched[0].encoded.contentEquals(originalChain[0].encoded)
+                        ) {
+                            KeyMintSecurityLevelInterceptor.patchedChains[keyId] = patched
+                        } else {
+                            SystemLogger.warning(
+                                "[TX_ID: $txId] Live patch for $keyId left the leaf unchanged " +
+                                    "(keybox missing/invalid or no attestation extension); serving it " +
+                                    "without caching so a later request can retry."
+                            )
+                        }
+                        finalChain = patched
                     }
 
                     CertificateHelper.updateCertificateChain(response.metadata, finalChain)

@@ -33,6 +33,20 @@ gr.nikolasspyr.integritycheck
 com.henrikherzig.playintegritychecker
 krypton.tbsafetychecker
 
+# 桌面应用自动入表（target_autofill.sh）虽然会补上"有启动图标的应用"，但它依赖
+# `cmd package query-activities` 的输出形状；该命令一旦在某个 ROM 上换了格式、
+# 或者检测工具本身被隐藏了图标，白名单就会漏掉它，它随即拿到未经模拟的真实 TEE
+# 链（Google 根 + 真实解锁态）。把已知的环境检测工具**显式写死在 baseline** 里，
+# 这一条就不再依赖自动补全是否工作。
+#
+# DuckDetector（Eltavine，Apache-2.0）：本仓库做环境检测审计时使用的判定基准，
+# 必须覆盖，否则它自己看到的就是真实 TEE 证明。
+com.eltavine.duckdetector
+
+# 其它常见的完整性 / 环境检测器
+com.scottyab.rootbeer
+org.lsposed.manager
+
 # AOSP / GMS 侧的证明入口
 com.google.android.gsf
 com.android.keyattestation
