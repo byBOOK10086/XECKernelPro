@@ -105,10 +105,11 @@ object ModuleBackgrounds {
                 // 以 1024px 宽为上限等比降采样（ImageDecoder 的 allocator 默认硬件位图，
                 // 这里强制软位图，便于后续可能的像素操作与低内存设备兼容）。
                 ImageDecoder.decodeBitmap(source, object : ImageDecoder.OnHeaderDecodedListener {
+                    // Android 的参数序：decoder 在前，info/source 在后。
                     override fun onHeaderDecoded(
+                        decoder: ImageDecoder,
                         info: ImageDecoder.ImageInfo,
                         decoderSource: ImageDecoder.Source,
-                        decoder: ImageDecoder,
                     ) {
                         val w = info.size.width
                         val h = info.size.height
