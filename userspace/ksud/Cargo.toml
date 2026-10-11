@@ -1,5 +1,9 @@
 [package]
-name = "ksud"
+# XECKernelPro ships the daemon as `xudc`; the CI artifact path, the repack job
+# and the on-device install path all expect that binary name. (Taking upstream's
+# side of the merge conflict replaced the whole file and silently restored
+# `ksud`, which produced a binary nothing looked for.)
+name = "xudc"
 version = "0.1.0"
 edition.workspace = true
 
