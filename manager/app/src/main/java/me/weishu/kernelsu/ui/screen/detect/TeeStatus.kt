@@ -46,12 +46,11 @@ import top.yukonga.miuix.kmp.blur.LayerBackdrop
  * 无效的信任根状态"，而设备上没有任何界面能看出"到底拦没拦"。内置模块又落在
  * tmpfs（/dev/.xudc_hidden），在模块页里根本不可见，于是只能靠 ADB 读日志。
  *
- * 这里把决定成败的四件事直接读出来：引擎进程、当前 keybox、白名单条目与内置验机
- * 工具是否被覆盖、锁态属性实际值；覆盖缺失时给一键补进名单的按钮。
+ * 这里把决定成败的五件事直接读出来：引擎进程、当前 keybox、**链末根证书是不是
+ * Google 证明根**、白名单条目与内置验机工具是否被覆盖、锁态属性实际值；
+ * 覆盖缺失时给一键补进名单的按钮。
  */
-private const val TRICKY_RUNTIME = "/data/adb/tricky_store"
-private const val TRICKY_DATA = "/data/adb/.xudc_secure"
-private const val BUNDLED_CHECKER = "wu.keyChain.test"
+private val TRICKY_RUNTIME = DetectTargets.TRICKY_RUNTIME
 
 /** 一次 root shell 取回全部事实，按 KEY=VALUE 逐行解析（避免多条命令的往返开销）。 */
 private val STATUS_SCRIPT = listOf(
@@ -76,18 +75,33 @@ private val STATUS_SCRIPT = listOf(
     "echo zeromount=\$([ -d /data/adb/modules/meta-zeromount ] && [ ! -f /data/adb/modules/meta-zeromount/disable ] && echo yes || echo no)",
 ).joinToString("\n")
 
-/** 把内置验机工具补进白名单，并同步管理器副本（引擎会在文件变化后自动重载）。 */
-private val ADD_CHECKER_SCRIPT = listOf(
+private val TRICKY_RUNTIME = DetectTargets.TRICKY_RUNTIME
+
+/** 一次 root shell 取回全部事实，按 KEY=VALUE 逐行解析（避免多条命令的往返开销）。 */
+private val STATUS_SCRIPT = listOf(
     "TK=$TRICKY_RUNTIME",
-    "T=\$TK/target.txt",
-    "mkdir -p \$TK " + TRICKY_DATA,
-    "[ -f \$T ] || : > \$T",
-    "if ! grep -qE '^[[:space:]]*wu\\.keyChain\\.test[!?]?[[:space:]]*\$' \$T; then",
-    "  cp -f \$T \$T.new.\$\$ && printf '\\n[keybox.xml]\\n$BUNDLED_CHECKER\\n' >> \$T.new.\$\$ && chmod 644 \$T.new.\$\$ && mv -f \$T.new.\$\$ \$T",
-    "fi",
-    "cp -f \$T " + TRICKY_DATA + "/target.txt 2>/dev/null",
-    "chmod 644 \$T " + TRICKY_DATA + "/target.txt 2>/dev/null",
-    "grep -qE '^[[:space:]]*wu\\.keyChain\\.test[!?]?[[:space:]]*\$' \$T && echo added=yes || echo added=no",
+    // 引擎只往 logcat 写（tag=TEESimulator），.engine.log 只有 service.sh 的快照；
+    // 想要"引擎到底交出了什么锁态"必须读 logcat。这里只取一次，后面复用。
+    "LC=\$(/system/bin/logcat -d -s TEESimulator:* 2>/dev/null | tail -n 500)",
+    "echo engine=\$(pidof TEESimulator 2>/dev/null || echo none)",
+    "echo enginefiles=\$([ -f \$TK/daemon ] && [ -f \$TK/classes.dex ] && [ -f \$TK/libTEESimulator.so ] && [ -x \$TK/inject ] && echo ok || echo missing)",
+    "echo deviceid=\$(sed -n 's/.*DeviceID=\"\\([^\"]*\\)\".*/\\1/p' \$TK/keybox.xml 2>/dev/null | head -n 1)",
+    "echo kbperm=\$(stat -c %a \$TK/keybox.xml 2>/dev/null)",
+    // 链末（根）证书判定：由 tricky_store 的 service.sh 与 TA_enhanced 的看护循环写进
+    // .keybox_root（格式 "google|other|missing|unknown <命中>/<总数> <DeviceID> <sha16>"）。
+    // 管理器不自己算哈希：root shell 里拼 awk/sha256sum 出错是静默的。
+    "echo kbroot=\$(cat \$TK/.keybox_root 2>/dev/null)",
+    "echo target=\$(grep -cvE '^[[:space:]]*(#|\$)' \$TK/target.txt 2>/dev/null)",
+    // 覆盖检查容忍 `包名!` / `包名?` 与行尾空白：引擎把模式后缀当同一目标，逐字比较会误报。
+    "echo checker=\$(grep -qE '^[[:space:]]*wu\\.keyChain\\.test[!?]?[[:space:]]*\$' \$TK/target.txt 2>/dev/null && echo yes || echo no)",
+    "echo vvb=\$(grep -qE '^[[:space:]]*io\\.github\\.vvb2060\\.keyattestation[!?]?[[:space:]]*\$' \$TK/target.txt 2>/dev/null && echo yes || echo no)",
+    "echo servrot=\$(printf '%s\\n' \"\$LC\" | grep -o 'Served RootOfTrust:.*' | tail -n 1)",
+    "echo patcherr=\$(printf '%s\\n' \"\$LC\" | grep -c -E 'Failed to patch|No keybox found|Failed to modify hardware')",
+    "echo lasterr=\$(printf '%s\\n' \"\$LC\" | grep -E ' E TEESimulator' | tail -n 1)",
+    "echo vbs=\$(getprop ro.boot.verifiedbootstate)",
+    "echo locked=\$(getprop ro.boot.flash.locked)",
+    "echo devstate=\$(getprop ro.boot.vbmeta.device_state)",
+    "echo zeromount=\$([ -d /data/adb/modules/meta-zeromount ] && [ ! -f /data/adb/modules/meta-zeromount/disable ] && echo yes || echo no)",
 ).joinToString("\n")
 
 private data class TeeStatus(
@@ -95,6 +109,7 @@ private data class TeeStatus(
     val engineFilesOk: Boolean = false,
     val deviceId: String = "",
     val kbPerm: String = "",
+    val kbRoot: String = "",
     val targetCount: Int = 0,
     val checkerCovered: Boolean = false,
     val vvbCovered: Boolean = false,
@@ -110,6 +125,11 @@ private data class TeeStatus(
     /** 引擎日志里那句 "Served RootOfTrust: deviceLocked=true verifiedBootState=0 …"。 */
     val servedLocked: Boolean get() = servedRootOfTrust.contains("deviceLocked=true")
     val servedVerified: Boolean get() = servedRootOfTrust.contains("verifiedBootState=0")
+
+    /** .keybox_root 的第一个字段：google / other / missing / unknown。 */
+    val rootState: String get() = kbRoot.trim().split(' ').firstOrNull().orEmpty()
+    /** "命中/总数"，例如 2/2。 */
+    val rootRatio: String get() = kbRoot.trim().split(' ').getOrNull(1).orEmpty()
 }
 
 @Composable
@@ -139,6 +159,7 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
             targetCount = map["target"].orEmpty().toIntOrNull() ?: 0,
             checkerCovered = map["checker"] == "yes",
             vvbCovered = map["vvb"] == "yes",
+            kbRoot = map["kbroot"].orEmpty(),
             servedRootOfTrust = map["servrot"].orEmpty(),
             patchErrors = map["patcherr"].orEmpty().toIntOrNull() ?: 0,
             lastEngineError = map["lasterr"].orEmpty(),
@@ -158,7 +179,7 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
             val ok = withContext(Dispatchers.IO) {
                 runCatching {
                     withNewRootShell(true) {
-                        ShellUtils.fastCmd(this, ADD_CHECKER_SCRIPT)
+                        ShellUtils.fastCmd(this, DetectTargets.ADD_CHECKER_SCRIPT)
                     }.contains("added=yes")
                 }.getOrDefault(false)
             }
@@ -217,6 +238,20 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                     current.kbPerm.ifEmpty { null }?.let { "chmod $it" },
                 ).joinToString(" · ").ifEmpty { "—" },
                 bad = current.kbPerm.isNotEmpty() && current.kbPerm != "644",
+            )
+            // 根证书：引擎签链用的是 keybox 的链，链末那张就是检测方眼里的"根"。
+            // 内置验机工具只拿链末证书的公钥与硬编码的 Google/AOSP/Knox 根公钥比对，
+            // 对不上就报"未知根证书"（而链照样签得出来 → 同时显示"已锁定"）。
+            // 判据由设备侧的 shell 层算好写进 .keybox_root，这里只展示。
+            StatusRow(
+                label = stringResource(R.string.detect_tee_root),
+                value = when (current.rootState) {
+                    "google" -> stringResource(R.string.detect_tee_root_google, current.rootRatio)
+                    "other" -> stringResource(R.string.detect_tee_root_other, current.rootRatio)
+                    "missing" -> stringResource(R.string.detect_tee_root_missing)
+                    else -> stringResource(R.string.detect_tee_root_unknown)
+                },
+                bad = current.rootState != "google",
             )
             // 白名单覆盖：这是"检测方到底会不会被拦截"的直接答案。
             StatusRow(

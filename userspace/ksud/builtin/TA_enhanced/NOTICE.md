@@ -105,6 +105,40 @@ vbhash 提取功能由源码构建的 ta-enhanced 守护进程（`rust/src/vbhas
   对不上，就会被判成"证书链由模块生成"。这是本次"检测到 TrickyStore 或类似模块"
   修复里同源的第一环（第二环见 tricky_store/NOTICE.md 的 `consistency.sh`）。
 
+- **2026-10-12（"bootloader 已锁定，但密钥认证仍报未知根证书"：可信级别口径改为链末根）**：
+  新增 `common/keybox_roots.txt`（Google 证明根证书指纹表），`common/keybox.sh` 的
+  `kb_trust_level` 从"链里含 Google **中间**证书"改为"**链末**证书是已知 Google 根"，
+  并新增 `kb_root_hashes` / `kb_trust_hits` / `kb_write_root_status`。
+  1. **为什么改口径**：设备上的验机工具（内置的 `wu.keyChain.test`）判的是链末那张证书
+     ——反编译 `assets/util.dex` 可见 `identifyRootCertificateType()` 把链末证书的公钥与
+     硬编码常量 `GOOGLE_ROOT_PUBLIC_KEY` / `GOOGLE_RKP_ROOT_PUBLIC_KEY` /
+     `AOSP_ROOT_EC_PUBLIC_KEY` / `AOSP_ROOT_RSA_PUBLIC_KEY` /
+     `KNOX_SAKV1|SAKV2|SAKMV1_ROOT_PUBLIC_KEY` 逐一比对，对不上就是 `UNKNOWN_ROOT`
+     （界面"未知根证书 —— 根证书不是已知可信的证书颁发机构"）。它**不**看中间证书。
+     旧口径把"中间证书已轮换的可信箱"和"链末是自签根/软件根"混成同一个"级别 1"，
+     于是前者被误判、后者没人管。改后：级别 0 = 每条带证书的链的链末都命中根表。
+     （已核对：出厂 yurikey 盒子的根 SPKI sha256 = `feb2ea75…`，与验机工具里那份
+     `GOOGLE_ROOT_PUBLIC_KEY` 常量逐字节相同。）
+  2. **为什么会出现"已锁定 + 未知根证书"并存**：链是**能签**的——`ta-enhanced keybox
+     generate`（自签 `CN=Android Keybox`，DeviceID="sw"）、TA WebUI 的 AOSP 按钮
+     （`common/.default`）、vendor 自己的第三方源（`rust/src/keybox/sources.rs` 的
+     upstream=`KOWX712/…/.extra`、integritybox=`MeowDump/…/ShockWave.tar`）都能提供
+     "有私钥、能签叶证书"的箱子。引擎用它们签出来的链，RootOfTrust 是伪造过的
+     （所以 bootloader 行是"已锁定"），但根不是 Google 的（所以根证书行是"未知"）。
+     `keybox/mod.rs::build_source_order` 的兜底顺序是 yurikey→upstream→integritybox→custom，
+     所以只要我们给的 URL 失败一次，vendor 就可能装进第三方箱子。
+  3. **修复**：级别 1（链末非 Google 根）时，看护循环/开机流程立刻用"上次可信副本"
+     （`KB_GOOD`）或模块内置副本顶回去；vendor 拉回的箱子**不再因为 DeviceID 里的
+     代次更高就被采纳**（代次只是个字符串，谁都写得出来，而根骗不了检测方）；
+     `service.sh` 把 vendor 的 `upstream` / `integritybox` 源改回本项目可信源；
+     结论写入 `/data/adb/tricky_store/.keybox_root`（`google|other|missing|unknown 命中/总数`）
+     供管理器"检测"页的「根证书」一行直接展示。
+  4. **兼容性**：`kb_cert_hashes` 由"多字符 RS 的 awk"改为逐行状态机——POSIX awk 只
+     规定 RS 是单字符，toybox/busybox awk 上多字符 RS 会把整份输入当成一条记录，
+     导致指纹永远不命中、级别永远判成 1 这类**静默降级**。
+     `kb_check_live` 里"级别 1 只提示不处置"的旧行为已删除（它正是靠"中间证书轮换也
+     会表现为级别 1"这条推断写下的，改口径后该推断不再成立）。
+
 许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
 一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。
 

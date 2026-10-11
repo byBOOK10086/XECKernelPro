@@ -519,6 +519,17 @@ See the log below for details.</string>
     <string name="detect_tee_served_rot_none">no attestation handled yet</string>
     <string name="detect_tee_patch_errors">Patch failures</string>
     <string name="detect_tee_patch_errors_none">none</string>
+    <!-- Root certificate: the engine signs the chain with the keybox chain, and its last
+         certificate is the "root" a detector sees. The bundled checker
+         (wu.keyChain.test) compares that certificate\'s public key against hardcoded
+         Google/AOSP/Knox root keys; anything else is reported as an unknown root
+         certificate — while the chain still verifies, so "bootloader locked" and
+         "unknown root certificate" show up together. -->
+    <string name="detect_tee_root">Root cert</string>
+    <string name="detect_tee_root_google">Google attestation root (%1$s)</string>
+    <string name="detect_tee_root_other">Not a Google root (%1$s) — detectors report an unknown root certificate; the guardian self-heals, reboot once if it stays red</string>
+    <string name="detect_tee_root_missing">No keybox — the engine can only issue a self-signed chain, so detectors report an unknown root certificate</string>
+    <string name="detect_tee_root_unknown">undetermined (no sha256sum or the status file was not written yet)</string>
     <string name="detect_tee_vvb_missing">vvb2060 KeyAttestation (io.github.vvb2060.keyattestation) is not in the intercept list — its bootloader row still reads the real TEE. The list is merged on every boot, so reboot once after installing this build.</string>
     <string name="detect_tee_patch_failed_note">Patch failures mean the engine handed out the REAL TEE chain: its keybox is genuine, so detectors call the key trusted, while its RootOfTrust still carries the device\'s true unlocked state.</string>
     <string name="detect_tee_running">running</string>

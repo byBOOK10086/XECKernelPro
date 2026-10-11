@@ -220,6 +220,21 @@ if [ -d "$TS" ] || [ -d "/data/adb/modules/.tricky_store" ] || [ -d "/data/adb/m
     fi
 
     keybox_source=$(read_config keybox.source "")
+    # vendor 自己的四路源里，upstream（KOWX712 的 .extra）与 integritybox（MeowDump 的
+    # ShockWave.tar，还经第三方镜像）**不保证链末挂 Google 证明根**；一旦它们被写进
+    # 实时路径，链照样签得出来（所以 bootloader 行会被伪造成"已锁定"），但验机工具
+    # 的 identifyRootCertificateType() 比对链末证书公钥时会判成 UNKNOWN_ROOT ——
+    # 设备上就是"未知根证书 + bootloader 已锁定"并存。这里把这两个源改回本项目可信源
+    # （custom -> XECKernelPro/keybox 分支，内容恒等于 yurikey 出厂盒子）；
+    # yurikey 本体与用户自己填的 custom URL 不动。看护循环另有一道兜底：
+    # 链末不是已知 Google 根就用上次可信副本/模块内置副本顶回去（common/keybox.sh）。
+    case "$keybox_source" in
+        upstream|integritybox)
+            _log "WARN" "keybox.source=$keybox_source 是 vendor 的第三方源（不保证链末挂 Google 根）——改回本项目可信源 custom"
+            "$BIN" config set keybox.source custom >/dev/null 2>&1 || _log "WARN" "keybox.source set failed"
+            keybox_source=custom
+            ;;
+    esac
     if [ -z "$keybox_source" ]; then
         "$BIN" config set keybox.source custom >/dev/null 2>&1 || _log "WARN" "keybox.source set failed"
         keybox_source=custom
@@ -268,7 +283,7 @@ _log "INFO" "Daemon launched"
 kb_prepare
 kb_ensure_from_module "$TS/keybox.xml"
 kb_guardian_loop &
-_log "INFO" "Keybox guardian started (state=$KB_STATE live级别=$(kb_trust_level "$KB_LIVE") DeviceID=$(kb_device_id "$KB_LIVE"))"
+_log "INFO" "Keybox guardian started (state=$KB_STATE live级别=$(kb_trust_level "$KB_LIVE") DeviceID=$(kb_device_id "$KB_LIVE") 根证书=$(cat "$KB_ROOT_STATUS" 2>/dev/null))"
 
 # Post-boot maintenance, bounded and fully backgrounded: a hung boot skips
 # these tasks with a warning instead of stalling this script.
@@ -326,6 +341,6 @@ _log "INFO" "Keybox guardian started (state=$KB_STATE live级别=$(kb_trust_leve
         _tgt_n=$(grep -cvE '^[[:space:]]*(#|$)' "$_tgt" 2>/dev/null)
         _tgt_ck=no
         grep -qxF -e 'wu.keyChain.test' "$_tgt" 2>/dev/null && _tgt_ck=yes
-        _log "INFO" "boot 后总览：keybox live级别=$(kb_trust_level "$KB_LIVE") DeviceID=$(kb_device_id "$KB_LIVE") 权限=$(stat -c %a "$KB_LIVE" 2>/dev/null) sha=$(kb_short "$(kb_sha "$KB_LIVE")") | 锁态 verifiedboot=$(getprop ro.boot.verifiedbootstate) flash.locked=$(getprop ro.boot.flash.locked) device_state=$(getprop ro.boot.vbmeta.device_state) | zeromount=$_zm | 拦截 target=${_tgt_n:-0} 验机工具覆盖=$_tgt_ck engine=$(pidof TEESimulator 2>/dev/null || echo none) | mode=$BOOTSTATE_MODE"
+        _log "INFO" "boot 后总览：keybox live级别=$(kb_trust_level "$KB_LIVE") DeviceID=$(kb_device_id "$KB_LIVE") 权限=$(stat -c %a "$KB_LIVE" 2>/dev/null) sha=$(kb_short "$(kb_sha "$KB_LIVE")") 根证书=$(cat "$KB_ROOT_STATUS" 2>/dev/null) | 锁态 verifiedboot=$(getprop ro.boot.verifiedbootstate) flash.locked=$(getprop ro.boot.flash.locked) device_state=$(getprop ro.boot.vbmeta.device_state) | zeromount=$_zm | 拦截 target=${_tgt_n:-0} 验机工具覆盖=$_tgt_ck engine=$(pidof TEESimulator 2>/dev/null || echo none) | mode=$BOOTSTATE_MODE"
     fi
 ) &

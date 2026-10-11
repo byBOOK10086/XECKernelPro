@@ -60,8 +60,13 @@ import java.io.File
  *
  * APK 打包在 assets 内，root 静默安装（管理器自身即 root，不走系统安装器）；
  * 打开走显式组件名，失败回落 monkey LAUNCHER。
+ *
+ * 安装成功后**立刻**把这个包补进引擎的拦截白名单（两个路径都对账）：引擎的拦截是
+ * 穷举白名单，基线合并只在开机跑一次，而"装完马上打开"正是最常见的路径——不补表
+ * 就等于让验机工具拿到未经模拟的真实 TEE 链（界面报"未知根证书 / bootloader 已解锁"）。
+ * 引擎侧有 FileObserver（CLOSE_WRITE/MOVED_TO）会即时重载，所以不需要重启。
  */
-private const val DETECT_PACKAGE = "wu.keyChain.test"
+private const val DETECT_PACKAGE = DetectTargets.BUNDLED_CHECKER
 private const val DETECT_ACTIVITY = "wu.keyChain.test/com.eide.eideapp.RunnerActivity"
 private const val DETECT_ASSET = "detect/keychain-check.apk"
 
@@ -120,7 +125,18 @@ fun DetectPager(
             }
             busy = false
             toast(context.getString(if (ok) R.string.detect_install_done else R.string.detect_install_failed))
-            if (ok) refresh()
+            if (ok) {
+                // 装完立即入表：引擎的拦截是穷举白名单，不补表的话这次打开拿到的
+                // 还是真实 TEE 链（"未知根证书 + 已解锁"）。
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        withNewRootShell(true) {
+                            ShellUtils.fastCmd(this, DetectTargets.ADD_CHECKER_SCRIPT)
+                        }
+                    }
+                }
+                refresh()
+            }
         }
     }
 

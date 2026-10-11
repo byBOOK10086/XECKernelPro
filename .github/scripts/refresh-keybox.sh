@@ -41,6 +41,60 @@ PLAIN_SOURCES=(
 
 log() { printf '==> %s\n' "$*"; }
 
+# ---------------------------------------------------------------------------
+# 链末（根）证书核验：只把"每条链都挂到已知 Google 证明根"的箱子打进产物
+# ---------------------------------------------------------------------------
+# 与 userspace/ksud/builtin/TA_enhanced/common/keybox_roots.txt 是同一份清单
+# （规范化 PEM 体的 sha256：去掉全部空白与 BEGIN/END 标记后对 base64 体取哈希）：
+#   1) Google Hardware Attestation Root 1（2019 重签发，yurikey 出厂盒子用的就是它）
+#   2) 同一把密钥的 2022 重签发版（DER 不同、公钥相同，所以两张都要登记）
+#   3) Key Attestation CA1（2025，EC P-384，Google 官方根清单第 2 张）
+# 为什么必须在构建期拦住：设备上的验机工具（内置的 wu.keyChain.test）拿**链末证书的
+# 公钥**与硬编码的 Google/AOSP/Knox 根公钥比对，对不上就是 UNKNOWN_ROOT
+# （"未知根证书 —— 根证书不是已知可信的证书颁发机构"）；而链本身照样签得出来，
+# 于是界面会同时出现"bootloader 已锁定 + 未知根证书"。出厂副本一旦不挂 Google 根，
+# 每台新刷入的设备都会踩这个坑，所以这里直接不让它进产物。
+GOOGLE_ROOTS="
+5be402bf9aa353b635a748a9e017de182c02e030a2e274fe3100435ee031c5ff
+49f3601ef04c09e4e008db8ca140233820fedec82dba1ea45714f7e54dc3bb54
+afce17777720cb8316b8bcc2268dfd299b0a69dbac46e3444734c1929d0bffcf
+"
+
+chain_root_hashes() {
+    awk '
+        /^[ \t]*<Key[ \t>]/ { if (have) print cur; cur = ""; have = 0; inbody = 0; next }
+        /-----BEGIN CERTIFICATE-----/ { inbody = 1; body = ""; next }
+        /-----END CERTIFICATE-----/   { inbody = 0; cur = body; have = 1; body = ""; next }
+        inbody {
+            line = $0
+            gsub(/[^A-Za-z0-9+\/=]/, "", line)
+            body = body line
+        }
+        END { if (have) print cur }
+    ' "$1" 2>/dev/null | while IFS= read -r _body; do
+        [ -n "$_body" ] || continue
+        printf '%s' "$_body" | sha256sum | awk '{print $1}'
+    done
+}
+
+# 0 = 每条带证书的链，链末都在已知 Google 根表里
+chain_rooted() {
+    local _f="$1" _h _n=0 _roots
+    [ -s "$_f" ] || return 1
+    # 清单是多行字符串：统一压成"空格包围的单词串"再做子串匹配，
+    # 否则 `*" $_h "*` 会因为分隔符是换行而不是空格而永远匹配不上。
+    _roots=" $(printf '%s' "$GOOGLE_ROOTS" | tr '\n' ' ' | tr -s ' ') "
+    while IFS= read -r _h; do
+        [ -n "$_h" ] || continue
+        _n=$((_n + 1))
+        case "$_roots" in
+            *" $_h "*) ;;
+            *) return 1 ;;
+        esac
+    done < <(chain_root_hashes "$_f")
+    [ "$_n" -gt 0 ]
+}
+
 looks_like_keybox() {
     local f="$1"
     [ -s "$f" ] || return 1
@@ -89,12 +143,25 @@ if [ -z "$FOUND" ]; then
     done
 fi
 
+if [ -n "$FOUND" ] && ! chain_rooted "$CANDIDATE"; then
+    echo "::warning::keybox from $FOUND does not chain to a known Google attestation root (checked: $(chain_root_hashes "$CANDIDATE" | wc -l | tr -d ' ') chain(s)) — refusing it, keeping the committed bundled copy"
+    FOUND=""
+    rm -f "$CANDIDATE"
+fi
+
 if [ -z "$FOUND" ]; then
     # 拿不到就保留仓库里那份。这里刻意不 exit 1：网络抖动不该让整个内核/管理器
     # 构建失败，而仓库里的内置副本本身就是设备端的离线兜底。
     echo "::warning::keybox refresh failed from all sources; keeping the committed bundled copy"
     if [ -f "$TARGET" ]; then
         log "committed copy: DeviceID=$(device_id "$TARGET") sha256=$(sha256sum "$TARGET" | cut -c1-16)"
+        # 兜底那一份必须是"挂 Google 根"的：它是设备上唯一不依赖网络的可信密钥。
+        # 这一条失败就意味着本轮产物会让检测方看到"未知根证书"，宁可不发。
+        if ! chain_rooted "$TARGET"; then
+            echo "::error::the committed bundled keybox does not chain to a known Google root either ($TARGET) — refusing to ship an unknown-root keybox"
+            exit 1
+        fi
+        log "committed copy chains to a known Google root"
     else
         echo "::error::no bundled keybox at $TARGET either"
         exit 1
@@ -136,3 +203,10 @@ fi
 install -m 644 "$CANDIDATE" "$TARGET"
 log "bundled keybox updated: $TARGET"
 log "embedded copy: DeviceID=$(device_id "$TARGET") sha256=$(sha256sum "$TARGET" | cut -c1-16)"
+# 落盘后再复核一次（防"写坏了/权限/编码环节把内容改了"这类静默失败）：
+# 这一步失败等于本轮产物会让检测方报"未知根证书"，直接失败比发出去再回滚便宜。
+if ! chain_rooted "$TARGET"; then
+    echo "::error::installed keybox does not chain to a known Google root ($TARGET) — aborting the build"
+    exit 1
+fi
+log "installed copy chains to a known Google root ($(chain_root_hashes "$TARGET" | wc -l | tr -d ' ') chain(s) verified)"

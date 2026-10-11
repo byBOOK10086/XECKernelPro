@@ -129,6 +129,24 @@ AOSP libbinder/libutils 头文件子集（Apache-2.0）、Linux 内核 UAPI 头�
   缓存（`AttestationPatcher` 在 keybox 缺失/无 attestation 扩展时是 fail-open，
   会把真实链原样返回，缓存它等于永久钉死真实的（解锁态）RootOfTrust）。
 
+- **2026-10-12（"bootloader 已锁定，但密钥认证仍报未知根证书"：播种/保留实时 keybox 时增加链末根核验）**：
+  `service.sh` 的 keybox 播种段落新增 `_KB_ROOTS` / `_kb_root_hashes` / `_kb_root_ok` /
+  `_kb_write_root_status`：判据与 `TA_enhanced/common/keybox_roots.txt` 同一份 Google 证明根
+  指纹清单，比对对象是每个 `<Key>` 块**最后一张**证书（链末 = 根）。
+  1. **为什么是本模块也要管**：验机工具只认链末证书的公钥（`identifyRootCertificateType()`
+     与硬编码的 Google/AOSP/Knox 根公钥比对），不是 Google 根就报"未知根证书"；而链照样
+     签得出来 —— 于是界面同时出现"bootloader 已锁定 + 未知根证书"。能造成它的箱子都不归
+     本项目控制：`ta-enhanced keybox generate` 的自签盒（DeviceID="sw"）、TA WebUI 的 AOSP
+     按钮（`common/.default`）、vendor 第三方源（KOWX712 `.extra` / MeowDump `ShockWave.tar`）。
+  2. **改动**：实时副本"链末非 Google 根"而内置副本是 Google 根时 → **开机即换回内置副本**
+     （旧逻辑只在"实时副本 == 上一版内置副本"或"结构不合法"时才动，一份第三方箱子一旦写进
+     实时路径就会被永久保留 —— 这正是"刷了新版本仍旧未知根证书"的路径）；"保留拉取来的
+     副本"这一分支同样以链末根为前提。判定不了（缺 `sha256sum`）时**不动**实时副本，
+     避免在能力不足的设备上误降级。
+  3. **可观测**：结论写入 `/data/adb/tricky_store/.keybox_root`
+     （`google|other|missing|unknown 命中/总数 DeviceID sha16`），管理器"检测"页的
+     TeeStatus 卡片新增「根证书」一行直接展示（红色即"检测方会报未知根证书"）。
+
 许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
 一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。
 

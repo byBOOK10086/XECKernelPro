@@ -202,12 +202,95 @@ _kb_looks_valid() {
     return 0
 }
 
+# ---------------------------------------------------------------------------
+# 链末（根）证书核验
+# ---------------------------------------------------------------------------
+# 与 builtin/TA_enhanced/common/keybox_roots.txt 同一份 Google 证明根指纹清单。
+# 为什么这里也要判：检测方（内置验机工具 wu.keyChain.test 的
+# identifyRootCertificateType）只看**链末证书的公钥**，不是 Google/AOSP/Knox 已知根
+# 就判 UNKNOWN_ROOT（界面"未知根证书 —— 根证书不是已知可信的证书颁发机构"）。
+# 而链本身照样签得出来 —— 于是设备上会出现"bootloader 已锁定（因为 RootOfTrust 被
+# 伪造了）+ 未知根证书"这种半红半绿的状态。能造成它的箱子有三种，都不归本项目控制：
+#   * ta-enhanced `keybox generate`（自签 CN=Android Keybox，DeviceID="sw"）；
+#   * TA_enhanced WebUI 的 AOSP 按钮（AOSP 软件认证根，私钥众所周知）；
+#   * vendor 自己的第三方源（KOWX712 .extra / MeowDump ShockWave.tar）。
+# 这里的职责只有一件：**开机时别让实时副本停在"链末不是 Google 根"的状态**。
+# TA_enhanced 的看护循环 15s 内还会再修一次（common/keybox.sh），两条路互为兜底。
+_KB_ROOTS="5be402bf9aa353b635a748a9e017de182c02e030a2e274fe3100435ee031c5ff 49f3601ef04c09e4e008db8ca140233820fedec82dba1ea45714f7e54dc3bb54 afce17777720cb8316b8bcc2268dfd299b0a69dbac46e3444734c1929d0bffcf"
+
+# 每个 <Key> 块最后一张证书（链末 = 根）的规范化 sha256：去掉全部空白与 BEGIN/END
+# 标记后对 base64 体取 sha256。逐行状态机实现，不用多字符 RS（POSIX awk 只规定 RS
+# 是单字符，toybox/busybox awk 上多字符 RS 会把整份输入当成一条记录）。
+_kb_root_hashes() {
+    awk '
+        /^[ \t]*<Key[ \t>]/ { if (have) print cur; cur = ""; have = 0; inbody = 0; next }
+        /-----BEGIN CERTIFICATE-----/ { inbody = 1; body = ""; next }
+        /-----END CERTIFICATE-----/   { inbody = 0; cur = body; have = 1; body = ""; next }
+        inbody {
+            line = $0
+            gsub(/[^A-Za-z0-9+\/=]/, "", line)
+            body = body line
+        }
+        END { if (have) print cur }
+    ' "$1" 2>/dev/null | while IFS= read -r _body; do
+        [ -n "$_body" ] || continue
+        printf '%s' "$_body" | sha256sum 2>/dev/null | awk '{print $1}'
+    done
+}
+
+# 0 = 每条带证书的链，链末都在已知 Google 根表里
+# 1 = 结构可用但链末不是已知 Google 根（自签根/软件根/第三方箱子）
+# 2 = 无法判定（缺 sha256sum / 文件不可读）—— 此时**不动**实时副本
+_kb_root_ok() {
+    [ -s "$1" ] || return 2
+    command -v sha256sum >/dev/null 2>&1 || return 2
+    local _h _n=0
+    for _h in $(_kb_root_hashes "$1"); do
+        _n=$((_n + 1))
+        case " $_KB_ROOTS " in
+            *" $_h "*) ;;
+            *) return 1 ;;
+        esac
+    done
+    [ "$_n" -gt 0 ] || return 1
+    return 0
+}
+
+# 结论写给管理器（TeeStatus「根证书」一行直接 cat 它，避免在 root shell 里重算哈希）。
+_kb_write_root_status() {
+    local _hit=0 _total=0 _h _state
+    if [ ! -s "$_KB_LIVE" ]; then
+        printf 'missing 0/0 -\n' > "$RUNTIME/.keybox_root" 2>/dev/null
+        return 0
+    fi
+    if ! command -v sha256sum >/dev/null 2>&1; then
+        printf 'unknown 0/0 %s\n' "$(_kb_device_id "$_KB_LIVE")" > "$RUNTIME/.keybox_root" 2>/dev/null
+        return 0
+    fi
+    for _h in $(_kb_root_hashes "$_KB_LIVE"); do
+        _total=$((_total + 1))
+        case " $_KB_ROOTS " in
+            *" $_h "*) _hit=$((_hit + 1)) ;;
+        esac
+    done
+    _state=other
+    [ "$_total" -gt 0 ] && [ "$_hit" -eq "$_total" ] && _state=google
+    printf '%s %s/%s %s\n' "$_state" "$_hit" "$_total" "$(_kb_device_id "$_KB_LIVE")" \
+        > "$RUNTIME/.keybox_root" 2>/dev/null
+    chmod 644 "$RUNTIME/.keybox_root" 2>/dev/null
+    return 0
+}
+
 _KB_LIVE="$RUNTIME/keybox.xml"
 _KB_SHIPPED="$MODPATH/keybox.xml"
 _KB_STAMP="$RUNTIME/.keybox_shipped"
 _kb_live_sha=$(_kb_sha "$_KB_LIVE")
 _kb_ship_sha=$(_kb_sha "$_KB_SHIPPED")
 _kb_prev_ship=$(cat "$_KB_STAMP" 2>/dev/null)
+_kb_live_root=2
+[ -f "$_KB_LIVE" ] && { _kb_root_ok "$_KB_LIVE"; _kb_live_root=$?; }
+_kb_ship_root=2
+_kb_root_ok "$_KB_SHIPPED"; _kb_ship_root=$?
 
 if [ ! -f "$_KB_LIVE" ]; then
     if stage_file "$_KB_SHIPPED" "$_KB_LIVE" 644; then
@@ -215,6 +298,17 @@ if [ ! -f "$_KB_LIVE" ]; then
         _kb_live_sha=$(_kb_sha "$_KB_LIVE")
     else
         log_line "ERROR keybox: failed to seed from bundled copy"
+    fi
+elif [ "$_kb_live_root" = "1" ] && [ "$_kb_ship_root" = "0" ]; then
+    # 实时副本链末不是已知 Google 根，而本模块内置的那份是：直接换掉。
+    # 不看"实时副本是不是拉取来的/代次高不高"——vendor 的第三方源可以把 DeviceID
+    # 里的代次随便写高，而链末的根是骗不了检测方的。
+    _kb_old_id=$(_kb_device_id "$_KB_LIVE")
+    if stage_file "$_KB_SHIPPED" "$_KB_LIVE" 644; then
+        log_line "WARN keybox: live copy chain root is not a known Google root (was DeviceID=${_kb_old_id:-?}) — re-seeded from the bundled copy (DeviceID=$(_kb_device_id "$_KB_LIVE") sha=$(_kb_sha "$_KB_LIVE"))"
+        _kb_live_sha=$(_kb_sha "$_KB_LIVE")
+    else
+        log_line "ERROR keybox: failed to replace the non-Google-rooted live copy"
     fi
 elif [ -n "$_kb_ship_sha" ] && [ "$_kb_live_sha" = "$_kb_prev_ship" ] && [ "$_kb_live_sha" != "$_kb_ship_sha" ]; then
     if stage_file "$_KB_SHIPPED" "$_KB_LIVE" 644; then
@@ -234,6 +328,8 @@ fi
 if [ -f "$_KB_LIVE" ] && ! _kb_looks_valid "$_KB_LIVE"; then
     log_line "WARN keybox: live copy failed structural check (sha=$(_kb_sha "$_KB_LIVE")) — engine will fall back to software-level certs until TA fetches a fresh one"
 fi
+
+_kb_write_root_status
 
 # ---------------------------------------------------------------------------
 # target.txt 覆盖合并 + 配置与"管理器副本"对账

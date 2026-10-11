@@ -29,11 +29,19 @@
 #
 # 4) **需要"可信"而不只是"能解析"。** vendor 的 keybox validate 只查标签存在性
 #    （rust/src/keybox/validate.rs 的 CHECKS 全是 contains）。本文件另外做
-#    **证书链指纹核验**：把每个 PEM 证书体规范化后取 sha256，与
-#    common/keybox_trust.txt 里登记的 Google Hardware Attestation 根/中间证书
-#    指纹比对，链里包含这些证书才算"可信"（级别 0）。
-#    （shell 层不做密码学验证；"私钥↔链首证书公钥一致"这一条已对出厂盒子单独
-#    复核，脚本与结论见交接文档。）
+#    **链末（根）证书核验**：把每个 <Key> 块最后一张证书的 PEM 体规范化后取
+#    sha256，与 common/keybox_roots.txt 里登记的 Google 证明根比对，**每条带证书
+#    的链都挂到 Google 根**才算可信（级别 0）。
+#    为什么口径从"链里含 Google 中间证书"改为"链末是 Google 根"：内置验机工具
+#    wu.keyChain.test 的 identifyRootCertificateType() 正是拿链末证书的公钥与硬编码
+#    的 GOOGLE_ROOT_PUBLIC_KEY / AOSP_ROOT_*_PUBLIC_KEY / KNOX_*_PUBLIC_KEY 比对，
+#    对不上就报"未知根证书"（UNKNOWN_ROOT），它**不**看中间证书。旧口径把
+#    "中间证书已轮换的可信箱"和"链末是自签根/软件根"混成同一个级别 1：前者被误判，
+#    后者又得不到处置 —— 设备上表现就是"bootloader 已锁定，但密钥认证仍报未知根
+#    证书"（链是能签的，只是根不认）。中间证书指纹表 keybox_trust.txt 保留，用于
+#    日志取证与"链是否被第三方重写过"的交叉核对。
+#    （shell 层不做密码学验证；"私钥↔链首证书公钥一致 + 逐跳签名验证"已对出厂盒子
+#    单独复核，脚本与结论见交接文档。）
 #
 # 5) **防止被写坏/被降级。** vendor 的四路源里 integritybox 走第三方镜像
 #    （raw.gitmirror.com），内容不归本项目控制；一旦它写进来一个结构不合法、
@@ -56,13 +64,18 @@ KB_STATE=${KB_STATE:-$KB_COMPAT_DIR/keybox}
 KB_GOOD=${KB_GOOD:-$KB_STATE/good.xml}       # 最后一次"可信级（0 级）"副本
 KB_LAST=${KB_LAST:-$KB_STATE/last.xml}       # 最后一次"结构合法（1 级及以上）"副本
 KB_TRUST_CUR=${KB_TRUST_CUR:-$KB_STATE/trust.cur}     # 指纹表（去注释后的纯 hash 行）
+KB_ROOTS_CUR=${KB_ROOTS_CUR:-$KB_STATE/roots.cur}     # Google 根证书指纹表（去注释后的纯 hash 行）
 KB_MIRRORS_CUR=${KB_MIRRORS_CUR:-$KB_STATE/mirrors.cur}
 KB_WORKING=${KB_WORKING:-$KB_STATE/working_mirror}
 KB_SHIPPED=${KB_SHIPPED:-$KB_STATE/shipped.sha}
+KB_SHIPPED_PATH=${KB_SHIPPED_PATH:-$KB_STATE/shipped.path}  # 模块内置副本路径（供看护循环复检）
+KB_ROOT_STATUS=${KB_ROOT_STATUS:-$KB_DIR/.keybox_root}      # 管理器读取的"根证书"结论
+KB_ROOT_FIXED=${KB_ROOT_FIXED:-$KB_STATE/root_fixed.logged} # 修复去重（按内容 sha）
 KB_COMPAT_SYNCED=${KB_COMPAT_SYNCED:-$KB_STATE/compat.synced}
 KB_NEXT_AT=${KB_NEXT_AT:-$KB_STATE/next_refresh_at}
 
 KB_TRUST_FILE=${KB_TRUST_FILE:-${MODDIR:-$MODPATH}/common/keybox_trust.txt}
+KB_ROOTS_FILE=${KB_ROOTS_FILE:-${MODDIR:-$MODPATH}/common/keybox_roots.txt}
 KB_MIRRORS_FILE=${KB_MIRRORS_FILE:-${MODDIR:-$MODPATH}/common/keybox_mirrors.txt}
 KB_MIRRORS_USER=${KB_MIRRORS_USER:-$KB_STATE/mirrors.txt}
 
@@ -106,34 +119,71 @@ kb_device_id() {
     sed -n 's/.*DeviceID="\([^"]*\)".*/\1/p' "$1" 2>/dev/null | head -n 1
 }
 
-# 把每个 PEM 证书体规范化（去掉所有空白）后逐个算 sha256。
-# 只取 <Certificate> 段：私钥段的标记是 "-----BEGIN PRIVATE KEY-----"，去掉空白后
-# 成 "-----BEGINPRIVATEKEY-----"，与证书标记不同，awk 不会误取。
+# 把每个 PEM 证书体规范化（去掉所有空白与 BEGIN/END 标记）后逐个算 sha256。
+#
+# 实现刻意走**逐行状态机**而不是 `awk -v RS='-----ENDCERTIFICATE-----'`：POSIX awk
+# 只规定 RS 是**单个字符**，多字符 RS 是 gawk 扩展；Android 的 toybox awk / busybox
+# awk 上多字符 RS 会被当成"整份输入是一条记录"，于是 body 变成整份文件拼接后的
+# 哈希——永远不会命中指纹表，级别永远判成 1（这类"静默降级"正是本文件要防的东西）。
 kb_cert_hashes() {
     command -v sha256sum >/dev/null 2>&1 || return 1
-    tr -d '[:space:]' < "$1" 2>/dev/null | awk -v RS='-----ENDCERTIFICATE-----' \
-        -v B='-----BEGINCERTIFICATE-----' '
-        {
-            i = index($0, B)
-            if (i > 0) {
-                body = substr($0, i + length(B))
-                gsub(/[^A-Za-z0-9+\/=]/, "", body)
-                if (length(body) > 0) print body
-            }
-        }' | while IFS= read -r _body; do
+    awk '
+        /-----BEGIN CERTIFICATE-----/ { inbody = 1; body = ""; next }
+        /-----END CERTIFICATE-----/   { inbody = 0; if (length(body) > 0) print body; body = ""; next }
+        inbody {
+            line = $0
+            gsub(/[^A-Za-z0-9+\/=]/, "", line)
+            body = body line
+        }
+    ' "$1" 2>/dev/null | while IFS= read -r _body; do
         printf '%s' "$_body" | sha256sum 2>/dev/null | awk '{print $1}'
     done
 }
 
-# 可信级别：0=链里含 Google Hardware Attestation 根/中间证书（指纹命中），
-#           1=结构合法但未命中指纹，2=无效。
-# 说明（别把这一层当成密码学验证）：shell 层只做"这张证书在不在链里"的指纹比对
-# 与结构核验；链上的签名关系由引擎/检测方运行时验证。出厂那份 yurikey 盒子已经
-# 用私钥↔证书公钥一致性单独复核过（EC 与 RSA 两把私钥的公钥部分都等于链首
-# 证书的 SPKI，见交接文档里的复核脚本与结论），所以"指纹命中 + 私钥一致性"这两件
-# 事合起来才构成"可信密钥"。
+# 每个 <Key algorithm=...> 块里**最后一张**证书（链末 = 根）的规范化 sha256。
+# 只用链末判定"是不是挂到了 Google 根"，理由见文件头第 4 条与 keybox_roots.txt。
+kb_root_hashes() {
+    command -v sha256sum >/dev/null 2>&1 || return 1
+    awk '
+        /^[ \t]*<Key[ \t>]/ { if (have) print cur; cur = ""; have = 0; inbody = 0; next }
+        /-----BEGIN CERTIFICATE-----/ { inbody = 1; body = ""; next }
+        /-----END CERTIFICATE-----/   { inbody = 0; cur = body; have = 1; body = ""; next }
+        inbody {
+            line = $0
+            gsub(/[^A-Za-z0-9+\/=]/, "", line)
+            body = body line
+        }
+        END { if (have) print cur }
+    ' "$1" 2>/dev/null | while IFS= read -r _body; do
+        [ -n "$_body" ] || continue
+        printf '%s' "$_body" | sha256sum 2>/dev/null | awk '{print $1}'
+    done
+}
+
+# 链里命中 keybox_trust.txt（Google 中间证书指纹表）的张数。只用于日志取证：
+# 中间证书轮换会让它变小，但**不影响**可信级别（级别只看链末根）。
+kb_trust_hits() {
+    local _hashes _n=0
+    _hashes=$(kb_cert_hashes "$1")
+    [ -n "$_hashes" ] || { printf '0'; return; }
+    [ -s "$KB_TRUST_CUR" ] || { printf '0'; return; }
+    printf '%s\n' "$_hashes" | grep -cFxf "$KB_TRUST_CUR" 2>/dev/null || printf '0'
+}
+
+# 可信级别：0 = 每条带证书的链**链末都是已知 Google 证明根**（keybox_roots.txt），
+#           1 = 结构合法但链末不是已知 Google 根（自签根/软件根/第三方箱子），
+#           2 = 结构不合法。
+# 为什么是"链末"而不是"链里含 Google 中间证书"：检测方（内置验机工具
+# wu.keyChain.test 的 identifyRootCertificateType）就是把链末证书的公钥与硬编码的
+# Google/AOSP/Knox 根公钥比对，对不上即 UNKNOWN_ROOT —— 设备上表现为
+# "未知根证书 + bootloader 已锁定"同时出现（链能签，根不认）。旧口径把
+# "中间证书轮换"和"链末是自签根"都归成级别 1，既误报真箱、又放过假箱。
+# 说明（别把这一层当成密码学验证）：shell 层只做"链末这张证书在不在已知根表里"
+# 的指纹比对与结构核验；链上的签名关系由引擎/检测方运行时验证。出厂那份 yurikey
+# 盒子已经用私钥↔链首证书公钥一致性 + 逐跳签名单独复核过（见交接文档里的复核脚本
+# 与结论），所以"链末命中已知根 + 私钥一致性"这两件事合起来才构成"可信密钥"。
 kb_trust_level() {
-    local _f="$1" _hashes
+    local _f="$1" _roots
     [ -s "$_f" ] || { printf '2'; return; }
     # 超过 1MB 的一律当无效：正常 keybox 只有几 KB，防止把某个大文件/归档写进实时路径
     [ "$(wc -c < "$_f" 2>/dev/null | tr -d ' ')" -le 1048576 ] 2>/dev/null || { printf '2'; return; }
@@ -143,14 +193,58 @@ kb_trust_level() {
     grep -q 'BEGIN.*PRIVATE KEY' "$_f" 2>/dev/null || { printf '2'; return; }
     # 至少要有一条可用链；yurikey 正常形态是 ecdsa+rsa 两把钥匙、每把 3 张证书。
     [ "$(grep -c 'BEGIN CERTIFICATE' "$_f" 2>/dev/null)" -ge 2 ] || { printf '2'; return; }
-    [ -s "$KB_TRUST_CUR" ] || { printf '1'; return; }
-    _hashes=$(kb_cert_hashes "$_f")
-    [ -n "$_hashes" ] || { printf '1'; return; }
-    if printf '%s\n' "$_hashes" | grep -qFxf "$KB_TRUST_CUR" 2>/dev/null; then
-        printf '0'
-    else
-        printf '1'
+    # 根指纹表缺失时退回旧口径（中间证书指纹表）：宁可沿用旧判据，也不要因为表丢了
+    # 就把一份好箱子判成"根不认"→ 触发无意义的回退。
+    if [ ! -s "$KB_ROOTS_CUR" ]; then
+        _roots=$(kb_cert_hashes "$_f")
+        [ -n "$_roots" ] || { printf '1'; return; }
+        if printf '%s\n' "$_roots" | grep -qFxf "$KB_TRUST_CUR" 2>/dev/null; then
+            printf '0'
+        else
+            printf '1'
+        fi
+        return
     fi
+    _roots=$(kb_root_hashes "$_f")
+    [ -n "$_roots" ] || { printf '1'; return; }
+    # 任何一条链的链末不在已知根表里 -> 级别 1（grep -v 有输出即存在未命中项）
+    if printf '%s\n' "$_roots" | grep -vxF -f "$KB_ROOTS_CUR" 2>/dev/null | grep -q .; then
+        printf '1'
+    else
+        printf '0'
+    fi
+}
+
+# 供管理器读取的"根证书"结论：google <命中>/<总数> DeviceID sha16
+# 管理器不做哈希（root shell 里拼 awk/管道容易写错），只 cat 这一行。
+# 内容没变就不重写：这个函数每 15s 被看护循环调用一次，无脑写文件既费闪存，
+# 也会让 .keybox_root 的 mtime 一直变（取证时看不出"判定是什么时候变的"）。
+kb_write_root_status() {
+    local _f="${1:-$KB_LIVE}" _roots _hit=0 _total=0 _h _line
+    [ -n "$KB_ROOT_STATUS" ] || return 0
+    if [ ! -s "$_f" ]; then
+        _line='missing 0/0 -'
+    else
+        _roots=$(kb_root_hashes "$_f")
+        while IFS= read -r _h; do
+            [ -n "$_h" ] || continue
+            _total=$((_total + 1))
+            if grep -qxF "$_h" "$KB_ROOTS_CUR" 2>/dev/null; then
+                _hit=$((_hit + 1))
+            fi
+        done <<EOF
+$_roots
+EOF
+        if [ "$_total" -gt 0 ] && [ "$_hit" -eq "$_total" ]; then
+            _line="google $_hit/$_total $(kb_device_id "$_f") $(kb_short "$(kb_sha "$_f")")"
+        else
+            _line="other $_hit/$_total $(kb_device_id "$_f") $(kb_short "$(kb_sha "$_f")")"
+        fi
+    fi
+    [ "$_line" = "$(cat "$KB_ROOT_STATUS" 2>/dev/null)" ] && return 0
+    printf '%s\n' "$_line" > "$KB_ROOT_STATUS" 2>/dev/null
+    chmod 644 "$KB_ROOT_STATUS" 2>/dev/null
+    return 0
 }
 
 kb_fix_perms() {
@@ -509,20 +603,21 @@ kb_sweep() {
         if kb_vendor_fetch "$_url"; then
             kb_maybe_decode "$KB_LIVE"
             _new_lvl=$(kb_trust_level "$KB_LIVE")
-            if [ "$_pre_lvl" = "0" ] && [ "$_new_lvl" = "1" ]; then
+            if [ "$_pre_lvl" = "0" ] && [ "$_new_lvl" != "0" ]; then
+                # vendor 的 fetch 在**我们给的 URL 失败之后还会继续试它自己的三路源**
+                # （keybox/mod.rs::build_source_order：yurikey -> upstream -> integritybox
+                # -> custom），其中 upstream 是 KOWX712 的 .extra、integritybox 走
+                # MeowDump 的第三方镜像，两者都不保证挂 Google 根。以前只要对方把
+                # DeviceID 里的代次写高（"Yurikey99" 只是个字符串）就会被采纳，于是
+                # 设备上换成了一份"能签链但根不认"的箱子：bootloader 行照样被伪造成
+                # 已锁定，验机工具却报"未知根证书"。现在不看代次，只认链末根：
+                # 手上那份是级别 0 就直接顶回去。
                 _pg=$(kb_generation "$_pre")
                 _ng=$(kb_generation "$KB_LIVE")
-                if [ -z "$_ng" ] || [ -z "$_pg" ] || [ "$_ng" -le "$_pg" ]; then
-                    _log "WARN" "keybox: vendor 拉回的箱子未挂 Google 根且代次不更新（候选=${_ng:-?} 现有=${_pg:-?}）——保留原可信副本"
-                    kb_install "$_pre" "keep-trusted"
-                    rm -f "$_pre" 2>/dev/null
-                    continue
-                fi
-                _log "INFO" "keybox: vendor 拉回代次更高的箱子（Yurikey$_pg -> Yurikey$_ng），采用"
-                kb_install "$KB_LIVE" "vendor:$_host"
-                kb_remember_working "$_url"
+                _log "WARN" "keybox: vendor 拉回的箱子链末不是已知 Google 根（级别 $_new_lvl，候选代次=${_ng:-?} 现有=${_pg:-?}）——保留原可信副本"
+                kb_install "$_pre" "keep-trusted"
                 rm -f "$_pre" 2>/dev/null
-                return 0
+                continue
             fi
             if kb_try_candidate "$KB_LIVE" "vendor:$_host" "$_url"; then
                 kb_remember_working "$_url"
@@ -541,7 +636,7 @@ kb_sweep() {
 
 # 15s 一次的可信度/防退化巡检 + 刷新判定
 kb_check_live() {
-    local _lvl _cur
+    local _lvl _cur _ship
     _lvl=$(kb_trust_level "$KB_LIVE")
     if [ "$_lvl" = "2" ]; then
         if [ -s "$KB_GOOD" ]; then
@@ -565,17 +660,33 @@ kb_check_live() {
             chmod 644 "$KB_GOOD" 2>/dev/null
             _log "INFO" "keybox: 记录可信副本 DeviceID=$(kb_device_id "$KB_LIVE") sha=$(kb_short "$_cur")"
         fi
-    elif [ -s "$KB_GOOD" ]; then
-        # 级别 1（结构合法但没挂 Google 根）而手上还有一份级别 0 的副本：
-        # 只在当前副本**无效**时才回退（见上面的分支），否则保留当前这份——中间
-        # 证书轮换也会表现为"级别 1"，那种情况下把旧箱子装回去反而是倒退。
-        # 这里只留一条去重的提示，避免每 15s 刷屏。
+    elif [ "$_lvl" = "1" ]; then
+        # 级别 1 = 链末不是已知 Google 证明根（自签根 / AOSP 软件根 / vendor 第三方源
+        # 里的箱子）。检测方对它的判定是固定的"未知根证书"（UNKNOWN_ROOT）：链照样
+        # 签得出来 —— 所以 bootloader 那一行会被伪造成"已锁定"，而根不认，设备上
+        # 表现就是"已锁定 + 未知根证书"并存。上一次的可信副本或模块内置副本才是正确
+        # 答案，立刻顶回去；两份都没有时才保留当前这份（总比完全没有箱子强），并按
+        # 内容 sha 只提示一次，避免每 15s 刷屏。
         _cur=$(kb_sha "$KB_LIVE")
-        if [ "$_cur" != "$(cat "$KB_STATE/level1.logged" 2>/dev/null)" ]; then
-            printf '%s\n' "$_cur" > "$KB_STATE/level1.logged" 2>/dev/null
-            _log "WARN" "keybox 当前为级别 1（DeviceID=$(kb_device_id "$KB_LIVE") sha=$(kb_short "$_cur")）：链未命中 Google 根指纹；若同时存在可信副本会在其无效时自动回退"
+        if [ -s "$KB_GOOD" ] && [ "$(kb_trust_level "$KB_GOOD")" = "0" ]; then
+            _log "WARN" "keybox 实时副本链末不是已知 Google 证明根（DeviceID=$(kb_device_id "$KB_LIVE") 级别 1，链里命中中间证书指纹 $(kb_trust_hits "$KB_LIVE") 张）——用上次可信副本恢复（DeviceID=$(kb_device_id "$KB_GOOD")）"
+            kb_install "$KB_GOOD" "repair-root-good"
+            kb_write_root_status "$KB_LIVE"
+            return 0
+        fi
+        _ship=$(cat "$KB_SHIPPED_PATH" 2>/dev/null)
+        if [ -n "$_ship" ] && [ -f "$_ship" ] && [ "$(kb_trust_level "$_ship")" = "0" ]; then
+            _log "WARN" "keybox 实时副本链末不是已知 Google 证明根（DeviceID=$(kb_device_id "$KB_LIVE") 级别 1）——用模块内置副本恢复（DeviceID=$(kb_device_id "$_ship")）"
+            kb_install "$_ship" "repair-root-shipped"
+            kb_write_root_status "$KB_LIVE"
+            return 0
+        fi
+        if [ "$_cur" != "$(cat "$KB_ROOT_FIXED" 2>/dev/null)" ]; then
+            printf '%s\n' "$_cur" > "$KB_ROOT_FIXED" 2>/dev/null
+            _log "WARN" "keybox 当前为级别 1（DeviceID=$(kb_device_id "$KB_LIVE") sha=$(kb_short "$_cur")）：链末不是已知 Google 根，验机工具会报\"未知根证书\"；手上暂无可信副本，继续按镜像扫描刷新"
         fi
     fi
+    kb_write_root_status "$KB_LIVE"
     kb_sync_compat
     return 0
 }
@@ -612,6 +723,16 @@ kb_prepare() {
         _log "WARN" "keybox 指纹表缺失：$KB_TRUST_FILE（可信级别只能判到 1）"
         : > "$KB_TRUST_CUR"
     fi
+    # Google 根证书表：可信级别的**主判据**（见 kb_trust_level）。
+    if [ -f "$KB_ROOTS_FILE" ]; then
+        sed -e 's/#.*//' -e 's/[[:space:]]//g' -e '/^$/d' "$KB_ROOTS_FILE" | \
+            awk 'length($0) == 64 { print }' > "$KB_ROOTS_CUR" 2>/dev/null
+        [ -s "$KB_ROOTS_CUR" ] || _log "WARN" "keybox 根证书表为空（$KB_ROOTS_FILE）：可信级别退回旧的中间证书口径"
+    else
+        _log "WARN" "keybox 根证书表缺失：$KB_ROOTS_FILE（可信级别只能判到 1）"
+        : > "$KB_ROOTS_CUR"
+    fi
+    kb_write_root_status "$KB_LIVE"
 }
 
 # 开机即时可用：模块内置副本（构建时由 CI 从上游刷新的那份）比实时副本新时换掉它。
@@ -623,6 +744,8 @@ kb_prepare() {
 #   - 内置副本结构不合法（级别 2）           -> 不换
 #   - 内置副本级别低于实时副本               -> 不换（防止构建产物回退把可信箱子换掉）
 #   - 两边代次都能识别且内置副本代次更低      -> 不换（防止镜像/构建回源到旧快照）
+# 最前面还有一条**优先级最高**的修复（与代次/新旧无关）：内置副本挂 Google 根、
+# 实时副本不挂（级别 1：自签根/软件根/vendor 第三方箱子）-> 直接换成内置副本。
 kb_ensure_from_module() {
     local _ship="$1" _live_sha _ship_sha _prev _live_lvl _ship_lvl _live_gen _ship_gen
     [ -f "$_ship" ] || return 0
@@ -631,6 +754,21 @@ kb_ensure_from_module() {
     _ship_lvl=$(kb_trust_level "$_ship")
     if [ "$_ship_lvl" = "2" ]; then
         _log "WARN" "keybox: 模块内置副本结构不合法，忽略（sha=$(kb_short "$_ship_sha")）"
+        return 0
+    fi
+    # 记下内置副本路径：看护循环在实时副本"根不认"时要用它兜底（见 kb_check_live）。
+    mkdir -p "$KB_STATE" 2>/dev/null
+    printf '%s\n' "$_ship" > "$KB_SHIPPED_PATH" 2>/dev/null
+    # 最高优先级的修复：内置副本挂 Google 根、实时副本不挂 —— 与代次/新旧无关，
+    # 直接换。设备上"bootloader 已锁定 + 未知根证书"就是这么来的：实时副本被换成了
+    # 一份自签根/软件根（vendor 第三方源、ta-enhanced keybox generate、WebUI 的
+    # AOSP 按钮），链能签、根不认。
+    _live_lvl=$(kb_trust_level "$KB_LIVE")
+    if [ -f "$KB_LIVE" ] && [ "$_live_lvl" != "0" ] && [ "$_live_sha" != "$_ship_sha" ]; then
+        _log "WARN" "keybox: 实时副本链末不是已知 Google 证明根（DeviceID=$(kb_device_id "$KB_LIVE") 级别 $_live_lvl）——开机即换成模块内置的可信副本（DeviceID=$(kb_device_id "$_ship") 级别 $_ship_lvl）"
+        kb_install "$_ship" "module-shipped-root-repair"
+        printf '%s\n' "$_ship_sha" > "$KB_SHIPPED" 2>/dev/null
+        kb_write_root_status "$KB_LIVE"
         return 0
     fi
     _prev=$(cat "$KB_SHIPPED" 2>/dev/null)
@@ -653,6 +791,7 @@ kb_ensure_from_module() {
         _log "INFO" "keybox: 实时副本保留（DeviceID=$(kb_device_id "$KB_LIVE") sha=$(kb_short "$_live_sha") 级别=$(kb_trust_level "$KB_LIVE")）"
     fi
     printf '%s\n' "$_ship_sha" > "$KB_SHIPPED" 2>/dev/null
+    kb_write_root_status "$KB_LIVE"
 }
 
 # 常驻看护：1s 权限钉住，15s 可信度巡检 + 刷新判定。

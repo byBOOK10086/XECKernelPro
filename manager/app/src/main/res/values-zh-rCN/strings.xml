@@ -510,6 +510,15 @@ XEC 项目组
     <string name="detect_tee_served_rot_none">还没有处理过证明请求</string>
     <string name="detect_tee_patch_errors">补丁失败次数</string>
     <string name="detect_tee_patch_errors_none">无</string>
+    <!-- 根证书：引擎签链用的是 keybox 里的链，链末证书就是检测方眼里的"根"。
+         内置验机工具（wu.keyChain.test）的 identifyRootCertificateType() 只拿链末证书
+         的公钥与硬编码的 Google/AOSP/Knox 根公钥比对，对不上就报"未知根证书"——
+         而链照样签得出来，于是界面会同时出现"已锁定 + 未知根证书"。 -->
+    <string name="detect_tee_root">根证书</string>
+    <string name="detect_tee_root_google">Google 证明根（%1$s）</string>
+    <string name="detect_tee_root_other">非 Google 根（%1$s）——验机工具会报"未知根证书"；看护会自愈，仍红请重启一次</string>
+    <string name="detect_tee_root_missing">无 keybox——引擎只能用自签链，检测方必然报未知根证书</string>
+    <string name="detect_tee_root_unknown">未判定（缺 sha256sum 或状态文件未生成）</string>
     <string name="detect_tee_vvb_missing">vvb2060「密钥认证」(io.github.vvb2060.keyattestation) 不在拦截名单里——它的启动状态一行读到的还是真实 TEE。名单每次开机会重新合并，装上本版本后重启一次即可。</string>
     <string name="detect_tee_patch_failed_note">出现补丁失败时，引擎交出去的其实是**真实 TEE 证书链**：它的 keybox 是真的（所以检测方说"密钥没问题"），但 RootOfTrust 里仍是真实的解锁态。</string>
     <string name="detect_tee_running">运行中</string>

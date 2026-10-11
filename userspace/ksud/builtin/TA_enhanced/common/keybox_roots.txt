@@ -1,0 +1,50 @@
+# 已知 Google 证明根证书指纹表（GPL-3.0，本项目编写，2026-10-12）
+# ============================================================================
+# 每行一个 sha256；比对对象与 keybox_trust.txt 完全一致 —— "规范化后的 PEM 证书体"：
+#   取每个 <Key algorithm=...> 块里的**最后一张** <Certificate>（= 链末证书 = 根），
+#   去掉全部空白（含换行）与 BEGIN/END 标记后，对剩下的 base64 体取 sha256。
+# 解析实现见同目录 keybox.sh::kb_root_hashes / kb_trust_level。
+#
+# 为什么要单独一份、而且只看**链末**证书：
+#   验机工具判的正是"根"。内置验机工具 wu.keyChain.test 的
+#   identifyRootCertificateType() 把链末证书的公钥与硬编码的
+#   GOOGLE_ROOT_PUBLIC_KEY / GOOGLE_RKP_ROOT_PUBLIC_KEY / AOSP_ROOT_EC_PUBLIC_KEY /
+#   AOSP_ROOT_RSA_PUBLIC_KEY / KNOX_SAKV1|SAKV2|SAKMV1_ROOT_PUBLIC_KEY 逐一比对，
+#   比对不上就是 UNKNOWN_ROOT（界面：未知根证书 —— 根证书不是已知可信的证书颁发机构）。
+#   旧表 keybox_trust.txt 登记的却是"链里出现过某个 Google**中间**证书"，于是中间
+#   证书一轮换，一份完全可信的新箱子就被判成"级别 1"（旧代码里那句
+#   "中间证书轮换也会表现为级别 1"就是这么来的），反而掩盖了真正的问题：
+#   链末挂的是自签根/软件根时，同样也是"级别 1"，两者无法区分。
+#   本表只看链末：级别 0 = 这条链真的挂到了 Google 的证明根，与检测方口径一致。
+#
+# 三张根证书（全部来自 Google 官方根证书清单：DuckDetector 打包的
+# capability/attestation/data/src/main/res/raw/google_attestation_roots.json，
+# 也就是 developer.android.com 的 Root certificates 一节）：
+#
+# 1) Google Hardware Attestation Root 1（2019-11-22 ~ 2034-11-18，RSA-4096，
+#    subject=issuer=serialNumber f92009e853b6b045）—— yurikey 出厂盒子
+#    （DeviceID=Yurikey58）的 ECDSA 链与 RSA 链共用这一张；私钥↔链首公钥一致性、
+#    链上逐跳签名均已复核通过（见交接文档的 kb_verify_chain 输出）。
+5be402bf9aa353b635a748a9e017de182c02e030a2e274fe3100435ee031c5ff
+#
+# 2) 上一张的 2022 重签发版（2022-03-20 ~ 2042-03-15，同 DN、同公钥，
+#    SPKI sha256 = feb2ea7551ee316ed4bb443c8293b884dbfdea40b603ee3e4f4a897e4580fbae，
+#    与内置验机工具里硬编码的 GOOGLE_ROOT_PUBLIC_KEY 常量逐字节相同）。
+#    DER 不同、密钥相同 —— 所以按证书体指纹比对时必须两张都登记。
+49f3601ef04c09e4e008db8ca140233820fedec82dba1ea45714f7e54dc3bb54
+#
+# 3) CN=Key Attestation CA1, OU=Android, O=Google LLC, C=US（2025-07-17 ~ 2035-07-15，
+#    EC P-384）—— 2025 年起 Google 新签发/远程配置（RKP）设备用的根，同一份官方清单
+#    里的第 2 张。登记它是为了"新根出现时不要把可信箱子误判成级别 1"；它没有泄露的
+#    私钥，登记它不代表本模块能伪造挂在这条链下的证明。
+afce17777720cb8316b8bcc2268dfd299b0a69dbac46e3444734c1929d0bffcf
+#
+# 不在本表里的根一律按"非 Google 根"处理（级别 1），包括：
+#   * AOSP 软件认证根（Android Keystore Software Attestation Root，私钥众所周知）；
+#   * 自签根，例如 `ta-enhanced keybox generate` 生成的 CN=Android Keybox
+#     （rust/src/keybox/generate.rs，DeviceID="sw"）—— 验机工具对它报的就是
+#     "未知根证书"，同时因为它有可用私钥，链照样能签出来，所以"bootloader 已锁定"
+#     与"未知根证书"会同时出现，看上去像只差一半；
+#   * vendor 的 upstream（KOWX712 .extra）/ integritybox（MeowDump ShockWave.tar）
+#     第三方源里的箱子 —— 不归本项目控制，是否挂 Google 根不做保证。
+# 命中级别 1 时 keybox.sh 会用上次可信副本/模块内置副本顶回去（见 kb_check_live）。
