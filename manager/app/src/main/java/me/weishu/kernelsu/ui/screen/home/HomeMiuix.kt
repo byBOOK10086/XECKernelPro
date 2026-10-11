@@ -38,6 +38,8 @@ import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.VolunteerActivism
+import androidx.compose.material.icons.automirrored.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CheckCircleOutline
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.runtime.Composable
@@ -60,6 +62,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.weishu.kernelsu.KernelVersion
+import me.weishu.kernelsu.getKernelVersion
 import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.WarningLevel
@@ -176,6 +179,15 @@ fun HomePagerMiuix(
                             actions = actions,
                             backdrop = backdrop,
                         )
+                        // 未激活界面「提权」导航：GhostLock 一键提权控制台。
+                        // 已激活（ksuVersion != null）时不出现——那时提权没有意义，
+                        // 更新走「修补方式 → 提权更新」。
+                        if (state.ksuVersion == null) {
+                            PrivilegeEntryCard(
+                                onClick = actions.onPrivilegeClick,
+                                backdrop = backdrop,
+                            )
+                        }
                         InfoCard(
                             systemInfo = state.systemInfo,
                             downloadCount = state.latestVersionInfo.downloadCount,
@@ -294,9 +306,12 @@ private fun StatusCard(
                         append(" [${stringResource(id = R.string.jailbreak_mode)}]")
                     }
                 }
-                val workingMode = when (state.lkmMode) {
-                    null -> null
-                    true -> "LKM"
+                // <5.10 内核走 KernelPatch 路线（ftruncate supercall + system
+                // 挂载），状态卡模式名换成对应用法；GKI 设备维持 LKM/GKI 口径。
+                val workingMode = when {
+                    state.lkmMode == null -> null
+                    !getKernelVersion().isGKI() -> stringResource(R.string.home_working_kpatch)
+                    state.lkmMode == true -> "LKM"
                     else -> "GKI"
                 }
                 val workingText = "${stringResource(id = R.string.home_working)}$workingState"
@@ -471,6 +486,45 @@ private fun StatusCard(
                 }
             }
         }
+    }
+}
+
+/**
+ * 未激活界面「提权」入口：一键提权控制台（GhostLock，CVE-2026-43499）。
+ * 与上面的未安装卡片同款玻璃语言；识别不了的机型里给手动 profile 操作空间。
+ */
+@Composable
+private fun PrivilegeEntryCard(
+    onClick: () -> Unit,
+    backdrop: LayerBackdrop? = null,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
+        colors = CardDefaults.defaultColors(color = Color.Transparent),
+        onClick = onClick,
+        pressFeedbackType = PressFeedbackType.Tilt,
+    ) {
+        BasicComponent(
+            title = stringResource(R.string.privilege_title),
+            summary = stringResource(R.string.privilege_entry_subtitle),
+            startAction = {
+                Icon(
+                    Icons.Rounded.Bolt,
+                    stringResource(R.string.privilege_title),
+                    modifier = Modifier.padding(end = 6.dp),
+                    tint = colorScheme.primary,
+                )
+            },
+            endActions = {
+                Icon(
+                    Icons.AutoMirrored.Rounded.ChevronRight,
+                    contentDescription = null,
+                    tint = colorScheme.onSurfaceVariantSummary,
+                )
+            },
+        )
     }
 }
 

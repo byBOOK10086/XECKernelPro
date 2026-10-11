@@ -115,4 +115,13 @@ sealed interface Route : NavKey, Parcelable {
     @Parcelize
     @Serializable
     data object Terminal : Route
+
+    /**
+     * 提权控制台：GhostLock（CVE-2026-43499）一键提权 + 手动 profile 操作空间。
+     * [updateMode] 为 true 时表示来自「修补方式 → 提权更新」：管理器升级后重放
+     * 提权/late-load，让新版本与内核模块重新对齐。
+     */
+    @Parcelize
+    @Serializable
+    data class Privilege(val updateMode: Boolean = false) : Route
 }

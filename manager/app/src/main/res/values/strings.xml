@@ -118,6 +118,8 @@ Aborted — the device was NOT rebooted.</string>
     <string name="webui">WebUi</string>
     <string name="module_long_press_hint">Long press a module banner for 1 second to view details</string>
     <string name="module_sheet_capability_hint">Action and WebUi are available only when the module provides them</string>
+    <string name="module_sheet_background">Photo</string>
+    <string name="module_sheet_background_clear_hint">Long-press the Photo button to clear this card's background</string>
     <string name="module_sheet_version_label">Version</string>
     <string name="show_system_apps">Show system apps</string>
     <string name="send_log">Send logs</string>
@@ -174,7 +176,7 @@ AK3 build
 API support
 疑问小猫 (3301237007)
 IV. Acknowledgements
-This project is based on tiann/KernelSU. Thanks to KernelSU author weishu (tiann) and the upstream community; thanks to HMA-OSS (frknkrc44), TEESimulator-RS (JingMatrix, Enginex0), Tricky Addon (Enginex0), susfs4ksu (sidex15, simonpunk) and LSPosed for their upstream work.
+This project is based on tiann/KernelSU. Thanks to KernelSU author weishu (tiann) and the upstream community; thanks to HMA-OSS (frknkrc44), TEESimulator-RS (JingMatrix, Enginex0), Tricky Addon (Enginex0), susfs4ksu (sidex15, simonpunk) and LSPosed for their upstream work. Thanks to GhostLock (YuKongA/ghostlock-app, Apache-2.0) for the one-tap elevate payload and profile toolchain, and to KPatch-Next (KernelSU-Next/KPatch-Next, GPL-2.0) for the KernelPatch binaries powering the sub-5.10 kernel route.
 Thanks to DuckDetector (Eltavine and the Duck Apps contributors, https://github.com/eltavine/Duck-Detector-Refactoring , Apache-2.0): this project audited its public detector semantics and evidence model as the calibration baseline for the environment-hiding work shipped here.
 Project developer XEC sincerely thanks all the above members for their contributions in development, design, testing and module support.
 We hereby announce and express our gratitude.
@@ -543,4 +545,72 @@ See the log below for details.</string>
     <string name="detect_tee_note">Detectors only receive a simulated TEE when their package is in the engine\'s list — the list is exhaustive and has no wildcard. Anything unlisted gets the real TEE attestation, which reads as an unknown root plus an unlocked state.</string>
     <string name="detect_tee_engine_down_note">The engine is not running, so nothing is intercepted and every app sees the real TEE. Reboot so the builtin module can start it again, then check /data/adb/tricky_store/.engine.log.</string>
     <string name="detect_tee_zeromount_note">ZeroMount is active: the bootloader-state props are skipped for this boot by design, so property-based detectors still read the real state.</string>
+    <!-- Privilege (GhostLock elevate) console -->
+    <string name="privilege_title">Elevate</string>
+    <string name="privilege_entry_subtitle">GhostLock one-tap elevate, with a manual path for unmatched devices</string>
+    <string name="privilege_update_title">Privilege update</string>
+    <string name="privilege_device">Device</string>
+    <string name="privilege_model">Model</string>
+    <string name="privilege_kernel">Kernel</string>
+    <string name="privilege_soc">SoC</string>
+    <string name="privilege_supported">Profile matched</string>
+    <string name="privilege_unsupported">No profile matched</string>
+    <string name="privilege_probing_root">Probing root state…</string>
+    <string name="privilege_root_shortcut">Root detected: refreshing via late-load (no exploit needed).</string>
+    <string name="privilege_root_missing_note">No root detected: the GhostLock exploit will be used.</string>
+    <string name="privilege_risk_warning">This drives a local kernel exploit (CVE-2026-43499) to load the KernelSU module without flashing boot. A failed attempt can crash or reboot the device; close your work and use it at your own risk. SELinux is temporarily relaxed during the run and restored right after.</string>
+    <string name="privilege_cpu_pair">CPU pair</string>
+    <string name="privilege_run">Elevate now</string>
+    <string name="privilege_run_update">Start update</string>
+    <string name="privilege_running">Running…</string>
+    <string name="privilege_success">Success! The manager will restart automatically.</string>
+    <string name="privilege_failed">Elevate failed: %1$s</string>
+    <string name="privilege_unsupported_hint">No profile matched this kernel. Import the matching .conf below, then retry.</string>
+    <string name="privilege_log">Run log</string>
+    <string name="privilege_manual_title">Manual setup</string>
+    <string name="privilege_manual_step1">Check your exact kernel version (shown above, same as uname -r).</string>
+    <string name="privilege_manual_step2">Grab the kernel profile zip from GhostLock releases and find the .conf whose file name matches your kernel exactly.</string>
+    <string name="privilege_manual_step3">Import that .conf below, then tap Elevate again.</string>
+    <string name="privilege_import_profile">Import profile (.conf)</string>
+    <string name="privilege_imported">%1$d profile(s) imported</string>
+    <string name="privilege_delete">Delete</string>
+    <string name="privilege_open_upstream">Open GhostLock releases</string>
+
+    <!-- KernelPatch route (<5.10 kernels) -->
+    <string name="kernel_patch_install">Kernel patch (kernels below 5.10)</string>
+    <string name="kernel_patch_summary">Patches the boot image with kpimg (KernelPatch); flash the patched image via fastboot/recovery. Mounting uses the system-mount style.</string>
+    <string name="kernel_patch_failed">Kernel patch failed: %1$s</string>
+    <string name="kernel_patch_saved">Patched boot image saved. Flash it as the boot partition, then reboot.</string>
+    <string name="home_working_kpatch">KernelPatch (kernel below 5.10)</string>
+
+    <!-- Native terminal (MT-style) -->
+    <string name="terminal_tab">Tab</string>
+    <string name="terminal_paste">Paste</string>
+    <string name="terminal_clear">Clear</string>
+    <string name="terminal_here">Show cwd</string>
+    <string name="terminal_hint_command">Type a command…</string>
+    <string name="terminal_open">Open</string>
+    <string name="terminal_execute">Execute</string>
+    <string name="terminal_delete">Delete</string>
+    <string name="terminal_permissions">Permissions</string>
+    <string name="terminal_copy_path">Copy path</string>
+    <string name="terminal_perm_owner">Owner</string>
+    <string name="terminal_perm_group">Group</string>
+    <string name="terminal_perm_others">Others</string>
+    <string name="terminal_perm_octal">Mode (octal)</string>
+    <string name="terminal_perm_owner_field">Owner (user:group)</string>
+    <string name="terminal_perm_apply">Apply</string>
+    <string name="terminal_cancel">Cancel</string>
+
+    <!-- Dynamic island -->
+    <string name="island_home">Home</string>
+    <string name="island_superuser">SuperUser</string>
+    <string name="island_modules">Modules</string>
+    <string name="island_detect">Detect</string>
+    <string name="island_settings">Settings</string>
+    <string name="island_working">Working</string>
+    <string name="island_not_working">Not working</string>
+    <string name="island_granted">%1$d granted</string>
+    <string name="island_modules_count">%1$d modules (%2$d on)</string>
+
 </resources>

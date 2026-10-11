@@ -102,6 +102,8 @@
     <string name="webui">WebUi</string>
     <string name="module_long_press_hint">长按模块横幅 1 秒查看详情</string>
     <string name="module_sheet_capability_hint">Action、WebUi 仅当模块包含对应能力时可点击</string>
+    <string name="module_sheet_background">背景</string>
+    <string name="module_sheet_background_clear_hint">长按「背景」按钮可清除这张卡的背景</string>
     <string name="module_sheet_version_label">版本号</string>
     <string name="show_system_apps">显示系统应用</string>
     <string name="send_log">发送日志</string>
@@ -158,7 +160,7 @@ AK3构建
 API支持
 疑问小猫 (3301237007)
 四、致谢
-本项目基于 tiann/KernelSU 修改开发，感谢 KernelSU 作者 weishu（tiann）与上游社区；感谢 HMA-OSS（frknkrc44）、TEESimulator-RS（JingMatrix、Enginex0）、Tricky Addon（Enginex0）、susfs4ksu（sidex15、simonpunk）、LSPosed 等上游项目的贡献。
+本项目基于 tiann/KernelSU 修改开发，感谢 KernelSU 作者 weishu（tiann）与上游社区；感谢 HMA-OSS（frknkrc44）、TEESimulator-RS（JingMatrix、Enginex0）、Tricky Addon（Enginex0）、susfs4ksu（sidex15、simonpunk）、LSPosed 等上游项目的贡献。 感谢 GhostLock（YuKongA/ghostlock-app，Apache-2.0）开源的一键提权载荷与 profile 工具链；感谢 KPatch-Next（KernelSU-Next/KPatch-Next，GPL-2.0）为 5.10 以下内核路线提供的 KernelPatch 二进制。
 感谢 DuckDetector（Eltavine 与 Duck Apps 贡献者，https://github.com/eltavine/Duck-Detector-Refactoring ，Apache-2.0）：本项目对其公开的检测器语义与证据模型做了完整的对抗性审计，本项目的环境隐蔽能力以该项目的检测项为校准基准。
 项目开发者 XEC 谨向以上所有人员致以诚挚感谢。感谢各位在开发、设计、测试与模块支持等环节所作出的贡献。
 特此公示，并致谢忱。
@@ -532,4 +534,72 @@ XEC 项目组
     <string name="detect_tee_note">只有被列进引擎拦截名单的包才会拿到模拟的 TEE 证明——这份名单是穷举的，没有通配符。不在名单里的包会原样拿到真实 TEE 证明，检测方看到的就是"未知根证书 + 真实解锁态"。</string>
     <string name="detect_tee_engine_down_note">引擎未运行：拦截完全没生效，所有应用拿到的都是真实 TEE。重启设备让内置模块重新拉起，然后看 /data/adb/tricky_store/.engine.log。</string>
     <string name="detect_tee_zeromount_note">ZeroMount 生效：本次开机按设计跳过锁态属性，属性类检测方读到的仍是真实状态。</string>
+    <!-- 提权（GhostLock）控制台 -->
+    <string name="privilege_title">提权</string>
+    <string name="privilege_entry_subtitle">GhostLock 一键提权，识别不了的机型给手动操作空间</string>
+    <string name="privilege_update_title">提权更新</string>
+    <string name="privilege_device">设备信息</string>
+    <string name="privilege_model">机型</string>
+    <string name="privilege_kernel">内核版本</string>
+    <string name="privilege_soc">SoC</string>
+    <string name="privilege_supported">已匹配 profile</string>
+    <string name="privilege_unsupported">未匹配 profile</string>
+    <string name="privilege_probing_root">正在探测 root 状态…</string>
+    <string name="privilege_root_shortcut">已检测到 root：将直接以 late-load 模式刷新（无需漏洞）。</string>
+    <string name="privilege_root_missing_note">未检测到 root：将使用 GhostLock 漏洞提权。</string>
+    <string name="privilege_risk_warning">这里驱动一个本地内核漏洞（CVE-2026-43499），在不刷写 boot 的情况下载入 KernelSU 内核模块。失败的尝试可能导致设备崩溃或重启；请先保存手头的工作，风险自担。运行期间 SELinux 会短暂放宽，结束后立即恢复。</string>
+    <string name="privilege_cpu_pair">CPU 对</string>
+    <string name="privilege_run">一键提权</string>
+    <string name="privilege_run_update">开始更新</string>
+    <string name="privilege_running">正在运行…</string>
+    <string name="privilege_success">提权成功！管理器将自动重启。</string>
+    <string name="privilege_failed">提权失败：%1$s</string>
+    <string name="privilege_unsupported_hint">没有匹配该内核的 profile：先在下方导入对应的 .conf，再重试。</string>
+    <string name="privilege_log">运行日志</string>
+    <string name="privilege_manual_title">手动操作</string>
+    <string name="privilege_manual_step1">确认你的内核版本（上方设备信息里有，等同 uname -r）。</string>
+    <string name="privilege_manual_step2">到 GhostLock 的 Releases 下载内核 profile 压缩包，找到文件名与你内核完全一致的 .conf。</string>
+    <string name="privilege_manual_step3">在下方导入该 .conf，然后重新点「一键提权」。</string>
+    <string name="privilege_import_profile">导入 profile (.conf)</string>
+    <string name="privilege_imported">已导入 %1$d 个 profile</string>
+    <string name="privilege_delete">删除</string>
+    <string name="privilege_open_upstream">打开 GhostLock Releases</string>
+
+    <!-- KernelPatch 路线（5.10 以下内核） -->
+    <string name="kernel_patch_install">内核补丁（5.10 以下的内核）</string>
+    <string name="kernel_patch_summary">用 kptools 把 kpimg 打进 boot 镜像，补丁后的镜像用 fastboot/recovery 手动刷入；模块以 system 挂载（5.10 以下的内核）方式生效。</string>
+    <string name="kernel_patch_failed">内核补丁失败：%1$s</string>
+    <string name="kernel_patch_saved">补丁后的 boot 镜像已保存。请刷入 boot 分区后重启。</string>
+    <string name="home_working_kpatch">内核补丁（5.10 以下的内核）</string>
+
+    <!-- 原生终端（MT 管理器式） -->
+    <string name="terminal_tab">补全</string>
+    <string name="terminal_paste">粘贴</string>
+    <string name="terminal_clear">清屏</string>
+    <string name="terminal_here">当前目录</string>
+    <string name="terminal_hint_command">输入命令…</string>
+    <string name="terminal_open">打开</string>
+    <string name="terminal_execute">执行</string>
+    <string name="terminal_delete">删除</string>
+    <string name="terminal_permissions">权限</string>
+    <string name="terminal_copy_path">复制路径</string>
+    <string name="terminal_perm_owner">属主</string>
+    <string name="terminal_perm_group">属组</string>
+    <string name="terminal_perm_others">其他</string>
+    <string name="terminal_perm_octal">权限（八进制）</string>
+    <string name="terminal_perm_owner_field">属主（用户:组）</string>
+    <string name="terminal_perm_apply">应用</string>
+    <string name="terminal_cancel">取消</string>
+
+    <!-- 灵动岛 -->
+    <string name="island_home">主页</string>
+    <string name="island_superuser">授权</string>
+    <string name="island_modules">模块</string>
+    <string name="island_detect">检测</string>
+    <string name="island_settings">设置</string>
+    <string name="island_working">运行中</string>
+    <string name="island_not_working">未激活</string>
+    <string name="island_granted">%1$d 个已授权</string>
+    <string name="island_modules_count">%1$d 个模块（%2$d 启用）</string>
+
 </resources>

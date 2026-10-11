@@ -136,6 +136,8 @@ internal fun InstallScreenMiuix(
                             onSelectBootImage = actions.onSelectBootImage,
                             onSelectBootImageForKpm = actions.onSelectBootImageForKpm,
                             onSelectAnyKernel = actions.onSelectAnyKernel,
+                            onSelectBootImageForKpatch = actions.onSelectBootImageForKpatch,
+                            onPrivilegeUpdate = actions.onPrivilegeUpdate,
                         )
                     }
                     AnimatedVisibility(
@@ -318,6 +320,8 @@ private fun SelectInstallMethod(
     onSelectBootImage: () -> Unit,
     onSelectBootImageForKpm: () -> Unit,
     onSelectAnyKernel: () -> Unit,
+    onSelectBootImageForKpatch: () -> Unit,
+    onPrivilegeUpdate: () -> Unit,
 ) {
     val confirmDialog = rememberConfirmDialog(
         onConfirm = {
@@ -333,8 +337,11 @@ private fun SelectInstallMethod(
             is InstallMethod.SelectFileForKpm -> onSelectBootImageForKpm()
             is InstallMethod.DownloadFile -> onDownloadFile()
             is InstallMethod.AnyKernel -> onSelectAnyKernel()
+            is InstallMethod.KernelPatch -> onSelectBootImageForKpatch()
             is InstallMethod.DirectInstall -> onSelected(option)
             is InstallMethod.DirectInstallToInactiveSlot -> confirmDialog.showConfirm(dialogTitle, dialogContent)
+            // 提权更新不是刷写方式：点击直接进提权控制台，自动识别机型。
+            is InstallMethod.PrivilegeUpdate -> onPrivilegeUpdate()
         }
     }
 

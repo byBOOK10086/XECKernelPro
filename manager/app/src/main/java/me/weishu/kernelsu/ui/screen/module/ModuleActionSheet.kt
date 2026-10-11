@@ -38,6 +38,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Wallpaper
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +57,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -136,6 +140,18 @@ fun ModuleActionSheet(
     val canAction = data.hasActionScript && data.enabled && !data.remove
     val canWebUi = data.hasWebUi && data.enabled && !data.remove
     val canUpdate = displayedUpdateUrl.isNotEmpty() && !data.remove
+
+    // DIY 卡片背景：选择器开在面板里（面板常驻根层，Launcher 随面板存在）。
+    // OpenDocument 返回的 content Uri 可持久化授权，重启后背景仍在。
+    val context = LocalContext.current
+    val hasBackground = ModuleBackgrounds.backgroundOf(context, data.id) != null
+    val backgroundPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            ModuleBackgrounds.set(context, data.id, uri)
+        }
+    }
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize(),
@@ -291,6 +307,18 @@ fun ModuleActionSheet(
                             danger = false,
                             onClick = onUpdate,
                         )
+                        // DIY 背景：点按换图，已有背景时长按清除。放在「卸载」旁边
+                        //（用户指定位置）。有背景时图标点亮，一眼能看出这张卡挂了图。
+                        SheetActionButton(
+                            icon = Icons.Rounded.Wallpaper,
+                            label = stringResource(R.string.module_sheet_background),
+                            enabled = true,
+                            danger = false,
+                            onClick = { backgroundPicker.launch(arrayOf("image/*")) },
+                            onLongClick = if (hasBackground) {
+                                { ModuleBackgrounds.clear(context, data.id) }
+                            } else null,
+                        )
                         SheetActionButton(
                             icon = if (data.remove) MiuixIcons.Undo else MiuixIcons.Delete,
                             label = stringResource(if (data.remove) R.string.undo else R.string.uninstall),
@@ -309,6 +337,17 @@ fun ModuleActionSheet(
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    if (hasBackground) {
+                        Text(
+                            text = stringResource(R.string.module_sheet_background_clear_hint),
+                            color = neon.textSub.copy(alpha = 0.50f),
+                            fontSize = 11.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp),
+                        )
+                    }
                 }
             }
         }

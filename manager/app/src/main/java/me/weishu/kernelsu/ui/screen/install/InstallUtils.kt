@@ -46,6 +46,25 @@ internal sealed class InstallMethod : Parcelable {
             get() = R.string.install_inactive_slot
     }
 
+    /**
+     * 提权更新：管理器升级后重放提权/late-load，让新版本管理器与内核模块重新
+     * 对齐。点击直接进入提权控制台（自动识别机型），不走下面的刷写流程。
+     */
+    data object PrivilegeUpdate : InstallMethod() {
+        override val label: Int
+            get() = R.string.privilege_update_title
+    }
+
+    /**
+     * KernelPatch 路线（5.10 以下的内核）：kptools 把 kpimg 打进 boot.img，
+     * 产物手动 fastboot/recovery 刷入。只在自动检测到非 GKI 内核时出现。
+     */
+    data class KernelPatch(
+        val uri: Uri? = null,
+        @get:StringRes override val label: Int = R.string.kernel_patch_install,
+        override val summary: String?
+    ) : InstallMethod()
+
     abstract val label: Int
 
     @IgnoredOnParcel

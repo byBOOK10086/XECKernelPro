@@ -244,6 +244,10 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.xz)
     implementation(libs.protobuf.kotlin.lite)
+
+    // GhostLock profile pipeline (vendored under com.ghostlock.app.*): HOCON
+    // parsing for the bundled kernel_profiles assets.
+    implementation("com.typesafe:config:1.4.3")
 }
 
 kotlin {

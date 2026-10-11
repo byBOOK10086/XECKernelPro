@@ -68,4 +68,6 @@ data class HomeActions(
     val onInstallClick: () -> Unit,
     val onOpenUrl: (String) -> Unit,
     val onJailbreakClick: () -> Unit = {},
+    /** 未激活界面「提权」导航：进 GhostLock 提权控制台。 */
+    val onPrivilegeClick: () -> Unit = {},
 )

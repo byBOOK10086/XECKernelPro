@@ -151,6 +151,51 @@ jobs:
           ls "${SDK_ROOT}/platforms" 2>/dev/null || true
           ls "${SDK_ROOT}/ndk" 2>/dev/null || true
 
+      - name: Build GhostLock native payload
+        # vendored third_party/ghostlock (see UPSTREAM.md); the PIE binary is
+        # shipped as jniLibs/arm64-v8a/libghostlock.so so it can be exec'd
+        # straight from nativeLibraryDir (useLegacyPackaging is enabled).
+        working-directory: .
+        run: |
+          set -euo pipefail
+          NDK_DIR="$(ls -d "${ANDROID_SDK_ROOT:-${ANDROID_HOME:?}}"/ndk/* 2>/dev/null | sort | tail -n 1)"
+          if [ -z "$NDK_DIR" ]; then
+            echo "::error::no NDK found under the Android SDK"
+            exit 1
+          fi
+          echo "NDK: ${NDK_DIR}"
+          make -C third_party/ghostlock/src NDK_ROOT="$NDK_DIR" -j"$(nproc)"
+          "$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" \
+            --strip-unneeded third_party/ghostlock/build/native/ghostlock
+          mkdir -p manager/app/src/main/jniLibs/arm64-v8a
+          cp -f third_party/ghostlock/build/native/ghostlock \
+            manager/app/src/main/jniLibs/arm64-v8a/libghostlock.so
+          file manager/app/src/main/jniLibs/arm64-v8a/libghostlock.so
+          ls -la manager/app/src/main/jniLibs/arm64-v8a/
+
+      - name: Fetch KPatch binaries (<5.10 kernel route)
+        # KernelPatch 路线（5.10 以下内核）：kptools-android 打进 jniLibs
+        # （libkptools.so，可从 nativeLibraryDir exec），kpimg 进 assets。
+        # 版本与 sha256 固定在 KernelSU-Next/KPatch-Next 0.13.5-2（GPL-2.0）。
+        working-directory: .
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/KernelSU-Next/KPatch-Next/releases/download/0.13.5-2"
+          fetch() {
+            local name="$1" sha="$2" dest="$3"
+            curl -fsSL --retry 3 -o "/tmp/${name}" "${BASE}/${name}"
+            echo "${sha}  /tmp/${name}" | sha256sum -c -
+            mkdir -p "$(dirname "${dest}")"
+            cp -f "/tmp/${name}" "${dest}"
+          }
+          fetch kptools-android aced6809a27e61604934349396de33fc98c91ad8b0b3c10959750e1956a63660 \
+            manager/app/src/main/jniLibs/arm64-v8a/libkptools.so
+          fetch kpimg-linux 943ce69cb00ed7aaff988da9a3fdda89004ba813b2c30aa4a843c642542d4cde \
+            manager/app/src/main/assets/kpatch/kpimg
+          chmod +x manager/app/src/main/jniLibs/arm64-v8a/libkptools.so
+          file manager/app/src/main/jniLibs/arm64-v8a/libkptools.so
+          ls -la manager/app/src/main/assets/kpatch/
+
       - name: Build branded manager
         run: |
           ./gradlew clean assembleRelease \

@@ -64,6 +64,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -896,6 +898,9 @@ fun ModuleItem(
         label = "cardGlow",
     )
 
+    // DIY 背景（长按面板「背景」按钮设置）：按模块 id 取，组合内可订阅，设置后即时生效。
+    val backgroundUri = ModuleBackgrounds.backgroundOf(LocalContext.current, module.id)
+
     Box(
         modifier = Modifier
             .padding(horizontal = 16.dp)
@@ -940,6 +945,23 @@ fun ModuleItem(
                 },
             )
     ) {
+        // DIY 背景层：图片画在玻璃卡体之上、内容之下；双层 scrim 保证文字对比度
+        // （用户硬性要求「不能掩盖字体」）。有背景时 modifier 上那圈描边会被图片
+        // 盖住，这里再补一圈同色动效描边浮在最上面。
+        if (backgroundUri != null) {
+            ModuleCardBackdrop(
+                uri = backgroundUri,
+                shape = Xc.shapes.sm,
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(Xc.shapes.sm),
+            )
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .border(width = 1.dp, color = borderColor, shape = Xc.shapes.sm)
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1055,118 +1077,133 @@ fun ModuleItem(
 }
 
 /**
- * 「一键隐藏」入口小方框：紫罗兰工具箱资源包的部署入口，固定在模块列表最上方。
+ * 「一键隐藏」入口卡：紫罗兰工具箱资源包的部署入口，固定在模块列表最上方。
+ * 卡体语言与 [ModuleItem] 完全同款（同圆角/玻璃/描边/按压缩放/辉光投影），
+ * 只是内容压缩成单行——视觉上就是列表里「没有开关的模块卡」。
  */
 @Composable
 private fun HidePackEntryCard(onClick: () -> Unit) {
-    val neon = XcNeon.colors
-    val hapticFeedback = LocalHapticFeedback.current
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .xGlassBody(
-                    backdrop = null,
-                    shape = Xc.shapes.sm,
-                    tint = neon.cardBg,
-                    rim = false,
-                )
-                .border(width = 1.dp, color = neon.cardBorder, shape = Xc.shapes.sm)
-                .combinedClickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onClick()
-                    },
-                )
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-        Icon(
-            imageVector = Icons.Rounded.VisibilityOff,
-            contentDescription = null,
-            tint = neon.accentCyan,
-            modifier = Modifier.size(20.dp),
-        )
-        Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
-            Text(
-                text = stringResource(R.string.hide_one_tap_title),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = neon.textMain,
-            )
-            Text(
-                text = stringResource(R.string.hide_one_tap_subtitle),
-                fontSize = 11.sp,
-                color = neon.textSub,
-            )
-        }
-        Text(
-            text = "›",
-            fontSize = 18.sp,
-            color = neon.textSub,
-        )
-        }
-        Spacer(Modifier.height(14.dp))
-    }
+    ModuleEntryCard(
+        icon = Icons.Rounded.VisibilityOff,
+        title = stringResource(R.string.hide_one_tap_title),
+        subtitle = stringResource(R.string.hide_one_tap_subtitle),
+        onClick = onClick,
+    )
 }
 
 /**
- * KPM 入口小方框：原底栏第 4 页（KpmScreen）收敛进模块页后的入口，固定在模块列表
- * 「一键隐藏」之下。卡片本体与 [HidePackEntryCard] 同款玻璃语言。
+ * KPM 入口卡：原底栏第 4 页（KpmScreen）收敛进模块页后的入口，固定在
+ * 「一键隐藏」之下。与模块卡同一套语言（见 [HidePackEntryCard]）。
  */
 @Composable
 private fun KpmEntryCard(onClick: () -> Unit) {
+    ModuleEntryCard(
+        icon = Icons.Rounded.Memory,
+        title = stringResource(R.string.kpm),
+        subtitle = stringResource(R.string.kpm_entry_subtitle),
+        onClick = onClick,
+    )
+}
+
+/**
+ * 入口卡与模块卡的「同款语言」实现。逐项对齐 [ModuleItem]：
+ * 外距 horizontal 16 / bottom 20、Xc.shapes.sm、双 dropShadow（常态卡影 +
+ * 按压时霓虹辉光）、xGlassBody(neon.cardBg, rim=false)、1dp 动效描边、
+ * 按压 0.98 缩放（150ms FastOutSlowIn）。差异只有两处：入口卡没有长按，
+ * 所以没有按压进度条；箭头用图标而不是字形「›」。
+ */
+@Composable
+private fun ModuleEntryCard(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
     val neon = XcNeon.colors
     val hapticFeedback = LocalHapticFeedback.current
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .xGlassBody(
-                    backdrop = null,
-                    shape = Xc.shapes.sm,
-                    tint = neon.cardBg,
-                    rim = false,
-                )
-                .border(width = 1.dp, color = neon.cardBorder, shape = Xc.shapes.sm)
-                .combinedClickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onClick()
-                    },
-                )
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+    val interaction = remember { MutableInteractionSource() }
+    val isPressed by interaction.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+        label = "entryCardScale",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (isPressed) neon.cardBorderPressed else neon.cardBorder,
+        animationSpec = tween(durationMillis = 150),
+        label = "entryCardBorder",
+    )
+    val glowColor by animateColorAsState(
+        targetValue = if (isPressed) neon.glow else Color.Transparent,
+        animationSpec = tween(durationMillis = 150),
+        label = "entryCardGlow",
+    )
+
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 20.dp)
+            .scale(scale)
+            .dropShadow(
+                shape = Xc.shapes.sm,
+                shadow = Shadow(
+                    radius = 24.dp,
+                    color = neon.cardShadow,
+                    offset = DpOffset(0.dp, 4.dp),
+                ),
+            )
+            .dropShadow(
+                shape = Xc.shapes.sm,
+                shadow = Shadow(
+                    radius = 22.dp,
+                    color = glowColor,
+                ),
+            )
+            .xGlassBody(
+                backdrop = null,
+                shape = Xc.shapes.sm,
+                tint = neon.cardBg,
+                rim = false,
+            )
+            .border(width = 1.dp, color = borderColor, shape = Xc.shapes.sm)
+            .combinedClickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onClick()
+                },
+            )
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                imageVector = Icons.Rounded.Memory,
+                imageVector = icon,
                 contentDescription = null,
                 tint = neon.accentCyan,
                 modifier = Modifier.size(20.dp),
             )
-            Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
+            Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
                 Text(
-                    text = stringResource(R.string.kpm),
-                    fontSize = 15.sp,
+                    text = title,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = neon.textMain,
                 )
                 Text(
-                    text = stringResource(R.string.kpm_entry_subtitle),
+                    text = subtitle,
                     fontSize = 11.sp,
                     color = neon.textSub,
                 )
             }
-            Text(
-                text = "›",
-                fontSize = 18.sp,
-                color = neon.textSub,
+            Icon(
+                imageVector = Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                tint = neon.textSub,
+                modifier = Modifier.size(18.dp),
             )
         }
-        Spacer(Modifier.height(14.dp))
     }
 }
+

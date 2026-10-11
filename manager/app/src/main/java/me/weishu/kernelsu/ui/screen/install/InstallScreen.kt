@@ -23,6 +23,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.getKernelVersion
+import me.weishu.kernelsu.kpatch.KPatch
 import me.weishu.kernelsu.ui.component.choosekmidialog.ChooseKmiDialog
 import me.weishu.kernelsu.ui.component.dialog.DownloadDialog
 import me.weishu.kernelsu.ui.component.dialog.rememberLoadingDialog
@@ -76,8 +77,11 @@ fun InstallScreen() {
     val selectFileKpmTip = stringResource(id = R.string.select_file_kpm_tip)
     val downloadFileMsg = stringResource(id = R.string.download_dialog_msg)
     val anyKernelTip = stringResource(id = R.string.install_anykernel_tip)
+    val kernelPatchTip = stringResource(id = R.string.kernel_patch_summary)
     val installRequiresRoot = stringResource(id = R.string.install_requires_root)
     val installRequiresGki = stringResource(id = R.string.install_requires_gki)
+    // kpatch 补丁成品（cache 内），等待用户选保存位置。
+    var pendingPatchedFile by remember { mutableStateOf<java.io.File?>(null) }
 
     // AnyKernel3 / 直接安装 / 安装到未使用槽位这三项以前被
     // `rootAvailable && isGkiDevice` 在 buildList 阶段整体丢弃，条件不满足时
@@ -93,7 +97,7 @@ fun InstallScreen() {
     }
     // `isGkiDevice` 必须留在 key 里：探测完成时它从 null 变成 true/false，
     // 下面 SelectFile 的 summary 要跟着从「非 GKI」提示换成 GKI 提示。
-    val installMethodOptions = remember(isAbDevice, isGkiDevice, selectFileTip, selectFileTipNoGki, selectFileKpmTip, downloadFileMsg, anyKernelTip) {
+    val installMethodOptions = remember(isAbDevice, isGkiDevice, selectFileTip, selectFileTipNoGki, selectFileKpmTip, downloadFileMsg, anyKernelTip, kernelPatchTip) {
         buildList {
             add(InstallMethod.SelectFile(summary = if (isGkiDevice == true) selectFileTip else selectFileTipNoGki))
             add(InstallMethod.SelectFileForKpm(summary = selectFileKpmTip))
@@ -101,6 +105,12 @@ fun InstallScreen() {
             add(InstallMethod.AnyKernel(summary = anyKernelTip))
             add(InstallMethod.DirectInstall)
             if (isAbDevice) add(InstallMethod.DirectInstallToInactiveSlot)
+            add(InstallMethod.PrivilegeUpdate)
+            // 自动检测内核匹配刷写方案：非 GKI（<5.10）内核才出现 KernelPatch
+            // 路线（kptools + kpimg 打 boot.img）；GKI 设备继续走上面的直刷。
+            if (isGkiDevice == false) {
+                add(InstallMethod.KernelPatch(summary = kernelPatchTip))
+            }
         }
     }
 
@@ -253,6 +263,32 @@ fun InstallScreen() {
             }
         }
     }
+    val selectKpatchImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (it.resultCode == Activity.RESULT_OK) {
+            it.data?.data?.let { uri ->
+                installMethod = InstallMethod.KernelPatch(uri, summary = kernelPatchTip)
+            }
+        }
+    }
+    // kpatch 补丁产物保存：用户选位置后把 cache 里的成品拷过去。
+    val savePatchedLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        val patched = pendingPatchedFile
+        if (uri != null && patched != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    patched.inputStream().use { it.copyTo(out) }
+                } ?: error("cannot open $uri")
+            }.onSuccess {
+                showMessage(resources.getString(R.string.kernel_patch_saved))
+            }.onFailure {
+                showMessage(resources.getString(R.string.kernel_patch_failed, it.message ?: ""))
+            }
+        }
+    }
 
     val state = InstallUiState(
         installMethod = installMethod,
@@ -287,6 +323,10 @@ fun InstallScreen() {
         onSelectAnyKernel = {
             selectAnyKernelLauncher.launch(Intent(Intent.ACTION_GET_CONTENT).apply { type = "application/zip" })
         },
+        onSelectBootImageForKpatch = {
+            selectKpatchImageLauncher.launch(Intent(Intent.ACTION_GET_CONTENT).apply { type = "application/octet-stream" })
+        },
+        onPrivilegeUpdate = dropUnlessResumed { navigator.push(Route.Privilege(updateMode = true)) },
         onUploadLkm = {
             selectLkmLauncher.launch(Intent(Intent.ACTION_GET_CONTENT).apply { type = "application/octet-stream" })
         },
@@ -302,21 +342,58 @@ fun InstallScreen() {
             }
         },
         onNext = {
-            val isLkmSelected = lkmSelection != LkmSelection.KmiNone
-            val isKmiUnknown = currentKmi.isBlank()
-            val isKmiUnresolved = when (installMethod) {
-                // The download flow extracts the KMI itself; no manual
-                // selection needed.
-                is InstallMethod.DownloadFile -> false
-                is InstallMethod.SelectFile -> true
-                is InstallMethod.SelectFileForKpm -> false
-                is InstallMethod.AnyKernel -> false
-                else -> isKmiUnknown
-            }
-            if (!isLkmSelected && isKmiUnresolved) {
-                showChooseKmiDialog.value = true
+            val method = installMethod
+            if (method is InstallMethod.KernelPatch) {
+                // KernelPatch 路线（<5.10）：选 boot.img → kptools 打 kpimg →
+                // 成品另存（fastboot/recovery 手动刷）。不进 Flash 流程。
+                val uri = method.uri
+                if (uri == null) {
+                    selectKpatchImageLauncher.launch(
+                        Intent(Intent.ACTION_GET_CONTENT).apply { type = "application/octet-stream" }
+                    )
+                } else {
+                    scope.launch {
+                        try {
+                            loadingDialog.showLoading()
+                            val bootFile = java.io.File(context.cacheDir, "kpatch_boot.img")
+                            context.contentResolver.openInputStream(uri)?.use { input ->
+                                bootFile.outputStream().use(input::copyTo)
+                            } ?: error("cannot open boot image")
+                            val result = KPatch.patch(context, bootFile) { }
+                            if (result.success && result.output != null) {
+                                pendingPatchedFile = result.output
+                                savePatchedLauncher.launch("boot-patched.img")
+                            } else {
+                                val tail = result.log.lineSequence()
+                                    .lastOrNull { it.isNotBlank() } ?: result.log.take(120)
+                                showMessage(resources.getString(R.string.kernel_patch_failed, tail))
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            showMessage(resources.getString(R.string.kernel_patch_failed, e.message ?: ""))
+                        } finally {
+                            loadingDialog.hide()
+                        }
+                    }
+                }
             } else {
-                onInstall()
+                val isLkmSelected = lkmSelection != LkmSelection.KmiNone
+                val isKmiUnknown = currentKmi.isBlank()
+                val isKmiUnresolved = when (installMethod) {
+                    // The download flow extracts the KMI itself; no manual
+                    // selection needed.
+                    is InstallMethod.DownloadFile -> false
+                    is InstallMethod.SelectFile -> true
+                    is InstallMethod.SelectFileForKpm -> false
+                    is InstallMethod.AnyKernel -> false
+                    else -> isKmiUnknown
+                }
+                if (!isLkmSelected && isKmiUnresolved) {
+                    showChooseKmiDialog.value = true
+                } else {
+                    onInstall()
+                }
             }
         },
         onAdvancedOptionsClicked = {

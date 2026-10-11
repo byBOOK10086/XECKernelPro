@@ -196,6 +196,25 @@ vendored 源码树（`third_party/`）始终**零修改**：上述修复全部�
 
 - **密钥链验机**（`manager/app/src/main/assets/detect/keychain-check.apk`，包名 `wu.keyChain.test`）— 第三方验机工具，版权归原作者。
 
+## 提权（GhostLock）与 KernelPatch 路线
+
+- **GhostLock**（`YuKongA/ghostlock-app`，Apache-2.0，作者 YuKongA 与 GhostLock 贡献者）—
+  `third_party/ghostlock/`（native 载荷源码，修订 67215cfe）、
+  `manager/app/src/main/assets/kernel_profiles/`（设备内核 profile 资产）、
+  `manager/app/src/main/java/com/ghostlock/`（profile 管线 Kotlin，来自其
+  profile-core 与 app 模块）与 `manager/.../privilege/GhostLockRunner.kt`
+  （执行协议移植）均出自该项目；本地补丁与范围见
+  `third_party/ghostlock/UPSTREAM.md`。致谢 YuKongA 将载荷与 profile 工具链
+  以宽松许可证开源。
+- **KPatch-Next**（`KernelSU-Next/KPatch-Next`，GPL-2.0）— 5.10 以下内核路线的
+  `kptools-android` 与 `kpimg-linux` 0.13.5-2 二进制由 CI 固定下载（sha256 pin，
+  见 `.github/workflows/build-xecpro.yml`），不打进源码树；`kpatch/KPatch.kt`
+  为其 CLI 的调用封装。上游 https://github.com/KernelSU-Next/KPatch-Next 。
+- **KernelPatch / APatch 生态调研引用**（`bmax121/KernelPatch` GPL-2.0、
+  `bmax121/APatch` GPL-3.0、`topjohnwu/Magisk` GPL-3.0、
+  `5ec1cff/MagicMountStandalone` GPL-3.0）— 仅作 5.10 以下兼容方案的架构调研
+  依据（kpatch 补丁流程、magic mount 挂载模型），未复制其源码或二进制。
+
 ## 其他
 
 - Rust 依赖见各 `Cargo.toml` / `Cargo.lock`；Android 依赖见 `manager/gradle/libs.versions.toml`
