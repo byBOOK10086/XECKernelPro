@@ -200,7 +200,10 @@ mod android {
         Ok(())
     }
 
-    pub(super) fn flash_partition(partition: &str, data: &[u8]) -> Result<()> {
+    // Upstream narrows this to `pub(super)`; our boot_txn (direct-flash rollback)
+    // and kpm_patch also flash partitions from outside this module, so keep it
+    // crate-visible.
+    pub(crate) fn flash_partition(partition: &str, data: &[u8]) -> Result<()> {
         let mut blk = std::fs::OpenOptions::new()
             .write(true)
             .truncate(false)
