@@ -2,10 +2,12 @@
 members = [
     "userspace/ksud",
     "userspace/ksuinit",
+    "userspace/xecinit",
 ]
 default-members = [
     "userspace/ksud",
     "userspace/ksuinit",
+    "userspace/xecinit",
 ]
 # Vendored third-party crates under third_party/ are built standalone by CI
 # (see .github/scripts/build-builtin-modules.sh) and must not join this

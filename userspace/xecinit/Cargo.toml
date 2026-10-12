@@ -1,0 +1,15 @@
+[package]
+name = "xecinit"
+version = "0.1.0"
+edition.workspace = true
+description = "XECKernelPro 挂载态 root 的 ramdisk init 载荷（<5.10 路线）"
+
+# 这是一个 PID 1 的 ramdisk 载荷：**故意零依赖**（除 libc）。
+# 理由：它要在最早期的 ramdisk 里跑，动态链接器、/system、/data 都还不存在；
+# 依赖越少，静态链接越稳，出问题时也越好定位。
+[dependencies]
+libc = "0.2"
+
+[[bin]]
+name = "xecinit"
+path = "src/main.rs"
