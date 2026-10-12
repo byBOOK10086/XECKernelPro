@@ -37,7 +37,7 @@ enum Phase {
 }
 
 impl Phase {
-    fn as_str(&self) -> &'static str {
+    const fn as_str(&self) -> &'static str {
         match self {
             Self::Prepared => "prepared",
             Self::Armed => "armed",
@@ -127,24 +127,30 @@ fn sync_parent(path: &Path) -> Result<()> {
 }
 
 fn serialize(state: &BootTxn) -> String {
-    let mut out = String::new();
-    out.push_str("version=1\n");
-    out.push_str(&format!("phase={}\n", state.phase.as_str()));
-    out.push_str(&format!("slot_suffix={}\n", state.slot_suffix));
-    out.push_str(&format!("target_partition={}\n", state.target_partition));
-    out.push_str(&format!("target_size={}\n", state.target_size));
-    out.push_str(&format!("target_sha256={}\n", state.target_sha256));
-    out.push_str(&format!("boot_id={}\n", state.boot_id));
-    out.push_str(&format!("ota={}\n", if state.ota { 1 } else { 0 }));
-    out.push_str(&format!("record_count={}\n", state.records.len()));
+    // 逐行组好再 join：`push_str(&format!(..))` 这种写法 clippy 判
+    // format_push_string（pedantic，本 crate 是 deny），改成 Vec<String> 既过
+    // lint 也不用引 std::fmt::Write（会和这里的 std::io::Write 撞名）。
+    let mut lines = vec![
+        format!("version={STATE_VERSION}"),
+        format!("phase={}", state.phase.as_str()),
+        format!("slot_suffix={}", state.slot_suffix),
+        format!("target_partition={}", state.target_partition),
+        format!("target_size={}", state.target_size),
+        format!("target_sha256={}", state.target_sha256),
+        format!("boot_id={}", state.boot_id),
+        format!("ota={}", u8::from(state.ota)),
+        format!("record_count={}", state.records.len()),
+    ];
     for (index, record) in state.records.iter().enumerate() {
-        out.push_str(&format!("record.{index}.partition={}\n", record.partition));
-        out.push_str(&format!("record.{index}.suffix={}\n", record.suffix));
-        out.push_str(&format!("record.{index}.backup={}\n", record.backup_name));
-        out.push_str(&format!("record.{index}.size={}\n", record.size));
-        out.push_str(&format!("record.{index}.sha256={}\n", record.sha256));
+        lines.push(format!("record.{index}.partition={}", record.partition));
+        lines.push(format!("record.{index}.suffix={}", record.suffix));
+        lines.push(format!("record.{index}.backup={}", record.backup_name));
+        lines.push(format!("record.{index}.size={}", record.size));
+        lines.push(format!("record.{index}.sha256={}", record.sha256));
     }
-    out
+    // 保持原来的尾随换行：解析侧按 lines() 读，不依赖行数
+    lines.push(String::new());
+    lines.join("\n")
 }
 
 fn parse_state(data: &str) -> Result<BootTxn> {

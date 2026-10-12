@@ -80,13 +80,12 @@ const fn resetprop() -> ResetProp {
 /// On unless the flag file says otherwise, so a fresh install looks locked from
 /// the first boot; the file is also the switch the manager UI writes.
 fn enabled() -> bool {
-    match fs::read_to_string(defs::BOOTSTATE_FLAG_PATH) {
-        Ok(value) => !matches!(
+    fs::read_to_string(defs::BOOTSTATE_FLAG_PATH).map_or(true, |value| {
+        !matches!(
             value.trim().to_ascii_lowercase().as_str(),
             "0" | "off" | "false" | "no" | "disable" | "disabled"
-        ),
-        Err(_) => true,
-    }
+        )
+    })
 }
 
 /// Rewrite the boot-state properties to the locked view. Never fails the boot:
@@ -205,29 +204,32 @@ fn rewrite_cmdline(original: &str) -> String {
 
 /// `/proc/bootconfig` uses one `key = value` line per parameter.
 fn rewrite_bootconfig(original: &str) -> String {
-    let mut text = String::new();
+    // 逐行收集再 join（不用 push_str(&format!(..))：clippy::format_push_string
+    // 在本 crate 是 deny）。
+    let mut lines: Vec<String> = Vec::new();
     let mut seen: Vec<&str> = Vec::new();
 
     for line in original.lines() {
         let key = line.split('=').next().unwrap_or_default().trim();
-        match override_value(key) {
-            Some(value) => {
-                seen.push(key);
-                text.push_str(&format!("{key} = {value}\n"));
-            }
-            None => {
-                text.push_str(line);
-                text.push('\n');
-            }
+        if let Some(value) = override_value(key) {
+            seen.push(key);
+            lines.push(format!("{key} = {value}"));
+        } else {
+            lines.push(line.to_string());
         }
     }
 
     for (key, value) in ANDROIDBOOT_OVERRIDES {
         if !seen.contains(key) {
-            text.push_str(&format!("{key} = {value}\n"));
+            lines.push(format!("{key} = {value}"));
         }
     }
 
+    if lines.is_empty() {
+        return String::new();
+    }
+    let mut text = lines.join("\n");
+    text.push('\n');
     text
 }
 

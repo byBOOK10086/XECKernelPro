@@ -554,8 +554,9 @@ fn submit_kstat(cmd_code: u32, cmd: &mut SusfsKstat, operation: &str) -> anyhow:
             cmd_code,
             // A raw pointer keeps `cmd` usable below: a `&mut` passed through a
             // C-variadic call is moved, so the kernel-written `err` field could
-            // not be read afterwards.
-            cmd as *mut SusfsKstat,
+            // not be read afterwards. `ptr::from_mut` is the clippy-clean form
+            // of `cmd as *mut SusfsKstat` (ref_as_ptr is pedantic).
+            std::ptr::from_mut(cmd),
         )
     };
     if syscall_result < 0 {

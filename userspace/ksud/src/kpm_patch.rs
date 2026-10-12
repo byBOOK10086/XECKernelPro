@@ -153,6 +153,10 @@ fn patch_kpm_flash() -> Result<()> {
     let boot_data = read_block_device(&partition)?;
     let repacked = patch_kpm_bytes(&boot_data)?;
     println!("- Flashing patched boot back to {partition}");
+    // 和 boot_patch 的直接刷写同源：动引导链之前先落回滚事务（prepare 记现状、
+    // arm 记将要写入的镜像），失败即中止。
+    crate::boot_txn::prepare(&slot, "boot", false)?;
+    crate::boot_txn::arm(&repacked)?;
     crate::boot_patch::flash_partition(&partition, &repacked)?;
     println!("- KPatch-Next embedded successfully. Reboot to take effect.");
     Ok(())

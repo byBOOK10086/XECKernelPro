@@ -103,7 +103,10 @@ pub fn on_post_fs_data() -> Result<()> {
         // to be provisioned and started, otherwise a stray `magisk` binary in
         // PATH silently disables Zygisk for the whole boot.
         if !crate::utils::is_safe_mode() {
-            exec_builtin_stage("post-fs-data", ScriptWait::Until(Instant::now() + defs::BOOT_STAGE_TIMEOUT));
+            exec_builtin_stage(
+                "post-fs-data",
+                ScriptWait::Until(Instant::now() + defs::BOOT_STAGE_TIMEOUT),
+            );
         }
         return Ok(());
     }

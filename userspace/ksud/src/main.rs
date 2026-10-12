@@ -18,7 +18,10 @@
 
 mod apk_sign;
 mod assets;
-mod boot_patch;
+// boot_txn（直接刷写的回滚事务）从 boot_patch 里取 flash_partition，所以这个
+// 模块本身按 crate 可见；`pub(crate)` 现在有了实际意义（否则 clippy 会判
+// redundant_pub_crate）。
+pub(crate) mod boot_patch;
 #[cfg(target_os = "android")]
 mod boot_txn;
 
