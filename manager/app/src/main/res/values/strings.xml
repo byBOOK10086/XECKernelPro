@@ -618,6 +618,7 @@ See the log below for details.</string>
     <string name="terminal_files_empty">(empty directory)</string>
     <string name="terminal_files_loading">Loading…</string>
     <string name="terminal_parent_dir">Parent directory</string>
+    <string name="terminal_copy_all">Copy output</string>
     <!-- MT-style visual file manager (terminal FILES tab) -->
     <string name="terminal_fm_jump">Jump to path</string>
     <string name="terminal_fm_name_hint">Name</string>

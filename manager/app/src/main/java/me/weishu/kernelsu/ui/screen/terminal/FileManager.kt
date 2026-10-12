@@ -130,7 +130,10 @@ internal object FsShell {
 
     suspend fun exec(script: String): Pair<Int, List<String>> = withContext(Dispatchers.IO) {
         runCatching {
-            val result = getRootShell().cmd(script).exec()
+            // 这个 libsu 版本没有 per-instance 的 Shell.cmd()，只有静态 Shell.cmd(...) 与
+            // Shell.newJob()；多行脚本交给 add() 一次性喂给同一个 sh（与 ShellUtils.fastCmd
+            // 的用法一致，TeeStatus 的多行状态脚本就是这么发的）。
+            val result = getRootShell().newJob().add(script).exec()
             result.code to (result.out + result.err)
         }.getOrElse { -1 to listOf(it.message ?: it.toString()) }
     }

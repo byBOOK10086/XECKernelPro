@@ -607,6 +607,7 @@ XEC 项目组
     <string name="terminal_files_empty">（空目录）</string>
     <string name="terminal_files_loading">正在读取…</string>
     <string name="terminal_parent_dir">上一级</string>
+    <string name="terminal_copy_all">复制输出</string>
     <!-- MT 形态的可视化文件管理（终端「文件」页） -->
     <string name="terminal_fm_jump">跳转到路径</string>
     <string name="terminal_fm_name_hint">名称</string>

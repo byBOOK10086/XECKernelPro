@@ -34,6 +34,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Clear
@@ -291,7 +292,7 @@ fun TerminalScreen() {
     // 终端/文件 双面板（MT 管理器式）：filesStartDir 首次切到文件页时取会话 cwd。
     var activeTab by remember { mutableStateOf(TerminalTab.CONSOLE) }
     var filesStartDir by remember { mutableStateOf<String?>(null) }
-    val scrollState = rememberScrollState()
+    val listState = rememberLazyListState()
     val clipboard = LocalClipboardManager.current
 
     // 长按动作表
@@ -302,12 +303,27 @@ fun TerminalScreen() {
     var viewerText by remember { mutableStateOf<String?>(null) }
     var viewerTitle by remember { mutableStateOf("") }
 
+    // 输出入队：处理 \r（进度条就地重写）、\b（退格）、ESC[2J/3J（清屏）与 ESC[H（归位）。
+    // 老实现逐行直接追加，`curl`/`wget`/`tar` 的百分比进度会刷出成百上千行垃圾。
     fun appendRaw(rawLines: List<String>) {
         for (raw in rawLines) {
-            val spans = parseAnsi(raw)
-            lines.add(TermLine(session.nextLineId(), spansToAnnotatedString(spans, AnsiBase)))
+            if (raw.contains("\u001b[2J") || raw.contains("\u001b[3J")) {
+                lines.clear()
+            }
+            val segments = raw.split('\r')
+            for ((index, segment) in segments.withIndex()) {
+                val text = segment.replace("\u001b[H", "").replace("\b", "")
+                if (text.isEmpty()) continue
+                val ansi = spansToAnnotatedString(parseAnsi(text), AnsiBase)
+                if (index > 0 && lines.isNotEmpty()) {
+                    // 同一个物理行被 \r 重写：替换而不是追加
+                    lines[lines.lastIndex] = TermLine(lines.last().id, ansi)
+                } else {
+                    lines.add(TermLine(session.nextLineId(), ansi))
+                }
+            }
         }
-        while (lines.size > 800) lines.removeRange(0, 200)
+        while (lines.size > 2000) lines.removeRange(0, 500)
     }
 
     fun submit(command: String) {
@@ -342,8 +358,12 @@ fun TerminalScreen() {
         }
     }
 
-    LaunchedEffect(lines.size) {
-        if (lines.isNotEmpty()) scrollState.animateScrollTo(scrollState.maxValue)
+    // 只在"用户本来就在底部"时自动跟随新输出；翻上去看历史时不再被拽回底部。
+    val atBottom = !listState.canScrollForward
+    LaunchedEffect(lines.size, atBottom, activeTab) {
+        if (lines.isNotEmpty() && atBottom && activeTab == TerminalTab.CONSOLE) {
+            listState.scrollToItem(lines.lastIndex)
+        }
     }
 
     Scaffold(
@@ -410,13 +430,15 @@ fun TerminalScreen() {
                 colors = CardDefaults.defaultColors(color = Color.Transparent),
             ) {
                 SelectionContainer {
-                    Column(
+                    // LazyColumn 而不是整块 verticalScroll：几千行输出时只渲染可见项，
+                    // 长按抽路径、复制、滚动都还成立。
+                    LazyColumn(
+                        state = listState,
                         modifier = Modifier
                             .fillMaxSize()
-                            .verticalScroll(scrollState)
                             .padding(12.dp),
                     ) {
-                        for (line in lines) {
+                        items(lines, key = { it.id }) { line ->
                             androidx.compose.material3.Text(
                                 text = line.text,
                                 fontFamily = FontFamily.Monospace,
@@ -473,6 +495,12 @@ fun TerminalScreen() {
                 }
                 QuickChip(stringResource(R.string.terminal_clear), icon = Icons.Rounded.Clear) {
                     lines.clear()
+                }
+                QuickChip(stringResource(R.string.terminal_copy_all), icon = Icons.Rounded.Description) {
+                    clipboard.setText(AnnotatedString(lines.joinToString("\n") { it.text.text }))
+                }
+                QuickChip("Esc") {
+                    input += "\u001b"
                 }
                 QuickChip(stringResource(R.string.terminal_here)) {
                     appendRaw(listOf("\u001b[36m${session.cwd.value}\u001b[0m"))
