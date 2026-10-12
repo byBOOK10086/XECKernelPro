@@ -138,7 +138,7 @@ pub fn magisk_main() -> Result<()> {
         }
         "--remove-modules" => {
             let reboot = !args.iter().any(|a| a == "-n");
-            remove_all_modules()?;
+            remove_all_modules();
             if reboot {
                 reboot_now();
             }
@@ -187,7 +187,8 @@ fn two_paths(args: &[String], opt: &str) -> Result<(String, String)> {
 
 /// 删除全部模块（`--remove-modules`）。逐个走正常的卸载路径，保证
 /// `uninstall.sh`、`remove` 标记这些约定仍然生效。
-fn remove_all_modules() -> Result<()> {
+/// 返回 `()`：所有失败都在内部告警处理（与 Magisk 一致，单个模块失败不阻断）。
+fn remove_all_modules() {
     let dir = Path::new(defs::MODULE_DIR);
     let entries = match std::fs::read_dir(dir) {
         Ok(it) => it,
@@ -210,7 +211,7 @@ fn remove_all_modules() -> Result<()> {
 
     if ids.is_empty() {
         println!("- no modules installed");
-        return Ok(());
+        return;
     }
 
     for id in &ids {
@@ -220,7 +221,6 @@ fn remove_all_modules() -> Result<()> {
             eprintln!("! failed to remove {id}: {e:#}");
         }
     }
-    Ok(())
 }
 
 /// `--clone-attr SRC DEST`：把 DEST 的权限/属主/SELinux 上下文套到 SRC 上。
@@ -238,10 +238,10 @@ fn clone_attr(src: &str, dest: &str) -> Result<()> {
         eprintln!("! chown {src} failed: {}", std::io::Error::last_os_error());
     }
 
-    if let Some(con) = con {
-        if let Err(e) = crate::restorecon::lsetfilecon(src, &con) {
-            eprintln!("! restorecon {src} failed: {e:#}");
-        }
+    if let Some(con) = con
+        && let Err(e) = crate::restorecon::lsetfilecon(src, &con)
+    {
+        eprintln!("! restorecon {src} failed: {e:#}");
     }
     Ok(())
 }
