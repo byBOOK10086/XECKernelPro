@@ -21,7 +21,11 @@ fun getGitCommitCount(): Int {
 }
 
 fun getGitDescribe(): String {
-    val process = Runtime.getRuntime().exec(arrayOf("git", "describe", "--tags", "--always"))
+    // `--exclude 'gki-*'`：gki-* 是内核预发布标签（build-susfs-gki.yml 打的），
+    // 不是管理器版本。不排除的话最近的那个 GKI 标签会变成 versionName，
+    // APK 文件名会成 XECKernelPro_vgki-android16-6.12-<sha>-65-g<sha>_31066-release.apk。
+    val process = Runtime.getRuntime()
+        .exec(arrayOf("git", "describe", "--tags", "--always", "--exclude", "gki-*"))
     return process.inputStream.bufferedReader().use { it.readText().trim() }
 }
 
