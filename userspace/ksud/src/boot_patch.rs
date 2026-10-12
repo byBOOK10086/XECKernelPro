@@ -387,7 +387,7 @@ fn parse_kmi_from_boot(image: &Path) -> Result<String> {
 
 /// For vendor boot, prefer the `init_boot` ramdisk entry over the one with empty name,
 /// matching the original magiskboot lookup order (init_boot.cpio before ramdisk.cpio).
-pub(crate) fn extract_ramdisk(ramdisk_image: &RamdiskImage) -> Result<(Cpio, Option<usize>)> {
+pub fn extract_ramdisk(ramdisk_image: &RamdiskImage) -> Result<(Cpio, Option<usize>)> {
     if ramdisk_image.is_vendor_ramdisk() {
         let (pos, target) = ramdisk_image
             .iter_vendor_ramdisk()

@@ -15,6 +15,7 @@
 
 use std::fs;
 use std::io::Cursor;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use android_bootimg::cpio::CpioEntry;
@@ -98,7 +99,7 @@ pub fn patch_ramdisk_bytes(boot_data: &[u8]) -> Result<Vec<u8>> {
     let orig_init_size = cpio
         .entry_by_name("init")
         .and_then(|entry| entry.data())
-        .map_or(0usize, |data| data.len());
+        .map_or(0usize, <[u8]>::len);
 
     println!("- 备份原 init -> {BACKUP_INIT}（{orig_init_size} 字节）");
     cpio.mv("init", BACKUP_INIT)?;
@@ -204,7 +205,6 @@ pub fn patch_ramdisk(args: &RamdiskPatchArgs) -> Result<()> {
         .with_context(|| format!("stat {}", boot.display()))?
         .permissions()
         .mode();
-    use std::os::unix::fs::PermissionsExt;
     temporary
         .as_file()
         .set_permissions(fs::Permissions::from_mode(mode))
