@@ -14,9 +14,11 @@
 //! 允许列表格式：一行一个 uid，`#` 起头是注释，空行忽略。
 
 use std::ffi::CString;
+use std::fmt::Write as _;
 use std::fs;
 use std::io::Write;
 use std::os::fd::{AsRawFd, RawFd};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 
@@ -47,7 +49,6 @@ fn ensure_dirs() -> Result<()> {
     if !dir.is_dir() {
         fs::create_dir_all(dir).with_context(|| format!("创建 {}", dir.display()))?;
     }
-    use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
         .with_context(|| format!("chmod {}", dir.display()))?;
     let allow_path_value = allow_path();
@@ -79,14 +80,13 @@ fn is_allowed(uid: u32) -> bool {
     read_allow().contains(&uid)
 }
 
-pub fn su_list() -> Result<()> {
+pub fn su_list() {
     let uids = read_allow();
     println!("已授权 root 的 uid（{} 个）：", uids.len());
     for uid in uids {
         println!("  {uid}");
     }
     println!("（列表文件：{}）", allow_path());
-    Ok(())
 }
 
 pub fn su_grant(uid: u32) -> Result<()> {
@@ -117,10 +117,9 @@ pub fn su_revoke(uid: u32) -> Result<()> {
 }
 
 fn write_allow(uids: &[u32]) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
     let mut text = String::from("# xecpro 挂载态 root 的允许列表：一行一个 uid\n");
     for uid in uids {
-        text.push_str(&format!("{uid}\n"));
+        let _ = writeln!(text, "{uid}");
     }
     let path = allow_path();
     fs::write(&path, text).with_context(|| format!("写 {path}"))?;
@@ -139,7 +138,6 @@ fn write_allow(uids: &[u32]) -> Result<()> {
 ///
 /// 目录/文件写不进去（没有 root 或 /data 不可写）时返回错误。
 pub fn install() -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
     ensure_dirs()?;
 
     let exe = std::env::current_exe().context("拿不到当前可执行文件路径")?;
@@ -161,10 +159,12 @@ pub fn install() -> Result<()> {
     let module_dir = format!("{}/xecpro-su", defs::MODULE_DIR);
     let module_bin = format!("{module_dir}/system/bin");
     fs::create_dir_all(&module_bin).with_context(|| format!("创建 {module_bin}"))?;
-    let prop = format!(
-        "id=xecpro-su\nname=XECPro su 垫片\nversion=1.0\nversionCode=1\n\
-         author=XECKernelPro\ndescription=挂载态 root（<5.10）的 su 通道：把 /system/bin/su 指向 xecpro 的垫片。\n"
-    );
+    let prop = "id=xecpro-su\n\
+                name=XECPro su 垫片\n\
+                version=1.0\n\
+                versionCode=1\n\
+                author=XECKernelPro\n\
+                description=挂载态 root（<5.10）的 su 通道：把 /system/bin/su 指向 xecpro 的垫片。\n";
     fs::write(format!("{module_dir}/module.prop"), prop)
         .with_context(|| format!("写 {module_dir}/module.prop"))?;
     let link = format!("{module_bin}/su");
@@ -216,7 +216,7 @@ fn peer_uid(stream: &UnixStream) -> Result<u32> {
             libc::SOL_SOCKET,
             libc::SO_PEERCRED,
             std::ptr::from_mut(&mut cred).cast::<libc::c_void>(),
-            &mut len,
+            &raw mut len,
         )
     };
     if rc != 0 {
@@ -273,7 +273,7 @@ fn recv_request(stream: &UnixStream) -> Result<(Vec<u8>, [RawFd; 3])> {
     msg.msg_control = cmsg_buf.as_mut_ptr().cast::<libc::c_void>();
     msg.msg_controllen = cmsg_buf.len();
 
-    let received = unsafe { libc::recvmsg(stream.as_raw_fd(), &mut msg, 0) };
+    let received = unsafe { libc::recvmsg(stream.as_raw_fd(), &raw mut msg, 0) };
     if received < 0 {
         bail!("recvmsg 失败：{}", std::io::Error::last_os_error());
     }
@@ -282,7 +282,7 @@ fn recv_request(stream: &UnixStream) -> Result<(Vec<u8>, [RawFd; 3])> {
     let mut fds = [-1 as RawFd; 3];
     let mut count = 0usize;
     unsafe {
-        let mut cmsg = libc::CMSG_FIRSTHDR(&msg);
+        let mut cmsg = libc::CMSG_FIRSTHDR(&raw const msg);
         while !cmsg.is_null() {
             if (*cmsg).cmsg_level == libc::SOL_SOCKET && (*cmsg).cmsg_type == libc::SCM_RIGHTS {
                 let data = libc::CMSG_DATA(cmsg).cast::<RawFd>();
@@ -293,7 +293,7 @@ fn recv_request(stream: &UnixStream) -> Result<(Vec<u8>, [RawFd; 3])> {
                 }
                 count += n;
             }
-            cmsg = libc::CMSG_NXTHDR(&msg, cmsg);
+            cmsg = libc::CMSG_NXTHDR(&raw const msg, cmsg);
         }
     }
     if count != 3 {
@@ -429,7 +429,7 @@ fn spawn_root(request: &Request, fds: &[RawFd; 3]) -> Result<i32> {
 
     // 父进程：等它结束，把退出码/信号翻译成 shell 语义的返回值
     let mut status: libc::c_int = 0;
-    let waited = unsafe { libc::waitpid(pid, &mut status, 0) };
+    let waited = unsafe { libc::waitpid(pid, &raw mut status, 0) };
     if waited < 0 {
         bail!("waitpid 失败：{}", std::io::Error::last_os_error());
     }

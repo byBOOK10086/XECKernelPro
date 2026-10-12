@@ -155,6 +155,10 @@ enum Commands {
     #[command(name = "install-mount-state", hide = true)]
     InstallMountState,
 
+    /// 查看挂载态 root 的状态（工作目录 / 允许列表 / socket / 自己是否被授权）
+    #[command(name = "mount-state-status", hide = true)]
+    MountStateStatus,
+
     /// 查看挂载态 root 的授权 uid 列表
     #[command(name = "su-list", hide = true)]
     SuList,
@@ -1095,7 +1099,11 @@ pub fn run() -> Result<()> {
         Commands::RamdiskPatch(ramdisk_args) => crate::ramdisk_patch::patch_ramdisk(&ramdisk_args),
         Commands::Daemon { once } => crate::su_daemon::run_daemon(once),
         Commands::InstallMountState => crate::su_daemon::install(),
-        Commands::SuList => crate::su_daemon::su_list(),
+        Commands::MountStateStatus => crate::su_daemon::self_test(),
+        Commands::SuList => {
+            crate::su_daemon::su_list();
+            Ok(())
+        }
         Commands::SuGrant { uid } => crate::su_daemon::su_grant(uid),
         Commands::SuRevoke { uid } => crate::su_daemon::su_revoke(uid),
         Commands::MagicMount { work, dry_run } => {
