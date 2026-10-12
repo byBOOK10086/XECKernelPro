@@ -276,7 +276,8 @@ static bool sc_dispatch(u16 magic, u64 key, u16 cmd, u64 a1, u64 a2, u64 a3, u64
     case SC_CMD_BUILD_TIME: {
         char buf[80];
 
-        scnprintf(buf, sizeof(buf), "%s (%s)", UTS_RELEASE, KSU_VERSION_FULL);
+        /* UTS_RELEASE 在部分内核树里不可直接引用，用运行时 utsname 更稳 */
+        scnprintf(buf, sizeof(buf), "%s (%s)", init_uts_ns.name.release, KSU_VERSION_FULL);
         *out = sc_copy_out((char __user *)a1, (int)a2, buf, strlen(buf) + 1);
         return true;
     }

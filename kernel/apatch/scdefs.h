@@ -33,6 +33,8 @@
 #define SC_CMD_BUILD_TIME 0x1007
 #define SC_CMD_KERNELPATCH_VER 0x1008
 #define SC_CMD_KERNEL_VER 0x1009
+#define SC_CMD_SKEY_GET 0x100a
+#define SC_CMD_SKEY_SET 0x100b
 
 /* KPM（本兼容层的主体） */
 #define SC_CMD_KPM_LOAD 0x1020
