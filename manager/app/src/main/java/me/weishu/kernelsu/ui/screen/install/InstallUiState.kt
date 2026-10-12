@@ -31,6 +31,13 @@ internal data class InstallUiState(
      * 就要把原因摆到 summary 上并禁用，而不是让用户点到一半才失败。
      */
     val kernelPatchBlockedReason: String?,
+    /**
+     * 当前 root 形态的一句话说明（内核态 5.10+ / 挂载态 5.10 以下）。
+     *
+     * 这是产品规则的单一口径在界面上的投影：两种形态互斥、不会共存，
+     * ksud 侧由 `root_mode` 闸门强制（xudc root-mode 可查）。
+     */
+    val rootModeTip: String?,
     val canSelectPartition: Boolean,
     val advancedOptionsShown: Boolean,
     val allowShell: Boolean,

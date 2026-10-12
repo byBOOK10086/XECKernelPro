@@ -38,8 +38,10 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.material3.Text
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
@@ -346,6 +348,16 @@ private fun SelectInstallMethod(
     }
 
     Column {
+        // root 形态声明（内核态 5.10+ / 挂载态 5.10 以下）：两种形态互斥、不会共存，
+        // ksud 侧由 root_mode 闸门强制，这里让用户在选安装方式前就看到自己所处的一侧。
+        state.rootModeTip?.let { tip ->
+            Text(
+                text = tip,
+                fontSize = 11.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
+        }
         state.installMethodOptions.forEach { option ->
             // 需要 root + GKI 的三项始终在列表里，条件不满足时只是变灰 + 显示原因，
             // 而不是整项消失（消失就是用户报的"没看见 GKI 功能"）。

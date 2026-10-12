@@ -37,11 +37,10 @@ pub mod android {
 
     use crate::utils;
 
+    /// 内核态 root 的闸门。判定与文案都收敛到 `root_mode`（单一口径），
+    /// 这里只保留原来的函数名给既有调用点用。
     pub(super) fn ensure_gki_kernel() -> Result<()> {
-        let version = get_kernel_version()?;
-        let is_gki = version.0 == 5 && version.1 >= 10 || version.2 > 5;
-        ensure!(is_gki, "only support GKI kernel");
-        Ok(())
+        crate::root_mode::ensure_kernel_state("KernelSU 内核安装（内置 / LKM / 直接刷写）")
     }
 
     pub fn get_kernel_version() -> Result<(i32, i32, i32)> {

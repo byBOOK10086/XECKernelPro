@@ -72,6 +72,13 @@ enum Commands {
     /// Emulate system reboot
     SoftReboot,
 
+    /// Show which root form this device uses (kernel-state >= 5.10 / mount-state < 5.10)
+    RootMode {
+        /// print machine-readable key=value lines
+        #[arg(long, default_value = "false")]
+        json: bool,
+    },
+
     /// Load a kernel module with kallsyms access
     Insmod {
         /// kernel module path
@@ -734,6 +741,26 @@ pub fn run() -> Result<()> {
         }
 
         Commands::SoftReboot => crate::soft_reboot::soft_reboot(),
+
+        Commands::RootMode { json } => {
+            let mode = crate::root_mode::current();
+            let (major, minor, patch) = crate::root_mode::kernel_version()?;
+            if json {
+                println!("mode={}", mode.as_str());
+                println!("kernel={major}.{minor}.{patch}");
+                println!("gki={}", crate::root_mode::is_gki_kernel());
+            } else {
+                println!("{}", mode.describe());
+                println!(
+                    "内核版本 {major}.{minor}.{patch}（GKI={}）",
+                    crate::root_mode::is_gki_kernel()
+                );
+                println!(
+                    "互斥规则：5.10+ 只走内核态（内置 KSU / LKM），5.10 以下只走挂载态（KernelPatch + 挂载），不会共存"
+                );
+            }
+            Ok(())
+        }
 
         Commands::Insmod { module, params } => debug::insmod(&module, &params),
 

@@ -83,6 +83,9 @@ mod profile;
 mod resetprop;
 #[cfg(target_os = "android")]
 mod restorecon;
+// root 形态判定（内核态 vs 挂载态）的单一闸门：所有会改变 root 形态的操作都要过它
+#[cfg(target_os = "android")]
+mod root_mode;
 #[cfg(target_os = "android")]
 mod sepolicy;
 #[cfg(target_os = "android")]

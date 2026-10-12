@@ -272,6 +272,8 @@ XEC Project Team
     <string name="install_anykernel_tip">Flash a third-party AnyKernel3 zip (e.g. a GKI kernel)</string>
     <string name="install_requires_root">Root is required to flash partitions directly. Install and activate XECKernel Pro first, then reopen this app.</string>
     <string name="install_requires_gki">Direct flashing (including AnyKernel3) needs a GKI kernel (5.10 or newer). Use image patching on this device instead.</string>
+    <string name="root_mode_kernel">Root form: kernel-state (stock KernelSU / LKM, 5.10+)</string>
+    <string name="root_mode_mount">Root form: mount-state (KernelPatch injection + mounting, below 5.10) · mutually exclusive with kernel-state</string>
     <string name="install_inactive_slot_warning">Your device will be **FORCED** to boot to the current inactive slot after a reboot!\nOnly use this option after OTA is done.\nContinue?</string>
     <string name="jailbreak_flash_warning">You are in **Jailbreak mode**. Flashing a partition on a device with a **locked bootloader** will break AVB (Android Verified Boot) and may cause the device to **fail to boot**.\n\nMake sure your bootloader is unlocked before proceeding!</string>
     <string name="jailbreak_flash_warning_countdown">Continue (%1$d)</string>

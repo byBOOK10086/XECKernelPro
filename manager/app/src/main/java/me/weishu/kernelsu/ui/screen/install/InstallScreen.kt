@@ -85,6 +85,12 @@ fun InstallScreen() {
     val anyKernelTip = stringResource(id = R.string.install_anykernel_tip)
     val kernelPatchTip = stringResource(id = R.string.kernel_patch_summary)
     val kernelPatchUnavailableTip = stringResource(id = R.string.kernel_patch_unavailable)
+    // root 形态说明：探测完成前不显示（避免首帧闪一个错的口径）
+    val rootModeTip = when (isGkiDevice) {
+        true -> stringResource(id = R.string.root_mode_kernel)
+        false -> stringResource(id = R.string.root_mode_mount)
+        null -> null
+    }
     val installRequiresRoot = stringResource(id = R.string.install_requires_root)
     val installRequiresGki = stringResource(id = R.string.install_requires_gki)
     // kpatch 补丁成品（cache 内），等待用户选保存位置。
@@ -313,6 +319,7 @@ fun InstallScreen() {
         installMethodOptions = installMethodOptions,
         gatedInstallBlockedReason = gatedInstallBlockedReason,
         kernelPatchBlockedReason = kernelPatchBlockedReason,
+        rootModeTip = rootModeTip,
         canSelectPartition = installMethod is InstallMethod.DirectInstall ||
             installMethod is InstallMethod.DirectInstallToInactiveSlot ||
             installMethod is InstallMethod.DownloadFile,
