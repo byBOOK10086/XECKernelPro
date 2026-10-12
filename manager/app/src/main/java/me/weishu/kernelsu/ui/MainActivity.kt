@@ -32,7 +32,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -81,8 +80,6 @@ import me.weishu.kernelsu.ui.component.dialog.LocalXDialogHost
 import me.weishu.kernelsu.ui.component.dialog.XDialogHost
 import me.weishu.kernelsu.ui.component.dialog.XDialogHostState
 import me.weishu.kernelsu.ui.design.clear.LocalWallpaperBackdrop
-import me.weishu.kernelsu.ui.design.island.DynamicIslandHost
-import me.weishu.kernelsu.ui.design.island.IslandState
 import me.weishu.kernelsu.ui.design.liquid.XDropletHost
 import me.weishu.kernelsu.ui.design.token.XcTheme
 import me.weishu.kernelsu.ui.navigation3.IntentDispatcher
@@ -475,9 +472,6 @@ open class MainActivity : ComponentActivity() {
                                         ModuleSheetState.onAddActionShortcut?.invoke(type)
                                     },
                                 )
-                                // 灵动岛：根层悬浮（与模块面板同层思路），盖在
-                                // 导航内容之上、对话框之下；仅主 pager 五页可见。
-                                DynamicIslandHost()
                                 XDialogHost(
                                     state = dialogHostState,
                                     backdrop = dialogBackdrop,
@@ -595,29 +589,6 @@ fun MainScreen(
         mainPagerState.syncPage()
     }
 
-    // 灵动岛：主 pager 五页挂岛并注册实时文案；离开 MainScreen 时隐藏。
-    LaunchedEffect(settledPage) {
-        IslandState.show(settledPage)
-    }
-    DisposableEffect(Unit) {
-        onDispose { IslandState.hide() }
-    }
-    val islandRootActive = isFullFeatured
-    val islandHomeLive = stringResource(
-        if (islandRootActive) R.string.island_working else R.string.island_not_working
-    )
-    val islandGrantedLive = stringResource(R.string.island_granted, superuserCount)
-    val islandModulesLive = stringResource(
-        R.string.island_modules_count,
-        moduleUiState.modules.size,
-        moduleUiState.modules.count { it.enabled },
-    )
-    LaunchedEffect(islandRootActive, islandHomeLive, islandGrantedLive, islandModulesLive) {
-        IslandState.rootActive = islandRootActive
-        IslandState.registerLiveText(0, islandHomeLive)
-        IslandState.registerLiveText(1, islandGrantedLive)
-        IslandState.registerLiveText(2, islandModulesLive)
-    }
 
     MainScreenBackHandler(mainPagerState, navController)
 

@@ -128,6 +128,7 @@ import me.weishu.kernelsu.ui.component.miuix.SearchBarFake
 import me.weishu.kernelsu.ui.component.miuix.SearchBox
 import me.weishu.kernelsu.ui.component.miuix.SearchPager
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
+import me.weishu.kernelsu.ui.design.island.IslandTopBar
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.design.token.XcNeon
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
@@ -316,10 +317,19 @@ fun ModulePagerMiuix(
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            BlurredBar(backdrop) {
-                searchStatus.TopAppBarAnim(backgroundColor = barColor) {
+            // 灵动岛：顶栏本身就是岛的展开态（无玻璃底）；上滑收缩成岛。
+            IslandTopBar(
+                islandTitle = stringResource(R.string.module),
+                islandLive = stringResource(
+                    R.string.island_modules_count,
+                    uiState.moduleList.size,
+                    uiState.moduleList.count { it.enabled },
+                ),
+                statusActive = me.weishu.kernelsu.Natives.isFullFeatured(),
+            ) {
+                searchStatus.TopAppBarAnim(backgroundColor = Color.Transparent) {
                     TopAppBar(
-                        color = barColor,
+                        color = Color.Transparent,
                         title = stringResource(R.string.module),
                         actions = {
                             Box {

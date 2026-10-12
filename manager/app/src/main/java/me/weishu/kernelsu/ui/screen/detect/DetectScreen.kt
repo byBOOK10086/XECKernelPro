@@ -39,6 +39,7 @@ import com.topjohnwu.superuser.ShellUtils
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
+import me.weishu.kernelsu.ui.design.island.IslandTopBar
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.design.token.XcNeon
 import me.weishu.kernelsu.ui.util.BlurredBar
@@ -209,9 +210,14 @@ private fun DetectPagerMiuix(
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            BlurredBar(backdrop) {
+            // 灵动岛：顶栏本身就是岛的展开态（无玻璃底）；上滑收缩成岛。
+            IslandTopBar(
+                islandTitle = stringResource(R.string.detection),
+                islandLive = null,
+                statusActive = me.weishu.kernelsu.Natives.isFullFeatured(),
+            ) {
                 TopAppBar(
-                    color = barColor,
+                    color = Color.Transparent,
                     title = stringResource(R.string.detection),
                     scrollBehavior = scrollBehavior,
                 )

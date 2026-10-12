@@ -602,4 +602,10 @@ XEC 项目组
     <string name="island_granted">%1$d 个已授权</string>
     <string name="island_modules_count">%1$d 个模块（%2$d 启用）</string>
 
+    <string name="terminal_tab_console">终端</string>
+    <string name="terminal_tab_files">文件</string>
+    <string name="terminal_files_empty">（空目录）</string>
+    <string name="terminal_files_loading">正在读取…</string>
+    <string name="terminal_parent_dir">上一级</string>
+
 </resources>

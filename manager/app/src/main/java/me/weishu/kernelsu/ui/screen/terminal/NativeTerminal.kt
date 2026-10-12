@@ -32,10 +32,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.InsertDriveFile
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,6 +49,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -281,6 +288,9 @@ fun TerminalScreen() {
     var historyIndex by remember { mutableIntStateOf(-1) }
     var running by remember { mutableStateOf(false) }
     var bootstrapped by remember { mutableStateOf(false) }
+    // 终端/文件 双面板（MT 管理器式）：filesStartDir 首次切到文件页时取会话 cwd。
+    var activeTab by remember { mutableStateOf(TerminalTab.CONSOLE) }
+    var filesStartDir by remember { mutableStateOf<String?>(null) }
     val scrollState = rememberScrollState()
     val clipboard = LocalClipboardManager.current
 
@@ -368,6 +378,28 @@ fun TerminalScreen() {
                 .padding(innerPadding)
                 .imePadding(),
         ) {
+            // 终端/文件 双面板切换条
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                QuickChip(
+                    label = stringResource(R.string.terminal_tab_console),
+                    selected = activeTab == TerminalTab.CONSOLE,
+                ) { activeTab = TerminalTab.CONSOLE }
+                QuickChip(
+                    label = stringResource(R.string.terminal_tab_files),
+                    selected = activeTab == TerminalTab.FILES,
+                ) {
+                    if (filesStartDir == null) filesStartDir = session.cwd.value
+                    activeTab = TerminalTab.FILES
+                }
+            }
+
+            if (activeTab == TerminalTab.CONSOLE) {
             // 输出台
             Card(
                 modifier = Modifier
@@ -478,6 +510,20 @@ fun TerminalScreen() {
                     )
                 }
             }
+            } else {
+                FilesPanel(
+                    session = session,
+                    startDir = filesStartDir ?: session.cwd.value,
+                    onOpenActions = { actionSheetPath = it },
+                    onOpenViewer = { p ->
+                        scope.launch {
+                            val (_, out) = session.run("head -c 200000 ${q(p)}")
+                            viewerTitle = p
+                            viewerText = out.joinToString("\n")
+                        }
+                    },
+                )
+            }
             Spacer(
                 Modifier.height(
                     WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
@@ -565,11 +611,19 @@ private fun completeInput(current: String, session: TerminalSession, apply: (Str
 }
 
 @Composable
-private fun QuickChip(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, onClick: () -> Unit) {
+private fun QuickChip(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    selected: Boolean = false,
+    onClick: () -> Unit,
+) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(colorScheme.surface.copy(alpha = 0.55f))
+            .background(
+                if (selected) colorScheme.primary.copy(alpha = 0.22f)
+                else colorScheme.surface.copy(alpha = 0.55f)
+            )
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -582,7 +636,11 @@ private fun QuickChip(label: String, icon: androidx.compose.ui.graphics.vector.I
                 Icon(it, contentDescription = null, modifier = Modifier.size(14.dp), tint = colorScheme.onSurfaceVariantSummary)
                 Spacer(Modifier.width(4.dp))
             }
-            Text(text = label, fontSize = 11.sp, color = colorScheme.onSurfaceVariantSummary)
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                color = if (selected) colorScheme.primary else colorScheme.onSurfaceVariantSummary,
+            )
         }
     }
 }
@@ -829,6 +887,207 @@ private fun OverlayDialogScaffold(onDismiss: () -> Unit, content: @Composable ()
             )) {
                 content()
             }
+        }
+    }
+}
+
+
+/* -------------------------------------------------------------------------
+ * 文件面板（MT 管理器式可视化文件管理）
+ *
+ * 与控制台共用同一个持久 shell 会话：列目录用 ls -1Ap（名字一行一个，目录
+ * 以 / 结尾），点目录进入、点文件用阅读器打开、长按出动作表（打开/执行/
+ * 删除/权限/复制路径——与控制台长按输出行共用同一套动作）。
+ * ---------------------------------------------------------------------- */
+
+private enum class TerminalTab { CONSOLE, FILES }
+
+private data class FileEntry(val name: String, val isDir: Boolean)
+
+private fun parentDirOf(path: String): String {
+    val trimmed = path.trimEnd('/')
+    val parent = trimmed.substringBeforeLast('/')
+    return parent.ifEmpty { "/" }
+}
+
+@Composable
+private fun FilesPanel(
+    session: TerminalSession,
+    startDir: String,
+    onOpenActions: (String) -> Unit,
+    onOpenViewer: (String) -> Unit,
+) {
+    var path by rememberSaveable { mutableStateOf(startDir) }
+    var entries by remember { mutableStateOf<List<FileEntry>?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var refreshToken by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(path, refreshToken) {
+        error = null
+        entries = null
+        val dir = path.trimEnd('/') + "/"
+        val (rc, out) = session.run("ls -1Ap ${q(dir)}")
+        if (rc != 0) {
+            error = out.firstOrNull { it.isNotBlank() } ?: "ls exited $rc"
+            entries = emptyList()
+        } else {
+            entries = out.filter { it.isNotBlank() }.map { line ->
+                if (line.endsWith("/")) FileEntry(line.trimEnd('/'), true)
+                else FileEntry(line, false)
+            }.sortedWith(
+                compareByDescending<FileEntry> { it.isDir }.thenBy { it.name.lowercase() }
+            )
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        // 路径栏：上一级 + 当前路径 + 刷新
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { path = parentDirOf(path) }) {
+                Icon(
+                    imageVector = Icons.Rounded.KeyboardArrowUp,
+                    contentDescription = stringResource(R.string.terminal_parent_dir),
+                    tint = colorScheme.onSurface,
+                )
+            }
+            Text(
+                text = path,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                color = colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = { refreshToken++ }) {
+                Icon(
+                    imageVector = Icons.Rounded.Refresh,
+                    contentDescription = null,
+                    tint = colorScheme.onSurface,
+                )
+            }
+        }
+
+        // 快捷跳转：root 管理器最常用的四个入口
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            listOf("/", "/data/adb", "/sdcard", "/data/local/tmp").forEach { jump ->
+                QuickChip(label = jump, selected = path == jump) { path = jump }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        Card(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .xGlassBody(backdrop = null, shape = Xc.shapes.md),
+            colors = CardDefaults.defaultColors(color = Color.Transparent),
+        ) {
+            val current = entries
+            when {
+                current == null -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(R.string.terminal_files_loading),
+                        fontSize = 12.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                    )
+                }
+
+                error != null -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = error ?: "",
+                        fontSize = 12.sp,
+                        color = Color(0xFFEF5350),
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+
+                current.isEmpty() -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(R.string.terminal_files_empty),
+                        fontSize = 12.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                    )
+                }
+
+                else -> LazyColumn(Modifier.fillMaxSize()) {
+                    items(current) { entry ->
+                        FileRow(
+                            entry = entry,
+                            dir = path,
+                            onOpen = { full ->
+                                if (entry.isDir) path = full else onOpenViewer(full)
+                            },
+                            onLongPress = onOpenActions,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FileRow(
+    entry: FileEntry,
+    dir: String,
+    onOpen: (String) -> Unit,
+    onLongPress: (String) -> Unit,
+) {
+    val full = dir.trimEnd('/') + "/" + entry.name
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { onOpen(full) },
+                onLongClick = { onLongPress(full) },
+            )
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Icon(
+            imageVector = if (entry.isDir) Icons.Rounded.Folder else Icons.Rounded.InsertDriveFile,
+            contentDescription = null,
+            tint = if (entry.isDir) Color(0xFFFFB300) else colorScheme.onSurfaceVariantSummary,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = entry.name,
+            fontSize = 13.sp,
+            color = colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (entry.isDir) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.Send,
+                contentDescription = null,
+                tint = Color.Transparent,
+                modifier = Modifier.size(14.dp),
+            )
         }
     }
 }

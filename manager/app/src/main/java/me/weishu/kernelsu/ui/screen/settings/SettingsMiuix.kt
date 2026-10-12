@@ -48,6 +48,7 @@ import me.weishu.kernelsu.ui.component.dialog.rememberLoadingDialog
 import me.weishu.kernelsu.ui.component.miuix.SendLogDialog
 import me.weishu.kernelsu.ui.component.uninstalldialog.UninstallDialog
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
+import me.weishu.kernelsu.ui.design.island.IslandTopBar
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.util.BlurredBar
@@ -88,9 +89,14 @@ fun SettingPagerMiuix(
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            BlurredBar(backdrop) {
+            // 灵动岛：顶栏本身就是岛的展开态（无玻璃底）；上滑收缩成岛。
+            IslandTopBar(
+                islandTitle = stringResource(R.string.settings),
+                islandLive = null,
+                statusActive = me.weishu.kernelsu.Natives.isFullFeatured(),
+            ) {
                 TopAppBar(
-                    color = barColor,
+                    color = Color.Transparent,
                     title = stringResource(R.string.settings),
                     scrollBehavior = scrollBehavior
                 )

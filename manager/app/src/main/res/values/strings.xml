@@ -613,4 +613,10 @@ See the log below for details.</string>
     <string name="island_granted">%1$d granted</string>
     <string name="island_modules_count">%1$d modules (%2$d on)</string>
 
+    <string name="terminal_tab_console">Console</string>
+    <string name="terminal_tab_files">Files</string>
+    <string name="terminal_files_empty">(empty directory)</string>
+    <string name="terminal_files_loading">Loading…</string>
+    <string name="terminal_parent_dir">Parent directory</string>
+
 </resources>

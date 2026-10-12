@@ -73,6 +73,7 @@ import me.weishu.kernelsu.ui.component.miuix.WarningCard
 import me.weishu.kernelsu.ui.component.rebootlistpopup.RebootListPopupMiuix
 import me.weishu.kernelsu.ui.component.statustag.StatusTag
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
+import me.weishu.kernelsu.ui.design.island.IslandTopBar
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.util.BlurredBar
@@ -111,8 +112,8 @@ fun HomePagerMiuix(
         containerColor = Color.Transparent,
         topBar = {
             TopBar(
+                state = state,
                 scrollBehavior = scrollBehavior,
-                backdrop = backdrop,
             )
         },
         popupHost = { },
@@ -261,15 +262,19 @@ private fun UpdateCard(
  */
 @Composable
 private fun TopBar(
+    state: HomeUiState,
     scrollBehavior: ScrollBehavior,
-    backdrop: LayerBackdrop?,
 ) {
-    BlurredBar(
-        backdrop = backdrop,
-        tint = Color.Transparent,
+    // 灵动岛：顶栏本身就是岛的展开态（无玻璃底）；上滑收缩成岛。
+    IslandTopBar(
+        islandTitle = stringResource(R.string.app_name),
+        islandLive = state.ksuVersion?.let {
+            stringResource(R.string.home_working_version, "$it-${state.kernelUAPIVersion}")
+        } ?: stringResource(R.string.island_not_working),
+        statusActive = state.ksuVersion != null,
     ) {
         TopAppBar(
-            // 栏底一律由上面那层玻璃画，这里再铺一层就把玻璃盖住了。
+            // 展开态没有玻璃底：透明浮在页面上。
             color = Color.Transparent,
             title = stringResource(R.string.app_name),
             titleColor = Xc.colors.text,
