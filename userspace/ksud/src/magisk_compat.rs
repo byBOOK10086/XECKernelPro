@@ -74,8 +74,8 @@ fn version_string() -> String {
 
 /// 入口：`magisk_main` 自己读环境里的 argv（和 `su`/`resetprop` 的多调用名分发一致）。
 pub fn magisk_main() -> Result<()> {
-    let argv: Vec<String> = std::env::args().collect();
-    let args = &argv[1..];
+    let invocation: Vec<String> = std::env::args().collect();
+    let args = &invocation[1..];
 
     // 无参数 → usage + 退出码 1（与 Magisk 一致）
     let Some(first) = args.first() else {
@@ -288,8 +288,8 @@ fn reboot_now() {
 /// `--unlock-blocks`：把 /dev/block/* 全部块设备解除只读。
 /// （Magisk 用它让后续写入不受"只读块设备"限制；失败只告警。）
 fn unlock_blocks() {
-    // BLKROSET = _IO(0x12, 93)
-    const BLKROSET: libc::c_ulong = 0x125d;
+    // BLKROSET = _IO(0x12, 93)。bionic 的 ioctl 第二参是 c_int（不是 c_ulong）。
+    const BLKROSET: libc::c_int = 0x125d;
 
     let Ok(entries) = std::fs::read_dir("/dev/block") else {
         eprintln!("! cannot read /dev/block");
