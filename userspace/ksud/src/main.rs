@@ -41,7 +41,11 @@ mod feature;
 // Upstream's ksu_config support: `feature.rs` imports `crate::feature_id`, and
 // `cli.rs` reaches `crate::soft_reboot`, so both must be declared here even
 // though this file is otherwise our side of the merge.
-#[cfg(target_os = "android")]
+//
+// feature_id 不能跟着 feature 一起 gate 在 android：boot_patch.rs（host 上也要
+// 编，见 module 头注释 "which also runs on the host"）无条件 import 它，gate 住
+// 就会让 aarch64-unknown-linux-musl / apple-darwin / windows-gnu 三条 host 构建
+// 全部 E0432（clippy 那次 CI 的 build-ksud-extra 就是死在这）。
 mod feature_id;
 #[cfg(target_os = "android")]
 mod init_event;

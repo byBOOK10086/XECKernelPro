@@ -285,7 +285,10 @@ jobs:
           fi
 
       - name: Upload build artifact
-        if: ${{ github.event_name == 'pull_request' || (github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) || github.ref_type == 'tag' }}
+        # workflow_dispatch 也要上传：repack-manager 依赖这个 artifact，手动
+        # dispatch（本项目主线是 fresh-main，push 触发器根本不会命中）时旧的
+        # 条件会把上传跳过，下游直接 "Artifact not found for name: manager-gradle"。
+        if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref_type == 'tag' }}
         uses: actions/upload-artifact@v7
         with:
           name: manager-gradle
