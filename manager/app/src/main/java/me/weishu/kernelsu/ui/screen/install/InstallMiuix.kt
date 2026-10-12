@@ -352,7 +352,12 @@ private fun SelectInstallMethod(
             val gated = option is InstallMethod.AnyKernel ||
                     option is InstallMethod.DirectInstall ||
                     option is InstallMethod.DirectInstallToInactiveSlot
-            val blockedReason = state.gatedInstallBlockedReason.takeIf { gated }
+            val blockedReason = when {
+                // KernelPatch 的不可用原因是「本 APK 没带 kptools 载荷」，与 root/GKI 无关
+                option is InstallMethod.KernelPatch -> state.kernelPatchBlockedReason
+                gated -> state.gatedInstallBlockedReason
+                else -> null
+            }
             val available = blockedReason == null
             val interactionSource = remember { MutableInteractionSource() }
             Row(

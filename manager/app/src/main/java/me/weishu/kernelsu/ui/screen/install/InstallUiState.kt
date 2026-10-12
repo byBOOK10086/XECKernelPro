@@ -23,6 +23,14 @@ internal data class InstallUiState(
      * 原因落到 summary 上，并渲染成不可用状态。
      */
     val gatedInstallBlockedReason: String?,
+    /**
+     * KernelPatch（<5.10 非 GKI）那项为什么不可用；`null` 表示可用。
+     *
+     * 与 [gatedInstallBlockedReason] 同理：这一项只在非 GKI 设备上才出现，但如果
+     * 这个 APK 根本没打包 kptools 载荷（管理器单独构建的工作流不下这个载荷），
+     * 就要把原因摆到 summary 上并禁用，而不是让用户点到一半才失败。
+     */
+    val kernelPatchBlockedReason: String?,
     val canSelectPartition: Boolean,
     val advancedOptionsShown: Boolean,
     val allowShell: Boolean,

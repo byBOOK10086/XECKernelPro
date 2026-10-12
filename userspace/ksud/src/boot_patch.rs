@@ -20,7 +20,7 @@ use crate::assets;
 use crate::feature_id::{FeatureId, parse_feature_id};
 
 #[cfg(target_os = "android")]
-mod android {
+pub(crate) mod android {
     use super::Result;
     pub(super) use crate::defs::{BACKUP_FILENAME, KSU_BACKUP_DIR, KSU_BACKUP_FILE_PREFIX};
     use crate::defs::{DEFAULT_PACKAGE_NAME, KSU_TEMP_BACKUP_DIR_NAME};

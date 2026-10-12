@@ -71,6 +71,12 @@ fun InstallScreen() {
     val rootAvailable by produceState<Boolean?>(initialValue = null) { value = rootAvailable() }
     val isAbDevice by produceState(initialValue = false) { value = isAbDevice() }
     val isGkiDevice by produceState<Boolean?>(initialValue = null) { value = getKernelVersion().isGKI() }
+    // KernelPatch 载荷是否真的随这个 APK 打包（kptools 在 nativeLibraryDir 里）。
+    // 发版工作流会下载并校验 sha256；管理器单独构建的工作流（build-manager.yml）不会。
+    // 不探测就会在 5.10 以下设备上给出一个「点了必失败」的入口。
+    val kpatchAvailable by produceState<Boolean?>(initialValue = null) {
+        value = runCatching { KPatch.available(context) }.getOrDefault(false)
+    }
 
     val selectFileTip = stringResource(id = R.string.select_file_tip, defaultPartition)
     val selectFileTipNoGki = stringResource(id = R.string.select_file_tip_nogki)
@@ -78,6 +84,7 @@ fun InstallScreen() {
     val downloadFileMsg = stringResource(id = R.string.download_dialog_msg)
     val anyKernelTip = stringResource(id = R.string.install_anykernel_tip)
     val kernelPatchTip = stringResource(id = R.string.kernel_patch_summary)
+    val kernelPatchUnavailableTip = stringResource(id = R.string.kernel_patch_unavailable)
     val installRequiresRoot = stringResource(id = R.string.install_requires_root)
     val installRequiresGki = stringResource(id = R.string.install_requires_gki)
     // kpatch 补丁成品（cache 内），等待用户选保存位置。
@@ -95,9 +102,13 @@ fun InstallScreen() {
         isGkiDevice == false -> installRequiresGki
         else -> null
     }
+    // KernelPatch 路线只在非 GKI（<5.10）设备上出现；出现了但 APK 里没有 kptools
+    // （载荷缺失）时把原因写到 summary 上并禁用，而不是让用户点到一半才失败。
+    val kernelPatchBlockedReason: String? =
+        if (isGkiDevice == false && kpatchAvailable == false) kernelPatchUnavailableTip else null
     // `isGkiDevice` 必须留在 key 里：探测完成时它从 null 变成 true/false，
     // 下面 SelectFile 的 summary 要跟着从「非 GKI」提示换成 GKI 提示。
-    val installMethodOptions = remember(isAbDevice, isGkiDevice, selectFileTip, selectFileTipNoGki, selectFileKpmTip, downloadFileMsg, anyKernelTip, kernelPatchTip) {
+    val installMethodOptions = remember(isAbDevice, isGkiDevice, kpatchAvailable, kernelPatchBlockedReason, selectFileTip, selectFileTipNoGki, selectFileKpmTip, downloadFileMsg, anyKernelTip, kernelPatchTip) {
         buildList {
             add(InstallMethod.SelectFile(summary = if (isGkiDevice == true) selectFileTip else selectFileTipNoGki))
             add(InstallMethod.SelectFileForKpm(summary = selectFileKpmTip))
@@ -109,7 +120,7 @@ fun InstallScreen() {
             // 自动检测内核匹配刷写方案：非 GKI（<5.10）内核才出现 KernelPatch
             // 路线（kptools + kpimg 打 boot.img）；GKI 设备继续走上面的直刷。
             if (isGkiDevice == false) {
-                add(InstallMethod.KernelPatch(summary = kernelPatchTip))
+                add(InstallMethod.KernelPatch(summary = kernelPatchBlockedReason ?: kernelPatchTip))
             }
         }
     }
@@ -301,6 +312,7 @@ fun InstallScreen() {
         slotSuffix = slotSuffix,
         installMethodOptions = installMethodOptions,
         gatedInstallBlockedReason = gatedInstallBlockedReason,
+        kernelPatchBlockedReason = kernelPatchBlockedReason,
         canSelectPartition = installMethod is InstallMethod.DirectInstall ||
             installMethod is InstallMethod.DirectInstallToInactiveSlot ||
             installMethod is InstallMethod.DownloadFile,

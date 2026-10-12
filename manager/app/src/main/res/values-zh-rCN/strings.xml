@@ -567,7 +567,8 @@ XEC 项目组
 
     <!-- KernelPatch 路线（5.10 以下内核） -->
     <string name="kernel_patch_install">内核补丁（5.10 以下的内核）</string>
-    <string name="kernel_patch_summary">用 kptools 把 kpimg 打进 boot 镜像，补丁后的镜像用 fastboot/recovery 手动刷入；模块以 system 挂载（5.10 以下的内核）方式生效。</string>
+    <string name="kernel_patch_summary">用 kptools 把 kpimg 打进 boot 镜像；补丁后的镜像需自行用 fastboot/recovery 刷入。注意：本管理器只负责产出镜像，不含 APatch/Magisk 的模块挂载与模块仓库，模块加载仍由 KernelSU/KPM 侧负责。</string>
+    <string name="kernel_patch_unavailable">本 APK 未内置 kptools 载荷（该构建未包含 KernelPatch 二进制），无法打内核补丁。</string>
     <string name="kernel_patch_failed">内核补丁失败：%1$s</string>
     <string name="kernel_patch_saved">补丁后的 boot 镜像已保存。请刷入 boot 分区后重启。</string>
     <string name="home_working_kpatch">内核补丁（5.10 以下的内核）</string>

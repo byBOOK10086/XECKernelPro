@@ -311,10 +311,14 @@ private fun StatusCard(
                         append(" [${stringResource(id = R.string.jailbreak_mode)}]")
                     }
                 }
-                // <5.10 内核走 KernelPatch 路线（ftruncate supercall + system
-                // 挂载），状态卡模式名换成对应用法；GKI 设备维持 LKM/GKI 口径。
+                // <5.10 内核走 KernelPatch 注入路线（kpimg + ftruncate supercall），
+                // 状态卡模式名换成对应用法；GKI 设备维持 LKM/GKI 口径。
+                // （本管理器不实现 Magisk/APatch 那套模块挂载，模块加载仍由
+                //  KernelSU/KPM 侧负责。）
+                // 顺序要紧：HomeViewModel 里 lkmMode 只在 GKI 设备上取值（非 GKI 恒为
+                // null），非 GKI 判断必须排在 lkmMode == null 之前，否则
+                // home_working_kpatch 永远显示不出来。
                 val workingMode = when {
-                    state.lkmMode == null -> null
                     !getKernelVersion().isGKI() -> stringResource(R.string.home_working_kpatch)
                     state.lkmMode == true -> "LKM"
                     else -> "GKI"

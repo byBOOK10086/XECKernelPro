@@ -23,6 +23,7 @@ import me.weishu.kernelsu.core.tasks.ExtractImage
 import me.weishu.kernelsu.core.tasks.ProbeResult
 import me.weishu.kernelsu.core.utils.DataSourceChannel
 import me.weishu.kernelsu.ksuApp
+import me.weishu.kernelsu.getKernelVersion
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import java.io.File
@@ -523,6 +524,16 @@ fun embedKpm(
     onStderr: (String) -> Unit,
 ): FlashResult {
     // 一键嵌入：对当前 boot 分区直接打 KPatch-Next 补丁并写回，无需外部 boot 文件或 fastboot。
+    // 但 kpimg 只服务 5.10 以下（非 GKI）内核：GKI 设备上已经有内置 KSU 与 LKM 两条
+    // 受支持的安装路线，拿 kpimg 覆盖 boot 分区等于顶掉一个可用的安装。ksud 侧
+    // （kpm_patch.rs 的 ensure_non_gki_kernel）也会再拦一次，这里先给出一句人话。
+    val kernelVersion = runCatching { getKernelVersion() }.getOrNull()
+    if (kernelVersion != null && kernelVersion.isGKI()) {
+        val msg = "KernelPatch embedding only supports non-GKI kernels below 5.10 " +
+                "(running kernel $kernelVersion); use the built-in KSU GKI kernel or the LKM route instead."
+        onStderr(msg)
+        return FlashResult(-1, msg, false)
+    }
     val cmd = "${getKsuDaemonPath()} boot-patch-kpm --flash"
     val result = flashWithIO(cmd, onStdout, onStderr)
     Log.i("XECKernelPro", "embed kpm result: ${result.isSuccess}")

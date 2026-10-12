@@ -146,6 +146,7 @@ pub fn patch_kpm_bytes(boot_data: &[u8]) -> Result<Vec<u8>> {
 /// fastboot is required — only a reboot afterwards.
 #[cfg(target_os = "android")]
 fn patch_kpm_flash() -> Result<()> {
+    ensure_non_gki_kernel()?;
     let slot = crate::boot_patch::get_slot_suffix(false);
     let partition = format!("/dev/block/by-name/boot{slot}");
     println!("- Patching live boot partition: {partition}");
@@ -154,6 +155,28 @@ fn patch_kpm_flash() -> Result<()> {
     println!("- Flashing patched boot back to {partition}");
     crate::boot_patch::flash_partition(&partition, &repacked)?;
     println!("- KPatch-Next embedded successfully. Reboot to take effect.");
+    Ok(())
+}
+
+/// KPatch-Next（kpimg）只服务 5.10 以下的非 GKI 内核。
+///
+/// 在这条路线上直接写回 boot 分区是破坏性操作：GKI 设备上我们已经有两个受支持
+/// 的安装方式（内置 KSU 的 GKI 内核、LKM 的 kernelsu.ko），拿 kpimg 覆盖 boot
+/// 分区等于顶掉一个可用的安装，而且本仓库并没有随之提供 APatch/KernelPatch 的
+/// 用户态工具链（模块挂载、superkey 客户端），刷完是“换了内核但没人管”的状态。
+/// 所以这里对齐 boot_patch.rs 的 `ensure_gki_kernel`，反向硬拦。
+#[cfg(target_os = "android")]
+fn ensure_non_gki_kernel() -> Result<()> {
+    let version = crate::boot_patch::android::get_kernel_version()?;
+    let is_gki = version.0 == 5 && version.1 >= 10 || version.2 > 5;
+    ensure!(
+        !is_gki,
+        "KPatch/KernelPatch embedding only supports non-GKI kernels below 5.10 (running kernel {}.{}.{}); \
+         use the built-in KSU GKI kernel or the LKM install route instead",
+        version.0,
+        version.1,
+        version.2
+    );
     Ok(())
 }
 
