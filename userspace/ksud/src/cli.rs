@@ -745,15 +745,35 @@ pub fn run() -> Result<()> {
         Commands::RootMode { json } => {
             let mode = crate::root_mode::current();
             let (major, minor, patch) = crate::root_mode::kernel_version()?;
+            // 两侧闸门各试一次：这就是"这台设备现在到底能走哪条路"的直接证据。
+            // 必需：mount 那一路的判定曾经带上补丁号，4 系内核在这里永远是 false
+            // （4.19.200 → 误判 GKI → 一键嵌入 KPatch 被自己拒掉）。
+            let kernel_state_ok = crate::root_mode::ensure_kernel_state("探测").is_ok();
+            let mount_state_ok = crate::root_mode::ensure_mount_state("探测").is_ok();
             if json {
                 println!("mode={}", mode.as_str());
                 println!("kernel={major}.{minor}.{patch}");
                 println!("gki={}", crate::root_mode::is_gki_kernel());
+                println!("kernel_state_ok={kernel_state_ok}");
+                println!("mount_state_ok={mount_state_ok}");
             } else {
                 println!("{}", mode.describe());
                 println!(
                     "内核版本 {major}.{minor}.{patch}（GKI={}）",
                     crate::root_mode::is_gki_kernel()
+                );
+                println!(
+                    "可用路线：内核态={} · 挂载态={}（KernelPatch 一键嵌入 / kpimg）",
+                    if kernel_state_ok {
+                        "可用"
+                    } else {
+                        "不可用"
+                    },
+                    if mount_state_ok {
+                        "可用"
+                    } else {
+                        "不可用"
+                    },
                 );
                 println!(
                     "互斥规则：5.10+ 只走内核态（内置 KSU / LKM），5.10 以下只走挂载态（KernelPatch + 挂载），不会共存"

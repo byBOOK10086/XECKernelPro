@@ -19,9 +19,15 @@ pub fn kernel_version() -> Result<(i32, i32, i32)> {
     crate::boot_patch::android::get_kernel_version()
 }
 
+/// 与 kernel/ 和 manager（`Kernels.kt::isGKI`）严格同一个式子：**只看 major.minor**。
+/// 5.10+ 或 6.x 视为 GKI，其余（含 4.x 与 5.0~5.9）都归挂载态区间。
+///
+/// 这里曾经多带一个 `|| patch > 5`（补丁号 > 5）：`4.19.200` 这类**所有** 4 系内核都会
+/// 被误判成 GKI，于是"5.1 以下内核一键嵌入 KPatch"被自己的闸门拒掉 —— 4 系内核拿不到
+/// root 的根因就是这一句。补丁号和 GKI 没有任何关系，判定绝不能带上它。
 pub fn is_gki_kernel() -> bool {
     match kernel_version() {
-        Ok((major, minor, patch)) => (major == 5 && minor >= 10) || major > 5 || patch > 5,
+        Ok((major, minor, _patch)) => (major == 5 && minor >= 10) || major > 5,
         // 版本读不出来时按"内核态"处理：宁可不给挂载态开闸（挂载态是破坏性写 boot）
         Err(_) => true,
     }
