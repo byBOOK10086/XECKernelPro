@@ -38,7 +38,7 @@ config KSU_DISABLE_POLICY
 menu "KernelSU - SUSFS"
 config KSU_SUSFS
 	bool "KernelSU addon - SUSFS"
-	depends on KSU
+	depends on KSU=y
 	depends on THREAD_INFO_IN_TASK
 	default n
 	help
@@ -49,8 +49,14 @@ config KSU_SUSFS
 	  entirely in the base kernel, and the hook entry points
 	  (fs/exec.c, fs/stat.c, kernel/reboot.c, ...) patched in by 50_
 	  call the ksu_handle_* handlers gated by this option.
-	  Only meaningful for built-in (CONFIG_KSU=y) GKI builds; the
-	  susfs symbols are not exported to modules.
+
+	  Built-in only. KSU is a tristate, so this must pin '=y':
+	  with CONFIG_KSU=m this tree would be compiled as a module against
+	  base-kernel susfs_* / ksu_* symbols that carry no EXPORT_SYMBOL
+	  (and against <linux/susfs.h>, which only exists after 50_ is
+	  applied), i.e. an unloadable module or a hard compile error.
+	  SUSFS is delivered exclusively as the built-in GKI kernel from
+	  .github/workflows/build-susfs-gki.yml.
 
 config KSU_SUSFS_SUS_PATH
 	bool "Enable to hide suspicious path"

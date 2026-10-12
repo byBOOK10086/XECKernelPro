@@ -553,6 +553,11 @@ enum Susfs {
         /// kernel version string
         version: String,
     },
+    /// Spoof /proc/bootconfig (GKI) or /proc/cmdline (non-GKI) from a file
+    SetCmdlineOrBootconfig {
+        /// path to the fake cmdline/bootconfig file (< 8 KiB)
+        path: String,
+    },
     /// Enable or disable SUSFS kernel log
     EnableLog {
         /// 0 to disable, 1 to enable
@@ -1053,6 +1058,7 @@ pub fn run() -> Result<()> {
                 Ok(())
             }
             Susfs::SetUname { release, version } => susfs::set_uname(&release, &version),
+            Susfs::SetCmdlineOrBootconfig { path } => susfs::set_cmdline_or_bootconfig(&path),
             Susfs::EnableLog { enabled } => susfs::enable_log(enabled != 0),
             Susfs::EnableAvcLogSpoofing { enabled } => susfs::enable_avc_log_spoofing(enabled != 0),
             Susfs::HideSusMntsForNonSuProcs { enabled } => {

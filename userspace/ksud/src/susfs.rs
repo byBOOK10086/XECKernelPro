@@ -10,6 +10,7 @@ const SUSFS_MAX_VERSION_BUFSIZE: usize = 16;
 const SUSFS_ENABLED_FEATURES_SIZE: usize = 8192;
 const SUSFS_MAX_VARIANT_BUFSIZE: usize = 16;
 const SUSFS_MAX_LEN_PATHNAME: usize = 256;
+const SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE: usize = 8192;
 const ERR_CMD_NOT_SUPPORTED: i32 = 126;
 const KSU_INSTALL_MAGIC1: u32 = 0xDEADBEEF;
 const CMD_SUSFS_SHOW_VERSION: u32 = 0x555e1;
@@ -23,6 +24,7 @@ const CMD_SUSFS_SET_UNAME: u32 = 0x55590;
 const CMD_SUSFS_ENABLE_LOG: u32 = 0x555a0;
 const CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING: u32 = 0x60010;
 const CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS: u32 = 0x55561;
+const CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG: u32 = 0x555b0;
 const CMD_SUSFS_ADD_OPEN_REDIRECT: u32 = 0x555c0;
 const CMD_SUSFS_ADD_SUS_PATH: u32 = 0x55550;
 const CMD_SUSFS_ADD_SUS_PATH_LOOP: u32 = 0x55553;
@@ -77,6 +79,14 @@ struct SusfsVariant {
 struct SusfsUname {
     release: [u8; 65],
     version: [u8; 65],
+    err: i32,
+}
+
+/// SUSFS v2.3.0 `struct st_susfs_spoof_cmdline_or_bootconfig`：定长 8 KiB 文本
+/// 缓冲 + err。内核侧 `susfs_set_cmdline_or_bootconfig()` 直接按这个布局读。
+#[repr(C)]
+struct SusfsFakeCmdline {
+    fake_cmdline_or_bootconfig: [u8; SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE],
     err: i32,
 }
 
@@ -261,6 +271,50 @@ pub fn set_uname(release: &str, version: &str) -> anyhow::Result<()> {
 
     if cmd.err != 0 {
         anyhow::bail!("Failed to set uname: err={}", cmd.err);
+    }
+    Ok(())
+}
+
+/// 用 `path` 文件的内容伪装 /proc/bootconfig（GKI）或 /proc/cmdline（非 GKI）。
+///
+/// 与上游 `ksu_susfs set_cmdline_or_bootconfig </path/to/file>` 同语义：参数是
+/// 文件路径，内核拷贝一份定长 8 KiB 的 NUL 填充缓冲。缺了这个 verb，
+/// CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG 在管理器/模块脚本里就没有任何
+/// 调用入口（内核路由早在 supercall/dispatch.c 里，等于只做了一半）。
+pub fn set_cmdline_or_bootconfig(path: &str) -> anyhow::Result<()> {
+    let content = std::fs::read(path)
+        .map_err(|e| anyhow::anyhow!("cannot read fake cmdline/bootconfig file {path}: {e}"))?;
+    if content.is_empty() {
+        anyhow::bail!("fake cmdline/bootconfig file is empty: {path}");
+    }
+    if content.len() >= SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE {
+        anyhow::bail!(
+            "fake cmdline/bootconfig too long: {} bytes (max {})",
+            content.len(),
+            SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE - 1
+        );
+    }
+
+    // 与同文件的 SusfsFeatures（同样 8 KiB）保持同一写法：CLI 跑在主线程，
+    // 默认 8 MiB 栈，8 KiB 缓冲放栈上没问题
+    let mut cmd = SusfsFakeCmdline {
+        fake_cmdline_or_bootconfig: [0; SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE],
+        err: ERR_CMD_NOT_SUPPORTED,
+    };
+    cmd.fake_cmdline_or_bootconfig[..content.len()].copy_from_slice(&content);
+
+    unsafe {
+        libc::syscall(
+            SYS_reboot,
+            KSU_INSTALL_MAGIC1,
+            SUSFS_MAGIC,
+            CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG,
+            &mut cmd,
+        )
+    };
+
+    if cmd.err != 0 {
+        anyhow::bail!("Failed to set cmdline_or_bootconfig: err={}", cmd.err);
     }
     Ok(())
 }

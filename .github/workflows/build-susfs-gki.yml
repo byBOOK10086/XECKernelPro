@@ -48,6 +48,11 @@ on:
         required: false
         default: ''
         type: string
+      susfs_sha:
+        description: 'susfs4ksu 提交 SHA（留空用下表按 KMI 固定的版本；填了就覆盖它）'
+        required: false
+        default: ''
+        type: string
       boot_img_url:
         description: '官方 GKI boot.img 直链（可选；留空只产出 Image.gz）'
         required: false
@@ -79,32 +84,86 @@ jobs:
           KDIR="/opt/ddk/src/$KMI"
           [ -d "$KDIR" ] || { echo "::error::GKI source missing at $KDIR"; exit 1; }
 
-          git clone --depth=50 "https://gitlab.com/simonpunk/susfs4ksu.git" -b "$BRANCH" /tmp/susfs \
-            || git clone --depth=50 "https://github.com/ShirkNeko/susfs4ksu" -b "$BRANCH" /tmp/susfs
+          # 上游提交必须固定：内核侧的 SUSFS ABI（SUSFS_VERSION、st_susfs_* 结构体
+          # 布局、CMD_SUSFS_* 集合）和本仓库用户态 ksud 的 verb 集合是一一对应的，
+          # 跟着分支头跑 = 上游一改就是一次静默的功能错配（甚至结构体错位）。
+          # 下表是 2026-10-12 用 GitLab API 解析出的各 KMI 分支尖端；要尝鲜就用
+          # susfs_sha 输入覆盖（susfs_branch 单独使用时按“打到分支头+告警”处理）。
+          case "$KMI" in
+            android12-5.10) PINNED_SHA=13e7da018ddd41341b9d6ab1b279f4e712789d9e ;;
+            android13-5.10) PINNED_SHA=2837d10b68bacbd7f06758d301237e8f8b363adb ;;
+            android13-5.15) PINNED_SHA=138a6641afd25fb04f803361232c44ef2e033e61 ;;
+            android14-5.15) PINNED_SHA=1f88baa37858183a45c62ad5aea315f27b3a8fc1 ;;
+            android14-6.1)  PINNED_SHA=17dc6b683b26e036242bfcfe86b33c5982590237 ;;
+            android15-6.6)  PINNED_SHA=a0f9c59e2243f8a5db955f4ad1686d5e0ad26e1a ;;
+            android16-6.12) PINNED_SHA=b213c54126fb243595ce7876e91d84d6e0861fec ;;
+            *) PINNED_SHA="" ;;
+          esac
+          WANT_SHA="${{ inputs.susfs_sha }}"
+          if [ -z "$WANT_SHA" ] && [ -n "${{ inputs.susfs_branch }}" ]; then
+            # 显式点了分支名：尊重选择，但把“没固定”这件事喊出来
+            echo "::warning::susfs_branch=$BRANCH given without susfs_sha: building the branch tip, not a pinned commit"
+            PINNED_SHA=""
+          fi
+          [ -n "$WANT_SHA" ] || WANT_SHA="$PINNED_SHA"
+
+          rm -rf /tmp/susfs
+          git clone --depth=200 "https://gitlab.com/simonpunk/susfs4ksu.git" -b "$BRANCH" /tmp/susfs \
+            || git clone --depth=200 "https://github.com/ShirkNeko/susfs4ksu" -b "$BRANCH" /tmp/susfs
+
+          SUSFS_SHA=$(git -C /tmp/susfs rev-parse HEAD)
+          if [ -n "$WANT_SHA" ] && [ "$SUSFS_SHA" != "$WANT_SHA" ]; then
+            git -C /tmp/susfs fetch --depth=200 origin "$WANT_SHA" >/dev/null 2>&1 || true
+            git -C /tmp/susfs checkout -q FETCH_HEAD >/dev/null 2>&1 || true
+            SUSFS_SHA=$(git -C /tmp/susfs rev-parse HEAD)
+          fi
+          # 固定不成 → 停下来说清楚，不降级到分支头：内核 ABI 与用户态 verb 必须
+          # 一一对应，静默换版本比构建失败危险得多。
+          if [ -n "$WANT_SHA" ] && [ "$SUSFS_SHA" != "$WANT_SHA" ]; then
+            echo "::error::susfs4ksu $WANT_SHA unreachable on $BRANCH (got $SUSFS_SHA); re-pin the KMI table in this workflow or pass susfs_sha"
+            exit 1
+          fi
+          echo "SUSFS_SOURCE_SHA=$SUSFS_SHA" >> "$GITHUB_ENV"
+          echo "susfs4ksu source: $BRANCH @ $SUSFS_SHA"
 
           # susfs4ksu 的补丁布局：50_add_susfs_in_gki-<KMI>.patch 只改既有文件
           # 的挂钩点；fs/susfs.c 与 include/linux/susfs*.h 是裸拷贝的新文件
           cp /tmp/susfs/kernel_patches/fs/* "$KDIR/fs/"
           cp /tmp/susfs/kernel_patches/include/linux/* "$KDIR/include/linux/"
-          PATCH_FILE=$(ls /tmp/susfs/kernel_patches/50_add_susfs_in_gki-$KMI*.patch | head -n1)
-          [ -f "$PATCH_FILE" ] || { echo "::error::susfs patch for $KMI not found"; exit 1; }
+
+          # 精确取本次 KMI 的补丁名；只有在上游改过命名时才退回通配符，且必须
+          # 唯一命中 —— 以前用 `ls ... | head -n1`，多命中时会静默挑第一个。
+          PATCH_DIR=/tmp/susfs/kernel_patches
+          PATCH_FILE="$PATCH_DIR/50_add_susfs_in_gki-$KMI.patch"
+          if [ ! -f "$PATCH_FILE" ]; then
+            CAND=$(find "$PATCH_DIR" -maxdepth 1 -name "50_add_susfs_in_gki-$KMI*.patch" | sort)
+            N=$(printf '%s\n' "$CAND" | grep -c . || true)
+            if [ "$N" != "1" ]; then
+              echo "::error::expected exactly one 50_add_susfs patch for $KMI, found $N"
+              ls -la "$PATCH_DIR" || true
+              exit 1
+            fi
+            PATCH_FILE="$CAND"
+          fi
 
           cd "$KDIR"
           # ddk-min 镜像里的 GKI 源码树自带历史残留的 .rej/.orig（实测
           # android15-6.6 镜像含 mm/rmap.c.rej，与 susfs 补丁无关）。先清掉，
           # 让下面的检查只对本次补丁产生的拒绝负责。
-          find . -name '*.rej' -o -name '*.orig' | head -20 | xargs -r rm -f
+          # 这里不能用 `find ... | head -20 | xargs rm`：残留超过 20 个就清不干净，
+          # 后面的检查会把镜像自带垃圾算到本次补丁头上（假失败）。
+          find . \( -name '*.rej' -o -name '*.orig' \) -delete
           patch -p1 < "$PATCH_FILE"
           # patch 在 set -e 下 hunk 失败会直接非零退出；这里兜底再扫一遍
-          # 新产生的 .rej，输出里能看到是哪段
-          REJS=$(find . -name '*.rej' | head -20)
-          if [ -n "$REJS" ]; then
+          # 新产生的 .rej，输出全部命中文件（不截断）
+          FIRST_REJ=$(find . -name '*.rej' -print -quit)
+          if [ -n "$FIRST_REJ" ]; then
             echo "::error::susfs patch has rejects for $KMI"
-            echo "$REJS"
+            find . -name '*.rej' -print
             exit 1
           fi
           [ -f fs/susfs.c ] || { echo "::error::fs/susfs.c missing after patch"; exit 1; }
-          echo "SUSFS patches applied to $KDIR ($(grep -m1 'SUSFS_VERSION' include/linux/susfs.h))"
+          echo "SUSFS patches applied to $KDIR ($(grep -m1 'SUSFS_VERSION' include/linux/susfs.h)) from $SUSFS_SHA"
 
       - name: Integrate XECKernel Pro (built-in KSU)
         run: |
@@ -186,10 +245,18 @@ jobs:
             exit $BUILD_RC
           fi
 
-          # 内置 KSU + SUSFS 路由必须真的在 vmlinux 里（LKM 断言的 built-in 版）
+          # 内置 KSU + SUSFS 路由必须真的在 vmlinux 里（LKM 断言的 built-in 版）。
+          # 每项都对应本工作流强制打开的一个开关：开关被 scripts/config 认下、
+          # 断言也过了，却没有符号 = 该 feature 的胶水没编进来（“配置到位但功能
+          # 空转”的经典形态），必须在这里就断掉。
           NM=$(command -v llvm-nm || command -v nm)
           for SYM in ksu_handle_sys_reboot ksu_handle_setresuid ksu_handle_vfs_fstat \
-                     susfs_add_sus_path susfs_show_version; do
+                     ksu_handle_execveat ksu_handle_input_handle_event \
+                     susfs_init susfs_show_version susfs_show_variant \
+                     susfs_add_sus_path susfs_add_sus_kstat susfs_set_uname \
+                     susfs_enable_log susfs_set_hide_sus_mnts_for_non_su_procs \
+                     susfs_set_cmdline_or_bootconfig susfs_add_open_redirect \
+                     susfs_add_sus_map; do
             "$NM" "$ODIR/vmlinux" | grep -q " $SYM$" || {
               echo "::error::symbol $SYM missing from vmlinux (KSU/SUSFS integration broken)"
               exit 1
@@ -197,8 +264,43 @@ jobs:
           done
           echo "=== KSU/SUSFS symbols verified in vmlinux ==="
 
+          # 产物本身也要验：arm64 引导头魔数在偏移 56（"ARM\x64" = 0x644d5241，
+          # 小端字节序 41 52 4d 64），Image.gz 必须是 gzip 且解出来还是 arm64
+          # Image。只验符号不验镜像的话，一个半截/错架构的 Image.gz 也能“通过”。
+          IMG="$ODIR/arch/arm64/boot/Image"
+          IMGZ="$ODIR/arch/arm64/boot/Image.gz"
+          [ -f "$IMG" ] || { echo "::error::arch/arm64/boot/Image missing"; exit 1; }
+          [ -f "$IMGZ" ] || { echo "::error::arch/arm64/boot/Image.gz missing"; exit 1; }
+          python3 - "$IMG" "$IMGZ" <<'PY'
+          import gzip, os, struct, sys
+
+          img, imgz = sys.argv[1], sys.argv[2]
+          head = open(img, 'rb').read(64)
+          if len(head) < 60:
+              sys.exit('Image too small: %d bytes' % len(head))
+          magic = struct.unpack_from('<I', head, 56)[0]
+          if magic != 0x644d5241:
+              sys.exit('Image lacks the arm64 boot magic at offset 56: 0x%08x' % magic)
+          with open(imgz, 'rb') as fh:
+              if fh.read(2) != b'\x1f\x8b':
+                  sys.exit('Image.gz is not a gzip stream')
+          inner = gzip.open(imgz, 'rb').read(64)
+          if len(inner) < 60 or struct.unpack_from('<I', inner, 56)[0] != 0x644d5241:
+              sys.exit('Image.gz does not decompress to an arm64 Image')
+          print('arm64 Image magic OK (Image %d bytes, Image.gz %d bytes)'
+                % (os.path.getsize(img), os.path.getsize(imgz)))
+          PY
+
           mkdir -p /github/workspace/out
           cp "$ODIR/arch/arm64/boot/Image.gz" "/github/workspace/out/Image.gz-$KMI"
+          {
+            echo "kmi=$KMI"
+            echo "susfs4ksu_commit=$SUSFS_SOURCE_SHA"
+            echo "susfs_source=$KDIR/include/linux/susfs.h"
+            grep -m1 'SUSFS_VERSION' "$KDIR/include/linux/susfs.h" || true
+            echo "ksu_source=$GITHUB_SHA"
+          } > "/github/workspace/out/susfs-source-$KMI.txt"
+          cat "/github/workspace/out/susfs-source-$KMI.txt"
           ls -la /github/workspace/out/
 
       # 默认产出可刷的 AnyKernel3 卡刷包：只替换 boot 分区里的内核、保留设备
@@ -258,8 +360,30 @@ jobs:
           fi
 
           ui_print " " "XECPro SUSFS GKI kernel installed." "Reboot to apply."
+          ui_print " " "IMPORTANT: open the XECKernel Pro manager after booting."
+          ui_print " " "SUSFS needs its userspace daemon, which is not in this zip."
           SCRIPT
           rm -rf .git README.md banner
+          # 这份说明是给“刷完就以为 SUSFS 生效了”的用户看的：AK3 只换内核，
+          # 守护/模块要靠管理器装。同时把本次构建的来源写清楚，便于回溯。
+          cat > READ-ME-FIRST.txt <<NOTE
+          XECPro SUSFS GKI kernel (KMI: $KMI)
+
+          这个 zip 只做一件事：把 boot 分区里的内核换成「内置 XECKernel Pro(KSU)
+          + SUSFS」的内核。ramdisk 与数据分区保持设备原样。
+
+          刷完必须做的一步（否则 SUSFS 等于没开）：
+            开机后打开 XECKernel Pro 管理器，让它完成用户态守护（xudc）与模块安装。
+            SUSFS/KSU 的用户态客户端不在本 zip 里；守护没装上，内核侧的隐藏 hook
+            就没有调用者，SUSFS 的隐藏能力一项都不会生效。
+
+          本次构建来源：
+            内核源码提交: $GITHUB_SHA
+            SUSFS 上游:   simonpunk/susfs4ksu @ $SUSFS_SOURCE_SHA（本工作流按 KMI 固定）
+            详细清单随 Release 提供：susfs-source-$KMI.txt
+
+          想回退：重刷官方 boot.img 即可，本包不改动其它分区。
+          NOTE
           # ddk 容器不带 zip 命令，用 python3 的 zipfile 打包（boot 重打包步骤同源）
           python3 - /github/workspace/out "XECPro-SUSFS-GKI-$KMI-AnyKernel3.zip" <<'PY'
           import os, sys, zipfile
@@ -353,6 +477,17 @@ jobs:
           name: susfs-gki-${{ inputs.kmi }}
           path: out
 
+      - name: Show what the kernel was built from
+        run: |
+          set -e
+          cat out/susfs-source-*.txt
+          {
+            echo "### SUSFS GKI ${{ inputs.kmi }}"
+            echo '```'
+            cat out/susfs-source-*.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Publish prerelease with the flashable kernel
         uses: softprops/action-gh-release@v3
         with:
@@ -365,7 +500,9 @@ jobs:
 
             - `XECPro-SUSFS-GKI-*-AnyKernel3.zip`：卡刷包。只替换 boot 分区里的内核、
               保留设备原 ramdisk（`split_boot`/`flash_boot`，GKI 2.0 白名单校验非 GKI 直接中止），
-              管理器或任意 Recovery 都能刷，刷完重启生效。
+              管理器或任意 Recovery 都能刷，刷完重启生效。包内 `READ-ME-FIRST.txt` 说明：
+              **刷完要打开管理器完成用户态守护（xudc）安装，SUSFS 才有调用者**。
             - `Image.gz-*`：裸内核镜像，供自行打包或管理器的 GKI 内核安装流程使用。
+            - `susfs-source-*.txt`：本次内核的真实来源（KSU 提交 + 固定的 susfs4ksu 提交 + SUSFS 版本）。
             - 若本次填了 `boot_img_url`，另附 `boot-susfs-*.img`（`fastboot flash boot`）。
           files: out/*
