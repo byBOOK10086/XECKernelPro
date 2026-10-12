@@ -93,6 +93,15 @@ mod android {
 #[allow(unused)]
 pub const VERSION_CODE: &str = env!("VERSION_CODE");
 pub const VERSION_NAME: &str = env!("VERSION_NAME");
+
+/// Magisk 兼容层对外报的版本与版本码。
+///
+/// **必须与 `installer.sh` 里的 `MAGISK_VER` / `MAGISK_VER_CODE` 一致**：模块用
+/// `magisk -V` 做版本门限，安装器用环境变量，两边不一致会让模块判断自相矛盾。
+/// `_scratch/run_all_checks.sh` 里有一条守卫在盯这个等式。
+pub const MAGISK_COMPAT_VER: &str = "25.2";
+pub const MAGISK_COMPAT_VER_CODE: &str = "25200";
+
 #[cfg(target_os = "android")]
 pub const FULL_VERSION: &str = const_format::formatcp!(
     "{VERSION_NAME} (uapi: {})",

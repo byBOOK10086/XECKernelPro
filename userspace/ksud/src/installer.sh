@@ -317,6 +317,14 @@ mark_remove() {
   chmod 644 $1
 }
 
+# REPLACE="..." 声明的目录：整体替换而非与真机目录合并（magic mount 语义）。
+# 以前这里调了一个**根本没定义**的 mark_replace，模块一旦用 REPLACE 就会
+# "mark_replace: not found" 直接失败。
+mark_replace() {
+  [ -d "$1" ] || return 0
+  mktouch "$1/.replace"
+}
+
 request_size_check() {
   reqSizeM=`du -ms "$1" | cut -f1`
 }

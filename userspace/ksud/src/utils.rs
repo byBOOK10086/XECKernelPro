@@ -227,7 +227,12 @@ pub fn has_magisk() -> bool {
 /// module pipeline - built-in modules, and therefore Zygisk, included - on
 /// devices that never ran Magisk, so require Magisk's own data dir as well.
 pub fn has_magisk_installed() -> bool {
-    PathBuf::from(defs::ADB_DIR).join("magisk").exists() && has_magisk()
+    let dir = PathBuf::from(defs::ADB_DIR).join("magisk");
+    // 我们自己的 Magisk 兼容层也会占用这个目录（第三方模块安装器硬门禁要求
+    // /data/adb/magisk/util_functions.sh 存在），所以先看有没有兼容层标记：
+    // 有 .xecpro-compat 说明这是我们的垫片，不是真的 Magisk 安装 —— 否则一旦
+    // 造出这个目录，模块流水线会被自己跳过（自锁）。
+    dir.exists() && !dir.join(".xecpro-compat").exists() && has_magisk()
 }
 
 // Mirror the daemon onto every path a KernelSU-aware consumer may probe.
@@ -279,7 +284,11 @@ fn link_ksud_to_bin() -> Result<()> {
 /// to reporting "no KernelSU". The boot path calls this before any module script
 /// runs so the official layout is guaranteed to be in place first.
 pub fn refresh_daemon_links() -> Result<()> {
-    link_ksud_to_bin()
+    link_ksud_to_bin()?;
+    // Magisk 兼容调用名：模块脚本普遍 `command -v magisk` 探测，并在命中时
+    // `MAGISTMP=$(magisk --path)`；缺了这个符号链接，MAGISTMP 会变成空串，
+    // 于是脚本里的 `$MAGISTMP/xxx` 落到根目录。详见 magisk_compat.rs。
+    crate::magisk_compat::ensure_magisk_cli_links()
 }
 
 pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Result<()> {

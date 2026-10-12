@@ -716,6 +716,12 @@ pub fn run() -> Result<()> {
         crate::resetprop::resetprop_main(&all_args)
     }
 
+    // Magisk 兼容调用名：模块脚本里的 `magisk --path` / `magisk -V` /
+    // `magisk --install-module` / `magisk su` 都从这里进来。
+    if arg0 == "magisk" || arg0.ends_with("/magisk") {
+        return crate::magisk_compat::magisk_main();
+    }
+
     let cli = Args::parse();
 
     log::info!("command: {:?}", cli.command);

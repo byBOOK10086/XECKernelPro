@@ -67,6 +67,10 @@ mod lkm_image;
 mod lkm_image_btf;
 #[cfg(target_os = "android")]
 mod magica;
+// Magisk 兼容层的 CLI（`magisk` 这个调用名）：脚本里 `magisk --path`/`-V`/
+// `--install-module` 等全靠它，缺了会让 `MAGISTMP=$(magisk --path)` 变空串。
+#[cfg(target_os = "android")]
+mod magisk_compat;
 #[cfg(target_os = "android")]
 mod metamodule;
 #[cfg(target_os = "android")]
