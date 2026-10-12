@@ -202,17 +202,12 @@ fn copy_overlay(from: &Path, to: &Path, applied: &mut usize) -> Result<(), Strin
             copy_overlay(&src, &dst, applied)?;
         } else {
             let data = fs::read(&src).map_err(|e| format!("读 {}: {e}", src.display()))?;
-            let is_rc = name.to_string_lossy().ends_with(".rc");
-            if is_rc && dst.exists() {
-                // 追加而不是覆盖：原 rc 里的启动项一个都不能丢
-                if let Ok(mut file) = fs::OpenOptions::new().append(true).open(&dst) {
-                    let header = format!("\n# ---- 由 xecinit 追加（{}）----\n", src.display());
-                    let _ = file.write_all(header.as_bytes());
-                    file.write_all(&data)
-                        .map_err(|e| format!("追加 {}: {e}", dst.display()))?;
-                    *applied += 1;
-                    continue;
-                }
+            // `*.rc` 一律**追加到 /init.rc**：init 只读 init.rc 和它 include 的文件，
+            // 在根上单独放 xecpro.rc 是不会被执行到的（Magisk 的 overlay.d 也是这个语义）。
+            if name.to_string_lossy().ends_with(".rc") {
+                append_to_init_rc(&src, &data)?;
+                *applied += 1;
+                continue;
             }
             if let Some(parent) = dst.parent() {
                 let _ = fs::create_dir_all(parent);
@@ -221,6 +216,27 @@ fn copy_overlay(from: &Path, to: &Path, applied: &mut usize) -> Result<(), Strin
             *applied += 1;
         }
     }
+    Ok(())
+}
+
+/// 把一段 rc 追加到 `/init.rc`（不存在就创建）。原 rc 里的启动项一个都不能丢，
+/// 所以只能是追加，不能覆盖。
+fn append_to_init_rc(src: &Path, data: &[u8]) -> Result<(), String> {
+    let target = Path::new("/init.rc");
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(target)
+        .map_err(|e| format!("打开 {}: {e}", target.display()))?;
+    let header = format!("\n# ---- xecinit: 来自 {} ----\n", src.display());
+    file.write_all(header.as_bytes())
+        .map_err(|e| format!("写 {}: {e}", target.display()))?;
+    file.write_all(data)
+        .map_err(|e| format!("追加 {}: {e}", target.display()))?;
+    if !data.ends_with(b"\n") {
+        let _ = file.write_all(b"\n");
+    }
+    kinfo!("已把 {} 追加到 /init.rc（{} 字节）", src.display(), data.len());
     Ok(())
 }
 
