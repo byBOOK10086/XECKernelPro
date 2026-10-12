@@ -14,14 +14,14 @@
 //!    普通文件 bind），再把模块文件放进 worker，最后把整个 worker 目录 bind 到真实路径；
 //! 4. 非 tmpfs 分支：直接把模块文件 bind 到真实路径；
 //! 5. 模块文件的属主/权限/扩展属性（含 `security.selinux`）在收集阶段从**真实目标**克隆过来，
-//!    否则 SELinux 会拒绝访问（这一步漏了，症状是"文件挂上了但打不开"）。
+//!    否则 `SELinux` 会拒绝访问（这一步漏了，症状是"文件挂上了但打不开"）。
 //!
 //! worker 镜像目录必须落在 tmpfs 上（默认 `/dev/.xecpro_magic`），不能放 `/data`：
 //! `/data` 还没准备好、而且会被 init 的 mount 追踪污染。
 
 use std::path::PathBuf;
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 
 #[cfg(target_os = "android")]
 mod imp {
@@ -50,8 +50,8 @@ mod imp {
     }
 
     impl Paths {
-        fn join(&self, name: &OsStr) -> Paths {
-            Paths {
+        fn join(&self, name: &OsStr) -> Self {
+            Self {
                 real: self.real.join(name),
                 worker: self.worker.join(name),
             }
@@ -59,28 +59,22 @@ mod imp {
     }
 
     enum FsNode {
-        Directory {
-            children: BTreeMap<OsString, FsNode>,
-        },
-        File {
-            src: PathBuf,
-        },
-        Symlink {
-            target: PathBuf,
-        },
+        Directory { children: BTreeMap<OsString, Self> },
+        File { src: PathBuf },
+        Symlink { target: PathBuf },
         Whiteout,
     }
 
     impl FsNode {
-        fn new_dir() -> FsNode {
-            FsNode::Directory {
+        const fn new_dir() -> Self {
+            Self::Directory {
                 children: BTreeMap::new(),
             }
         }
 
         /// 把一个模块目录收进节点树。`src` 是模块内该层目录，`rel` 是它对应的真实路径（`/` 起）。
         fn collect(&mut self, src: &Path, rel: &Path) -> Result<()> {
-            let FsNode::Directory { children } = self else {
+            let Self::Directory { children } = self else {
                 return Ok(());
             };
             let Ok(dir) = fs::read_dir(src) else {
@@ -97,25 +91,25 @@ mod imp {
                 if file_type.is_dir() {
                     children
                         .entry(name)
-                        .or_insert_with(FsNode::new_dir)
+                        .or_insert_with(Self::new_dir)
                         .collect(&child_src, &child_rel)?;
                 } else if file_type.is_symlink() {
                     let target = fs::read_link(&child_src)?;
                     if let Some(slot) = children.get_mut(&name)
-                        && let FsNode::Directory { .. } = slot
+                        && let Self::Directory { .. } = slot
                     {
                         continue; // 目录不能被后面的模块顶成链接
                     }
-                    children.insert(name, FsNode::Symlink { target });
+                    children.insert(name, Self::Symlink { target });
                 } else if is_whiteout(&meta) {
-                    children.insert(name, FsNode::Whiteout);
+                    children.insert(name, Self::Whiteout);
                 } else {
-                    let real = root_join(&child_rel);
-                    if real.exists() {
+                    let real_path = root_join(&child_rel);
+                    if real_path.exists() {
                         // 克隆真实目标的属主/权限/标签：sdcardfs/SELinux 认这个
-                        let _ = clone_attr(&real, &child_src);
+                        let _ = clone_attr(&real_path, &child_src);
                     }
-                    children.insert(name, FsNode::File { src: child_src });
+                    children.insert(name, Self::File { src: child_src });
                 }
             }
             Ok(())
@@ -124,20 +118,21 @@ mod imp {
         /// 这个节点的父目录是否必须换成 tmpfs（Magisk `parent_should_be_tmpfs`）。
         fn parent_should_be_tmpfs(&self, target: &Path) -> bool {
             match self {
-                FsNode::Directory { .. } | FsNode::File { .. } => {
-                    match fs::symlink_metadata(target) {
-                        Ok(meta) => meta.file_type().is_symlink(),
-                        Err(_) => true, // 目标不存在
-                    }
+                Self::Directory { .. } | Self::File { .. } => {
+                    fs::symlink_metadata(target).map_or(true, |meta| meta.file_type().is_symlink())
                 }
                 _ => true, // 符号链接 / whiteout 都不能直接 bind
             }
         }
 
         /// 提交一个节点。`is_root_dir` = 顶层分区（模块想在顶层放不可支持的东西时只警告不中止）。
-        fn commit(&mut self, paths: Paths, is_root_dir: bool) -> Result<()> {
+        ///
+        /// 每个分支都以 `Ok(())` 结尾是刻意的：这里做的是**副作用**（挂载/建目录），
+        /// 把尾表达式提出来反而看不出每个分支各自成功/跳过的语义，故显式放行该 lint。
+        #[allow(clippy::branches_sharing_code)]
+        fn commit(&mut self, paths: &Paths, is_root_dir: bool) -> Result<()> {
             match self {
-                FsNode::Directory { children } => {
+                Self::Directory { children } => {
                     let mut need_tmpfs = false;
                     children.retain(|name, node| {
                         if name == OsStr::new(".replace") {
@@ -163,7 +158,7 @@ mod imp {
                     });
 
                     if need_tmpfs {
-                        self.commit_tmpfs(paths.clone())?;
+                        self.commit_tmpfs(paths)?;
                         // worker 里放好之后，整棵搬（bind --rec）到真实路径
                         bind_mount(&paths.worker, &paths.real, true).with_context(|| {
                             format!(
@@ -175,19 +170,19 @@ mod imp {
                         info!("magic mount: {} <- tmpfs(worker)", paths.real.display());
                     } else {
                         for (name, node) in children.iter_mut() {
-                            node.commit(paths.join(name), false)?;
+                            node.commit(&paths.join(name), false)?;
                         }
                     }
                     Ok(())
                 }
-                FsNode::File { src } => {
+                Self::File { src } => {
                     bind_mount(src, &paths.real, false).with_context(|| {
                         format!("mount {} <- {}", paths.real.display(), src.display())
                     })?;
                     info!("magic mount: {} <- {}", paths.real.display(), src.display());
                     Ok(())
                 }
-                FsNode::Symlink { .. } | FsNode::Whiteout => {
+                Self::Symlink { .. } | Self::Whiteout => {
                     // 这两种必须走 tmpfs 分支；能走到这里说明父目录判定漏了
                     warn!("{} 需要 tmpfs 父目录，已跳过", paths.real.display());
                     Ok(())
@@ -196,9 +191,12 @@ mod imp {
         }
 
         /// tmpfs 分支：把真实目录镜像进 worker，再把模块内容放进 worker。
-        fn commit_tmpfs(&mut self, paths: Paths) -> Result<()> {
+        ///
+        /// 同 `commit`：分支尾都是 `Ok(())` 是副作用语义使然，显式放行该 lint。
+        #[allow(clippy::branches_sharing_code)]
+        fn commit_tmpfs(&mut self, paths: &Paths) -> Result<()> {
             match self {
-                FsNode::Directory { children } => {
+                Self::Directory { children } => {
                     fs::create_dir_all(&paths.worker)
                         .with_context(|| format!("mkdir {}", paths.worker.display()))?;
                     if paths.real.exists() {
@@ -208,17 +206,17 @@ mod imp {
                     }
 
                     // `.replace`：只放模块自己的内容，**不做镜像**
-                    if let Some(FsNode::File { src }) = children.remove(OsStr::new(".replace"))
+                    if let Some(Self::File { src }) = children.remove(OsStr::new(".replace"))
                         && let Some(module_dir) = src.parent()
                     {
                         for (name, node) in children.iter_mut() {
                             let child = paths.join(name);
                             match node {
-                                FsNode::Directory { .. } => {
+                                Self::Directory { .. } => {
                                     let from = module_dir.join(name);
                                     mount_dummy("replace", &from, &child.worker, true)?;
                                 }
-                                _ => node.commit_tmpfs(child)?,
+                                _ => node.commit_tmpfs(&child)?,
                             }
                         }
                         info!("magic mount: {} <- replace", paths.real.display());
@@ -239,10 +237,10 @@ mod imp {
                             if meta.file_type().is_dir() {
                                 // 不能直接把真实目录 bind 成镜像：init 会追踪这些 mount
                                 // 导致卸载/重挂异常，只能递归镜像。
-                                FsNode::new_dir().commit_tmpfs(child)?;
+                                Self::new_dir().commit_tmpfs(&child)?;
                             } else if meta.file_type().is_symlink() {
                                 let target = fs::read_link(entry.path())?;
-                                FsNode::Symlink { target }.commit_tmpfs(child)?;
+                                Self::Symlink { target }.commit_tmpfs(&child)?;
                             } else {
                                 mount_dummy("mirror", &entry.path(), &child.worker, false)?;
                             }
@@ -250,15 +248,15 @@ mod imp {
                     }
 
                     for (name, node) in children.iter_mut() {
-                        node.commit_tmpfs(paths.join(name))?;
+                        node.commit_tmpfs(&paths.join(name))?;
                     }
                     Ok(())
                 }
-                FsNode::File { src } => {
+                Self::File { src } => {
                     mount_dummy("mount", src, &paths.worker, false)?;
                     Ok(())
                 }
-                FsNode::Symlink { target } => {
+                Self::Symlink { target } => {
                     if paths.worker.exists() {
                         let _ = fs::remove_file(&paths.worker);
                     }
@@ -280,7 +278,7 @@ mod imp {
                     );
                     Ok(())
                 }
-                FsNode::Whiteout => {
+                Self::Whiteout => {
                     // 不往 worker 里放东西 = 真实文件在这个目录里"消失"（这就是删除语义）
                     info!("magic mount: {} <- (whiteout/删除)", paths.real.display());
                     Ok(())
@@ -343,7 +341,7 @@ mod imp {
     fn clone_attr(src: &Path, dst: &Path) -> Result<()> {
         let meta = fs::symlink_metadata(src)?;
         let _ = fs::set_permissions(dst, fs::Permissions::from_mode(meta.mode() & 0o7777));
-        if let (Ok(src_c), Ok(dst_c)) = (cpath(src), cpath(dst)) {
+        if let Ok(dst_c) = cpath(dst) {
             unsafe {
                 libc::lchown(dst_c.as_ptr(), meta.uid(), meta.gid());
             }
@@ -362,7 +360,7 @@ mod imp {
         if size <= 0 {
             return Ok(Vec::new());
         }
-        let mut buf = vec![0u8; size as usize];
+        let mut buf = vec![0u8; size.cast_unsigned()];
         let n = unsafe {
             libc::llistxattr(
                 c.as_ptr(),
@@ -373,7 +371,7 @@ mod imp {
         if n <= 0 {
             return Ok(Vec::new());
         }
-        buf.truncate(n as usize);
+        buf.truncate(n.cast_unsigned());
         Ok(buf
             .split(|b| *b == 0)
             .filter(|s| !s.is_empty())
@@ -387,7 +385,7 @@ mod imp {
         if size < 0 {
             return Ok(None);
         }
-        let mut buf = vec![0u8; size as usize];
+        let mut buf = vec![0u8; size.cast_unsigned()];
         let n = unsafe {
             libc::lgetxattr(
                 c.as_ptr(),
@@ -399,7 +397,7 @@ mod imp {
         if n < 0 {
             return Ok(None);
         }
-        buf.truncate(n as usize);
+        buf.truncate(n.cast_unsigned());
         Ok(Some(buf))
     }
 
@@ -421,6 +419,11 @@ mod imp {
     /// 挂载所有启用模块。返回参与挂载的模块名（按处理顺序）。
     ///
     /// `work_root` 必须在 tmpfs 上（默认 `/dev/.xecpro_magic`）。
+    ///
+    /// # Errors
+    ///
+    /// 模块目录读不了、worker 目录建不出来、或任一次 bind/mount 系统调用失败时返回错误；
+    /// 单个模块内部的问题（读不到的条目等）只跳过并记日志，不影响其它模块。
     pub fn mount_modules(work_root: &Path) -> Result<Vec<String>> {
         let mut modules = Vec::new();
         let mut root = FsNode::new_dir();
@@ -481,15 +484,16 @@ mod imp {
             real: PathBuf::from("/"),
             worker: work_root.to_path_buf(),
         };
-        root.commit(paths, true)?;
+        root.commit(&paths, true)?;
         Ok(modules)
     }
 }
 
-#[cfg(target_os = "android")]
-pub use imp::mount_modules;
-
 /// 调试/内部入口：`xudc magic-mount [--work DIR] [--dry-run]`。
+///
+/// # Errors
+///
+/// 枚举模块目录失败、或挂载失败时返回错误；非 Android 目标直接返回错误（不静默成功）。
 pub fn cli_magic_mount(work: Option<PathBuf>, dry_run: bool) -> Result<()> {
     #[cfg(target_os = "android")]
     {
@@ -525,6 +529,6 @@ pub fn cli_magic_mount(work: Option<PathBuf>, dry_run: bool) -> Result<()> {
     #[cfg(not(target_os = "android"))]
     {
         let _ = (work, dry_run);
-        bail!("magic mount 只能在 Android 上运行")
+        anyhow::bail!("magic mount 只能在 Android 上运行")
     }
 }
