@@ -131,6 +131,7 @@ import top.yukonga.miuix.kmp.icon.extended.HorizontalSplit
 import top.yukonga.miuix.kmp.icon.extended.Link
 import top.yukonga.miuix.kmp.icon.extended.Sort
 import top.yukonga.miuix.kmp.icon.extended.TopDownloads
+import top.yukonga.miuix.kmp.icon.extended.UploadCloud
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.PressFeedbackType

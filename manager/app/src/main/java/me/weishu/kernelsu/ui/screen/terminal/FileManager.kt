@@ -1187,18 +1187,20 @@ internal fun FileManagerPanel(startDir: String, onOpenTerminal: (String) -> Unit
             }
             val mime = fmMimeOf(entry.name)
             if (view) {
-                val direct = Intent(Intent.ACTION_VIEW)
-                    .setDataAndType(uri, mime)
-                    .setClipData(ClipData.newRawUri(entry.name, uri))
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                val direct = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, mime)
+                    setClipData(ClipData.newRawUri(entry.name, uri))
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
                 grantToReceivers(uri, direct)
                 if (runCatching { context.startActivity(direct) }.isSuccess) return@launch
             }
-            val send = Intent(Intent.ACTION_SEND)
-                .setType(mime)
-                .putExtra(Intent.EXTRA_STREAM, uri)
-                .setClipData(ClipData.newRawUri(entry.name, uri))
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                setType(mime)
+                putExtra(Intent.EXTRA_STREAM, uri)
+                setClipData(ClipData.newRawUri(entry.name, uri))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
             grantToReceivers(uri, send)
             val chooser = Intent.createChooser(send, entry.name)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -1263,10 +1265,11 @@ internal fun FileManagerPanel(startDir: String, onOpenTerminal: (String) -> Unit
                 info = text(R.string.terminal_fm_op_failed, it.message ?: "fileprovider")
                 return@launch
             }
-            val intent = Intent(Intent.ACTION_VIEW)
-                .setDataAndType(uri, "application/vnd.android.package-archive")
-                .setClipData(ClipData.newRawUri(entry.name, uri))
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                setClipData(ClipData.newRawUri(entry.name, uri))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
             grantToReceivers(uri, intent)
             runCatching { context.startActivity(intent) }
                 .onFailure { info = text(R.string.terminal_fm_op_failed, it.message ?: "no installer") }
