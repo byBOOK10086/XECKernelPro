@@ -489,6 +489,9 @@ mod imp {
     }
 }
 
+#[cfg(target_os = "android")]
+pub use imp::mount_modules;
+
 /// 调试/内部入口：`xudc magic-mount [--work DIR] [--dry-run]`。
 ///
 /// # Errors

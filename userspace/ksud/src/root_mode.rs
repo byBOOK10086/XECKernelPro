@@ -37,7 +37,7 @@ pub fn is_gki_kernel() -> bool {
 pub enum RootMode {
     /// 内核态：内置 KSU / LKM，5.10+
     KernelState,
-    /// 挂载态：kpimg 注入 + 挂载，<5.10
+    /// 挂载态：ramdisk/KPatch 注入 + magic mount 挂模块，<5.10
     MountState,
 }
 

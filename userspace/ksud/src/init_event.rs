@@ -204,15 +204,43 @@ pub fn on_post_fs_data() -> Result<()> {
         warn!("load system.prop failed: {e}");
     }
 
-    // execute metamodule mount script
-    if let Err(e) = metamodule::exec_mount_script(module_dir) {
-        warn!("execute metamodule mount failed: {e}");
+    // execute metamodule mount script；没装 metamodule 时退到内置 magic mount 引擎
+    if metamodule::has_metamodule() {
+        if let Err(e) = metamodule::exec_mount_script(module_dir) {
+            warn!("execute metamodule mount failed: {e}");
+        }
+    } else if let Err(e) = mount_modules_magic_fallback() {
+        warn!("magic mount failed: {e}");
     }
 
     run_stage("post-mount", wait);
 
     std::env::set_current_dir("/").with_context(|| "failed to chdir to /")?;
 
+    Ok(())
+}
+
+/// 没有 metamodule 时的兜底：用内置 magic mount 引擎把 `/data/adb/modules/*` 映射到真实根
+/// （Magisk 同款算法，见 `magic_mount.rs`）。挂上之后要通知内核，否则非 root 应用的
+/// umount 逻辑不知道模块已经挂载 —— metamodule 的 mount 脚本做的也是这一句。
+#[cfg(target_os = "android")]
+fn mount_modules_magic_fallback() -> Result<()> {
+    let mounted = crate::magic_mount::mount_modules(Path::new(defs::MAGIC_WORK_DIR))?;
+    if mounted.is_empty() {
+        info!("magic mount: 没有需要挂载的模块");
+        return Ok(());
+    }
+    info!(
+        "magic mount: 已挂载 {} 个模块: {}",
+        mounted.len(),
+        mounted.join(", ")
+    );
+    ksucalls::report_module_mounted();
+    Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+fn mount_modules_magic_fallback() -> Result<()> {
     Ok(())
 }
 
