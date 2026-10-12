@@ -55,8 +55,11 @@ jobs:
   build-ksuinit:
     uses: ./.github/workflows/ksuinit.yml
 
+  build-xecinit:
+    uses: ./.github/workflows/xecinit.yml
+
   build-ksud:
-    needs: [build-lkm, build-ksuinit]
+    needs: [build-lkm, build-ksuinit, build-xecinit]
     strategy:
       matrix:
         include:
@@ -67,6 +70,7 @@ jobs:
       target: ${{ matrix.target }}
       pack_lkm: true
       pack_ksuinit: true
+      pack_xecinit: true
 
   build-manager:
     needs: [generate-key]

@@ -13,6 +13,10 @@ on:
         required: false
         type: boolean
         default: false
+      pack_xecinit:
+        required: false
+        type: boolean
+        default: false
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -37,6 +41,15 @@ jobs:
         mv ksuinit-x86_64/ksuinit ./userspace/ksud/bin/x86_64/
         mv ksuinit-riscv64/ksuinit ./userspace/ksud/bin/riscv64/
         
+    # ramdisk init 载荷（<5.10 挂载态 root）：必须在 cargo build 之前放进
+    # bin/aarch64/，rust-embed 是在编译期把 bin/ 打进 xudc 的。
+    - name: Prepare xecinit
+      if: ${{ inputs.pack_xecinit }}
+      run: |
+        mv xecinit-aarch64/xecinit ./userspace/ksud/bin/aarch64/xecinit
+        chmod 0755 ./userspace/ksud/bin/aarch64/xecinit
+        ls -l ./userspace/ksud/bin/aarch64/xecinit
+
     - name: Setup rustup
       run: |
         if [ "${{ inputs.target }}" = riscv64-linux-android ]; then

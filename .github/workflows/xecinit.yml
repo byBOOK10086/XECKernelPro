@@ -1,0 +1,57 @@
+name: Build xecinit
+
+# 静态构建 ramdisk init 载荷（<5.10 挂载态 root 的 /init）。
+# 与 ksuinit 同样的静态链接方式：+crt-static + NDK 的 clang_rt.builtins。
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: false
+        type: string
+        default: ubuntu-latest
+
+jobs:
+  build:
+    runs-on: ${{ inputs.os }}
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+
+    - name: Setup rustup
+      run: |
+        rustup update stable
+        rustup target add aarch64-linux-android
+
+    - uses: nttld/setup-ndk@v1
+      id: setup-ndk
+      with:
+        ndk-version: r29
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: . -> target
+        cache-targets: false
+
+    - name: Build xecinit (aarch64, static)
+      env:
+        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+      run: |
+        source .github/scripts/setup-rust-build.sh aarch64-linux-android 26
+        BUILTINS="$($CLANG_PATH --print-resource-dir)/lib/linux/libclang_rt.builtins-aarch64-android.a"
+        test -f "$BUILTINS"
+        export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wno-unused-command-line-argument -C link-arg=$BUILTINS"
+        cargo build --package xecinit --target=aarch64-linux-android --release
+        file target/aarch64-linux-android/release/xecinit
+        # 必须真的是静态的：ramdisk 阶段没有动态链接器
+        if readelf -d target/aarch64-linux-android/release/xecinit 2>/dev/null | grep -q NEEDED; then
+          echo "::error::xecinit 不是静态链接，ramdisk 里跑不起来"
+          exit 1
+        fi
+        echo "static ok"
+
+    - name: Upload xecinit artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: xecinit-aarch64
+        path: target/aarch64-linux-android/release/xecinit
