@@ -139,6 +139,10 @@ enum Commands {
     #[cfg(target_arch = "aarch64")]
     BootPatchKpm(BootPatchKpmArgs),
 
+    /// 给 boot 镜像的 ramdisk 注入 xecinit（<5.10 挂载态 root）
+    #[cfg(target_arch = "aarch64")]
+    RamdiskPatch(crate::ramdisk_patch::RamdiskPatchArgs),
+
     /// 内部/自检：用 magic mount 方式把 /data/adb/modules 挂到系统上
     #[command(name = "magic-mount", hide = true)]
     MagicMount {
@@ -1063,6 +1067,8 @@ pub fn run() -> Result<()> {
         Commands::BootPatchV2(patch) => crate::lkm_image::patch_boot(&patch),
         #[cfg(target_arch = "aarch64")]
         Commands::BootPatchKpm(kpm_args) => crate::kpm_patch::patch_kpm(&kpm_args),
+        #[cfg(target_arch = "aarch64")]
+        Commands::RamdiskPatch(args) => crate::ramdisk_patch::patch_ramdisk(&args),
         Commands::MagicMount { work, dry_run } => {
             crate::magic_mount::cli_magic_mount(work, dry_run)
         }

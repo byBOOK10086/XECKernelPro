@@ -23,9 +23,9 @@ use std::path::Path;
 
 use crate::{kerror, kinfo, kwarn};
 
-/// 原 init 与配置的存放处（与 Magisk 的 `.backup` 同布局，方便互相识别/回滚）。
-const BACKUP_DIR: &str = "/.backup";
-const BACKUP_INIT: &str = "/.backup/init";
+/// 注入器把原 init 备份在这个名字下（**ramdisk 根**，不放子目录：cpio 的目录语义
+/// 各家实现不一致，平铺最稳）。名字与 `ramdisk_patch.rs` 里的常量必须一致。
+const BACKUP_INIT: &str = "/.xecpro_init";
 /// 覆盖层：注入进 ramdisk 的 `overlay.d/`，运行时合并到根。
 const OVERLAY_DIR: &str = "/overlay.d";
 
@@ -238,7 +238,6 @@ fn hand_off(argv: &[std::ffi::CString]) -> Result<(), String> {
         fs::rename(backup, init).map_err(|e| format!("还原 {BACKUP_INIT} -> /init 失败：{e}"))?;
         kinfo!("已还原真 init（{BACKUP_INIT}）");
     } else {
-        let _ = fs::remove_dir_all(BACKUP_DIR);
         std::os::unix::fs::symlink("/system/bin/init", init)
             .map_err(|e| format!("/init -> /system/bin/init 失败：{e}"))?;
         kinfo!("ramdisk 里没有原 init 备份，/init 软链到 /system/bin/init");
