@@ -47,8 +47,9 @@ jobs:
       if: ${{ inputs.pack_xecinit }}
       run: |
         mv xecinit-aarch64/xecinit ./userspace/ksud/bin/aarch64/xecinit
-        chmod 0755 ./userspace/ksud/bin/aarch64/xecinit
-        ls -l ./userspace/ksud/bin/aarch64/xecinit
+        mv xecsu-aarch64/xecsu ./userspace/ksud/bin/aarch64/xecsu
+        chmod 0755 ./userspace/ksud/bin/aarch64/xecinit ./userspace/ksud/bin/aarch64/xecsu
+        ls -l ./userspace/ksud/bin/aarch64/xecinit ./userspace/ksud/bin/aarch64/xecsu
 
     - name: Setup rustup
       run: |

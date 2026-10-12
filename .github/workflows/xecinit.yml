@@ -1,4 +1,4 @@
-name: Build xecinit
+name: Build root payloads (xecinit / xecsu)
 
 # 静态构建 ramdisk init 载荷（<5.10 挂载态 root 的 /init）。
 # 与 ksuinit 同样的静态链接方式：+crt-static + NDK 的 clang_rt.builtins。
@@ -55,3 +55,24 @@ jobs:
       with:
         name: xecinit-aarch64
         path: target/aarch64-linux-android/release/xecinit
+
+    # su 垫片：同样静态，它会被 magic mount 挂到 /system/bin/su。
+    - name: Build xecsu (aarch64, static)
+      env:
+        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+      run: |
+        source .github/scripts/setup-rust-build.sh aarch64-linux-android 26
+        BUILTINS="$($CLANG_PATH --print-resource-dir)/lib/linux/libclang_rt.builtins-aarch64-android.a"
+        test -f "$BUILTINS"
+        export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wno-unused-command-line-argument -C link-arg=$BUILTINS"
+        cargo build --package xecsu --target=aarch64-linux-android --release
+        if readelf -d target/aarch64-linux-android/release/xecsu 2>/dev/null | grep -q NEEDED; then
+          echo "::error::xecsu 不是静态链接"
+          exit 1
+        fi
+
+    - name: Upload xecsu artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: xecsu-aarch64
+        path: target/aarch64-linux-android/release/xecsu
