@@ -629,6 +629,7 @@ See the log below for details.</string>
     <string name="terminal_fm_search_empty">No match</string>
     <string name="terminal_fm_search_results">%1$d hit(s)</string>
     <string name="terminal_fm_close">Close</string>
+    <string name="terminal_fm_count">%1$d items</string>
     <string name="terminal_fm_selected">%1$d selected</string>
     <string name="terminal_fm_select_all">Select all</string>
     <string name="terminal_fm_clear_selection">Clear selection</string>

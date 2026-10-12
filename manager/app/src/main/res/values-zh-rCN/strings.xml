@@ -618,6 +618,7 @@ XEC 项目组
     <string name="terminal_fm_search_empty">没有匹配项</string>
     <string name="terminal_fm_search_results">命中 %1$d 项</string>
     <string name="terminal_fm_close">关闭</string>
+    <string name="terminal_fm_count">%1$d 项</string>
     <string name="terminal_fm_selected">已选 %1$d 项</string>
     <string name="terminal_fm_select_all">全选</string>
     <string name="terminal_fm_clear_selection">取消选择</string>

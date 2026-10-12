@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -78,6 +78,7 @@ import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.util.getRootShell
+import com.topjohnwu.superuser.Shell
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
@@ -120,22 +121,60 @@ internal data class FsEntry(
 
 private data class FmClip(val cut: Boolean, val paths: List<String>)
 
-private val FM_LS_ROW = Regex(
-    "^([-dlbcps])([rwxSsTt-]{9})[.+]?[ \t]+(\\d+)[ \t]+(\\S+)[ \t]+(\\S+)[ \t]+(\\d+)[ \t]+(\\S+)[ \t]+(\\S+)[ \t]+(.+)$"
+/** 列目录结果：code!=0 表示命令失败；note 非空表示走了兜底路径（界面要显式提示）。 */
+internal data class FmListing(val code: Int, val entries: List<FsEntry>, val note: String?)
+
+// `ls -l` 的日期列有两种形态：Android(toybox) 是 %F %H:%M（2026-10-12 06:00），
+// busybox/老工具箱是 POSIX 的 %b %e %H:%M（Oct 12 06:00）或 %b %e  %Y（Oct 12  2025）；
+// 设备文件的大小列是 "major, minor"。以前只有一条严格正则，解析不出来的行被
+// `?: continue` 静默丢掉 —— 只要输出格式不是预期那一种，界面就是"一个文件都显示不出来"。
+private val FM_LS_ISO = Regex(
+    "^([-dlbcps][rwxSsTt-]{9}[.+@]?)[ \\t]+\\d+[ \\t]+(\\S+)[ \\t]+(\\S+)[ \\t]+((?:\\d+,\\s*\\d+)|\\d+)" +
+        "[ \\t]+(\\d{4}-\\d{2}-\\d{2})[ \\t]+(\\d{1,2}:\\d{2}(?::\\d{2})?)[ \\t]+(.+)$"
+)
+
+private val FM_LS_POSIX = Regex(
+    "^([-dlbcps][rwxSsTt-]{9}[.+@]?)[ \\t]+\\d+[ \\t]+(\\S+)[ \\t]+(\\S+)[ \\t]+((?:\\d+,\\s*\\d+)|\\d+)" +
+        "[ \\t]+([A-Za-z]{3})[ \\t]+(\\d{1,2})[ \\t]+(\\d{1,2}:\\d{2}(?::\\d{2})?|\\d{4})[ \\t]+(.+)$"
 )
 
 internal object FsShell {
 
     fun quote(s: String): String = "'" + s.replace("'", "'\\''") + "'"
 
-    suspend fun exec(script: String): Pair<Int, List<String>> = withContext(Dispatchers.IO) {
-        runCatching {
-            // 这个 libsu 版本没有 per-instance 的 Shell.cmd()，只有静态 Shell.cmd(...) 与
-            // Shell.newJob()；多行脚本交给 add() 一次性喂给同一个 sh（与 ShellUtils.fastCmd
-            // 的用法一致，TeeStatus 的多行状态脚本就是这么发的）。
-            val result = getRootShell().newJob().add(script).exec()
-            result.code to (result.out + result.err)
-        }.getOrElse { -1 to listOf(it.message ?: it.toString()) }
+    /**
+     * 执行脚本。先走 libsu 的静态全局 Shell（`Shell.cmd`，与终端页/检测页同源，
+     * 现网已验证可用），失败再走应用自己的 root shell（`KsuCli.SHELL`）。
+     * 两条都失败时返回 -1 + 每一路的失败原因，让界面能把真实原因显示出来，
+     * 而不是让用户对着一个空列表猜。
+     *
+     * `retry=false` 用于**有副作用的任意脚本**（例如"在终端里执行这个文件"）：
+     * 那种命令重放一次可能产生两次副作用，宁可只试一遍。
+     */
+    suspend fun exec(script: String, retry: Boolean = true): Pair<Int, List<String>> =
+        withContext(Dispatchers.IO) {
+        val problems = ArrayList<String>()
+        val attempts: List<Pair<String, () -> Shell.Result>> = if (retry) {
+            listOf(
+                "global" to { Shell.cmd(script).exec() },
+                "ksu" to { getRootShell().newJob().add(script).exec() },
+            )
+        } else {
+            listOf("ksu" to { getRootShell().newJob().add(script).exec() })
+        }
+        for ((label, run) in attempts) {
+            val outcome = runCatching { run() }
+            val result = outcome.getOrNull()
+            if (result == null) {
+                problems.add("$label: " + (outcome.exceptionOrNull()?.message ?: "failed"))
+                continue
+            }
+            val lines = result.out + result.err
+            if (result.code == 0) return@withContext 0 to lines
+            val firstBad = lines.firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+            problems.add("$label: exit ${result.code}" + if (firstBad.isEmpty()) "" else " · $firstBad")
+        }
+        -1 to problems
     }
 
     fun firstError(lines: List<String>): String = lines.firstOrNull { it.isNotBlank() }?.trim().orEmpty()
@@ -162,42 +201,121 @@ internal object FsShell {
         return value
     }
 
-    private fun parseRows(dir: String, lines: List<String>): List<FsEntry> {
-        val out = ArrayList<FsEntry>(lines.size)
-        for (line in lines) {
-            if (line.isBlank() || line.startsWith("total ")) continue
-            val m = FM_LS_ROW.find(line) ?: continue
-            val type = m.groupValues[1].first()
-            val perms = m.groupValues[2]
-            val owner = m.groupValues[4]
-            val group = m.groupValues[5]
-            val size = m.groupValues[6].toLongOrNull() ?: 0L
-            val date = m.groupValues[7] + " " + m.groupValues[8].take(5)
-            val rest = m.groupValues[9]
-            val isLink = type == 'l'
-            val target = if (isLink) rest.substringAfter(" -> ", "").ifEmpty { null } else null
-            val name = if (target != null) rest.substringBefore(" -> ") else rest
-            if (name.isEmpty() || name == "." || name == "..") continue
-            out.add(
-                FsEntry(
-                    name = name,
-                    path = joinPath(dir, name),
-                    isDir = type == 'd',
-                    isLink = isLink,
-                    linkTarget = target,
-                    size = size,
-                    perms = perms,
-                    octal = octalOf(perms),
-                    owner = owner,
-                    group = group,
-                    date = date,
-                )
+    /** 一行 `ls -l` → FsEntry；两种日期形态都试，试不出来返回 null（交给 stat 兜底）。 */
+    private fun parseLine(dir: String, line: String): FsEntry? {
+        FM_LS_ISO.find(line)?.let { m ->
+            return buildEntry(
+                dir = dir,
+                mode = m.groupValues[1],
+                owner = m.groupValues[2],
+                group = m.groupValues[3],
+                size = m.groupValues[4],
+                date = m.groupValues[5] + " " + m.groupValues[6],
+                rest = m.groupValues[7],
             )
+        }
+        FM_LS_POSIX.find(line)?.let { m ->
+            return buildEntry(
+                dir = dir,
+                mode = m.groupValues[1],
+                owner = m.groupValues[2],
+                group = m.groupValues[3],
+                size = m.groupValues[4],
+                date = m.groupValues[5] + " " + m.groupValues[6] + " " + m.groupValues[7],
+                rest = m.groupValues[8],
+            )
+        }
+        return null
+    }
+
+    private fun buildEntry(
+        dir: String,
+        mode: String,
+        owner: String,
+        group: String,
+        size: String,
+        date: String,
+        rest: String,
+    ): FsEntry? {
+        if (mode.length < 10) return null
+        val type = mode[0]
+        val perms = mode.substring(1, 10)
+        val isLink = type == 'l'
+        val arrow = rest.indexOf(" -> ")
+        val name = (if (isLink && arrow >= 0) rest.substring(0, arrow) else rest).trimEnd()
+        if (name.isEmpty() || name == "." || name == "..") return null
+        val target = if (isLink && arrow >= 0) rest.substring(arrow + 4).trim() else null
+        // 设备文件的大小列是 "major, minor"，没有可比大小，记 0
+        val sizeValue = size.replace(" ", "").substringBefore(',').toLongOrNull() ?: 0L
+        return FsEntry(
+            name = name,
+            path = joinPath(dir, name),
+            isDir = type == 'd',
+            isLink = isLink,
+            linkTarget = target,
+            size = sizeValue,
+            perms = perms,
+            octal = octalOf(perms),
+            owner = owner,
+            group = group,
+            date = date,
+        )
+    }
+
+    /**
+     * `ls -l` 一行都没解析出来时的兜底：先用 `ls -1A` 拿到名字，再一次性 `stat` 补属性。
+     * 只要目录里真的有东西，这条路就一定能把文件列出来（慢一点也认了）。
+     */
+    private suspend fun statEntries(dir: String, names: List<String>): List<FsEntry> {
+        val out = ArrayList<FsEntry>(names.size)
+        for (chunk in names.chunked(64)) {
+            val args = chunk.joinToString(" ") { quote(it) }
+            val script = "cd -- " + quote(dir) + " 2>/dev/null || exit 3\n" +
+                "LC_ALL=C stat -c '%A|%a|%U|%G|%s|%Y|%F|%N' -- " + args + " 2>&1\n"
+            val (code, lines) = exec(script)
+            if (code != 0 && lines.none { it.contains('|') }) continue
+            for (line in lines) {
+                // 文件名里可能有 '|'，只在最后一段（%N）里保留
+                val parts = line.split('|', limit = 8)
+                if (parts.size < 8) continue
+                val perms = parts[0].trim()
+                val octal = parts[1].trim().toIntOrNull(8) ?: octalOf(perms)
+                val type = parts[6].trim()
+                val nameField = parts[7].trim()
+                val arrow = nameField.indexOf(" -> ")
+                val rawName = (if (arrow >= 0) nameField.substring(0, arrow) else nameField).trim().trim('\'')
+                val name = rawName.trimEnd('/').substringAfterLast('/').ifEmpty { rawName }
+                if (name.isEmpty() || name == "." || name == "..") continue
+                out.add(
+                    FsEntry(
+                        name = name,
+                        path = joinPath(dir, name),
+                        isDir = type.equals("directory", true),
+                        isLink = arrow >= 0 || type.contains("link", true),
+                        linkTarget = if (arrow >= 0) nameField.substring(arrow + 4).trim().trim('\'') else null,
+                        size = parts[4].trim().toLongOrNull() ?: 0L,
+                        perms = perms,
+                        octal = octal,
+                        owner = parts[2].trim(),
+                        group = parts[3].trim(),
+                        date = parts[5].trim(),
+                    )
+                )
+            }
         }
         return out
     }
 
-    suspend fun list(dir: String, sort: FmSort, reverse: Boolean, showHidden: Boolean): Pair<Int, List<FsEntry>> {
+    private fun sorted(entries: List<FsEntry>, sort: FmSort, reverse: Boolean): List<FsEntry> {
+        val base = when (sort) {
+            FmSort.NAME -> entries.sortedBy { it.name.lowercase() }
+            FmSort.SIZE -> entries.sortedByDescending { it.size }
+            FmSort.TIME -> entries.sortedByDescending { it.date.toLongOrNull() ?: 0L }
+        }
+        return if (reverse) base.reversed() else base
+    }
+
+    suspend fun list(dir: String, sort: FmSort, reverse: Boolean, showHidden: Boolean): FmListing {
         val flags = buildString {
             append("-l")
             if (showHidden) append("A")
@@ -210,8 +328,36 @@ internal object FsShell {
         }
         val script = "cd -- " + quote(dir) + " 2>/dev/null || exit 3\nLC_ALL=C ls " + flags + " 2>&1\n"
         val (code, lines) = exec(script)
-        if (code != 0) return code to emptyList()
-        return 0 to parseRows(dir, lines)
+        if (code != 0) {
+            return FmListing(code, emptyList(), lines.take(4).joinToString("\n").trim().ifEmpty { null })
+        }
+        val rows = ArrayList<FsEntry>(lines.size)
+        for (line in lines) {
+            if (line.isBlank() || line.startsWith("total ")) continue
+            parseLine(dir, line)?.let { rows.add(it) }
+        }
+        if (rows.isNotEmpty()) return FmListing(0, rows, null)
+
+        // ls -l 一行都没解析出来：可能是空目录，也可能是输出形态和我们对不上。
+        // 用名字列表判断到底空不空；有东西就 stat 兜底列出来，绝不显示成空目录。
+        val nameFlags = if (showHidden) "-1A" else "-1"
+        val (nameCode, nameLines) = exec(
+            "cd -- " + quote(dir) + " 2>/dev/null || exit 3\nLC_ALL=C ls " + nameFlags + " 2>&1\n"
+        )
+        if (nameCode != 0) {
+            return FmListing(nameCode, emptyList(), nameLines.take(4).joinToString("\n").trim().ifEmpty { null })
+        }
+        val names = nameLines.map { it.trim() }.filter { it.isNotEmpty() && it != "." && it != ".." }
+        if (names.isEmpty()) return FmListing(0, emptyList(), null)
+
+        val viaStat = sorted(statEntries(dir, names), sort, reverse)
+        val raw = lines.firstOrNull { it.isNotBlank() }?.take(120).orEmpty()
+        val note = if (viaStat.isEmpty()) {
+            "ls -l 输出无法解析（${lines.size} 行），stat 兜底也失败；原始输出首行：$raw"
+        } else {
+            "ls -l 输出无法解析，已用 stat 兜底列出 ${viaStat.size} 项（首行：$raw）"
+        }
+        return FmListing(0, viaStat, note)
     }
 
     suspend fun testDir(path: String): Boolean =
@@ -342,8 +488,10 @@ internal object FsShell {
     suspend fun execute(path: String): String {
         val dir = parentOf(path)
         val name = path.trimEnd('/').substringAfterLast('/')
+        // 任意脚本：不重放（retry=false），避免副作用执行两遍
         val (code, lines) = exec(
-            "cd -- " + quote(dir) + " 2>/dev/null || exit 3\nsh -c " + quote("./" + name) + " 2>&1 | tail -n 400\n"
+            "cd -- " + quote(dir) + " 2>/dev/null || exit 3\nsh -c " + quote("./" + name) + " 2>&1 | tail -n 400\n",
+            retry = false,
         )
         return if (code == 0) "" else firstError(lines).ifEmpty { "exec exit $code" }
     }
@@ -812,6 +960,9 @@ internal fun FileManagerPanel(startDir: String, onOpenTerminal: (String) -> Unit
     }
     var entries by remember { mutableStateOf<List<FsEntry>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    // 兜底路径的提示（例如 ls -l 解析不了、已改用 stat 列出）：一直挂在列表上方，
+    // 不用弹窗，也方便用户截图反馈。
+    var note by remember { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
     var refreshToken by remember { mutableIntStateOf(0) }
     var selected by remember { mutableStateOf(setOf<String>()) }
@@ -847,13 +998,14 @@ internal fun FileManagerPanel(startDir: String, onOpenTerminal: (String) -> Unit
     LaunchedEffect(path, refreshToken, sort, reverse, showHidden) {
         entries = null
         error = null
+        note = null
         persist()
-        val (code, list) = FsShell.list(path, sort, reverse, showHidden)
-        if (code != 0) {
-            error = text(R.string.terminal_fm_op_failed, "exit $code")
-            entries = emptyList()
-        } else {
-            entries = list
+        val listing = FsShell.list(path, sort, reverse, showHidden)
+        entries = listing.entries
+        note = listing.note
+        if (listing.code != 0) {
+            // 失败时把 exec 收集到的两路失败原因原样显示，别再让用户猜。
+            error = listing.note ?: text(R.string.terminal_fm_op_failed, "exit ${listing.code}")
         }
     }
 
@@ -1048,6 +1200,31 @@ internal fun FileManagerPanel(startDir: String, onOpenTerminal: (String) -> Unit
                 }
             }
 
+            val noteText = note
+            if (noteText != null) {
+                Text(
+                    text = noteText,
+                    fontSize = 10.sp,
+                    color = Color(0xFFEF5350),
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+            // 当前目录与条目数常显：这样"空目录"和"列不出来"一眼能区分，
+            // 用户截图反馈时也自带现场信息。
+            val shownCount = (searchResults ?: entries)?.size
+            if (shownCount != null) {
+                Text(
+                    text = stringResource(R.string.terminal_fm_count, shownCount) + "  " + path,
+                    fontSize = 10.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+
             Spacer(Modifier.height(8.dp))
 
             Card(
@@ -1062,12 +1239,14 @@ internal fun FileManagerPanel(startDir: String, onOpenTerminal: (String) -> Unit
                     shown == null -> FmCenterText(stringResource(R.string.terminal_fm_loading))
                     error != null -> FmCenterText(error ?: "", danger = true)
                     shown.isEmpty() -> FmCenterText(
-                        if (searchResults != null) stringResource(R.string.terminal_fm_search_empty)
-                        else stringResource(R.string.terminal_files_empty)
+                        (if (searchResults != null) stringResource(R.string.terminal_fm_search_empty)
+                        else stringResource(R.string.terminal_files_empty)) + "\n" + path
                     )
 
                     else -> LazyColumn(Modifier.fillMaxSize()) {
-                        items(shown, key = { it.path }) { entry ->
+                        // key 里带下标：万一 ls 输出里有重名（同一个名字出现两次），
+                        // 纯 path 做 key 会让 Compose 直接抛异常、整页空白。
+                        itemsIndexed(shown, key = { index, entry -> entry.path + "#" + index }) { _, entry ->
                             FmRow(
                                 entry = entry,
                                 selected = selected.contains(entry.path),
