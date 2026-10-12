@@ -1068,7 +1068,7 @@ pub fn run() -> Result<()> {
         #[cfg(target_arch = "aarch64")]
         Commands::BootPatchKpm(kpm_args) => crate::kpm_patch::patch_kpm(&kpm_args),
         #[cfg(target_arch = "aarch64")]
-        Commands::RamdiskPatch(args) => crate::ramdisk_patch::patch_ramdisk(&args),
+        Commands::RamdiskPatch(ramdisk_args) => crate::ramdisk_patch::patch_ramdisk(&ramdisk_args),
         Commands::MagicMount { work, dry_run } => {
             crate::magic_mount::cli_magic_mount(work, dry_run)
         }

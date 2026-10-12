@@ -17,7 +17,7 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use android_bootimg::cpio::{Cpio, CpioEntry};
+use android_bootimg::cpio::CpioEntry;
 use android_bootimg::parser::BootImage;
 use android_bootimg::patcher::BootImagePatchOption;
 use anyhow::{Context, Result, anyhow, bail, ensure};
@@ -58,7 +58,7 @@ pub fn patch_ramdisk_bytes(boot_data: &[u8]) -> Result<Vec<u8>> {
         anyhow!("这个镜像里没有 ramdisk（init_boot / vendor_boot 单独分区的布局 v1 暂不支持）")
     })?;
 
-    let (mut cpio, vendor_ramdisk_idx) = crate::boot_patch::android::extract_ramdisk(ramdisk)?;
+    let (mut cpio, vendor_ramdisk_idx) = crate::boot_patch::extract_ramdisk(ramdisk)?;
 
     for marker in FOREIGN_MARKERS {
         if cpio.exists(marker) {
