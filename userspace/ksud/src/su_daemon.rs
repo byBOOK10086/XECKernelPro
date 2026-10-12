@@ -128,6 +128,57 @@ fn write_allow(uids: &[u32]) -> Result<()> {
     Ok(())
 }
 
+/// 安装挂载态 root 的用户态部分（管理器调用一次即可，之后重启生效）：
+///
+/// * `/data/adb/xecpro/xudc` —— 当前这份 xudc 的拷贝，init 会用它拉起 daemon；
+/// * `/data/adb/xecpro/bin/xecsu` —— su 垫片（从内置载荷解出来）；
+/// * `/data/adb/modules/xecpro-su/` —— 一个最小模块，靠 magic mount 把
+///   `system/bin/su` 挂成我们的垫片（这样 /system 只读也能用上 su）。
+///
+/// # Errors
+///
+/// 目录/文件写不进去（没有 root 或 /data 不可写）时返回错误。
+pub fn install() -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    ensure_dirs()?;
+
+    let exe = std::env::current_exe().context("拿不到当前可执行文件路径")?;
+    let daemon_path = format!("{}/xudc", defs::XECPRO_DIR);
+    fs::copy(&exe, &daemon_path).with_context(|| format!("拷贝到 {daemon_path}"))?;
+    fs::set_permissions(&daemon_path, fs::Permissions::from_mode(0o755)).ok();
+    println!("- daemon: {daemon_path}");
+
+    let bin_dir = format!("{}/bin", defs::XECPRO_DIR);
+    fs::create_dir_all(&bin_dir).with_context(|| format!("创建 {bin_dir}"))?;
+    let su_path = format!("{bin_dir}/su");
+    let su_payload = crate::assets::get_asset("xecsu")
+        .context("内置载荷里没有 xecsu —— 这次构建没带上 su 垫片")?;
+    fs::write(&su_path, su_payload.as_ref().as_ref()).with_context(|| format!("写 {su_path}"))?;
+    fs::set_permissions(&su_path, fs::Permissions::from_mode(0o755)).ok();
+    println!("- su 垫片: {su_path}");
+
+    // 最小模块：magic mount 会把 system/bin/su 挂到 /system/bin/su
+    let module_dir = format!("{}/xecpro-su", defs::MODULE_DIR);
+    let module_bin = format!("{module_dir}/system/bin");
+    fs::create_dir_all(&module_bin).with_context(|| format!("创建 {module_bin}"))?;
+    let prop = format!(
+        "id=xecpro-su\nname=XECPro su 垫片\nversion=1.0\nversionCode=1\n\
+         author=XECKernelPro\ndescription=挂载态 root（<5.10）的 su 通道：把 /system/bin/su 指向 xecpro 的垫片。\n"
+    );
+    fs::write(format!("{module_dir}/module.prop"), prop)
+        .with_context(|| format!("写 {module_dir}/module.prop"))?;
+    let link = format!("{module_bin}/su");
+    let _ = fs::remove_file(&link);
+    std::os::unix::fs::symlink(format!("{bin_dir}/su"), &link)
+        .with_context(|| format!("建软链 {link}"))?;
+    println!("- 模块: {module_dir}（/system/bin/su -> {bin_dir}/su）");
+
+    println!("\n下一步：");
+    println!("  1) 注入 ramdisk：xudc ramdisk-patch --flash（或 --boot/--output 出镜像手动刷）");
+    println!("  2) 重启；然后 xudc su-grant <uid> 授权，应用里的 su 就能用了");
+    Ok(())
+}
+
 /// daemon 主循环。`once=true` 时只处理一个连接（自检用）。
 pub fn run_daemon(once: bool) -> Result<()> {
     ensure_dirs()?;
@@ -279,7 +330,10 @@ fn parse_request(payload: &[u8]) -> Result<Request> {
         bail!("cwd 长度不合法：{cwd_len}");
     }
     let cwd = String::from_utf8_lossy(&payload[cursor..cursor + cwd_len]).into_owned();
-    Ok(Request { args, cwd })
+    Ok(Request {
+        args: request_args,
+        cwd,
+    })
 }
 
 fn take_u32(payload: &[u8], cursor: &mut usize) -> Result<u32> {

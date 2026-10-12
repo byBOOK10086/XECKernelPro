@@ -104,6 +104,19 @@ pub fn patch_ramdisk_bytes(boot_data: &[u8]) -> Result<Vec<u8>> {
     println!("- 备份原 init -> {BACKUP_INIT}（{orig_init_size} 字节）");
     cpio.mv("init", BACKUP_INIT)?;
 
+    // 让 init 在 post-fs-data 阶段把用户态 daemon 拉起来（root 身份）。
+    // 走 overlay.d + xecinit 的"追加到 /init.rc"语义：不碰原 init.rc 的任何一行。
+    // 注意 seclabel：`u:r:su:s0` 在部分 user 版固件上不存在，那种机型需要先补
+    // sepolicy（P3-4），否则 init 会拒绝启动这个 service 并把原因写进 kmsg。
+    let service_rc = format!(
+        "# xecpro: 挂载态 root 的用户态 daemon 与 su 通道\nservice xecpro_daemon {dir}/xudc daemon\n    class late_start\n    user root\n    group root\n    seclabel u:r:su:s0\n\non post-fs-data\n    mkdir {dir} 0700 root root\n    start xecpro_daemon\n",
+        dir = crate::defs::XECPRO_DIR
+    );
+    cpio.add(
+        "overlay.d/xecpro.rc",
+        CpioEntry::regular(0o644, Box::new(service_rc.into_bytes())),
+    )?;
+
     let payload = assets::get_asset("xecinit")
         .context("内置载荷里没有 xecinit —— 这次构建没带上 ramdisk init，无法注入")?;
     let config = format!(

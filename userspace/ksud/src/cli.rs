@@ -151,6 +151,10 @@ enum Commands {
         once: bool,
     },
 
+    /// 安装挂载态 root（<5.10）的用户态载荷：daemon + su 垫片 + 最小模块
+    #[command(name = "install-mount-state", hide = true)]
+    InstallMountState,
+
     /// 查看挂载态 root 的授权 uid 列表
     #[command(name = "su-list", hide = true)]
     SuList,
@@ -1090,6 +1094,7 @@ pub fn run() -> Result<()> {
         #[cfg(target_arch = "aarch64")]
         Commands::RamdiskPatch(ramdisk_args) => crate::ramdisk_patch::patch_ramdisk(&ramdisk_args),
         Commands::Daemon { once } => crate::su_daemon::run_daemon(once),
+        Commands::InstallMountState => crate::su_daemon::install(),
         Commands::SuList => crate::su_daemon::su_list(),
         Commands::SuGrant { uid } => crate::su_daemon::su_grant(uid),
         Commands::SuRevoke { uid } => crate::su_daemon::su_revoke(uid),
