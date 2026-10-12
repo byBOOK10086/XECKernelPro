@@ -148,7 +148,7 @@ fun ModuleRepoScreenMiuix(
     val context = LocalContext.current
     var sourceDialog by remember { mutableStateOf(false) }
     var sourceDraft by remember { mutableStateOf(state.repoUrl) }
-    val sourceHost = ModuleRepoSettings.hostOf(state.source ?: state.repoUrl)
+    val sourceHost = ModuleRepoSettings.labelOf(state.source ?: state.repoUrl)
     // 实际生效的源 != 主源：自建仓库没拉到、已经回退官方源，界面必须说出来，
     // 否则用户会以为列表里这些就是自己仓库里的模块。
     val fellBack = state.source != null && state.source != ModuleRepoSettings.primaryUrl

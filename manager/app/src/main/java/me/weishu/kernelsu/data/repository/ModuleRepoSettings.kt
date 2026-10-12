@@ -13,10 +13,20 @@ import me.weishu.kernelsu.ksuApp
  */
 object ModuleRepoSettings {
 
-    /** 自建仓库（默认源）：和官方同 schema 的 modules.json。 */
-    const val DEFAULT_URL = "http://42.193.123.248/modrepo/modules.json"
+    /**
+     * 默认主源：我们自己的 GitHub 托管模块仓库（和官方同 schema 的 modules.json）。
+     *
+     * 走 jsDelivr 而不是 raw.githubusercontent —— 国内手机访问 raw 常被墙，jsDelivr 一般可达；
+     * 索引更新后由仓库工作流调 jsDelivr purge 清缓存（否则 CDN 会缓存 12 小时）。
+     */
+    const val DEFAULT_URL =
+        "https://cdn.jsdelivr.net/gh/byBOOK10086/XECKernelPro-Modules@main/modules.json"
 
-    /** 官方仓库，只做兜底。 */
+    /** 我们自己仓库的原始地址：jsDelivr 抽风/没清缓存时的第二顺位。 */
+    const val RAW_FALLBACK_URL =
+        "https://raw.githubusercontent.com/byBOOK10086/XECKernelPro-Modules/main/modules.json"
+
+    /** 官方仓库，只做最后兜底。 */
     const val OFFICIAL_URL = "https://modules.kernelsu.org/modules.json"
 
     private const val PREFS = "settings"
@@ -33,10 +43,21 @@ object ModuleRepoSettings {
     val primaryUrl: String
         get() = configuredUrl.ifEmpty { DEFAULT_URL }
 
-    /** 依次尝试的源：主源优先，官方兜底，重复只试一次。 */
-    fun sources(): List<String> = listOf(primaryUrl, OFFICIAL_URL).distinct()
+    /** 依次尝试的源：主源优先，本仓库 raw 次之，官方兜底，重复只试一次。 */
+    fun sources(): List<String> =
+        listOf(primaryUrl, RAW_FALLBACK_URL, OFFICIAL_URL).distinct()
 
     /** 展示用短标签：去掉协议与路径，只留主机（含端口）。 */
     fun hostOf(url: String): String =
         url.substringAfter("://").substringBefore('/').ifEmpty { url }
+
+    /** 给人看的源名字：自家仓库/官方仓库说清楚，其它情况退回主机名。 */
+    fun labelOf(url: String): String = when {
+        url.contains("XECKernelPro-Modules") && url.contains("jsdelivr") ->
+            "XECKernelPro 模块仓库（jsDelivr）"
+
+        url.contains("XECKernelPro-Modules") -> "XECKernelPro 模块仓库（GitHub raw）"
+        url == OFFICIAL_URL -> "官方模块仓库"
+        else -> hostOf(url)
+    }
 }
