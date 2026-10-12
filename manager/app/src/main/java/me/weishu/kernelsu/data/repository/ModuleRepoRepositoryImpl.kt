@@ -13,28 +13,41 @@ import org.json.JSONObject
 
 class ModuleRepoRepositoryImpl : ModuleRepoRepository {
 
-    companion object {
-        private const val MODULES_URL = "https://modules.kernelsu.org/modules.json"
+    @Volatile
+    override var lastSource: String? = null
+        private set
+
+    /**
+     * 依次尝试各仓库源：配置的主源（默认自建仓库）优先，失败再回退官方源。
+     * 自建站挂掉不能让模块列表整个空白 —— 界面拿 [lastSource] 就能看出用的是哪一个。
+     */
+    override suspend fun fetchModules(): Result<List<RepoModule>> = withContext(Dispatchers.IO) {
+        if (!isNetworkAvailable(ksuApp)) {
+            return@withContext Result.failure(Exception("Network unavailable"))
+        }
+        var lastError: Exception? = null
+        for (source in ModuleRepoSettings.sources()) {
+            try {
+                val modules = fetchFrom(source)
+                lastSource = source
+                return@withContext Result.success(modules)
+            } catch (e: Exception) {
+                lastError = e
+            }
+        }
+        Result.failure(lastError ?: Exception("no module repository source"))
     }
 
-    override suspend fun fetchModules(): Result<List<RepoModule>> = withContext(Dispatchers.IO) {
-        runCatching {
-            if (!isNetworkAvailable(ksuApp)) {
-                throw Exception("Network unavailable")
+    private fun fetchFrom(url: String): List<RepoModule> {
+        val request = Request.Builder().url(url).build()
+        ksuApp.okhttpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw Exception("Fetch failed: ${response.code} @ $url")
             }
-
-            val request = Request.Builder().url(MODULES_URL).build()
-            ksuApp.okhttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw Exception("Fetch failed: ${response.code}")
-                }
-
-                val body = response.body.string()
-                val json = JSONArray(body)
-                (0 until json.length()).mapNotNull { idx ->
-                    val item = json.optJSONObject(idx) ?: return@mapNotNull null
-                    parseRepoModule(item)
-                }
+            val body = response.body.string()
+            val json = JSONArray(body)
+            return (0 until json.length()).mapNotNull { idx ->
+                json.optJSONObject(idx)?.let { item -> parseRepoModule(item) }
             }
         }
     }

@@ -34,5 +34,6 @@ data class RepoModuleArg(
     val authorsList: List<AuthorArg>,
     val latestRelease: String,
     val latestReleaseTime: String,
+    val latestAsset: ReleaseAssetArg? = null,
     val releases: List<ReleaseArg>
 ) : Parcelable

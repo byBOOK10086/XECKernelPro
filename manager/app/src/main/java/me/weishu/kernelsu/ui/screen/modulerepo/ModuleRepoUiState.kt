@@ -18,7 +18,11 @@ data class ModuleRepoUiState(
     val modules: List<RepoModule> = emptyList(),
     val searchStatus: SearchStatus = SearchStatus(""),
     val searchResults: List<RepoModule> = emptyList(),
-    val error: Throwable? = null
+    val error: Throwable? = null,
+    /** 当前配置的仓库地址（主源）。 */
+    val repoUrl: String = "",
+    /** 最近一次实际生效的仓库地址；与 repoUrl 不同即表示已回退。 */
+    val source: String? = null,
 )
 
 @Immutable
@@ -30,6 +34,7 @@ data class ModuleRepoActions(
     val onSearchStatusChange: (SearchStatus) -> Unit,
     val onSetSortOrder: (RepoSort) -> Unit,
     val onOpenRepoDetail: (RepoModule) -> Unit,
+    val onSaveRepoUrl: (String) -> Unit,
 )
 
 @Immutable

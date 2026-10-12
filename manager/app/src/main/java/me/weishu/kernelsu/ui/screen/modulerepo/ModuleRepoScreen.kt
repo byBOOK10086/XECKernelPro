@@ -42,6 +42,7 @@ fun ModuleRepoScreen() {
         onClearSearch = { viewModel.updateSearchText("") },
         onSearchStatusChange = viewModel::updateSearchStatus,
         onSetSortOrder = viewModel::setSortOrder,
+        onSaveRepoUrl = viewModel::setRepoUrl,
         onOpenRepoDetail = { module ->
             val args = RepoModuleArg(
                 moduleId = module.moduleId,
@@ -50,6 +51,7 @@ fun ModuleRepoScreen() {
                 authorsList = module.authorList.map { AuthorArg(it.name, it.link) },
                 latestRelease = module.latestRelease,
                 latestReleaseTime = module.latestReleaseTime,
+                latestAsset = module.latestAsset?.let { ReleaseAssetArg(it.name, it.downloadUrl, it.size, 0) },
                 releases = emptyList()
             )
             navigator.push(Route.ModuleRepoDetail(args))
@@ -104,6 +106,26 @@ fun ModuleRepoDetailScreen(module: RepoModuleArg) {
         } else {
             readmeLoaded = true
         }
+    }
+
+    // 自建仓库的模块在官方站点上没有详情页，fetchModuleDetail 会拿不到任何资产，
+    // 详情页就会变成"看得见装不上"。这里用列表里带回来的 latestAsset 合成一条
+    // 发布记录兜底（官方模块若已包含同一个下载地址则不重复添加）。
+    LaunchedEffect(module.moduleId, readmeLoaded, detailReleases) {
+        val asset = module.latestAsset ?: return@LaunchedEffect
+        if (!readmeLoaded) return@LaunchedEffect
+        if (detailReleases.any { rel -> rel.assets.any { it.downloadUrl == asset.downloadUrl } }) {
+            return@LaunchedEffect
+        }
+        detailReleases = listOf(
+            ReleaseArg(
+                tagName = module.latestRelease.ifEmpty { "latest" },
+                name = module.latestRelease,
+                publishedAt = module.latestReleaseTime,
+                assets = listOf(asset),
+                descriptionHTML = "",
+            )
+        ) + detailReleases
     }
 
     val state = ModuleRepoDetailUiState(

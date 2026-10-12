@@ -85,6 +85,15 @@ Aborted — the device was NOT rebooted.</string>
     <string name="module_repos_sort_created">Created time</string>
     <string name="module_repos_sort_name">Name</string>
     <string name="module_repos_sort_stars">Stars</string>
+    <string name="module_repos_source">Repository source</string>
+    <string name="module_repos_source_summary">Using %1$s. Upload a module zip there and it shows up in this list.</string>
+    <string name="module_repos_source_hint">modules.json URL</string>
+    <string name="module_repos_source_use_default">My repo</string>
+    <string name="module_repos_source_official">Official</string>
+    <string name="module_repos_source_save">Save &amp; refresh</string>
+    <string name="module_repos_source_current">Repository: %1$s</string>
+    <string name="module_repos_source_fallback">%1$s unreachable · using the official repo</string>
+    <string name="module_repos_source_bad_url">Enter an http(s) URL</string>
     <string name="module_repos_source_code">Source code</string>
     <string name="confirm">Confirm</string>
     <string name="uninstall">Uninstall</string>
@@ -682,5 +691,12 @@ See the log below for details.</string>
     <string name="terminal_fm_text_hint">File content (view or edit)</string>
     <string name="terminal_fm_notice">Notice</string>
     <string name="terminal_fm_op_failed">Failed: %1$s</string>
+    <string name="terminal_fm_run_title">Output · %1$s (exit %2$d)</string>
+    <string name="terminal_fm_no_output">(no output)</string>
+    <string name="terminal_fm_copy_output">Copy output</string>
+    <string name="terminal_fm_no_app">No app on this device can open %1$s</string>
+    <string name="terminal_fm_install_failed">Install failed</string>
+    <string name="terminal_fm_install_system">Install with system installer</string>
+    <string name="terminal_fm_install_perm">Allow this app to install unknown apps first</string>
 
 </resources>

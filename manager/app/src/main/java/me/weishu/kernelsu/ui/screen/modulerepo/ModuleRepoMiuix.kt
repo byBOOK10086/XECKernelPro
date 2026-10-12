@@ -81,6 +81,10 @@ import me.weishu.kernelsu.ui.component.PagerNavigationSpringSpec
 import me.weishu.kernelsu.ui.component.ScrollToTopOnChange
 import me.weishu.kernelsu.ui.component.SearchStatus
 import me.weishu.kernelsu.ui.component.dialog.ConfirmDialogHandle
+import android.widget.Toast
+import me.weishu.kernelsu.data.repository.ModuleRepoSettings
+import me.weishu.kernelsu.ui.component.dialog.XDialog
+import me.weishu.kernelsu.ui.component.dialog.XDialogTitle
 import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.component.markdown.GithubMarkdown
 import me.weishu.kernelsu.ui.component.miuix.SearchBarFake
@@ -115,6 +119,7 @@ import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
@@ -139,6 +144,14 @@ fun ModuleRepoScreenMiuix(
     actions: ModuleRepoActions,
 ) {
     val searchStatus = state.searchStatus
+    val context = LocalContext.current
+    var sourceDialog by remember { mutableStateOf(false) }
+    var sourceDraft by remember { mutableStateOf(state.repoUrl) }
+    val sourceHost = ModuleRepoSettings.hostOf(state.source ?: state.repoUrl)
+    // 实际生效的源 != 主源：自建仓库没拉到、已经回退官方源，界面必须说出来，
+    // 否则用户会以为列表里这些就是自己仓库里的模块。
+    val fellBack = state.source != null && state.source != ModuleRepoSettings.primaryUrl
+    LaunchedEffect(state.repoUrl) { if (!sourceDialog) sourceDraft = state.repoUrl }
     val density = LocalDensity.current
     val metaBg = colorScheme.tertiaryContainer.copy(alpha = 0.6f)
     val metaTint = colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
@@ -156,6 +169,55 @@ fun ModuleRepoScreenMiuix(
     val backdrop = rememberBlurBackdrop(enableBlur)
     val blurActive = backdrop != null
     val barColor = if (blurActive) Color.Transparent else colorScheme.surface.copy(alpha = 1f)
+
+    // 仓库源设置：改 URL、切默认/官方、保存后立即重拉。放在 Scaffold 之前注册，
+    // XDialog 自己会挂到根层宿主，不参与这里的布局。
+    XDialog(show = sourceDialog, onDismissRequest = { sourceDialog = false }) {
+        XDialogTitle(
+            text = stringResource(R.string.module_repos_source),
+            summary = stringResource(R.string.module_repos_source_summary, sourceHost),
+        )
+        TextField(
+            value = sourceDraft,
+            onValueChange = { sourceDraft = it.trim() },
+            label = stringResource(R.string.module_repos_source_hint),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(
+                text = stringResource(R.string.module_repos_source_use_default),
+                onClick = { sourceDraft = ModuleRepoSettings.DEFAULT_URL },
+            )
+            TextButton(
+                text = stringResource(R.string.module_repos_source_official),
+                onClick = { sourceDraft = ModuleRepoSettings.OFFICIAL_URL },
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Spacer(Modifier.weight(1f))
+            TextButton(
+                text = stringResource(R.string.module_repos_source_save),
+                onClick = {
+                    if (!sourceDraft.startsWith("http")) {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.module_repos_source_bad_url),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    } else {
+                        actions.onSaveRepoUrl(sourceDraft)
+                        sourceDialog = false
+                    }
+                },
+            )
+        }
+    }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -194,6 +256,16 @@ fun ModuleRepoScreenMiuix(
                                         }
                                     }
                                 })
+                            IconButton(
+                                onClick = { sourceDialog = true },
+                                holdDownState = sourceDialog
+                            ) {
+                                Icon(
+                                    imageVector = MiuixIcons.UploadCloud,
+                                    tint = colorScheme.onSurface,
+                                    contentDescription = stringResource(R.string.module_repos_source),
+                                )
+                            }
                             IconButton(
                                 onClick = { showSortPopup.value = true },
                                 holdDownState = showSortPopup.value
@@ -440,6 +512,18 @@ fun ModuleRepoScreenMiuix(
                             ),
                             overscrollEffect = null,
                         ) {
+                            item {
+                                Text(
+                                    text = if (fellBack) {
+                                        stringResource(R.string.module_repos_source_fallback, sourceHost)
+                                    } else {
+                                        stringResource(R.string.module_repos_source_current, sourceHost)
+                                    },
+                                    fontSize = 12.sp,
+                                    color = colorScheme.onSurfaceVariantSummary,
+                                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp),
+                                )
+                            }
                             items(items = state.modules, key = { it.moduleId }, contentType = { "module" }) { module ->
                                 val moduleAuthor = stringResource(id = R.string.module_author)
 

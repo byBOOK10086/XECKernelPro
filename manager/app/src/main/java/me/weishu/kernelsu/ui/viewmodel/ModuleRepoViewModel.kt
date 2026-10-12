@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.data.repository.ModuleRepoRepository
 import me.weishu.kernelsu.data.repository.ModuleRepoRepositoryImpl
+import me.weishu.kernelsu.data.repository.ModuleRepoSettings
 import me.weishu.kernelsu.data.repository.SettingsRepository
 import me.weishu.kernelsu.data.repository.SettingsRepositoryImpl
 import me.weishu.kernelsu.ksuApp
@@ -47,7 +48,8 @@ class ModuleRepoViewModel(
         _uiState.update {
             it.copy(
                 sortOrder = initial,
-                offline = !isNetworkAvailable(ksuApp)
+                offline = !isNetworkAvailable(ksuApp),
+                repoUrl = ModuleRepoSettings.primaryUrl
             )
         }
 
@@ -142,7 +144,8 @@ class ModuleRepoViewModel(
                     _uiState.update {
                         it.copy(
                             modules = sorted,
-                            offline = !isNetworkAvailable(ksuApp)
+                            offline = !isNetworkAvailable(ksuApp),
+                            source = repo.lastSource
                         )
                     }
                     refreshSearchResults()
@@ -163,6 +166,13 @@ class ModuleRepoViewModel(
                 }
             }
         }
+    }
+
+    /** 保存仓库源并立即刷新；空串 = 回到默认（自建仓库）。 */
+    fun setRepoUrl(url: String) {
+        ModuleRepoSettings.configuredUrl = url.trim()
+        _uiState.update { it.copy(repoUrl = ModuleRepoSettings.primaryUrl) }
+        refresh()
     }
 
     fun setSortOrder(order: RepoSort) {

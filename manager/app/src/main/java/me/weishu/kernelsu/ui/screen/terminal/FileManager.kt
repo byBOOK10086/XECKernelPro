@@ -2,8 +2,12 @@
 
 package me.weishu.kernelsu.ui.screen.terminal
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.util.Base64
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Article
@@ -137,6 +142,12 @@ private val FM_LS_POSIX = Regex(
     "^([-dlbcps][rwxSsTt-]{9}[.+@]?)[ \\t]+\\d+[ \\t]+(\\S+)[ \\t]+(\\S+)[ \\t]+((?:\\d+,\\s*\\d+)|\\d+)" +
         "[ \\t]+([A-Za-z]{3})[ \\t]+(\\d{1,2})[ \\t]+(\\d{1,2}:\\d{2}(?::\\d{2})?|\\d{4})[ \\t]+(.+)$"
 )
+
+/** 需要看到结果的动作（执行/安装）：退出码 + 完整输出，界面弹窗展示而不是一句话提示。 */
+internal data class FmRun(val code: Int, val output: String, val error: String)
+
+/** 包在脚本末尾的退出码标记：让有副作用、失败也要拿输出的命令能走成功分支回到界面。 */
+private const val FM_RUN_MARK = "__XECPRO_RC="
 
 internal object FsShell {
 
@@ -468,10 +479,63 @@ internal object FsShell {
         return out
     }
 
-    suspend fun installApk(path: String): String {
-        val (code, lines) = exec("pm install -r -d --user 0 " + quote(path) + " 2>&1")
-        if (code == 0 && lines.none { it.contains("Failure", true) }) return ""
-        return firstError(lines).ifEmpty { "pm install exit $code" }
+    /** 应用自身 uid：root 复制进 cache 的文件必须交还给应用，否则 FileProvider/接收方读不到。 */
+    private fun appUid(): Int = android.os.Process.myUid()
+
+    /**
+     * 把文件（哪怕只有 root 能读）复制到应用 cache 下的独占目录，再把属主/权限交还给应用。
+     * 旧实现直接 `cp -a` 进 cacheDir：root 复制出来的文件属主是 root、权限 0600/0644，
+     * 应用自己与 FileProvider 都读不了 —— "用系统应用打开 / 分享"必然失败。
+     */
+    suspend fun stageForShare(src: String, name: String, dir: java.io.File): Pair<String?, String> {
+        if (!dir.exists() && !dir.mkdirs()) return null to ("mkdir failed: " + dir.absolutePath)
+        val dest = java.io.File(dir, name.replace('/', '_').trim().ifEmpty { "file" })
+        val path = dest.absolutePath
+        val uid = appUid()
+        val script = "cp -f -- " + quote(src) + " " + quote(path) + " 2>&1 || exit 4\n" +
+            "chown " + uid + ":" + uid + " -- " + quote(path) + " 2>&1\n" +
+            "chmod 0600 -- " + quote(path) + " 2>&1\n"
+        val (code, lines) = exec(script)
+        if (code != 0) return null to firstError(lines).ifEmpty { "copy exit $code" }
+        if (!dest.exists() || !dest.canRead()) {
+            return null to firstError(lines).ifEmpty { "copied but unreadable: $path" }
+        }
+        return path to ""
+    }
+
+    /**
+     * 安装 APK。旧实现直接 `pm install <路径>`：/sdcard 是 FUSE 挂载，system_server 读不到
+     * 那份文件，于是永远失败（而且只看退出码、不认 "Failure [...]"）。现在先复制到
+     * /data/local/tmp（pm 读得到）再装，装完即删，并把 pm 的完整输出带回界面。
+     */
+    suspend fun installApk(path: String): FmRun {
+        val tmp = "/data/local/tmp/.xecpro-install-" + System.currentTimeMillis().toString(36) + ".apk"
+        val script = """
+            export PATH=/system/bin:/system/xbin:/vendor/bin:${'$'}PATH
+            SRC=${quote(path)}
+            TMP=${quote(tmp)}
+            if ! cp -f -- "${'$'}SRC" "${'$'}TMP" 2>&1; then
+              echo "复制到 /data/local/tmp 失败"
+              rm -f -- "${'$'}TMP" 2>/dev/null
+              echo "${FM_RUN_MARK}4"
+              exit 0
+            fi
+            chmod 0644 -- "${'$'}TMP" 2>/dev/null
+            pm install -r -d --user 0 "${'$'}TMP" 2>&1
+            rc=${'$'}?
+            rm -f -- "${'$'}TMP" 2>/dev/null
+            echo "${FM_RUN_MARK}${'$'}rc"
+        """.trimIndent()
+        val (code, lines) = exec(script, retry = false)
+        if (code != 0) return FmRun(-1, "", firstError(lines).ifEmpty { "pm install exit $code" })
+        val rc = lines.lastOrNull { it.startsWith(FM_RUN_MARK) }
+            ?.removePrefix(FM_RUN_MARK)?.trim()?.toIntOrNull() ?: -1
+        val output = lines.filterNot { it.startsWith(FM_RUN_MARK) }.joinToString("\n").trim()
+        if (rc == 0 && output.lineSequence().any { it.trim() == "Success" }) return FmRun(0, output, "")
+        val reason = output.lineSequence().map { it.trim() }.firstOrNull { it.startsWith("Failure") }
+            ?: output.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }
+            ?: "pm install exit $rc"
+        return FmRun(rc, output, reason)
     }
 
     suspend fun extractZip(path: String, destDir: String): String {
@@ -485,15 +549,60 @@ internal object FsShell {
         return if (code == 0) "" else firstError(lines).ifEmpty { "unzip exit $code" }
     }
 
-    suspend fun execute(path: String): String {
-        val dir = parentOf(path)
-        val name = path.trimEnd('/').substringAfterLast('/')
-        // 任意脚本：不重放（retry=false），避免副作用执行两遍
-        val (code, lines) = exec(
-            "cd -- " + quote(dir) + " 2>/dev/null || exit 3\nsh -c " + quote("./" + name) + " 2>&1 | tail -n 400\n",
-            retry = false,
-        )
-        return if (code == 0) "" else firstError(lines).ifEmpty { "exec exit $code" }
+    /**
+     * 执行任意文件（脚本 / ELF）。旧实现 `cd 目录 && sh -c './文件'`：/sdcard 是 noexec 挂载、
+     * 文件也没有 +x，"执行"必然 Permission denied。现在复制到 /data/local/tmp（可执行、不受
+     * noexec 限制）再运行：脚本走 `sh 文件`（不依赖 +x），其余直接执行、126/127 再退回 `sh`；
+     * 工作目录仍是文件所在目录，CRLF 一次性归一化，输出整段带回界面（不重放，避免副作用两遍）。
+     */
+    suspend fun runFile(path: String): FmRun {
+        val stamp = System.currentTimeMillis().toString(36)
+        val script = """
+            export PATH=/system/bin:/system/xbin:/vendor/bin:${'$'}PATH
+            SRC=${quote(path)}
+            DIR=${quote(parentOf(path))}
+            TMP=/data/local/tmp/.xecpro-exec-$stamp
+            LOG=${'$'}TMP.log
+            if ! cp -f -- "${'$'}SRC" "${'$'}TMP" > "${'$'}LOG" 2>&1; then
+              echo "复制到 /data/local/tmp 失败："
+              cat "${'$'}LOG"
+              rm -f -- "${'$'}TMP" "${'$'}LOG" 2>/dev/null
+              echo "${FM_RUN_MARK}4"
+              exit 0
+            fi
+            chmod 0700 -- "${'$'}TMP" 2>/dev/null
+            case "${'$'}SRC" in
+              *.sh|*.sh.txt|*.bash|*.ash|*.mksh|*.rc)
+                tr -d '\r' < "${'$'}TMP" > "${'$'}TMP.lf" 2>/dev/null && mv -f -- "${'$'}TMP.lf" "${'$'}TMP" ;;
+            esac
+            use_sh=0
+            case "${'$'}SRC" in *.sh|*.sh.txt|*.bash|*.ash|*.mksh|*.rc) use_sh=1 ;; esac
+            if [ "${'$'}use_sh" = 0 ]; then
+              head -n 1 "${'$'}TMP" 2>/dev/null | grep -qE '^#!.*(sh|bash|ash|mksh|dash)' && use_sh=1
+            fi
+            cd -- "${'$'}DIR" 2>/dev/null || cd / 2>/dev/null
+            if [ "${'$'}use_sh" = 1 ]; then
+              sh "${'$'}TMP" > "${'$'}LOG" 2>&1
+              rc=${'$'}?
+            else
+              "${'$'}TMP" > "${'$'}LOG" 2>&1
+              rc=${'$'}?
+              if [ "${'$'}rc" -eq 126 ] || [ "${'$'}rc" -eq 127 ]; then
+                sh "${'$'}TMP" > "${'$'}LOG" 2>&1
+                rc=${'$'}?
+              fi
+            fi
+            tail -n 400 "${'$'}LOG" 2>/dev/null
+            rm -f -- "${'$'}TMP" "${'$'}LOG" 2>/dev/null
+            echo "${FM_RUN_MARK}${'$'}rc"
+        """.trimIndent()
+        val (code, lines) = exec(script, retry = false)
+        if (code != 0) return FmRun(-1, "", firstError(lines).ifEmpty { "exec exit $code" })
+        val output = lines.filterNot { it.startsWith(FM_RUN_MARK) }.joinToString("\n").trim()
+        val rc = lines.lastOrNull { it.startsWith(FM_RUN_MARK) }
+            ?.removePrefix(FM_RUN_MARK)?.trim()?.toIntOrNull()
+            ?: return FmRun(-1, output, "没有拿到退出码（脚本可能被中断）")
+        return FmRun(rc, output, "")
     }
 }
 
@@ -926,6 +1035,44 @@ private fun FmViewerDialog(
 }
 
 @Composable
+private fun FmOutputDialog(
+    title: String,
+    body: String,
+    actionLabel: String?,
+    onAction: (() -> Unit)?,
+    onDismiss: () -> Unit,
+) {
+    val clipboard = LocalClipboardManager.current
+    FmDialogCard(onDismiss = onDismiss) {
+        FmTitle(title)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(240.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            Text(
+                text = body,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                color = colorScheme.onSurface,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            FmChip(label = stringResource(R.string.terminal_fm_copy_output)) {
+                clipboard.setText(AnnotatedString(body))
+            }
+            Spacer(Modifier.weight(1f))
+            if (actionLabel != null && onAction != null) {
+                FmChip(label = actionLabel, selected = true) { onAction() }
+            }
+            FmChip(label = stringResource(R.string.terminal_fm_ok)) { onDismiss() }
+        }
+    }
+}
+
+@Composable
 private fun FmCenterText(text: String, danger: Boolean = false) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
@@ -979,6 +1126,8 @@ internal fun FileManagerPanel(startDir: String, onOpenTerminal: (String) -> Unit
     var viewerEditable by remember { mutableStateOf(false) }
     var menuFor by remember { mutableStateOf<FsEntry?>(null) }
     var searchResults by remember { mutableStateOf<List<FsEntry>?>(null) }
+    var runResult by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var installFallback by remember { mutableStateOf<FsEntry?>(null) }
 
     fun persist() {
         prefs.edit()
@@ -1009,26 +1158,118 @@ internal fun FileManagerPanel(startDir: String, onOpenTerminal: (String) -> Unit
         }
     }
 
+    /** 把读权限逐个授给能接收这次 Intent 的包：只加 FLAG_GRANT_READ_URI_PERMISSION
+     *  在部分 ROM / chooser 路径上会被忽略，接收方拿到 URI 也是打不开。 */
+    fun grantToReceivers(uri: Uri, intent: Intent) {
+        context.packageManager.queryIntentActivities(intent, 0).forEach { resolved ->
+            runCatching {
+                context.grantUriPermission(
+                    resolved.activityInfo.packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+        }
+    }
+
     fun shareWith(entry: FsEntry, view: Boolean) {
         scope.launch {
-            val cacheDir = java.io.File(context.cacheDir, "fm")
-            cacheDir.mkdirs()
-            val target = java.io.File(cacheDir, entry.name.replace('/', '_'))
-            val err = FsShell.copy(listOf(entry.path), cacheDir.absolutePath)
-            if (err.isNotEmpty()) {
+            val (staged, err) = FsShell.stageForShare(
+                entry.path, entry.name, java.io.File(context.cacheDir, "fm"),
+            )
+            if (staged == null) {
                 info = text(R.string.terminal_fm_op_failed, err)
                 return@launch
             }
-            runCatching {
-                val uri = FileProvider.getUriForFile(context, BuildConfig.APPLICATION_ID + ".fileprovider", target)
-                val intent = if (view) {
-                    Intent(Intent.ACTION_VIEW).setDataAndType(uri, fmMimeOf(entry.name))
-                } else {
-                    Intent(Intent.ACTION_SEND).setType(fmMimeOf(entry.name)).putExtra(Intent.EXTRA_STREAM, uri)
+            val uri = runCatching {
+                FileProvider.getUriForFile(context, BuildConfig.APPLICATION_ID + ".fileprovider", java.io.File(staged))
+            }.getOrElse {
+                info = text(R.string.terminal_fm_op_failed, it.message ?: "fileprovider")
+                return@launch
+            }
+            val mime = fmMimeOf(entry.name)
+            if (view) {
+                val direct = Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(uri, mime)
+                    .setClipData(ClipData.newRawUri(entry.name, uri))
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                grantToReceivers(uri, direct)
+                if (runCatching { context.startActivity(direct) }.isSuccess) return@launch
+            }
+            val send = Intent(Intent.ACTION_SEND)
+                .setType(mime)
+                .putExtra(Intent.EXTRA_STREAM, uri)
+                .setClipData(ClipData.newRawUri(entry.name, uri))
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            grantToReceivers(uri, send)
+            val chooser = Intent.createChooser(send, entry.name)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { context.startActivity(chooser) }
+                .onFailure { info = text(R.string.terminal_fm_no_app, entry.name) }
+        }
+    }
+
+    /** 执行文件：结果（退出码 + 完整输出）弹窗显示，不再只丢一句"操作失败"。 */
+    fun runScript(entry: FsEntry) {
+        scope.launch {
+            val result = FsShell.runFile(entry.path)
+            val head = text(R.string.terminal_fm_run_title, entry.name, result.code)
+            val body = buildString {
+                append(result.output.ifEmpty { text(R.string.terminal_fm_no_output) })
+                if (result.error.isNotEmpty()) append("\n\n").append(result.error)
+            }
+            runResult = head to body
+        }
+    }
+
+    /** 安装 APK：失败时把 pm 的原始输出摊开，并留一个"用系统安装器"的兜底入口。 */
+    fun installApk(entry: FsEntry) {
+        scope.launch {
+            val result = FsShell.installApk(entry.path)
+            if (result.code == 0) {
+                installFallback = null
+                afterWrite(text(R.string.terminal_fm_installed))
+            } else {
+                installFallback = entry
+                runResult = text(R.string.terminal_fm_install_failed) + " · " + entry.name to
+                    result.output.ifEmpty { result.error }
+            }
+        }
+    }
+
+    /** 兜底：拷进 cache（属主已交还应用）后交给系统安装器，用户自己确认安装。 */
+    fun installWithSystem(entry: FsEntry) {
+        scope.launch {
+            val (staged, err) = FsShell.stageForShare(
+                entry.path, entry.name, java.io.File(context.cacheDir, "fm"),
+            )
+            if (staged == null) {
+                info = text(R.string.terminal_fm_op_failed, err)
+                return@launch
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                !context.packageManager.canRequestPackageInstalls()
+            ) {
+                runCatching {
+                    context.startActivity(
+                        Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + context.packageName))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
                 }
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(intent)
-            }.onFailure { info = text(R.string.terminal_fm_op_failed, it.message ?: "no activity") }
+                info = text(R.string.terminal_fm_install_perm)
+                return@launch
+            }
+            val uri = runCatching {
+                FileProvider.getUriForFile(context, BuildConfig.APPLICATION_ID + ".fileprovider", java.io.File(staged))
+            }.getOrElse {
+                info = text(R.string.terminal_fm_op_failed, it.message ?: "fileprovider")
+                return@launch
+            }
+            val intent = Intent(Intent.ACTION_VIEW)
+                .setDataAndType(uri, "application/vnd.android.package-archive")
+                .setClipData(ClipData.newRawUri(entry.name, uri))
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            grantToReceivers(uri, intent)
+            runCatching { context.startActivity(intent) }
+                .onFailure { info = text(R.string.terminal_fm_op_failed, it.message ?: "no installer") }
         }
     }
 
@@ -1049,13 +1290,7 @@ internal fun FileManagerPanel(startDir: String, onOpenTerminal: (String) -> Unit
         when {
             entry.isDir -> path = entry.path
             entry.isLink -> scope.launch { if (FsShell.testDir(entry.path)) path = entry.path else readInto(entry, false) }
-            entry.name.endsWith(".apk", true) -> scope.launch {
-                val err = FsShell.installApk(entry.path)
-                afterWrite(
-                    if (err.isEmpty()) text(R.string.terminal_fm_installed)
-                    else text(R.string.terminal_fm_op_failed, err)
-                )
-            }
+            entry.name.endsWith(".apk", true) -> installApk(entry)
 
             fmIsText(entry.name) -> readInto(entry, false)
             else -> shareWith(entry, view = true)
@@ -1460,6 +1695,22 @@ internal fun FileManagerPanel(startDir: String, onOpenTerminal: (String) -> Unit
             )
         }
 
+        val pendingInstall = installFallback
+        val pendingAction: (() -> Unit)? = if (pendingInstall == null) {
+            null
+        } else {
+            { runResult = null; installWithSystem(pendingInstall) }
+        }
+        runResult?.let { shown ->
+            FmOutputDialog(
+                title = shown.first,
+                body = shown.second,
+                actionLabel = if (pendingAction == null) null else stringResource(R.string.terminal_fm_install_system),
+                onAction = pendingAction,
+                onDismiss = { runResult = null; installFallback = null },
+            )
+        }
+
         menuFor?.let { entry ->
             FmDialogCard(onDismiss = { menuFor = null }) {
                 FmTitle(entry.name)
@@ -1469,21 +1720,16 @@ internal fun FileManagerPanel(startDir: String, onOpenTerminal: (String) -> Unit
                 }
                 FmMenuItem(stringResource(R.string.terminal_fm_execute)) {
                     menuFor = null
-                    scope.launch {
-                        val err = FsShell.execute(entry.path)
-                        if (err.isNotEmpty()) info = text(R.string.terminal_fm_op_failed, err)
-                    }
+                    runScript(entry)
                 }
                 if (entry.name.endsWith(".apk", true)) {
                     FmMenuItem(stringResource(R.string.terminal_fm_install)) {
                         menuFor = null
-                        scope.launch {
-                            val err = FsShell.installApk(entry.path)
-                            afterWrite(
-                                if (err.isEmpty()) text(R.string.terminal_fm_installed)
-                                else text(R.string.terminal_fm_op_failed, err)
-                            )
-                        }
+                        installApk(entry)
+                    }
+                    FmMenuItem(stringResource(R.string.terminal_fm_install_system)) {
+                        menuFor = null
+                        installWithSystem(entry)
                     }
                 }
                 if (entry.name.endsWith(".zip", true)) {

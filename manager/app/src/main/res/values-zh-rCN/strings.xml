@@ -73,6 +73,15 @@
     <string name="module_repos_sort_created">创建时间</string>
     <string name="module_repos_sort_name">名称</string>
     <string name="module_repos_sort_stars">星标数</string>
+    <string name="module_repos_source">模块仓库源</string>
+    <string name="module_repos_source_summary">当前使用 %1$s；把模块 zip 传到同一台服务器上，它就会出现在这个列表里。</string>
+    <string name="module_repos_source_hint">modules.json 地址</string>
+    <string name="module_repos_source_use_default">用我的仓库</string>
+    <string name="module_repos_source_official">官方源</string>
+    <string name="module_repos_source_save">保存并刷新</string>
+    <string name="module_repos_source_current">仓库源：%1$s</string>
+    <string name="module_repos_source_fallback">%1$s 不可用 · 已回退官方源</string>
+    <string name="module_repos_source_bad_url">请输入 http(s) 地址</string>
     <string name="module_repos_source_code">源码</string>
     <string name="uninstall">卸载</string>
     <string name="enable">启用</string>
@@ -671,5 +680,12 @@ XEC 项目组
     <string name="terminal_fm_text_hint">文件内容（可直接编辑）</string>
     <string name="terminal_fm_notice">提示</string>
     <string name="terminal_fm_op_failed">操作失败：%1$s</string>
+    <string name="terminal_fm_run_title">执行输出 · %1$s（退出码 %2$d）</string>
+    <string name="terminal_fm_no_output">（无输出）</string>
+    <string name="terminal_fm_copy_output">复制输出</string>
+    <string name="terminal_fm_no_app">系统里没有能打开 %1$s 的应用</string>
+    <string name="terminal_fm_install_failed">安装失败</string>
+    <string name="terminal_fm_install_system">用系统安装器安装</string>
+    <string name="terminal_fm_install_perm">请先允许本应用安装未知来源的应用</string>
 
 </resources>
