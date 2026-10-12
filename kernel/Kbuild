@@ -106,6 +106,16 @@ kernelsu-objs += kpm/relo.o
 kernelsu-objs += kpm/super_access.o
 ccflags-y += -DCONFIG_KPM=1
 
+# APatch/KernelPatch supercall 兼容层（应答 syscall 45，把命令转发给上面的 KPM
+# 引擎）。对象总是编进去（外置模块构建不处理本模块的 Kconfig，理由同上），
+# 行为由 CONFIG_KSU_APATCH_COMPAT 决定：外置构建靠 workflow 传同名 make 变量
+# 走到下面的 ccflag，内置构建靠 generated/autoconf.h。
+kernelsu-objs += apatch/auth.o
+kernelsu-objs += apatch/compat.o
+ifeq ($(CONFIG_KSU_APATCH_COMPAT),y)
+ccflags-y += -DCONFIG_KSU_APATCH_COMPAT=1
+endif
+
 obj-$(CONFIG_KSU) += kernelsu.o
 
 MDIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))

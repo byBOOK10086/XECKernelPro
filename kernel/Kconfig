@@ -181,4 +181,36 @@ config KPM
 	select KALLSYMS
 	select KALLSYMS_ALL
 
+menu "XECKernel Pro - APatch/KernelPatch compatibility"
+
+config KSU_APATCH_COMPAT
+	bool "APatch/KernelPatch supercall compatibility layer"
+	depends on KSU && ARM64
+	default n
+	help
+	  Answer the APatch / KernelPatch userspace on syscall 45 (arm64: brk), so
+	  that KernelPatch clients work against this kernel: the KPM client bundled
+	  in ksud (/dev/.kpmd, KPatch-Next "0x2026" dialect) and APatch tooling
+	  ("0x1158" dialect). KPM commands are forwarded to the KPM engine that is
+	  already part of this tree (kpm/kpm.c); nothing else changes.
+
+	  Only requests whose magic matches 0x1158/0x2026 and whose command number
+	  is implemented are intercepted; everything else - including every real
+	  brk/truncate call - is passed through to the original syscall entry.
+	  Credentials: root, the manager app, the literal "su" (APatch 0.13.9
+	  default), or a superkey (see the option below / /data/adb/ap/superkey).
+	  PANIC/TEST/rehook style commands are deliberately NOT implemented.
+
+config KSU_APATCH_SUPERKEY
+	string "Preset superkey (leave empty; prefer /data/adb/ap/superkey)"
+	depends on KSU_APATCH_COMPAT
+	default ""
+	help
+	  Optional compile-time superkey. It is stored as plain text in .rodata,
+	  so leave this empty unless you really want it baked into the image; the
+	  runtime alternatives are /data/adb/ap/superkey (read on first use) and
+	  the SKEY_SET command (0x100b).
+
+endmenu
+
 endmenu

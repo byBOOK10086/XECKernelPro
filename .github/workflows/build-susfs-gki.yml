@@ -209,13 +209,15 @@ jobs:
             -e KSU_SUSFS_OPEN_REDIRECT \
             -e KSU_SUSFS_SUS_MAP \
             -d KSU_DEBUG -d KSU_DISABLE_MANAGER -d KSU_DISABLE_POLICY -e KPM \
+            -e KSU_APATCH_COMPAT \
             -d LTO_CLANG -e LTO_NONE -d LTO_CLANG_THIN -d LTO_CLANG_FULL -d THINLTO
           make O="$ODIR" ARCH=arm64 olddefconfig
 
           # scripts/config 对未知符号静默忽略：逐项断言真的生效了
           for CFG in KSU KSU_SUSFS KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_KSTAT \
                      KSU_SUSFS_SPOOF_UNAME KSU_SUSFS_ENABLE_LOG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-                     KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG KSU_SUSFS_OPEN_REDIRECT KSU_SUSFS_SUS_MAP KPM; do
+                     KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG KSU_SUSFS_OPEN_REDIRECT KSU_SUSFS_SUS_MAP KPM \
+                     KSU_APATCH_COMPAT; do
             grep -q "^CONFIG_${CFG}=y" "$ODIR/.config" || {
               echo "::error::CONFIG_${CFG} did not land in .config"
               exit 1
@@ -256,7 +258,9 @@ jobs:
                      susfs_add_sus_path susfs_add_sus_kstat susfs_set_uname \
                      susfs_enable_log susfs_set_hide_sus_mnts_for_non_su_procs \
                      susfs_set_cmdline_or_bootconfig susfs_add_open_redirect \
-                     susfs_add_sus_map; do
+                     susfs_add_sus_map \
+                     ksu_apatch_compat_init sukisu_kpm_list_apatch \
+                     sukisu_kpm_info_apatch sukisu_kpm_control_out; do
             "$NM" "$ODIR/vmlinux" | grep -q " $SYM$" || {
               echo "::error::symbol $SYM missing from vmlinux (KSU/SUSFS integration broken)"
               exit 1

@@ -24,6 +24,7 @@
 #include "selinux/selinux.h"
 #include "hook/syscall_hook.h"
 #include "feature/adb_root.h"
+#include "apatch/compat.h"
 #include "feature/selinux_hide.h"
 #include "feature/uts_spoof.h"
 #include "infra/symbol_resolver.h"
@@ -165,6 +166,9 @@ int __init kernelsu_init(void)
     ksu_selinux_hide_init();
 
     ksu_supercalls_init();
+    // APatch/KernelPatch 兼容层：必须在 ksu_syscall_hook_init()（决定
+    // ksu_syscall_table 是否可用）之后。没开 CONFIG_KSU_APATCH_COMPAT 时是空实现。
+    ksu_apatch_compat_init();
     ksu_app_profile_init();
 
     if (ksu_late_loaded) {
@@ -222,6 +226,8 @@ void __exit kernelsu_exit(void)
 {
     // Phase 1: Stop all hooks first to prevent new callbacks
     ksu_syscall_hook_manager_exit();
+    // syscall 45 的表项 hook 也属于 Phase 1：先还原表项，再拆其它结构
+    ksu_apatch_compat_exit();
 
     ksu_supercalls_exit();
 

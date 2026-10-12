@@ -96,6 +96,11 @@ struct kp_module {
 
     char *args, *ctl_args;
 
+    /* APatch/KernelPatch 兼容层要在 info 里报这两项（UI 用）：
+     * load_event 是加载时机（字面量），load_source 是模块来源路径（要释放）。 */
+    const char *load_event;
+    char *load_source;
+
     mod_initcall_t *init;
     mod_ctl0call_t *ctl0;
     mod_ctl1call_t *ctl1;
@@ -575,7 +580,8 @@ static int kpm_move_module(struct kp_module *mod, struct kp_load_info *info)
 /* Loader core                                                            */
 /* ---------------------------------------------------------------------- */
 
-static long kpm_load_module(const void *data, int len, const char *args, const char *event)
+static long kpm_load_module(const void *data, int len, const char *args, const char *event,
+                            const char *source)
 {
     struct kp_load_info load_info = { .len = len, .hdr = data };
     struct kp_load_info *info = &load_info;
@@ -611,6 +617,12 @@ static long kpm_load_module(const void *data, int len, const char *args, const c
             goto free_mod;
         }
     }
+
+    /* 兼容层 info 的两项：event 是字面量直接存指针；source 来自调用方缓冲，
+     * 必须复制。复制失败只是少一行 UI 信息，不影响加载。 */
+    mod->load_event = event;
+    if (source && source[0])
+        mod->load_source = kstrdup(source, GFP_KERNEL);
 
     kpm_layout_sections(mod, info);
     kpm_layout_symtab(mod, info);
@@ -658,6 +670,8 @@ free_exec:
 free_args:
     if (mod->args)
         kfree(mod->args);
+    if (mod->load_source)
+        kfree(mod->load_source);
 free_mod:
     kfree(mod);
 out:
@@ -742,7 +756,7 @@ static long kpm_load_module_path(const char *path, const char *args)
 
     mutex_lock(&kpm_lock);
     kpm_resolve_symbols();
-    rc = kpm_load_module(data, (int)len, args, "load-file");
+    rc = kpm_load_module(data, (int)len, args, "load-file", path);
     mutex_unlock(&kpm_lock);
 
 free_data:
@@ -781,6 +795,8 @@ static long kpm_unload_module(const char *name)
         kfree(mod->args);
     if (mod->ctl_args)
         kfree(mod->ctl_args);
+    if (mod->load_source)
+        kfree(mod->load_source);
 
     kpm_set_module_nx(mod->start, mod->size);
     kpm_free_exec(mod->start);
@@ -953,6 +969,118 @@ noinline NO_OPTIMIZE void sukisu_kpm_version(char *buf, int bufferSize)
         strscpy(buf, KSU_VERSION_FULL, bufferSize);
 }
 EXPORT_SYMBOL(sukisu_kpm_version);
+
+/* ---------------------------------------------------------------------- */
+/* APatch/KernelPatch 兼容层专用桥接                                       */
+/*                                                                        */
+/* 与上面给 KSU 自己 ioctl 用的版本并存，刻意不改它们的输出格式，避免影响  */
+/* 管理器 KPM 页的解析；这三个只在 apatch/compat.c 里被调用。              */
+/* ---------------------------------------------------------------------- */
+
+/* list：'\n' 分隔、末尾不加 '\n'（KernelPatch 契约）；缓冲不够报 -ENOBUFS */
+static int kpm_build_list_nl(char *out, int size)
+{
+    struct kp_module *pos;
+    int off = 0;
+    bool first = true;
+
+    if (!out || size <= 0)
+        return -EINVAL;
+
+    out[0] = '\0';
+
+    list_for_each_entry (pos, &kpm_modules, list) {
+        int w = snprintf(out + off, size - off, "%s%s", first ? "" : "\n", pos->info.name);
+        if (w < 0)
+            return -EINVAL;
+        if (w >= size - off) {
+            out[size - 1] = '\0';
+            return -ENOBUFS;
+        }
+        off += w;
+        first = false;
+    }
+
+    return off;
+}
+
+noinline NO_OPTIMIZE void sukisu_kpm_list_apatch(void *out, int bufferSize, int *result)
+{
+    int rc;
+
+    mutex_lock(&kpm_lock);
+    rc = kpm_build_list_nl((char *)out, bufferSize);
+    mutex_unlock(&kpm_lock);
+
+    if (result)
+        *result = rc;
+}
+EXPORT_SYMBOL(sukisu_kpm_list_apatch);
+
+/* info：8 行 key=value —— 后两行 load_event/load_source 是 APatch 管理器要显示的 */
+noinline NO_OPTIMIZE void sukisu_kpm_info_apatch(const char *name, char *buf, int bufferSize, int *size)
+{
+    int sz = 0;
+
+    if (size)
+        *size = 0;
+    if (!name || !buf || bufferSize <= 0)
+        return;
+
+    mutex_lock(&kpm_lock);
+    struct kp_module *mod = kpm_find_module(name);
+    if (mod) {
+        snprintf(buf, bufferSize,
+                 "name=%s\n"
+                 "version=%s\n"
+                 "license=%s\n"
+                 "author=%s\n"
+                 "description=%s\n"
+                 "args=%s\n"
+                 "load_event=%s\n"
+                 "load_source=%s\n",
+                 mod->info.name, kpm_str(mod->info.version), kpm_str(mod->info.license), kpm_str(mod->info.author),
+                 kpm_str(mod->info.description), kpm_str(mod->args), mod->load_event ? mod->load_event : "",
+                 mod->load_source ? mod->load_source : "");
+        buf[bufferSize - 1] = '\0';
+        sz = strlen(buf) + 1;
+    }
+    mutex_unlock(&kpm_lock);
+
+    if (size)
+        *size = sz;
+}
+EXPORT_SYMBOL(sukisu_kpm_info_apatch);
+
+/* control：带 out_msg 回传的变体（上面那版把 out/outlen 写死成 NULL,0，收不到输出） */
+noinline NO_OPTIMIZE void sukisu_kpm_control_out(const char *name, const char *args, long arg_len, char __user *out,
+                                                int outlen, int *result)
+{
+    long rc = -EINVAL;
+
+    if (name && args && arg_len > 0) {
+        mutex_lock(&kpm_lock);
+        struct kp_module *mod = kpm_find_module(name);
+        if (!mod) {
+            rc = -ENOENT;
+        } else if (!mod->ctl0 || !*mod->ctl0) {
+            rc = -ENOSYS;
+        } else {
+            if (mod->ctl_args)
+                kfree(mod->ctl_args);
+            mod->ctl_args = kstrndup(args, arg_len, GFP_KERNEL);
+            if (!mod->ctl_args)
+                rc = -ENOMEM;
+            else
+                rc = kpm_call_ctl0(mod->ctl0, mod->ctl_args, out, outlen);
+        }
+        mutex_unlock(&kpm_lock);
+    }
+
+    if (result)
+        *result = (int)rc;
+}
+EXPORT_SYMBOL(sukisu_kpm_control_out);
 
 /* ---------------------------------------------------------------------- */
 /* supercall 分发（保持不变）                                             */
