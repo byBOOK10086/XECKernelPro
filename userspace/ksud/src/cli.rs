@@ -139,6 +139,17 @@ enum Commands {
     #[cfg(target_arch = "aarch64")]
     BootPatchKpm(BootPatchKpmArgs),
 
+    /// 内部/自检：用 magic mount 方式把 /data/adb/modules 挂到系统上
+    #[command(name = "magic-mount", hide = true)]
+    MagicMount {
+        /// worker 镜像目录（必须在 tmpfs 上，默认 /dev/.xecpro_magic）
+        #[arg(long)]
+        work: Option<std::path::PathBuf>,
+        /// 只列出会参与挂载的模块，不真的挂
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+
     /// Show boot information
     BootInfo {
         #[command(subcommand)]
@@ -1052,6 +1063,9 @@ pub fn run() -> Result<()> {
         Commands::BootPatchV2(patch) => crate::lkm_image::patch_boot(&patch),
         #[cfg(target_arch = "aarch64")]
         Commands::BootPatchKpm(kpm_args) => crate::kpm_patch::patch_kpm(&kpm_args),
+        Commands::MagicMount { work, dry_run } => {
+            crate::magic_mount::cli_magic_mount(work, dry_run)
+        }
         Commands::Resetprop { args } => {
             let mut full_args = vec!["resetprop".to_string()];
             full_args.extend(args);

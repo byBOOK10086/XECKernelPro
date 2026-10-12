@@ -110,3 +110,7 @@ pub const FULL_VERSION: &str = const_format::formatcp!(
 
 #[cfg(target_os = "android")]
 pub use android::*;
+
+/// magic mount 的 worker 镜像目录。必须在 tmpfs 上：/data 这时还没准备好，
+/// 而且 /data 上的挂载会被 init 追踪，卸载/重挂都会出问题。
+pub const MAGIC_WORK_DIR: &str = "/dev/.xecpro_magic";

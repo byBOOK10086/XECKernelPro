@@ -65,6 +65,7 @@ mod ksucalls;
 mod late_load;
 mod lkm_image;
 mod lkm_image_btf;
+mod magic_mount;
 #[cfg(target_os = "android")]
 mod magica;
 // Magisk 兼容层的 CLI（`magisk` 这个调用名）：脚本里 `magisk --path`/`-V`/
