@@ -50,7 +50,8 @@ fn ensure_dirs() -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
         .with_context(|| format!("chmod {}", dir.display()))?;
-    let allow = Path::new(&allow_path());
+    let allow_path_value = allow_path();
+    let allow = Path::new(&allow_path_value);
     if !allow.is_file() {
         fs::write(
             allow,
@@ -260,17 +261,17 @@ fn parse_request(payload: &[u8]) -> Result<Request> {
     if magic != MAGIC {
         bail!("魔数不对：0x{magic:08x}");
     }
-    let argc = take_u32(payload, &mut cursor)? as usize;
-    if argc > MAX_ARGS {
-        bail!("argc 太大：{argc}");
+    let arg_count = take_u32(payload, &mut cursor)? as usize;
+    if arg_count > MAX_ARGS {
+        bail!("argc 太大：{arg_count}");
     }
-    let mut args = Vec::with_capacity(argc);
-    for _ in 0..argc {
+    let mut request_args = Vec::with_capacity(arg_count);
+    for _ in 0..arg_count {
         let len = take_u32(payload, &mut cursor)? as usize;
         if len > MAX_ARG_LEN || cursor + len > payload.len() {
             bail!("参数长度不合法：{len}");
         }
-        args.push(String::from_utf8_lossy(&payload[cursor..cursor + len]).into_owned());
+        request_args.push(String::from_utf8_lossy(&payload[cursor..cursor + len]).into_owned());
         cursor += len;
     }
     let cwd_len = take_u32(payload, &mut cursor)? as usize;
@@ -357,12 +358,13 @@ fn spawn_root(request: &Request, fds: &[RawFd; 3]) -> Result<i32> {
             }
             let env = build_env();
             let program_c = CString::new(program.clone()).unwrap_or_default();
-            let mut argv: Vec<CString> = Vec::with_capacity(args.len() + 2);
-            argv.push(CString::new(program.clone()).unwrap_or_default());
+            let mut exec_argv: Vec<CString> = Vec::with_capacity(args.len() + 2);
+            exec_argv.push(CString::new(program.clone()).unwrap_or_default());
             for arg in &args {
-                argv.push(CString::new(arg.as_str()).unwrap_or_default());
+                exec_argv.push(CString::new(arg.as_str()).unwrap_or_default());
             }
-            let mut argv_ptrs: Vec<*const libc::c_char> = argv.iter().map(|a| a.as_ptr()).collect();
+            let mut argv_ptrs: Vec<*const libc::c_char> =
+                exec_argv.iter().map(|a| a.as_ptr()).collect();
             argv_ptrs.push(std::ptr::null());
             let env_ptrs: Vec<*const libc::c_char> = env.iter().map(|e| e.as_ptr()).collect();
             libc::execve(program_c.as_ptr(), argv_ptrs.as_ptr(), env_ptrs.as_ptr());

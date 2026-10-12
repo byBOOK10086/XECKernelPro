@@ -143,6 +143,26 @@ enum Commands {
     #[cfg(target_arch = "aarch64")]
     RamdiskPatch(crate::ramdisk_patch::RamdiskPatchArgs),
 
+    /// 内部：挂载态 root 的用户态 daemon（由注入的 rc 以 root 拉起）
+    #[command(name = "daemon", hide = true)]
+    Daemon {
+        /// 只处理一个连接就退出（自检用）
+        #[arg(long, default_value_t = false)]
+        once: bool,
+    },
+
+    /// 查看挂载态 root 的授权 uid 列表
+    #[command(name = "su-list", hide = true)]
+    SuList,
+
+    /// 授权某个 uid 使用挂载态 root
+    #[command(name = "su-grant", hide = true)]
+    SuGrant { uid: u32 },
+
+    /// 撤销某个 uid
+    #[command(name = "su-revoke", hide = true)]
+    SuRevoke { uid: u32 },
+
     /// 内部/自检：用 magic mount 方式把 /data/adb/modules 挂到系统上
     #[command(name = "magic-mount", hide = true)]
     MagicMount {
