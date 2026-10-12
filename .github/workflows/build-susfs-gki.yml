@@ -335,3 +335,37 @@ jobs:
         with:
           name: susfs-gki-${{ inputs.kmi }}
           path: /github/workspace/out/
+
+  # 产物默认只躺在 Actions artifact 里（90 天过期、手机端也不好取）。补一个发布 job：
+  # 生成 prerelease（tag: gki-<KMI>-<完整 SHA>）并把 Image.gz / AnyKernel3 卡刷包挂上去，
+  # 手机浏览器或管理器直接下载。刻意用 prerelease + `gki-` 前缀 + 不带 APK 资产，
+  # 避免被管理器的"检查更新"误认成新的管理器版本。
+  publish:
+    name: Publish GKI ${{ inputs.kmi }}
+    needs: build-susfs-gki
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: susfs-gki-${{ inputs.kmi }}
+          path: out
+
+      - name: Publish prerelease with the flashable kernel
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: gki-${{ inputs.kmi }}-${{ github.sha }}
+          name: SUSFS GKI ${{ inputs.kmi }} (${{ github.sha }})
+          prerelease: true
+          body: |
+            内核内置 XECKernel Pro（KSU，`CONFIG_KSU=y`）+ SUSFS 全套开关的 GKI 内核，
+            KMI `${{ inputs.kmi }}`，源码 `${{ github.sha }}`。
+
+            - `XECPro-SUSFS-GKI-*-AnyKernel3.zip`：卡刷包。只替换 boot 分区里的内核、
+              保留设备原 ramdisk（`split_boot`/`flash_boot`，GKI 2.0 白名单校验非 GKI 直接中止），
+              管理器或任意 Recovery 都能刷，刷完重启生效。
+            - `Image.gz-*`：裸内核镜像，供自行打包或管理器的 GKI 内核安装流程使用。
+            - 若本次填了 `boot_img_url`，另附 `boot-susfs-*.img`（`fastboot flash boot`）。
+          files: out/*
