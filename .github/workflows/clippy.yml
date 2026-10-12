@@ -15,6 +15,10 @@ on:
     paths:
       - '.github/workflows/clippy.yml'
       - 'userspace/**'
+  # 手动可触发：本地没有 Rust 工具链（ksud 的 libc 被 pin 到 github rev，cargo
+  # 解析不了），改 userspace/ 后想先过一遍 -Dwarnings 的编译检查，就 dispatch 这个，
+  # 不必等发版链路。
+  workflow_dispatch:
 
 env:
   RUSTFLAGS: '-Dwarnings'

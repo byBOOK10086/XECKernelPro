@@ -32,6 +32,10 @@ on:
       - 'Cargo.lock'
       - 'Cargo.toml'
   workflow_call:
+  # 手动可触发：这个工作流本来只在 main/dev/ci 的 push 上跑，而本项目的主线是
+  # fresh-main —— 改了 manager/ 或 userspace/ 之后想单独验证编译（不经过发版
+  # 链路、不产出 Release），就 dispatch 它。
+  workflow_dispatch:
 
 jobs:
   generate-key:
