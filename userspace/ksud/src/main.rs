@@ -18,10 +18,12 @@
 
 mod apk_sign;
 mod assets;
-// boot_txn（直接刷写的回滚事务）从 boot_patch 里取 flash_partition，所以这个
-// 模块本身按 crate 可见；`pub(crate)` 现在有了实际意义（否则 clippy 会判
-// redundant_pub_crate）。
-pub(crate) mod boot_patch;
+// boot_txn / kpm_patch 从兄弟模块调 boot_patch::flash_partition：crate 根声明的
+// 私有模块对整棵 crate 可见，所以这里不需要动可见性；boot_patch 里对应的
+// android 子模块与 flash_partition 则必须是 `pub`——clippy::redundant_pub_crate
+// （nursery，本 crate 开了 warn(clippy::nursery) 且 CI 用 -Dwarnings）只放过
+// `pub`，写 `pub(crate)` 会被判「inside private module」。
+mod boot_patch;
 #[cfg(target_os = "android")]
 mod boot_txn;
 

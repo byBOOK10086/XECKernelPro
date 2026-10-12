@@ -20,7 +20,7 @@ use crate::assets;
 use crate::feature_id::{FeatureId, parse_feature_id};
 
 #[cfg(target_os = "android")]
-pub(crate) mod android {
+pub mod android {
     use super::Result;
     pub(super) use crate::defs::{BACKUP_FILENAME, KSU_BACKUP_DIR, KSU_BACKUP_FILE_PREFIX};
     use crate::defs::{DEFAULT_PACKAGE_NAME, KSU_TEMP_BACKUP_DIR_NAME};
@@ -202,8 +202,9 @@ pub(crate) mod android {
 
     // Upstream narrows this to `pub(super)`; our boot_txn (direct-flash rollback)
     // and kpm_patch also flash partitions from outside this module, so keep it
-    // crate-visible.
-    pub(crate) fn flash_partition(partition: &str, data: &[u8]) -> Result<()> {
+    // crate-visible. Declared `pub`（而不是 `pub(crate)`）：外层模块是 crate 根的
+    // 私有模块，写 `pub(crate)` 会被 clippy::redundant_pub_crate 判成冗余。
+    pub fn flash_partition(partition: &str, data: &[u8]) -> Result<()> {
         let mut blk = std::fs::OpenOptions::new()
             .write(true)
             .truncate(false)
