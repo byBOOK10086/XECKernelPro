@@ -25,7 +25,7 @@ pub mod android {
     pub(super) use crate::defs::{BACKUP_FILENAME, KSU_BACKUP_DIR, KSU_BACKUP_FILE_PREFIX};
     use crate::defs::{DEFAULT_PACKAGE_NAME, KSU_TEMP_BACKUP_DIR_NAME};
     use android_bootimg::cpio::{Cpio, CpioEntry};
-    use anyhow::{Context, anyhow, bail, ensure};
+    use anyhow::{Context, anyhow, bail};
     use regex_lite::Regex;
     use rustix::process::getuid;
     use std::fs::{File, OpenOptions};

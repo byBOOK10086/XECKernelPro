@@ -36,17 +36,17 @@ pub enum RootMode {
 }
 
 impl RootMode {
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
-            RootMode::KernelState => "kernel",
-            RootMode::MountState => "mount",
+            Self::KernelState => "kernel",
+            Self::MountState => "mount",
         }
     }
 
-    pub fn describe(self) -> &'static str {
+    pub const fn describe(self) -> &'static str {
         match self {
-            RootMode::KernelState => "内核态 root（原版 KernelSU：内置 KSU / kernelsu.ko，5.10+）",
-            RootMode::MountState => "挂载态 root（KernelPatch 注入 + 挂载，5.10 以下）",
+            Self::KernelState => "内核态 root（原版 KernelSU：内置 KSU / kernelsu.ko，5.10+）",
+            Self::MountState => "挂载态 root（KernelPatch 注入 + 挂载，5.10 以下）",
         }
     }
 }
