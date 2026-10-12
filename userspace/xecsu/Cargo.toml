@@ -1,0 +1,14 @@
+[package]
+name = "xecsu"
+version = "0.1.0"
+edition.workspace = true
+description = "XECKernelPro 挂载态 root 的 su 垫片（<5.10 路线）"
+
+# 和 xecinit 同理：**故意零依赖**（除 libc）。它会被 magic mount 挂到
+# /system/bin/su，越简单越不容易在别人的设备上出意外。
+[dependencies]
+libc = "0.2"
+
+[[bin]]
+name = "xecsu"
+path = "src/main.rs"

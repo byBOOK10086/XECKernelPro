@@ -68,8 +68,10 @@ mod lkm_image_btf;
 mod magic_mount;
 #[cfg(target_os = "android")]
 mod magica;
-#[cfg(all(target_arch = "aarch64", target_os = "android"))]
 mod ramdisk_patch;
+#[cfg(all(target_arch = "aarch64", target_os = "android"))]
+#[cfg(target_os = "android")]
+mod su_daemon;
 // Magisk 兼容层的 CLI（`magisk` 这个调用名）：脚本里 `magisk --path`/`-V`/
 // `--install-module` 等全靠它，缺了会让 `MAGISTMP=$(magisk --path)` 变空串。
 #[cfg(target_os = "android")]

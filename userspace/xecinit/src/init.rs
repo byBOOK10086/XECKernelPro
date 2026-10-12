@@ -236,7 +236,11 @@ fn append_to_init_rc(src: &Path, data: &[u8]) -> Result<(), String> {
     if !data.ends_with(b"\n") {
         let _ = file.write_all(b"\n");
     }
-    kinfo!("已把 {} 追加到 /init.rc（{} 字节）", src.display(), data.len());
+    kinfo!(
+        "已把 {} 追加到 /init.rc（{} 字节）",
+        src.display(),
+        data.len()
+    );
     Ok(())
 }
 

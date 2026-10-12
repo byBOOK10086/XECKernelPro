@@ -1069,6 +1069,10 @@ pub fn run() -> Result<()> {
         Commands::BootPatchKpm(kpm_args) => crate::kpm_patch::patch_kpm(&kpm_args),
         #[cfg(target_arch = "aarch64")]
         Commands::RamdiskPatch(ramdisk_args) => crate::ramdisk_patch::patch_ramdisk(&ramdisk_args),
+        Commands::Daemon { once } => crate::su_daemon::run_daemon(once),
+        Commands::SuList => crate::su_daemon::su_list(),
+        Commands::SuGrant { uid } => crate::su_daemon::su_grant(uid),
+        Commands::SuRevoke { uid } => crate::su_daemon::su_revoke(uid),
         Commands::MagicMount { work, dry_run } => {
             crate::magic_mount::cli_magic_mount(work, dry_run)
         }
