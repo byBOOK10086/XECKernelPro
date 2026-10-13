@@ -139,7 +139,11 @@ internal fun InstallScreenMiuix(
                             onSelectBootImageForKpm = actions.onSelectBootImageForKpm,
                             onSelectAnyKernel = actions.onSelectAnyKernel,
                             onSelectBootImageForKpatch = actions.onSelectBootImageForKpatch,
-                            onSelectBootImageForMountState = actions.onSelectBootImageForMountState,
+                            onSelectBootImageForMagisk = actions.onSelectBootImageForMagisk,
+                            onSelectMagiskKeepVerity = actions.onSelectMagiskKeepVerity,
+                            onSelectMagiskKeepForceEncrypt = actions.onSelectMagiskKeepForceEncrypt,
+                            onSelectMagiskPatchVbmetaFlag = actions.onSelectMagiskPatchVbmetaFlag,
+                            onSelectMagiskRecoveryMode = actions.onSelectMagiskRecoveryMode,
                             onPrivilegeUpdate = actions.onPrivilegeUpdate,
                         )
                     }
@@ -291,6 +295,36 @@ internal fun InstallScreenMiuix(
                                     summary = stringResource(id = R.string.enable_adb_summary),
                                     onCheckedChange = actions.onSelectEnableAdb
                                 )
+                                // Magisk 路线专属选项（= boot_patch.sh 的四个环境变量；
+                                // LEGACYSAR 由设备自动判定后直接传给脚本）。
+                                // **只在选中该路线时出现** —— GKI / 内核态用户看不到任何
+                                // Magisk 相关的选项，这是"两套路线互不污染"在界面上的落实。
+                                if (uiState.installMethod is InstallMethod.MagiskPatch) {
+                                    CheckboxPreference(
+                                        title = stringResource(id = R.string.magisk_patch_keep_verity),
+                                        checked = uiState.magiskKeepVerity,
+                                        summary = stringResource(id = R.string.magisk_patch_keep_verity_summary),
+                                        onCheckedChange = actions.onSelectMagiskKeepVerity
+                                    )
+                                    CheckboxPreference(
+                                        title = stringResource(id = R.string.magisk_patch_keep_forceencrypt),
+                                        checked = uiState.magiskKeepForceEncrypt,
+                                        summary = stringResource(id = R.string.magisk_patch_keep_forceencrypt_summary),
+                                        onCheckedChange = actions.onSelectMagiskKeepForceEncrypt
+                                    )
+                                    CheckboxPreference(
+                                        title = stringResource(id = R.string.magisk_patch_vbmeta_flag),
+                                        checked = uiState.magiskPatchVbmetaFlag,
+                                        summary = stringResource(id = R.string.magisk_patch_vbmeta_flag_summary),
+                                        onCheckedChange = actions.onSelectMagiskPatchVbmetaFlag
+                                    )
+                                    CheckboxPreference(
+                                        title = stringResource(id = R.string.magisk_patch_recovery_mode),
+                                        checked = uiState.magiskRecoveryMode,
+                                        summary = stringResource(id = R.string.magisk_patch_recovery_mode_summary),
+                                        onCheckedChange = actions.onSelectMagiskRecoveryMode
+                                    )
+                                }
                             }
                         }
                     }
@@ -324,7 +358,11 @@ private fun SelectInstallMethod(
     onSelectBootImageForKpm: () -> Unit,
     onSelectAnyKernel: () -> Unit,
     onSelectBootImageForKpatch: () -> Unit,
-    onSelectBootImageForMountState: () -> Unit,
+    onSelectBootImageForMagisk: () -> Unit,
+    onSelectMagiskKeepVerity: (Boolean) -> Unit,
+    onSelectMagiskKeepForceEncrypt: (Boolean) -> Unit,
+    onSelectMagiskPatchVbmetaFlag: (Boolean) -> Unit,
+    onSelectMagiskRecoveryMode: (Boolean) -> Unit,
     onPrivilegeUpdate: () -> Unit,
 ) {
     val confirmDialog = rememberConfirmDialog(
@@ -341,7 +379,7 @@ private fun SelectInstallMethod(
             is InstallMethod.SelectFileForKpm -> onSelectBootImageForKpm()
             is InstallMethod.DownloadFile -> onDownloadFile()
             is InstallMethod.AnyKernel -> onSelectAnyKernel()
-            is InstallMethod.RamdiskPatch -> onSelectBootImageForMountState()
+            is InstallMethod.MagiskPatch -> onSelectBootImageForMagisk()
             is InstallMethod.KernelPatch -> onSelectBootImageForKpatch()
             is InstallMethod.DirectInstall -> onSelected(option)
             is InstallMethod.DirectInstallToInactiveSlot -> confirmDialog.showConfirm(dialogTitle, dialogContent)
@@ -368,8 +406,8 @@ private fun SelectInstallMethod(
                     option is InstallMethod.DirectInstall ||
                     option is InstallMethod.DirectInstallToInactiveSlot
             val blockedReason = when {
-                // 挂载态路线的不可用原因是「本 APK 没带 xudc 载荷」，与 root/GKI 无关
-                option is InstallMethod.RamdiskPatch -> state.ramdiskPatchBlockedReason
+                // Magisk 路线的不可用原因是「本 APK 没带 Magisk 官方载荷」，与 root/GKI 无关
+                option is InstallMethod.MagiskPatch -> state.magiskPatchBlockedReason
                 // KernelPatch 的不可用原因是「本 APK 没带 kptools 载荷」，与 root/GKI 无关
                 option is InstallMethod.KernelPatch -> state.kernelPatchBlockedReason
                 gated -> state.gatedInstallBlockedReason

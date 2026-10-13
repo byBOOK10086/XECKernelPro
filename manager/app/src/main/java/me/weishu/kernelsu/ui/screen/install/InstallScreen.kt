@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.getKernelVersion
 import me.weishu.kernelsu.kpatch.KPatch
-import me.weishu.kernelsu.mountstate.RamdiskPatch
+import me.weishu.kernelsu.mountstate.MagiskPatch
 import me.weishu.kernelsu.ui.component.choosekmidialog.ChooseKmiDialog
 import me.weishu.kernelsu.ui.component.dialog.DownloadDialog
 import me.weishu.kernelsu.ui.component.dialog.rememberLoadingDialog
@@ -63,6 +63,11 @@ fun InstallScreen() {
     var allowShell by rememberSaveable { mutableStateOf(false) }
     var enableAdb by rememberSaveable { mutableStateOf(false) }
     var forceBackup by rememberSaveable { mutableStateOf(false) }
+    // Magisk 修补的高级选项（= boot_patch.sh 的五个环境变量，默认全 false = 官方默认）
+    var magiskKeepVerity by rememberSaveable { mutableStateOf(false) }
+    var magiskKeepForceEncrypt by rememberSaveable { mutableStateOf(false) }
+    var magiskPatchVbmetaFlag by rememberSaveable { mutableStateOf(false) }
+    var magiskRecoveryMode by rememberSaveable { mutableStateOf(false) }
 
     val currentKmi by produceState(initialValue = "") { value = getCurrentKmi() }
     val partitions by produceState(initialValue = emptyList()) { value = getAvailablePartitions() }
@@ -78,10 +83,14 @@ fun InstallScreen() {
     val kpatchAvailable by produceState<Boolean?>(initialValue = null) {
         value = runCatching { KPatch.available(context) }.getOrDefault(false)
     }
-    // 挂载态路线的载荷（libxeccli.so = xudc）是否随包：与 kptools 同性质，
-    // 发版 APK 必有、build-manager.yml 单独构建的没有。缺了就灰掉并说明原因。
-    val ramdiskPatchAvailable by produceState<Boolean?>(initialValue = null) {
-        value = runCatching { RamdiskPatch.available(context) }.getOrDefault(false)
+    // Magisk 路线的载荷（官方 magiskboot/magiskinit/... + boot_patch.sh）是否随包：
+    // 与 kptools 同性质，发版 APK 必有、build-manager.yml 单独构建的没有。
+    val magiskPatchAvailable by produceState<Boolean?>(initialValue = null) {
+        value = runCatching { MagiskPatch.available(context) }.getOrDefault(false)
+    }
+    // legacy SAR 自动判定（官方脚本靠这个环境变量决定要不要改内核 skip_initramfs）
+    val deviceLegacySar by produceState(initialValue = false) {
+        value = runCatching { MagiskPatch.detectLegacySar() }.getOrDefault(false)
     }
 
     val selectFileTip = stringResource(id = R.string.select_file_tip, defaultPartition)
@@ -91,10 +100,11 @@ fun InstallScreen() {
     val anyKernelTip = stringResource(id = R.string.install_anykernel_tip)
     val kernelPatchTip = stringResource(id = R.string.kernel_patch_summary)
     val kernelPatchUnavailableTip = stringResource(id = R.string.kernel_patch_unavailable)
-    // 挂载态路线（<5.10 的正式路线）：不需要 root，用户选 boot.img → 注入 xecinit
-    // → 导出补丁镜像自己刷。
-    val ramdiskPatchTip = stringResource(id = R.string.ramdisk_patch_summary)
-    val ramdiskPatchUnavailableTip = stringResource(id = R.string.ramdisk_patch_unavailable)
+    // Magisk 路线（<5.10 的正式路线）：**用 Magisk 官方的修补方式** —— 用户选 boot.img
+    // （A-only legacy SAR 机型选 recovery），管理器把官方载荷摆好、跑官方脚本，
+    // 产出 new-boot.img 再导出。不需要 root，也不进 Flash 流程。
+    val magiskPatchTip = stringResource(id = R.string.magisk_patch_summary)
+    val magiskPatchUnavailableTip = stringResource(id = R.string.magisk_patch_unavailable)
     // root 形态说明：探测完成前不显示（避免首帧闪一个错的口径）
     val rootModeTip = when (isGkiDevice) {
         true -> stringResource(id = R.string.root_mode_kernel)
@@ -122,12 +132,12 @@ fun InstallScreen() {
     // （载荷缺失）时把原因写到 summary 上并禁用，而不是让用户点到一半才失败。
     val kernelPatchBlockedReason: String? =
         if (isGkiDevice == false && kpatchAvailable == false) kernelPatchUnavailableTip else null
-    // 挂载态路线同理，但判据是 xudc 载荷（libxeccli.so）在不在。
-    val ramdiskPatchBlockedReason: String? =
-        if (isGkiDevice == false && ramdiskPatchAvailable == false) ramdiskPatchUnavailableTip else null
+    // Magisk 路线同理，但判据是官方载荷（magiskboot 等）在不在。
+    val magiskPatchBlockedReason: String? =
+        if (isGkiDevice == false && magiskPatchAvailable == false) magiskPatchUnavailableTip else null
     // `isGkiDevice` 必须留在 key 里：探测完成时它从 null 变成 true/false，
     // 下面 SelectFile 的 summary 要跟着从「非 GKI」提示换成 GKI 提示。
-    val installMethodOptions = remember(isAbDevice, isGkiDevice, kpatchAvailable, ramdiskPatchAvailable, kernelPatchBlockedReason, ramdiskPatchBlockedReason, selectFileTip, selectFileTipNoGki, selectFileKpmTip, downloadFileMsg, anyKernelTip, kernelPatchTip, ramdiskPatchTip) {
+    val installMethodOptions = remember(isAbDevice, isGkiDevice, kpatchAvailable, magiskPatchAvailable, kernelPatchBlockedReason, magiskPatchBlockedReason, selectFileTip, selectFileTipNoGki, selectFileKpmTip, downloadFileMsg, anyKernelTip, kernelPatchTip, magiskPatchTip) {
         buildList {
             add(InstallMethod.SelectFile(summary = if (isGkiDevice == true) selectFileTip else selectFileTipNoGki))
             add(InstallMethod.SelectFileForKpm(summary = selectFileKpmTip))
@@ -137,11 +147,10 @@ fun InstallScreen() {
             if (isAbDevice) add(InstallMethod.DirectInstallToInactiveSlot)
             add(InstallMethod.PrivilegeUpdate)
             // 自动检测内核匹配刷写方案：非 GKI（<5.10）内核才有下面两条。
-            // 第一条（挂载态）是正式路线：注入 xecinit + 模块挂载 + su 通道，
-            // **不需要 root**；第二条 KernelPatch 只剩内核通道，留作实验入口。
-            // GKI 设备继续走上面的直刷。
+            // 第一条（Magisk 官方修补）是正式路线；第二条 KernelPatch 只剩内核通道，
+            // 留作实验入口。GKI 设备继续走上面的直刷。
             if (isGkiDevice == false) {
-                add(InstallMethod.RamdiskPatch(summary = ramdiskPatchBlockedReason ?: ramdiskPatchTip))
+                add(InstallMethod.MagiskPatch(summary = magiskPatchBlockedReason ?: magiskPatchTip))
                 add(InstallMethod.KernelPatch(summary = kernelPatchBlockedReason ?: kernelPatchTip))
             }
         }
@@ -194,9 +203,9 @@ fun InstallScreen() {
                         is InstallMethod.AnyKernel -> FlashIt.FlashAnyKernel(
                             uri = method.uri ?: return@let
                         )
-                        // 挂载态路线不走 Flash（产物由用户自己刷），万一被调到这里
+                        // Magisk 路线不走 Flash（产物由用户自己刷），万一被调到这里
                         // 也绝不能退化成 `boot = null` 的 root 直刷。
-                        is InstallMethod.RamdiskPatch -> return@let
+                        is InstallMethod.MagiskPatch -> return@let
                         else -> FlashIt.FlashBoot(
                             boot = if (method is InstallMethod.SelectFile) method.uri else null,
                             lkm = lkmSelection,
@@ -308,12 +317,12 @@ fun InstallScreen() {
             }
         }
     }
-    val selectMountStateImageLauncher = rememberLauncherForActivityResult(
+    val selectMagiskImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) {
         if (it.resultCode == Activity.RESULT_OK) {
             it.data?.data?.let { uri ->
-                installMethod = InstallMethod.RamdiskPatch(uri, summary = ramdiskPatchTip)
+                installMethod = InstallMethod.MagiskPatch(uri, summary = magiskPatchTip)
             }
         }
     }
@@ -348,7 +357,11 @@ fun InstallScreen() {
         gatedInstallBlockedReason = gatedInstallBlockedReason,
         kernelPatchBlockedReason = kernelPatchBlockedReason,
         rootModeTip = rootModeTip,
-        ramdiskPatchBlockedReason = ramdiskPatchBlockedReason,
+        magiskPatchBlockedReason = magiskPatchBlockedReason,
+        magiskKeepVerity = magiskKeepVerity,
+        magiskKeepForceEncrypt = magiskKeepForceEncrypt,
+        magiskPatchVbmetaFlag = magiskPatchVbmetaFlag,
+        magiskRecoveryMode = magiskRecoveryMode,
         canSelectPartition = installMethod is InstallMethod.DirectInstall ||
             installMethod is InstallMethod.DirectInstallToInactiveSlot ||
             installMethod is InstallMethod.DownloadFile,
@@ -374,9 +387,13 @@ fun InstallScreen() {
         onSelectBootImageForKpatch = {
             selectKpatchImageLauncher.launch(Intent(Intent.ACTION_GET_CONTENT).apply { type = "application/octet-stream" })
         },
-        onSelectBootImageForMountState = {
-            selectMountStateImageLauncher.launch(Intent(Intent.ACTION_GET_CONTENT).apply { type = "application/octet-stream" })
+        onSelectBootImageForMagisk = {
+            selectMagiskImageLauncher.launch(Intent(Intent.ACTION_GET_CONTENT).apply { type = "application/octet-stream" })
         },
+        onSelectMagiskKeepVerity = { magiskKeepVerity = it },
+        onSelectMagiskKeepForceEncrypt = { magiskKeepForceEncrypt = it },
+        onSelectMagiskPatchVbmetaFlag = { magiskPatchVbmetaFlag = it },
+        onSelectMagiskRecoveryMode = { magiskRecoveryMode = it },
         onPrivilegeUpdate = dropUnlessResumed { navigator.push(Route.Privilege(updateMode = true)) },
         onUploadLkm = {
             selectLkmLauncher.launch(Intent(Intent.ACTION_GET_CONTENT).apply { type = "application/octet-stream" })
@@ -394,36 +411,43 @@ fun InstallScreen() {
         },
         onNext = {
             val method = installMethod
-            if (method is InstallMethod.RamdiskPatch) {
-                // 挂载态路线（<5.10 的正式路线）：选 boot.img → xudc 注入 xecinit →
-                // 成品另存（fastboot/recovery 手动刷）。**不需要 root**，也不进
-                // Flash 流程（那条链整条建立在 root shell 上）。
+            if (method is InstallMethod.MagiskPatch) {
+                // Magisk 路线（<5.10 的正式路线）：选 boot.img（A-only legacy SAR 选 recovery）
+                // → 跑 Magisk 官方 boot_patch.sh → 导出它自己产出的 new-boot.img。
+                // 管理器不实现任何修补算法，也不进 Flash 流程（那条链建立在 root shell 上）。
                 val uri = method.uri
                 if (uri == null) {
-                    selectMountStateImageLauncher.launch(
+                    selectMagiskImageLauncher.launch(
                         Intent(Intent.ACTION_GET_CONTENT).apply { type = "application/octet-stream" }
                     )
                 } else {
                     scope.launch {
-                        val bootFile = java.io.File(context.cacheDir, "mountstate_boot.img")
+                        val bootFile = java.io.File(context.cacheDir, "magisk_boot_input.img")
                         try {
                             loadingDialog.showLoading()
                             context.contentResolver.openInputStream(uri)?.use { input ->
                                 bootFile.outputStream().use(input::copyTo)
                             } ?: error("cannot open boot image")
-                            val result = RamdiskPatch.patch(context, bootFile) { }
+                            val options = MagiskPatch.Options(
+                                keepVerity = magiskKeepVerity,
+                                keepForceEncrypt = magiskKeepForceEncrypt,
+                                patchVbmetaFlag = magiskPatchVbmetaFlag,
+                                recoveryMode = magiskRecoveryMode,
+                                legacySar = deviceLegacySar,
+                            )
+                            val result = MagiskPatch.patch(context, bootFile, options) { }
                             if (result.success && result.output != null) {
                                 pendingPatchedFile = result.output
-                                savePatchedLauncher.launch("xecpro-patched-boot.img")
+                                savePatchedLauncher.launch("magisk-patched.img")
                             } else {
                                 val tail = result.log.lineSequence()
-                                    .lastOrNull { it.isNotBlank() } ?: result.log.take(160)
-                                showMessage(resources.getString(R.string.ramdisk_patch_failed, tail))
+                                    .lastOrNull { it.isNotBlank() } ?: result.log.take(200)
+                                showMessage(resources.getString(R.string.magisk_patch_failed, tail))
                             }
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            showMessage(resources.getString(R.string.ramdisk_patch_failed, e.message ?: ""))
+                            showMessage(resources.getString(R.string.magisk_patch_failed, e.message ?: ""))
                         } finally {
                             loadingDialog.hide()
                             bootFile.delete()

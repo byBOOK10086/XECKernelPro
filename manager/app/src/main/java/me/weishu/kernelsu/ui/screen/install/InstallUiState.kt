@@ -32,12 +32,17 @@ internal data class InstallUiState(
      */
     val kernelPatchBlockedReason: String?,
     /**
-     * 挂载态路线（<5.10 非 GKI 的正式路线）那项为什么不可用；`null` 表示可用。
+     * Magisk 路线（<5.10 非 GKI 的正式路线）那项为什么不可用；`null` 表示可用。
      *
-     * 判据是 `libxeccli.so`（= xudc）是否随包：管理器单独构建的 APK 不带这个载荷，
-     * 那种 APK 上要把原因摆出来并禁用，而不是让用户点到一半才失败。
+     * 判据是 Magisk 官方载荷是否随包（管理器单独构建的 APK 不带），那种 APK 上要把
+     * 原因摆出来并禁用，而不是让用户点到一半才失败。
      */
-    val ramdiskPatchBlockedReason: String?,
+    val magiskPatchBlockedReason: String?,
+    /** Magisk 修补的高级选项（一一对应 `boot_patch.sh` 的五个环境变量，默认全 false）。 */
+    val magiskKeepVerity: Boolean,
+    val magiskKeepForceEncrypt: Boolean,
+    val magiskPatchVbmetaFlag: Boolean,
+    val magiskRecoveryMode: Boolean,
     /**
      * 当前 root 形态的一句话说明（内核态 5.10+ / 挂载态 5.10 以下）。
      *
@@ -62,7 +67,11 @@ internal data class InstallScreenActions(
     val onSelectBootImageForKpm: () -> Unit,
     val onSelectAnyKernel: () -> Unit,
     val onSelectBootImageForKpatch: () -> Unit,
-    val onSelectBootImageForMountState: () -> Unit,
+    val onSelectBootImageForMagisk: () -> Unit,
+    val onSelectMagiskKeepVerity: (Boolean) -> Unit,
+    val onSelectMagiskKeepForceEncrypt: (Boolean) -> Unit,
+    val onSelectMagiskPatchVbmetaFlag: (Boolean) -> Unit,
+    val onSelectMagiskRecoveryMode: (Boolean) -> Unit,
     val onPrivilegeUpdate: () -> Unit,
     val onUploadLkm: () -> Unit,
     val onClearLkm: () -> Unit,

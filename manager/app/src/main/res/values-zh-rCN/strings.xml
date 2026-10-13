@@ -351,7 +351,7 @@ XEC 项目组
     <string name="module_shortcut_permission_tip_default">若创建快捷方式失败，请在系统设置中为本应用启用桌面快捷方式权限</string>
     <string name="no_such_module">模块 %s 不存在</string>
     <string name="module_unavailable">模块 %s 被禁用，待更新或待卸载</string>
-    <string name="select_file_tip_nogki">非 GKI 内核（5.10 以下，含 4 系）用不了 LKM 修补：请用下面的「挂载态 root」路线（注入 xecinit 拿 root）</string>
+    <string name="select_file_tip_nogki">非 GKI 内核（5.10 以下，含 4 系）用不了 LKM 修补：请用下面的「Magisk 修补」路线（用 Magisk 官方修补器）</string>
     <string name="current_kmi">本设备 KMI 版本：%s</string>
     <string name="current_device_kmi">当前设备的 KMI</string>
     <string name="module_action_success">模块 action 执行成功。</string>
@@ -688,9 +688,16 @@ XEC 项目组
     <string name="terminal_fm_install_system">用系统安装器安装</string>
     <string name="terminal_fm_install_perm">请先允许本应用安装未知来源的应用</string>
 
-    <string name="ramdisk_patch_install">挂载态 root（5.10 以下的内核）</string>
-    <string name="ramdisk_patch_summary">5.10 以下内核的推荐路线：选你自己的 boot 镜像，把 xecinit 注入 ramdisk —— 全程不需要 root。刷入后重启即可：su 通道 + 模块挂载（magic mount）+ post-fs-data / service / boot-completed 三个阶段脚本。刷之前请务必备份原厂 boot 镜像。</string>
-    <string name="ramdisk_patch_unavailable">本 APK 未内置 xudc 载荷（libxeccli.so），无法走挂载态路线。</string>
-    <string name="ramdisk_patch_failed">挂载态注入失败：%1$s</string>
-    <string name="ramdisk_patch_saved">补丁后的 boot 镜像已保存。请刷入 boot 分区后重启。</string>
+    <string name="magisk_patch_install">Magisk 修补（5.10 以下的内核）</string>
+    <string name="magisk_patch_summary">5.10 以下内核的推荐路线：用 Magisk 官方修补器（本 APK 内置官方原样 magiskboot 与 boot_patch.sh）打你自己机型的 boot 镜像；A-only legacy SAR 机型请改选 recovery 镜像。产物用 fastboot/recovery 刷入，全程不需要 root。</string>
+    <string name="magisk_patch_unavailable">本 APK 未内置 Magisk 官方载荷（magiskboot / boot_patch.sh），无法走 Magisk 路线。</string>
+    <string name="magisk_patch_failed">Magisk 修补失败：%1$s</string>
+    <string name="magisk_patch_keep_verity">保留 AVB 2.0 / dm-verity</string>
+    <string name="magisk_patch_keep_verity_summary">给 Magisk 传 KEEPVERITY=true（保留校验而不是去掉）。默认关闭，与 Magisk 官方默认一致。</string>
+    <string name="magisk_patch_keep_forceencrypt">保留强制加密</string>
+    <string name="magisk_patch_keep_forceencrypt_summary">给 Magisk 传 KEEPFORCEENCRYPT=true。默认关闭，与 Magisk 官方默认一致。</string>
+    <string name="magisk_patch_vbmeta_flag">同时修补 vbmeta flags</string>
+    <string name="magisk_patch_vbmeta_flag_summary">给 Magisk 传 PATCHVBMETAFLAG=true。只有需要改 vbmeta flags 的机型才用。</string>
+    <string name="magisk_patch_recovery_mode">Recovery 模式（A-only legacy SAR）</string>
+    <string name="magisk_patch_recovery_mode_summary">给 Magisk 传 RECOVERYMODE=true：改打 recovery 镜像。boot 里没有 ramdisk 的 A-only system-as-root 机型用这个。</string>
 </resources>

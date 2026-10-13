@@ -66,15 +66,15 @@ internal sealed class InstallMethod : Parcelable {
     ) : InstallMethod()
 
     /**
-     * 挂载态路线（5.10 以下非 GKI 的正式路线）：xudc 把 xecinit 注入 boot 镜像的
-     * ramdisk，产物手动 fastboot/recovery 刷入 —— 刷完就是完整的挂载态 root
-     * （su 通道 + magic mount 模块 + 三个阶段脚本）。**全程不需要 root**，
-     * 这是还没有 root 的 <5.10 用户拿到 root 的第一步。
-     * 只在自动检测到非 GKI 内核时出现。
+     * Magisk 路线（5.10 以下非 GKI 的正式路线）：**直接使用 Magisk 官方的修补方式**。
+     *
+     * 管理器不实现任何 boot 修补算法：把官方载荷按 `boot_patch.sh` 的目录契约摆好，
+     * 让脚本自己产出 `new-boot.img`，再由用户 fastboot/recovery 刷入。**全程不需要
+     * root**，只在自动检测到非 GKI 内核时出现。
      */
-    data class RamdiskPatch(
+    data class MagiskPatch(
         val uri: Uri? = null,
-        @get:StringRes override val label: Int = R.string.ramdisk_patch_install,
+        @get:StringRes override val label: Int = R.string.magisk_patch_install,
         override val summary: String?
     ) : InstallMethod()
 

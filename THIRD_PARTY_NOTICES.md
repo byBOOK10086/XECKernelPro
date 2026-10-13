@@ -215,6 +215,29 @@ vendored 源码树（`third_party/`）始终**零修改**：上述修复全部�
   `5ec1cff/MagicMountStandalone` GPL-3.0）— 仅作 5.10 以下兼容方案的架构调研
   依据（kpatch 补丁流程、magic mount 挂载模型），未复制其源码或二进制。
 
+## Magisk 路线（5.10 以下挂载态 root，方案甲）
+
+- **Magisk**（`topjohnwu/Magisk`，**GPL-3.0**，作者 John Wu 与 Magisk 贡献者）—
+  5.10 以下（非 GKI）设备的挂载态 root **直接使用官方的修补方式**：本项目不实现
+  boot 修补算法，只驱动官方 `boot_patch.sh`。随 APK 分发的官方载荷取自
+  **v30.7**（`Magisk-v30.7.apk`，release 2026-02-23），**一个字节都不改**：
+
+  | 载荷 | 落地位置 |
+  |---|---|
+  | `assets/{boot_patch.sh,util_functions.sh,stub.apk}` | `manager/app/src/main/assets/magisk/` |
+  | `lib/<abi>/{libmagiskboot,libmagiskinit,libmagisk,libinit-ld,libbusybox,libmagiskpolicy}.so` | `manager/app/src/main/jniLibs/<abi>/`（ABI：arm64-v8a、x86_64） |
+
+  下载与校验在 CI 完成：`.github/workflows/build-xecpro.yml` 的
+  *Fetch Magisk payload* 步骤按 **APK 与每个载荷文件各自的 sha256** 校验，
+  载荷不进源码树。上游 https://github.com/topjohnwu/Magisk （tag `v30.7`）；
+  GPL-3.0 全文已随本仓库 [LICENSE](LICENSE) 提供，本项目用户态同样按 GPL-3.0 分发
+  （见上方合规表 §5）。本地唯一的"修改"是**文件名**（jniLibs 命名约定）与调用参数
+  （`BOOTMODE`/`KEEPVERITY`/`KEEPFORCEENCRYPT`/`PATCHVBMETAFLAG`/`RECOVERYMODE`/
+  `LEGACYSAR`），脚本与二进制本身未改动。
+- 该路线**只在非 GKI（<5.10）分支可用**；GKI / 内核态（5.10+）路线不引用任何
+  Magisk 资源，反之 5.10 以下设备也不会出现 KernelSU 的痕迹（两条路线互不污染）。
+
+
 ## 其他
 
 - Rust 依赖见各 `Cargo.toml` / `Cargo.lock`；Android 依赖见 `manager/gradle/libs.versions.toml`
