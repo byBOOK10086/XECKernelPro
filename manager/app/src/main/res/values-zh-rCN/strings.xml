@@ -582,7 +582,7 @@ XEC 项目组
     <string name="kernel_patch_unavailable">本 APK 未内置 kptools 载荷（该构建未包含 KernelPatch 二进制），无法打内核补丁。</string>
     <string name="kernel_patch_failed">内核补丁失败：%1$s</string>
     <string name="kernel_patch_saved">补丁后的 boot 镜像已保存。请刷入 boot 分区后重启。</string>
-    <string name="home_working_kpatch">内核补丁（5.10 以下的内核）</string>
+    <string name="home_working_kpatch">Magisk 路线（5.10 以下挂载态）</string>
 
     <!-- 原生终端（MT 管理器式） -->
     <string name="terminal_tab">补全</string>
@@ -700,4 +700,30 @@ XEC 项目组
     <string name="magisk_patch_vbmeta_flag_summary">给 Magisk 传 PATCHVBMETAFLAG=true。只有需要改 vbmeta flags 的机型才用。</string>
     <string name="magisk_patch_recovery_mode">Recovery 模式（A-only legacy SAR）</string>
     <string name="magisk_patch_recovery_mode_summary">给 Magisk 传 RECOVERYMODE=true：改打 recovery 镜像。boot 里没有 ramdisk 的 A-only system-as-root 机型用这个。</string>
+    <!-- 挂载态（5.10 以下，方案甲）：root 就是 Magisk 的 root，超级用户页读写 Magisk 的策略表 -->
+    <string name="magisk_su_refresh">刷新</string>
+    <string name="magisk_su_route_title">Magisk 路线（挂载态）</string>
+    <string name="magisk_su_route_summary">5.10 以下的挂载态路线：这里的 root 就是 Magisk 的 root。本页通过官方 magisk CLI 读写 Magisk 自己的策略表（magisk.db 的 policies 表）。</string>
+    <string name="magisk_su_version_label">Magisk 守护进程</string>
+    <string name="magisk_su_version_unknown">未检测到</string>
+    <string name="magisk_su_self_label">本管理器的 root</string>
+    <string name="magisk_su_self_granted">已授权（能读到策略表）</string>
+    <string name="magisk_su_self_denied">还没授权 —— 请在 Magisk 应用里批准 XECKernelPro</string>
+    <string name="magisk_su_zygisk">Zygisk</string>
+    <string name="magisk_su_zygisk_summary">由 magiskd 在开机时装载：改完要重启才生效。</string>
+    <string name="magisk_su_denylist">启用 DenyList</string>
+    <string name="magisk_su_denylist_count">DenyList 里有 %1$d 个应用；名单本身请在 Magisk 应用里配置。</string>
+    <string name="magisk_su_policies">申请过 root 的应用</string>
+    <string name="magisk_su_sync_note">和 Magisk 应用是同一张表：这里改动那边立刻可见，在 Magisk 里授权或撤销这边也会跟着变。</string>
+    <string name="magisk_su_empty">还没有应用申请过 root。有应用调用 su 之后就会出现在这里。</string>
+    <string name="magisk_su_open_magisk">打开 Magisk 应用</string>
+    <string name="magisk_su_policy_query">询问</string>
+    <string name="magisk_su_policy_allow">允许</string>
+    <string name="magisk_su_policy_deny">拒绝</string>
+    <string name="magisk_su_policy_restrict">受限</string>
+    <string name="magisk_su_logging">日志</string>
+    <string name="magisk_su_notification">通知</string>
+    <string name="magisk_su_revoke">撤销</string>
+    <string name="magisk_su_self_tag">本管理器</string>
+    <string name="magisk_su_user_tag">用户 %1$d</string>
 </resources>

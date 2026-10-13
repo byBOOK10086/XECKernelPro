@@ -53,10 +53,22 @@ data class ModuleUiState(
     val checkModuleUpdate: Boolean = true,
     val isSafeMode: Boolean = false,
     val magiskInstalled: Boolean = false,
+    /**
+     * 这台设备是不是"Magisk 路线"（<5.10 非 GKI；Magisk 本身就是这条路的 root 实现）。
+     *
+     * 与 [magiskInstalled] 的区别很关键：内核态设备（5.10+）上出现 Magisk 才是**冲突**，
+     * 而 5.10 以下的挂载态设备上 Magisk 是预期内的 —— 那种设备模块列表、模块操作
+     * 都照常可用（目录同为 `/data/adb/modules`）。
+     */
+    val magiskRoute: Boolean = false,
     val confirmDialogState: ModuleConfirmDialogState? = null,
 ) {
+    /** 真正与 Magisk 冲突（内核态设备上另有真 Magisk）时，才禁掉模块操作。 */
+    val magiskConflict: Boolean
+        get() = magiskInstalled && !magiskRoute
+
     val installButtonVisible: Boolean
-        get() = !(isSafeMode || magiskInstalled)
+        get() = !(isSafeMode || magiskConflict)
 }
 
 @Immutable

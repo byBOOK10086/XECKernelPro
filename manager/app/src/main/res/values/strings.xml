@@ -593,7 +593,7 @@ See the log below for details.</string>
     <string name="kernel_patch_unavailable">This APK has no bundled kptools payload (the build did not include the KernelPatch binaries), so kernel patching is unavailable.</string>
     <string name="kernel_patch_failed">Kernel patch failed: %1$s</string>
     <string name="kernel_patch_saved">Patched boot image saved. Flash it as the boot partition, then reboot.</string>
-    <string name="home_working_kpatch">KernelPatch (kernel below 5.10)</string>
+    <string name="home_working_kpatch">Magisk route (kernel below 5.10)</string>
 
     <!-- Native terminal (MT-style) -->
     <string name="terminal_tab">Tab</string>
@@ -711,4 +711,30 @@ See the log below for details.</string>
     <string name="magisk_patch_vbmeta_flag_summary">Pass PATCHVBMETAFLAG=true to Magisk. Only for devices that need the vbmeta flags patched.</string>
     <string name="magisk_patch_recovery_mode">Recovery mode (A-only legacy SAR)</string>
     <string name="magisk_patch_recovery_mode_summary">Pass RECOVERYMODE=true: patch a recovery image instead of boot. Needed on A-only system-as-root devices whose boot image has no ramdisk.</string>
+    <!-- 挂载态（5.10 以下，方案甲）：root 就是 Magisk 的 root，超级用户页读写 Magisk 的策略表 -->
+    <string name="magisk_su_refresh">Refresh</string>
+    <string name="magisk_su_route_title">Magisk route (mount state)</string>
+    <string name="magisk_su_route_summary">The below-5.10 mount-state route: root here belongs to Magisk. This page reads and writes the policy table of Magisk itself (magisk.db, policies) through the official magisk CLI.</string>
+    <string name="magisk_su_version_label">Magisk daemon</string>
+    <string name="magisk_su_version_unknown">not detected</string>
+    <string name="magisk_su_self_label">Root of this manager</string>
+    <string name="magisk_su_self_granted">granted (policy table readable)</string>
+    <string name="magisk_su_self_denied">not granted yet - approve XECKernelPro in the Magisk app</string>
+    <string name="magisk_su_zygisk">Zygisk</string>
+    <string name="magisk_su_zygisk_summary">Loaded by magiskd at boot: takes effect after a reboot.</string>
+    <string name="magisk_su_denylist">Enforce DenyList</string>
+    <string name="magisk_su_denylist_count">%1$d app(s) on the DenyList; configure the list itself in the Magisk app.</string>
+    <string name="magisk_su_policies">Apps that asked for root</string>
+    <string name="magisk_su_sync_note">Same table as the Magisk app: changes here are visible there at once, and grants or revocations made in Magisk show up here.</string>
+    <string name="magisk_su_empty">No app has asked for root yet. A request shows up here right after an app calls su.</string>
+    <string name="magisk_su_open_magisk">Open the Magisk app</string>
+    <string name="magisk_su_policy_query">Ask</string>
+    <string name="magisk_su_policy_allow">Allow</string>
+    <string name="magisk_su_policy_deny">Deny</string>
+    <string name="magisk_su_policy_restrict">Restrict</string>
+    <string name="magisk_su_logging">Log</string>
+    <string name="magisk_su_notification">Notify</string>
+    <string name="magisk_su_revoke">Revoke</string>
+    <string name="magisk_su_self_tag">this manager</string>
+    <string name="magisk_su_user_tag">user %1$d</string>
 </resources>

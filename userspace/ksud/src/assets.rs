@@ -11,27 +11,38 @@ mod android {
     pub const RESETPROP_PATH: &str = concatcp!(BINARY_DIR, "resetprop");
     pub const BUSYBOX_PATH: &str = concatcp!(BINARY_DIR, "busybox");
     pub const BOOTCTL_PATH: &str = concatcp!(BINARY_DIR, "bootctl");
+    /// 真 Magisk 的目录：挂载态（方案甲）设备上它才是"我们的邻居"。
+    const MAGISK_DIR: &str = "/data/adb/magisk";
 
     /// 模块脚本/安装器该用哪个 bin 目录？
     ///
     /// 内核态（5.10+）用 KernelSU 的既有布局 `/data/adb/ksu/bin`；挂载态（<5.10）
-    /// 用它自己的 `/data/adb/xecpro/bin` —— 两个形态在设备上互不出现对方的痕迹
-    /// （`/data/adb/ksu` 本身就是"内核态 root"的指纹）。
+    /// 优先用我们自己的 `/data/adb/xecpro/bin`。
+    ///
+    /// 但挂载态的**正式路线现在是 Magisk**（方案甲，管理器跑官方 `boot_patch.sh`）：
+    /// 那种设备上 `/data/adb/xecpro/bin` 根本不会存在（没人跑 `install-mount-state`），
+    /// 而真 Magisk 自带 `/data/adb/magisk`。所以这里做一次**只对挂载态生效**的探测：
+    /// 有我们自己的就用它，没有就退到 Magisk 的目录。内核态照旧返回原值，一行不变。
     pub fn binary_dir() -> String {
-        if crate::utils::is_mount_state() {
-            crate::defs::XECPRO_BIN_DIR.to_string()
-        } else {
-            BINARY_DIR.trim_end_matches('/').to_string()
+        if !crate::utils::is_mount_state() {
+            return BINARY_DIR.trim_end_matches('/').to_string();
         }
+        if std::path::Path::new(crate::defs::XECPRO_BIN_DIR).is_dir() {
+            return crate::defs::XECPRO_BIN_DIR.to_string();
+        }
+        MAGISK_DIR.to_string()
     }
 
-    /// 当前形态下 busybox 的路径（随 [`binary_dir`] 走）。
+    /// 挂载态下 busybox 的路径（随 [`binary_dir`] 的探测结果走）。
     pub fn busybox_path() -> String {
-        if crate::utils::is_mount_state() {
-            format!("{}/busybox", crate::defs::XECPRO_BIN_DIR)
-        } else {
-            BUSYBOX_PATH.to_string()
+        if !crate::utils::is_mount_state() {
+            return BUSYBOX_PATH.to_string();
         }
+        let ours = format!("{}/busybox", crate::defs::XECPRO_BIN_DIR);
+        if std::path::Path::new(&ours).is_file() {
+            return ours;
+        }
+        format!("{MAGISK_DIR}/busybox")
     }
 
     pub fn ensure_binaries(ignore_if_exist: bool) -> anyhow::Result<()> {

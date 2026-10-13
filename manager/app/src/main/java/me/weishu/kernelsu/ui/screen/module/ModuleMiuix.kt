@@ -540,7 +540,9 @@ fun ModulePagerMiuix(
         },
         contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal)
     ) { innerPadding ->
-        if (uiState.magiskInstalled) {
+        // 只有"内核态设备上另有真 Magisk"才算冲突（那时模块流水线让给 Magisk）；
+        // 5.10 以下的挂载态设备上 Magisk 就是这条路的 root 实现，列表照常显示。
+        if (uiState.magiskConflict) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()

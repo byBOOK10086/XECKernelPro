@@ -23,6 +23,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.R
+import me.weishu.kernelsu.getKernelVersion
 import me.weishu.kernelsu.data.model.Module
 import me.weishu.kernelsu.data.model.ModuleUpdateInfo
 import me.weishu.kernelsu.data.repository.ModuleRepository
@@ -122,10 +123,16 @@ class ModuleViewModel(
     fun refreshEnvironmentState() {
         viewModelScope.launch {
             val magiskInstalled = withContext(Dispatchers.IO) { hasMagisk() }
+            // <5.10（非 GKI）设备上 Magisk **就是**这条路的 root 实现本身（方案甲：
+            // 管理器驱动官方 boot_patch.sh），不是"冲突"。真正的冲突只可能发生在
+            // 内核态设备上：KSU 驱动 + 另一个真 Magisk 同时存在。
+            val magiskRoute = magiskInstalled &&
+                withContext(Dispatchers.IO) { !getKernelVersion().isGKI() }
             val isSafeMode = Natives.isSafeMode
             _uiState.update {
                 it.copy(
                     magiskInstalled = magiskInstalled,
+                    magiskRoute = magiskRoute,
                     isSafeMode = isSafeMode,
                 )
             }

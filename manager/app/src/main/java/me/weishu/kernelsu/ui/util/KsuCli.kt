@@ -80,6 +80,20 @@ fun Uri.getFileName(context: Context): String? {
 fun createRootShell(globalMnt: Boolean = false): Shell {
     Shell.enableVerboseLogging = BuildConfig.DEBUG
     val builder = Shell.Builder.create()
+    // 挂载态（<5.10，方案甲 = Magisk 路线）：内核里没有 KSU 驱动，`libxeccli.so debug su`
+    // 这个进程永远拿不到 root（它只能靠内核驱动提权），再试一遍只会得到一个空壳。
+    // 直接走设备上的 `su`，也就是 Magisk 的 su —— 管理器的 root 和其它 app 完全同一条
+    // 通道：授权记在 /data/adb/magisk.db 的 policies 表里，Magisk 应用既能看到本管理器，
+    // 也能随时收回它的 root；本管理器反过来也能改同一张表（超级用户页）。
+    // 内核态一个字都不改：驱动在就还是先走 ksud。
+    if (isMountState) {
+        return try {
+            if (globalMnt) builder.build("su", "-mm") else builder.build("su")
+        } catch (e: Throwable) {
+            Log.w(TAG, "magisk su failed: ", e)
+            builder.build("sh")
+        }
+    }
     return try {
         if (globalMnt) {
             builder.build(getKsuDaemonPath(), "debug", "su", "-g")
