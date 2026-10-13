@@ -69,23 +69,24 @@ command -v magisk 2>/dev/null || true
     @Volatile
     private var cachedBinary: String? = null
 
-    fun snapshot(): Snapshot = withNewRootShell { shell ->
-        val version = version(shell)
-        val policies = policies(shell)
+    fun snapshot(): Snapshot = withNewRootShell {
+        val shell = this
+        val daemonVersion = version(shell)
+        val policyList = policies(shell)
         val enforced = runMagisk(shell, "--denylist status").isSuccess
-        val denylist = runMagisk(shell, "--denylist ls").out
+        val denylistApps = runMagisk(shell, "--denylist ls").out
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .map { it.substringBefore('|') }
             .distinct()
-        val zygisk = query(shell, "SELECT value FROM settings WHERE key='zygisk'")
+        val zygiskOn = query(shell, "SELECT value FROM settings WHERE key='zygisk'")
             .firstOrNull()?.get("value") == "1"
         Snapshot(
-            version = version,
-            policies = policies,
+            version = daemonVersion,
+            policies = policyList,
             denylistEnforced = enforced,
-            denylistCount = denylist.size,
-            zygiskEnabled = zygisk,
+            denylistCount = denylistApps.size,
+            zygiskEnabled = zygiskOn,
         )
     }
 
@@ -104,8 +105,8 @@ command -v magisk 2>/dev/null || true
     fun removePolicy(uid: Int) = exec("DELETE FROM policies WHERE uid=$uid")
 
     fun setDenylistEnforced(enabled: Boolean) {
-        val result = withNewRootShell { shell ->
-            runMagisk(shell, if (enabled) "--denylist enable" else "--denylist disable")
+        val result = withNewRootShell {
+            runMagisk(this, if (enabled) "--denylist enable" else "--denylist disable")
         }
         if (!result.isSuccess) throw Unavailable(message("magisk --denylist", result))
     }
@@ -169,7 +170,7 @@ command -v magisk 2>/dev/null || true
     }
 
     private fun exec(sql: String) {
-        val result = withNewRootShell { shell -> runMagisk(shell, "--sqlite ${quote(sql)}") }
+        val result = withNewRootShell { runMagisk(this, "--sqlite ${quote(sql)}") }
         if (!result.isSuccess) throw Unavailable(message("magisk --sqlite", result))
     }
 
