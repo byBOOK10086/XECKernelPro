@@ -741,7 +741,7 @@ fun hasMagisk(): Boolean {
         [ -e /data/adb/magisk/${MAGISK_COMPAT_MARKER} ] && exit 1
         [ -e /data/adb/magisk.db ] && exit 0
         for b in magisk64 magisk32 magiskinit magiskboot; do
-          [ -e "/data/adb/magisk/\$b" ] && exit 0
+          [ -e "/data/adb/magisk/${'$'}b" ] && exit 0
         done
         exit 1
     """.trimIndent()

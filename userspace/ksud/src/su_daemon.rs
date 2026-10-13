@@ -187,7 +187,6 @@ pub fn run_daemon(once: bool) -> Result<()> {
     let listener = UnixListener::bind(&path).with_context(|| format!("bind {path}"))?;
     // socket 本身不设访问限制：授权判定靠 SO_PEERCRED + 允许列表（只看 socket 权限
     // 会把普通应用挡在门外，反而做不了"按 uid 授权"）。
-    use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(&path, fs::Permissions::from_mode(0o666)).ok();
     info!("xecpro daemon: 监听 {path}");
 
@@ -268,7 +267,7 @@ fn recv_request(stream: &UnixStream) -> Result<(Vec<u8>, [RawFd; 3])> {
         iov_len: buf.len(),
     };
     let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
-    msg.msg_iov = &mut iov;
+    msg.msg_iov = &raw mut iov;
     msg.msg_iovlen = 1;
     msg.msg_control = cmsg_buf.as_mut_ptr().cast::<libc::c_void>();
     msg.msg_controllen = cmsg_buf.len();
@@ -366,7 +365,7 @@ fn resolve_command(args: &[String]) -> (String, Vec<String>) {
             "-s" | "--shell" => {
                 index += 1;
                 if let Some(value) = args.get(index) {
-                    shell = value.clone();
+                    shell.clone_from(value);
                 }
             }
             "-" | "-l" | "--login" => {}
@@ -405,15 +404,15 @@ fn spawn_root(request: &Request, fds: &[RawFd; 3]) -> Result<i32> {
                 libc::dup2(*fd, index as RawFd);
                 libc::close(*fd);
             }
-            if !request.cwd.is_empty() {
-                if let Ok(cwd) = CString::new(request.cwd.clone()) {
-                    libc::chdir(cwd.as_ptr());
-                }
+            if !request.cwd.is_empty()
+                && let Ok(cwd) = CString::new(request.cwd.as_str())
+            {
+                libc::chdir(cwd.as_ptr());
             }
             let env = build_env();
             let program_c = CString::new(program.clone()).unwrap_or_default();
             let mut exec_argv: Vec<CString> = Vec::with_capacity(args.len() + 2);
-            exec_argv.push(CString::new(program.clone()).unwrap_or_default());
+            exec_argv.push(CString::new(program.as_str()).unwrap_or_default());
             for arg in &args {
                 exec_argv.push(CString::new(arg.as_str()).unwrap_or_default());
             }
