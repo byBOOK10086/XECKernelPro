@@ -210,7 +210,7 @@ service xecpro_daemon {dir}/xudc daemon
 on post-fs-data
     mkdir {dir} 0700 root root
     start logd
-    exec -- /system/bin/sh {bootstrap}
+    exec -- /system/bin/sh {payload_dir}{BOOTSTRAP_SH}
     start xecpro_daemon
     exec u:r:su:s0 root -- {dir}/xudc post-fs-data
 
@@ -223,8 +223,7 @@ on property:vold.decrypt=trigger_restart_framework
 on property:sys.boot_completed=1
     exec u:r:su:s0 root -- {dir}/xudc boot-completed
 ",
-        dir = crate::defs::XECPRO_DIR,
-        bootstrap = format!("{payload_dir}{BOOTSTRAP_SH}")
+        dir = crate::defs::XECPRO_DIR
     );
 
     // 首启自举：第一次开机时 /data 是空的（用户当时还没有 root，没法自己铺用户态），
@@ -234,12 +233,11 @@ on property:sys.boot_completed=1
         r#"#!/system/bin/sh
 # xecpro 首启自举（由 xudc ramdisk-patch 注入，见 userspace/ksud/src/ramdisk_patch.rs）。
 DIR={dir}
-if [ ! -x "$DIR/xudc" ] || ! cmp -s {payload}/xudc "$DIR/xudc"; then
-    {payload}/xudc install-mount-state > /dev/kmsg 2>&1
+if [ ! -x "$DIR/xudc" ] || ! cmp -s {payload_dir}/xudc "$DIR/xudc"; then
+    {payload_dir}/xudc install-mount-state > /dev/kmsg 2>&1
 fi
 "#,
-        dir = crate::defs::XECPRO_DIR,
-        payload = payload_dir
+        dir = crate::defs::XECPRO_DIR
     );
 
     // 目录条目必须显式加：Linux 的 initramfs 解包器只对 S_ISDIR 的成员建目录，
