@@ -139,6 +139,7 @@ internal fun InstallScreenMiuix(
                             onSelectBootImageForKpm = actions.onSelectBootImageForKpm,
                             onSelectAnyKernel = actions.onSelectAnyKernel,
                             onSelectBootImageForKpatch = actions.onSelectBootImageForKpatch,
+                            onSelectBootImageForMountState = actions.onSelectBootImageForMountState,
                             onPrivilegeUpdate = actions.onPrivilegeUpdate,
                         )
                     }
@@ -323,6 +324,7 @@ private fun SelectInstallMethod(
     onSelectBootImageForKpm: () -> Unit,
     onSelectAnyKernel: () -> Unit,
     onSelectBootImageForKpatch: () -> Unit,
+    onSelectBootImageForMountState: () -> Unit,
     onPrivilegeUpdate: () -> Unit,
 ) {
     val confirmDialog = rememberConfirmDialog(

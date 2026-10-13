@@ -101,10 +101,16 @@ pub fn run(argv: &[std::ffi::CString]) -> Result<(), String> {
         return hand_off(argv);
     }
 
-    // 分支判定落到 kmsg，真机排查时一眼就能看出走的是哪条路。
+    // legacy SAR：内核 cmdline 带 `skip_initramfs`（注入器把它 hexpatch 成
+    // `want_initramfs` 之后 ramdisk 才会被加载，但 cmdline 里的字符串还在）。
+    // 这种机型的 `/` 只是临时 ramdisk、system 在别的分区上：必须先把 system
+    // 挂起来当根，再把阶段脚本注入它的 init.rc。
     if cfg.skip_initramfs {
-        kinfo!("分支：legacy SAR（skip_initramfs）");
-    } else if cfg.force_normal_boot {
+        return run_legacy_sar(argv);
+    }
+
+    // 分支判定落到 kmsg，真机排查时一眼就能看出走的是哪条路。
+    if cfg.force_normal_boot {
         kinfo!("分支：first stage（force_normal_boot）");
     } else if check_two_stage() {
         kinfo!("分支：2SI（first stage 路径）");
@@ -135,6 +141,20 @@ fn is_second_stage(argv: &[std::ffi::CString]) -> bool {
 const SYSTEM_INIT_RC: &str = "/system/etc/init/hw/init.rc";
 /// 第二段改写后的 init.rc 落在 ramdisk 根（可写）。
 const STAGED_INIT_RC: &str = "/xecinit.rc";
+/// legacy SAR：system 分区先挂到这里（挂上之后再 `switch_root` 到它）。
+const SAR_ROOT: &str = "/system_root";
+/// legacy SAR：`switch_root` 之后我们的载荷能从哪儿读到（注入器按同一个约定
+/// 生成 rc 与自举脚本里的路径，见 `ramdisk_patch.rs` 的 `Layout::payload_dir`）。
+const SAR_REHOME: &str = "/mnt/xecpro";
+/// legacy SAR：system 分区的候选设备节点（照 Magisk `init/mount.cpp`）。
+const SAR_DEVICE_CANDIDATES: [&str; 6] = [
+    "/dev/block/by-name/system",
+    "/dev/block/by-name/system_a",
+    "/dev/block/by-name/system_b",
+    "/dev/block/by-name/vroot",
+    "/dev/block/by-name/APP",
+    "/dev/root",
+];
 
 /// 第二段：`/system` 已挂载，把 `overlay.d/*.rc` 注入真正的 init.rc 再交棒。
 ///
@@ -147,20 +167,30 @@ fn run_second_stage(argv: &[std::ffi::CString]) -> Result<(), String> {
         "xecinit 第二段：/system 已挂载，把阶段脚本注入 {}",
         SYSTEM_INIT_RC
     );
-    match stage_system_init_rc() {
+    match stage_init_rc(
+        Path::new(SYSTEM_INIT_RC),
+        Path::new(OVERLAY_DIR),
+        Path::new(STAGED_INIT_RC),
+    ) {
         Ok(0) => kinfo!("overlay.d 里没有 *.rc，没什么要注入的"),
         Ok(bytes) => kinfo!("已注入 {SYSTEM_INIT_RC}（追加 {bytes} 字节，bind 挂载生效）"),
         Err(e) => kwarn!("注入 {SYSTEM_INIT_RC} 失败（继续交棒）：{e}"),
     }
-    exec_system_init(argv)
+    exec_at("/system/bin/init", argv)
 }
 
-fn stage_system_init_rc() -> Result<usize, String> {
-    let target = Path::new(SYSTEM_INIT_RC);
+/// 把 `overlay` 下的 `*.rc` 追加到 `target`（真 init.rc），再把结果 bind 挂回去。
+///
+/// 系统分区只读，所以只能"读原文件 → 追加 → 写到可写的地方（`staged`）→ bind 覆盖"。
+/// Magisk 用 overlayfs 做同一件事（`init/rootdir.cpp` 里 `mount_overlay("/")`），
+/// bind 挂载更简单，对内核也没有额外要求。
+///
+/// 返回追加的字节数（0 = 没有 rc 可注入）。
+fn stage_init_rc(target: &Path, overlay: &Path, staged: &Path) -> Result<usize, String> {
     if !target.is_file() {
-        return Err(format!("{SYSTEM_INIT_RC} 不存在：这个布局还没支持"));
+        return Err(format!("{} 不存在", target.display()));
     }
-    let sources = rc_files(Path::new(OVERLAY_DIR));
+    let sources = rc_files(overlay);
     if sources.is_empty() {
         return Ok(0);
     }
@@ -179,10 +209,155 @@ fn stage_system_init_rc() -> Result<usize, String> {
         }
     }
 
-    let staged = Path::new(STAGED_INIT_RC);
     fs::write(staged, text.as_bytes()).map_err(|e| format!("写 {}：{e}", staged.display()))?;
     mount_bind(staged, target)?;
     Ok(added)
+}
+
+/// legacy SAR：把 system 分区挂成新的根，再把阶段脚本注入它的 init.rc，最后交棒。
+///
+/// 顺序照 Magisk `init/init.rs` 的 `legacy_system_as_root()`：挂 system →
+/// 把 ramdisk 重新安置（否则 `switch_root` 之后读不到我们的载荷）→ `switch_root` →
+/// 改真 init.rc → exec 真 init。任何一步失败都只报警告，最后仍尽力交棒。
+fn run_legacy_sar(argv: &[std::ffi::CString]) -> Result<(), String> {
+    kinfo!("分支：legacy SAR（skip_initramfs）—— 先把 system 挂成根再交棒");
+    mount_system_root()?;
+    if let Err(e) = rehome_payloads() {
+        kwarn!("重新安置载荷失败（{e}）：首启自举可能起不来，但仍然继续交棒");
+    }
+    switch_root(SAR_ROOT)?;
+    kinfo!("已 switch_root 到 {SAR_ROOT}");
+
+    // 现在 `/` 是 system 分区，真 init.rc 在这两个候选路径之一上。
+    let target = if Path::new(SYSTEM_INIT_RC).is_file() {
+        Path::new(SYSTEM_INIT_RC)
+    } else {
+        Path::new("/init.rc")
+    };
+    let overlay = format!("{SAR_REHOME}{OVERLAY_DIR}");
+    let staged = format!("{SAR_REHOME}.rc");
+    match stage_init_rc(target, Path::new(&overlay), Path::new(&staged)) {
+        Ok(0) => kinfo!("{} 里没有 overlay.d 的 rc 可注入", target.display()),
+        Ok(bytes) => kinfo!("已注入 {}（追加 {bytes} 字节）", target.display()),
+        Err(e) => kwarn!("注入 {} 失败（继续交棒）：{e}", target.display()),
+    }
+
+    // 真 init 在新根上：SAR 机型通常是 `/init`，也有 `/system/bin/init` 的布局。
+    for candidate in ["/init", "/system/bin/init"] {
+        if Path::new(candidate).is_file() {
+            return exec_at(candidate, argv);
+        }
+    }
+    Err("SAR：switch_root 之后找不到真 init（/init 与 /system/bin/init 都不在）".to_string())
+}
+
+/// 把 system 分区只读挂到 [`SAR_ROOT`]：先 ext4，再 erofs（照 Magisk
+/// `init/mount.cpp` 的 `mount_system_root()`）。设备节点用 by-name 找，
+/// 找不到就退到 `/dev/root`。
+fn mount_system_root() -> Result<(), String> {
+    let _ = fs::create_dir_all(SAR_ROOT);
+    let mut last = String::from("没有可用的候选分区");
+    for dev in SAR_DEVICE_CANDIDATES {
+        if !Path::new(dev).exists() {
+            continue;
+        }
+        for fstype in ["ext4", "erofs"] {
+            match mount_with(dev, SAR_ROOT, Some(fstype), libc::MS_RDONLY) {
+                Ok(()) => {
+                    kinfo!("已把 {dev}（{fstype}，只读）挂到 {SAR_ROOT}");
+                    return Ok(());
+                }
+                Err(e) => last = e,
+            }
+        }
+    }
+    Err(format!("挂载 system 分区失败（最后一次：{last}）"))
+}
+
+/// `switch_root` 之后旧根就没了，而 rc 与首启自举脚本还要从 ramdisk 里读 xudc。
+///
+/// 做法：在新根的 `/mnt` 上盖一个 tmpfs（system 分区只读，没法往里 mkdir），
+/// 再把当前根 bind 挂到 `{SAR_ROOT}{SAR_REHOME}`。路径与注入器生成的
+/// `Layout::payload_dir()` 必须一致。
+fn rehome_payloads() -> Result<(), String> {
+    let mnt = format!("{SAR_ROOT}/mnt");
+    if !Path::new(&mnt).is_dir() {
+        return Err(format!("{mnt} 不存在"));
+    }
+    mount_with("tmpfs", &mnt, Some("tmpfs"), 0)?;
+    let rehome = format!("{SAR_ROOT}{SAR_REHOME}");
+    fs::create_dir_all(&rehome).map_err(|e| format!("建 {rehome}：{e}"))?;
+    mount_with("/", &rehome, None, libc::MS_BIND)?;
+    kinfo!("载荷已重新挂到 {SAR_REHOME}（switch_root 之后仍可读）");
+    Ok(())
+}
+
+/// 切换根：chdir → 把新根 move 到 `/` → chroot → chdir（照 Magisk `switch_root`）。
+fn switch_root(new_root: &str) -> Result<(), String> {
+    let root_c = cstr(new_root)?;
+    if unsafe { libc::chdir(root_c.as_ptr()) } != 0 {
+        return Err(format!(
+            "chdir {new_root} 失败：{}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    if unsafe {
+        libc::mount(
+            cstr(".")?.as_ptr(),
+            cstr("/")?.as_ptr(),
+            std::ptr::null(),
+            libc::MS_MOVE,
+            std::ptr::null(),
+        )
+    } != 0
+    {
+        return Err(format!(
+            "MS_MOVE {new_root} -> / 失败：{}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    if unsafe { libc::chroot(cstr(".")?.as_ptr()) } != 0 {
+        return Err(format!(
+            "chroot {new_root} 失败：{}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    if unsafe { libc::chdir(cstr("/")?.as_ptr()) } != 0 {
+        return Err(format!("chdir / 失败：{}", std::io::Error::last_os_error()));
+    }
+    Ok(())
+}
+
+/// 通用 `mount`（`flags` 与 `fstype` 可选，例如 bind 挂载的 fstype 就是 NULL）。
+fn mount_with(
+    source: &str,
+    target: &str,
+    fstype: Option<&str>,
+    flags: libc::c_ulong,
+) -> Result<(), String> {
+    let source_c = cstr(source)?;
+    let target_c = cstr(target)?;
+    let fstype_c = match fstype {
+        Some(name) => Some(cstr(name)?),
+        None => None,
+    };
+    let fstype_ptr = fstype_c.as_ref().map_or(std::ptr::null(), |c| c.as_ptr());
+    let rc = unsafe {
+        libc::mount(
+            source_c.as_ptr(),
+            target_c.as_ptr(),
+            fstype_ptr,
+            flags,
+            std::ptr::null(),
+        )
+    };
+    if rc != 0 {
+        return Err(format!(
+            "mount {source} -> {target}（{flags:#x}）失败：{}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    Ok(())
 }
 
 /// `dir` 下的 `*.rc`（非递归；子目录只记一条日志 —— overlay.d 里目前只有一个 rc）。
@@ -229,9 +404,9 @@ fn mount_bind(src: &Path, target: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// 把控制权交给系统分区上的真 init（第二段）。
-fn exec_system_init(argv: &[std::ffi::CString]) -> Result<(), String> {
-    let path = cstr("/system/bin/init")?;
+/// `execv` 到指定路径（argv 原样带过去）。
+fn exec_at(path_str: &str, argv: &[std::ffi::CString]) -> Result<(), String> {
+    let path = cstr(path_str)?;
     let mut argv_ptrs: Vec<*const std::ffi::c_char> = argv.iter().map(|arg| arg.as_ptr()).collect();
     if argv_ptrs.is_empty() {
         argv_ptrs.push(path.as_ptr());
@@ -239,7 +414,7 @@ fn exec_system_init(argv: &[std::ffi::CString]) -> Result<(), String> {
     argv_ptrs.push(std::ptr::null());
     unsafe { libc::execv(path.as_ptr(), argv_ptrs.as_ptr()) };
     Err(format!(
-        "/system/bin/init execv 失败：{}",
+        "{path_str} execv 失败：{}",
         std::io::Error::last_os_error()
     ))
 }
