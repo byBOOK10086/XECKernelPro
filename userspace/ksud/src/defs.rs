@@ -123,4 +123,4 @@ pub const XECPRO_DIR: &str = "/data/adb/xecpro";
 /// 内核态用 `/data/adb/ksu/bin`（KernelSU 既有布局，Zygisk Next 之类正是按它认
 /// "内核态 root"），挂载态**一个字节都不碰它** —— 两个形态在设备上互不出现对方
 /// 的痕迹，这是产品硬约束（见 `root_mode.rs` 与 `utils::purge_magisk_impersonation`）。
-pub const XECPRO_BIN_DIR: &str = concatcp!(XECPRO_DIR, "/bin");
+pub const XECPRO_BIN_DIR: &str = const_format::concatcp!(XECPRO_DIR, "/bin");

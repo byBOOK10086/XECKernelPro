@@ -258,10 +258,12 @@ pub fn purge_magisk_impersonation() {
 
     // 1) `bin/magisk` 调用名：只在它确实指向我们自己的 daemon 时才删，
     //    免得误删用户/其他工具自己放的东西。
+    //    注意：本文件 `use anyhow::...Ok`，`Ok(..)` 在模式位置会被解析成函数调用，
+    //    所以这里统一走 `.ok()` + `Some(..)`。
     let link = PathBuf::from(defs::BINARY_DIR).join("magisk");
-    if let Ok(target) = std::fs::read_link(&link) {
+    if let Some(target) = std::fs::read_link(&link).ok() {
         let daemon = Path::new(defs::DAEMON_PATH);
-        if target == daemon || target.file_name() == daemon.file_name() {
+        if target.as_path() == daemon || target.file_name() == daemon.file_name() {
             let _ = std::fs::remove_file(&link);
         }
     }
@@ -296,7 +298,7 @@ pub fn purge_magisk_impersonation() {
         "/debug_ramdisk/magisk64",
     ] {
         let path = Path::new(probe);
-        let Ok(target) = std::fs::read_link(path) else {
+        let Some(target) = std::fs::read_link(path).ok() else {
             continue;
         };
         if target.as_path() == daemon || target.file_name() == daemon.file_name() {
