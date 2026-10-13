@@ -258,10 +258,11 @@ pub fn purge_magisk_impersonation() {
 
     // 1) `bin/magisk` 调用名：只在它确实指向我们自己的 daemon 时才删，
     //    免得误删用户/其他工具自己放的东西。
-    //    注意：本文件 `use anyhow::...Ok`，`Ok(..)` 在模式位置会被解析成函数调用，
-    //    所以这里统一走 `.ok()` + `Some(..)`。
+    //    模式位置写全路径 `std::result::Result::Ok`：本文件 `use anyhow::...Ok`，
+    //    裸 `Ok(..)` 会被解析成函数调用（E0532），而 `.ok()` + `Some(..)` 又会被
+    //    `clippy::match_result_ok` 判冗余（`-Dwarnings` 下编译失败）。全路径两头都满足。
     let link = PathBuf::from(defs::BINARY_DIR).join("magisk");
-    if let Some(target) = std::fs::read_link(&link).ok() {
+    if let std::result::Result::Ok(target) = std::fs::read_link(&link) {
         let daemon = Path::new(defs::DAEMON_PATH);
         if target.as_path() == daemon || target.file_name() == daemon.file_name() {
             let _ = std::fs::remove_file(&link);
@@ -298,7 +299,7 @@ pub fn purge_magisk_impersonation() {
         "/debug_ramdisk/magisk64",
     ] {
         let path = Path::new(probe);
-        let Some(target) = std::fs::read_link(path).ok() else {
+        let std::result::Result::Ok(target) = std::fs::read_link(path) else {
             continue;
         };
         if target.as_path() == daemon || target.file_name() == daemon.file_name() {
@@ -352,7 +353,11 @@ fn link_ksud_to_bin() -> Result<()> {
 ///
 /// 非 Android 构建（CI 里的 x86_64 检查）没有内核版本可读，一律按内核态处理 ——
 /// 内核态那条路才是"什么额外东西都不铺"的安全默认值。
-pub(crate) fn is_mount_state() -> bool {
+///
+/// 写 `pub` 而不是 `pub(crate)`：外层模块是 crate 根的私有模块，`pub(crate)`
+/// 会被 `clippy::redundant_pub_crate` 判成冗余（`-Dwarnings` 下直接编译失败，
+/// `boot_patch.rs` 与 `main.rs` 里各留过一条同样的注释）。
+pub fn is_mount_state() -> bool {
     #[cfg(target_os = "android")]
     {
         crate::root_mode::current() == crate::root_mode::RootMode::MountState
