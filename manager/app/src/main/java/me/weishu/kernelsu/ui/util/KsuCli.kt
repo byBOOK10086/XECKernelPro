@@ -24,6 +24,7 @@ import me.weishu.kernelsu.core.tasks.ProbeResult
 import me.weishu.kernelsu.core.utils.DataSourceChannel
 import me.weishu.kernelsu.ksuApp
 import me.weishu.kernelsu.getKernelVersion
+import me.weishu.kernelsu.mountstate.MagiskRoot
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import java.io.File
@@ -227,8 +228,16 @@ fun flashModule(
         file.outputStream().use { output ->
             this?.copyTo(output)
         }
-        val cmd = "module install ${file.absolutePath}"
-        val result = flashWithIO("${getKsuDaemonPath()} $cmd", onStdout, onStderr)
+        // 挂载态（<5.10，方案甲）：这台设备的 root / 模块挂载 / Zygisk 全是 Magisk 的，
+        // 模块安装也必须走 Magisk 官方安装器 —— 模块的 customize.sh 用的是 Magisk 那套
+        // ui_print / set_perm / replace 语义，交给内核态的 ksud 安装器会装出半成品。
+        // 内核态一个字都不改：还是 ksud。
+        val cmd = if (isMountState) {
+            MagiskRoot.installModuleCommand(file.absolutePath)
+        } else {
+            "${getKsuDaemonPath()} module install ${file.absolutePath}"
+        }
+        val result = flashWithIO(cmd, onStdout, onStderr)
         Log.i("XECKernelPro", "install module $uri result: $result")
 
         file.delete()

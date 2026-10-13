@@ -51,3 +51,4 @@
 
 - 上游项目：https://github.com/tiann/KernelSU
 - 问题反馈：本仓库 Issues
+- 5.10 以下内核（挂载态 / Magisk 路线）使用指南：[docs/mount-state-root-guide.md](docs/mount-state-root-guide.md)

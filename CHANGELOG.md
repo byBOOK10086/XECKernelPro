@@ -4,6 +4,58 @@
 
 ---
 
+## v31103–v31107 · 2026-10-13 · 5.10 以下改走 Magisk 官方修补（方案甲）+ 管理器双向管 root
+
+> 类型：路线切换 + 新增功能（对外可见：<5.10 的安装方式、超级用户页、模块安装通道）
+> 提交范围：`bc9029e5..41506e67`（发版 v31103 → v31107）
+
+### 变更：<5.10 的 root 改用 Magisk 官方修补（方案甲）
+
+- 安装页在非 GKI（<5.10）分支新增 **「Magisk 修补（5.10 以下的内核）」**：管理器不做任何
+  boot 修补算法，只按官方 `boot_patch.sh` 的目录契约摆好载荷（`magiskboot` / `magiskinit` /
+  `magisk` / `init-ld` / `busybox` / `stub.apk` / `util_functions.sh`）并以 `BOOTMODE=true`
+  跑官方脚本，把产物 `new-boot.img` 导出给用户刷入。
+- 高级开关四个，全部对应官方环境变量（默认全关，与 Magisk 默认一致）：
+  `KEEPVERITY` / `KEEPFORCEENCRYPT` / `PATCHVBMETAFLAG` / `RECOVERYMODE`；`LEGACYSAR`
+  由管理器判定后传入。A-only legacy SAR 的官方答案是 **`RECOVERYMODE=true` 刷 recovery**。
+- 载荷版本固定 **v30.7**，CI 按 **APK sha256 + 每个载荷文件 sha256** 校验后解包到
+  `assets/magisk/` 与 `jniLibs/<abi>/`（不进源码树）；GPL-3.0 署名、来源与"未修改"声明见
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+### 新增：挂载态的「超级用户」页 = Magisk 策略表的前端（双向）
+
+- 管理器新增按路线的判定：**驱动是否应答 + 内核是否 GKI**（都不需要 root）。非 GKI 且无驱动
+  ⇒ 挂载态：这台设备上的 root 就是 Magisk 的 root。
+- **超级用户页**直接读写 Magisk 自己的策略表（`magisk --sqlite` / `magisk --denylist`）：
+  权限四态（询问 / 允许 / 拒绝 / 受限）、通知、日志、撤销、Zygisk 开关、DenyList 强制状态
+  与条数，并标出「本管理器」自己那一行。**不建影子名单、不缓存授权** ⇒ Magisk App 与本
+  管理器两边改一边立刻一致；本管理器的 root 授权也在同一张表里，Magisk 那边看得到、收得回。
+- 授权框永远由 Magisk 弹（它只认自己签名的管理器），管理器不会绕过它自己发 root。
+- 挂载态的 root shell 改为直接走设备的 `su`（原来先试 `libxeccli.so debug su`，没有内核驱动
+  时必然拿不到 root），并且每条命令新开一条 shell —— 授权被撤销或首次被拒之后不会留死壳。
+
+### 变更：模块安装通道
+
+- 挂载态下刷入模块改走 **Magisk 官方安装器**（`magisk --install-module`），模块的
+  `customize.sh` 用 Magisk 的 `ui_print` / `set_perm` / `replace` 语义；内核态仍走
+  `ksud module install`。启用 / 禁用 / 卸载继续用两边共用的 `disable` / `remove` 标记文件。
+
+### 移除：自研挂载态路线从界面撤下
+
+- `InstallMethod.RamdiskPatch` 及其界面与字符串全部撤下；`xudc ramdisk-patch` 与 `xecinit`
+  代码保留为实验，不再对外推荐。
+- 「与 Magisk 冲突、模块不可用」不再出现在 <5.10 设备上（那是内核态与真 Magisk 同时存在时
+  才有的真冲突）；首页该位置改为「Magisk 路线（5.10 以下挂载态）」。
+
+### 兼容性
+
+- **GKI 2.0 / 内核态（5.10+）行为不变**：Magisk 相关资源与逻辑只出现在非 GKI 分支；
+  `_scratch/check_root_mode_isolation.py`（51 条断言）与 CI 全量构建（8 个 LKM、ksud、
+  xecinit、管理器 APK）保证这一点。
+- <5.10 使用说明见 [docs/mount-state-root-guide.md](docs/mount-state-root-guide.md)。
+
+---
+
 ## v31001 · 2026-10-06 · 许可合规整改：XecHide 下架、Zygisk Next 移出分发、上游署名补全、迁移新仓库
 
 > 类型：合规与分发调整（对外可见：Release 资产与资源包内容变化）

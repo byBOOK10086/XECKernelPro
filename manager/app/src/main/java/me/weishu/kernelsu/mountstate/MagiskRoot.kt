@@ -115,6 +115,21 @@ command -v magisk 2>/dev/null || true
     fun setZygisk(enabled: Boolean) =
         exec("INSERT OR REPLACE INTO settings (key,value) VALUES ('zygisk',${if (enabled) 1 else 0})")
 
+    /**
+     * 挂载态下安装模块的命令：交给 **Magisk 官方安装器**（`magisk --install-module`）。
+     *
+     * 模块自己的 `customize.sh` 用的是 Magisk 那套 `ui_print` / `set_perm` / `replace` 语义，
+     * 由 Magisk 自己跑才对；ksud 的安装器是给内核态设备用的，两条路线不许混用工具链。
+     * 二进制路径在 shell 里现探（不依赖 PATH），zip 路径按 POSIX 规则转义。
+     */
+    fun installModuleCommand(zip: String): String = buildString {
+        append("M=\"\$(for p in /data/adb/magisk/magisk /system/bin/magisk /debug_ramdisk/magisk; do ")
+        append("[ -x \"\$p\" ] && { printf '%s' \"\$p\"; break; }; done)\"; ")
+        append("[ -n \"\$M\" ] || M=magisk; ")
+        append("\"\$M\" --install-module ")
+        append(quote(zip))
+    }
+
     // ---- 内部：全部在调用方给的那条 root shell 里跑 ----
 
     /** magisk CLI 的绝对路径；找不到就是这条路线还没装好。 */
