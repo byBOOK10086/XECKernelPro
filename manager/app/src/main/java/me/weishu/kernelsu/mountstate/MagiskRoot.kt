@@ -1,7 +1,7 @@
 package me.weishu.kernelsu.mountstate
 
 import com.topjohnwu.superuser.Shell
-import me.weishu.kernelsu.ui.util.getRootShell
+import me.weishu.kernelsu.ui.util.withNewRootShell
 
 /**
  * 方案甲：5.10 以下挂载态设备的 root **就是** Magisk 的 root。
@@ -21,6 +21,11 @@ import me.weishu.kernelsu.ui.util.getRootShell
  *
  * 效果是双向的：Magisk 应用和本管理器读写同一张表，一边改另一边立刻一致 ——
  * 本管理器的 root 授权也在里面（它同样是通过 `su` 申请 root 的普通 app）。
+ *
+ * 每条命令都用**新开的 root shell**：挂载态的 `su` 就是 Magisk 的 su，用户可能在 Magisk
+ * 应用里随时授权或撤销，缓存一条 shell 会在"第一次请求被拒/超时"之后变成死壳，
+ * 之后再授权也一直是"读不到"。一次刷新只开一条 shell（最多弹一次授权框），
+ * 所以代价只是一次 `su` 进程。
  *
  * 只在挂载态被引用：内核态（5.10+ GKI / LKM / KPatch）设备一行都不会走到这里。
  */
@@ -42,6 +47,15 @@ object MagiskRoot {
         val notification: Boolean,
     )
 
+    /** 一次刷新的全部数据：一条 shell 读完，保证同一时刻的一致性。 */
+    data class Snapshot(
+        val version: String,
+        val policies: List<Policy>,
+        val denylistEnforced: Boolean,
+        val denylistCount: Int,
+        val zygiskEnabled: Boolean,
+    )
+
     /** 设备上没有可用的 magisk CLI，或者 magiskd 拒绝了这次调用（例如还没授权 root）。 */
     class Unavailable(message: String) : Exception(message)
 
@@ -55,36 +69,25 @@ command -v magisk 2>/dev/null || true
     @Volatile
     private var cachedBinary: String? = null
 
-    /** magisk CLI 的绝对路径；找不到就是这条路线还没装好。 */
-    fun binary(): String {
-        cachedBinary?.let { return it }
-        val result = run(PROBE)
-        val path = result.out.firstOrNull { it.trim().startsWith("/") }?.trim()
-            ?: throw Unavailable(message("magisk CLI not found", result))
-        cachedBinary = path
-        return path
+    fun snapshot(): Snapshot = withNewRootShell { shell ->
+        val version = version(shell)
+        val policies = policies(shell)
+        val enforced = runMagisk(shell, "--denylist status").isSuccess
+        val denylist = runMagisk(shell, "--denylist ls").out
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .map { it.substringBefore('|') }
+            .distinct()
+        val zygisk = query(shell, "SELECT value FROM settings WHERE key='zygisk'")
+            .firstOrNull()?.get("value") == "1"
+        Snapshot(
+            version = version,
+            policies = policies,
+            denylistEnforced = enforced,
+            denylistCount = denylist.size,
+            zygiskEnabled = zygisk,
+        )
     }
-
-    /** 正在跑的 magiskd 版本（`-v` 走守护进程，顺便证明 daemon 活着；失败退回二进制版本）。 */
-    fun version(): String {
-        val running = runMagisk("-v")
-        running.out.firstOrNull { it.isNotBlank() }?.let { return it.trim() }
-        val local = runMagisk("-c")
-        return local.out.firstOrNull { it.isNotBlank() }?.trim()
-            ?: throw Unavailable(message("magisk -v", running))
-    }
-
-    fun policies(): List<Policy> = query("SELECT uid, policy, until, logging, notification FROM policies")
-        .mapNotNull { row ->
-            val uid = row["uid"]?.toIntOrNull() ?: return@mapNotNull null
-            Policy(
-                uid = uid,
-                policy = row["policy"]?.toIntOrNull() ?: POLICY_DENY,
-                until = row["until"]?.toLongOrNull() ?: 0L,
-                logging = row["logging"] == "1",
-                notification = row["notification"] == "1",
-            )
-        }
 
     /**
      * 写一行策略。四个值都给全：Magisk 自己也是整行替换，缺列会被当成 0。
@@ -100,33 +103,55 @@ command -v magisk 2>/dev/null || true
 
     fun removePolicy(uid: Int) = exec("DELETE FROM policies WHERE uid=$uid")
 
-    fun denylistEnforced(): Boolean = runMagisk("--denylist status").isSuccess
-
     fun setDenylistEnforced(enabled: Boolean) {
-        val result = runMagisk(if (enabled) "--denylist enable" else "--denylist disable")
+        val result = withNewRootShell { shell ->
+            runMagisk(shell, if (enabled) "--denylist enable" else "--denylist disable")
+        }
         if (!result.isSuccess) throw Unavailable(message("magisk --denylist", result))
     }
-
-    /** DenyList 里的包名（Magisk 的 `ls` 是 `包名|进程` 一行一条，同包去重）。 */
-    fun denylist(): List<String> = runMagisk("--denylist ls").out
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
-        .map { it.substringBefore('|') }
-        .distinct()
-
-    fun zygiskEnabled(): Boolean =
-        query("SELECT value FROM settings WHERE key='zygisk'").firstOrNull()?.get("value") == "1"
 
     /** Zygisk 由 magiskd 在开机时装载，改完要重启才生效（Magisk 应用也是这么提示的）。 */
     fun setZygisk(enabled: Boolean) =
         exec("INSERT OR REPLACE INTO settings (key,value) VALUES ('zygisk',${if (enabled) 1 else 0})")
 
-    // ---- 内部：全是 `magisk <args>` 一次执行 ----
+    // ---- 内部：全部在调用方给的那条 root shell 里跑 ----
 
-    private fun runMagisk(args: String): Shell.Result = run("${binary()} $args")
+    /** magisk CLI 的绝对路径；找不到就是这条路线还没装好。 */
+    private fun binary(shell: Shell): String {
+        cachedBinary?.let { return it }
+        val result = run(shell, PROBE)
+        val path = result.out.firstOrNull { it.trim().startsWith("/") }?.trim()
+            ?: throw Unavailable(message("magisk CLI not found", result))
+        cachedBinary = path
+        return path
+    }
 
-    private fun query(sql: String): List<Map<String, String>> {
-        val result = runMagisk("--sqlite ${quote(sql)}")
+    /** 正在跑的 magiskd 版本（`-v` 走守护进程，顺便证明 daemon 活着；失败退回二进制版本）。 */
+    private fun version(shell: Shell): String {
+        val running = runMagisk(shell, "-v")
+        running.out.firstOrNull { it.isNotBlank() }?.let { return it.trim() }
+        val local = runMagisk(shell, "-c")
+        return local.out.firstOrNull { it.isNotBlank() }?.trim()
+            ?: throw Unavailable(message("magisk -v", running))
+    }
+
+    private fun policies(shell: Shell): List<Policy> =
+        query(shell, "SELECT uid, policy, until, logging, notification FROM policies")
+            .mapNotNull { row ->
+                val uid = row["uid"]?.toIntOrNull() ?: return@mapNotNull null
+                Policy(
+                    uid = uid,
+                    policy = row["policy"]?.toIntOrNull() ?: POLICY_DENY,
+                    until = row["until"]?.toLongOrNull() ?: 0L,
+                    logging = row["logging"] == "1",
+                    notification = row["notification"] == "1",
+                )
+            }
+
+    private fun runMagisk(shell: Shell, args: String): Shell.Result = run(shell, "${binary(shell)} $args")
+
+    private fun query(shell: Shell, sql: String): List<Map<String, String>> {
+        val result = runMagisk(shell, "--sqlite ${quote(sql)}")
         if (!result.isSuccess) throw Unavailable(message("magisk --sqlite", result))
         return result.out.mapNotNull { line ->
             val trimmed = line.trim()
@@ -144,14 +169,14 @@ command -v magisk 2>/dev/null || true
     }
 
     private fun exec(sql: String) {
-        val result = runMagisk("--sqlite ${quote(sql)}")
+        val result = withNewRootShell { shell -> runMagisk(shell, "--sqlite ${quote(sql)}") }
         if (!result.isSuccess) throw Unavailable(message("magisk --sqlite", result))
     }
 
-    private fun run(command: String): Shell.Result {
+    private fun run(shell: Shell, command: String): Shell.Result {
         val stdout = ArrayList<String>()
         val stderr = ArrayList<String>()
-        return getRootShell().newJob().add(command).to(stdout, stderr).exec()
+        return shell.newJob().add(command).to(stdout, stderr).exec()
     }
 
     /** 进 shell 的一切都要过这一层：SQL 里带单引号，包一层单引号后按 POSIX 规则转义。 */

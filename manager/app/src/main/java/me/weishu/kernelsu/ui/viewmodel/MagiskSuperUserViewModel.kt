@@ -152,16 +152,17 @@ class MagiskSuperUserViewModel : ViewModel() {
     }
 
     private fun read(): MagiskSuperUserUiState {
-        val version = MagiskRoot.version()
-        val entries = MagiskRoot.policies().map { describe(it) }.sortedWith(
+        // 一次刷新只开一条 root shell（Magisk 的授权框最多弹一次），读到的也是同一时刻的一份。
+        val snapshot = MagiskRoot.snapshot()
+        val entries = snapshot.policies.map { describe(it) }.sortedWith(
             compareBy<MagiskRootEntry> { policyRank(it.policy) }.thenBy { it.label }
         )
         return MagiskSuperUserUiState(
-            magiskVersion = version,
+            magiskVersion = snapshot.version,
             entries = entries,
-            zygiskEnabled = MagiskRoot.zygiskEnabled(),
-            denylistEnforced = MagiskRoot.denylistEnforced(),
-            denylistCount = MagiskRoot.denylist().size,
+            zygiskEnabled = snapshot.zygiskEnabled,
+            denylistEnforced = snapshot.denylistEnforced,
+            denylistCount = snapshot.denylistCount,
         )
     }
 
