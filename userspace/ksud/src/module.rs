@@ -155,7 +155,7 @@ pub fn get_common_script_envs(module_id: Option<&str>) -> Vec<(&'static str, Str
             format!(
                 "{}:{}",
                 env_var("PATH").unwrap_or_default(),
-                defs::BINARY_DIR.trim_end_matches('/')
+                assets::binary_dir()
             ),
         ),
     ];
@@ -183,7 +183,7 @@ fn exec_install_script(module_file: &str, is_metamodule: bool, module_id: &str) 
     let install_script =
         metamodule::get_install_script(is_metamodule, INSTALLER_CONTENT, INSTALL_MODULE_SCRIPT)?;
 
-    let result = Command::new(assets::BUSYBOX_PATH)
+    let result = Command::new(assets::busybox_path())
         .args(["sh", "-c", &install_script])
         .envs(get_common_script_envs(Some(module_id)))
         .env("OUTFD", "1")
@@ -437,7 +437,7 @@ pub fn exec_script<T: AsRef<Path>>(path: T, wait: ScriptWait) -> Result<()> {
 
     let sigchld = SigchldBlock::block().context("Failed to block SIGCHLD")?;
     let original_sigmask = sigchld.previous;
-    let mut command = Command::new(assets::BUSYBOX_PATH);
+    let mut command = Command::new(assets::busybox_path());
     unsafe {
         command.pre_exec(move || {
             if libc::sigprocmask(
@@ -940,7 +940,7 @@ fn install_module_to_system(zip: &str) -> Result<()> {
 
     // first check if working dir is usable
     ensure_dir_exists(defs::WORKING_DIR).with_context(|| "Failed to create working dir")?;
-    ensure_dir_exists(defs::BINARY_DIR).with_context(|| "Failed to create bin dir")?;
+    ensure_dir_exists(assets::binary_dir()).with_context(|| "Failed to create bin dir")?;
 
     // read the module_id from zip, if failed it will return early.
     let mut buffer: Vec<u8> = Vec::new();

@@ -94,13 +94,13 @@ mod android {
 pub const VERSION_CODE: &str = env!("VERSION_CODE");
 pub const VERSION_NAME: &str = env!("VERSION_NAME");
 
-/// Magisk 兼容层对外报的版本与版本码。
+/// 历史遗留：旧版内核态（LKM/GKI）曾经装过一个"Magisk 兼容层"，会在
+/// `/data/adb/magisk/` 下放这个标记文件。
 ///
-/// **必须与 `installer.sh` 里的 `MAGISK_VER` / `MAGISK_VER_CODE` 一致**：模块用
-/// `magisk -V` 做版本门限，安装器用环境变量，两边不一致会让模块判断自相矛盾。
-/// `_scratch/run_all_checks.sh` 里有一条守卫在盯这个等式。
-pub const MAGISK_COMPAT_VER: &str = "25.2";
-pub const MAGISK_COMPAT_VER_CODE: &str = "25200";
+/// 兼容层已经**整体删除**（产品硬约束：内核态设备上不允许出现任何 Magisk 的东西，
+/// 见 `utils::purge_magisk_impersonation` 的说明），这个常量现在只剩一个用途：
+/// 开机时把这个标记连同它的空目录一起清掉。
+pub const MAGISK_LEGACY_MARKER: &str = ".xecpro-compat";
 
 #[cfg(target_os = "android")]
 pub const FULL_VERSION: &str = const_format::formatcp!(
@@ -115,9 +115,12 @@ pub use android::*;
 /// 而且 /data 上的挂载会被 init 追踪，卸载/重挂都会出问题。
 pub const MAGIC_WORK_DIR: &str = "/dev/.xecpro_magic";
 
-/// 人工逃生口：`/data/adb/magisk/` 下出现这个文件，就一律当"没装真 Magisk"，
-/// 不再跳过模块流水线（判定见 `utils::has_magisk_installed`）。
-pub const MAGISK_COMPAT_MARKER: &str = ".xecpro-compat";
-
 /// 挂载态 root（<5.10）的工作目录：允许列表、su socket、载荷与日志都放这里。
 pub const XECPRO_DIR: &str = "/data/adb/xecpro";
+
+/// 挂载态 root 的用户态工具目录（`xudc`、`su` 垫片、busybox 都在这儿）。
+///
+/// 内核态用 `/data/adb/ksu/bin`（KernelSU 既有布局，Zygisk Next 之类正是按它认
+/// "内核态 root"），挂载态**一个字节都不碰它** —— 两个形态在设备上互不出现对方
+/// 的痕迹，这是产品硬约束（见 `root_mode.rs` 与 `utils::purge_magisk_impersonation`）。
+pub const XECPRO_BIN_DIR: &str = concatcp!(XECPRO_DIR, "/bin");

@@ -12,7 +12,36 @@ mod android {
     pub const BUSYBOX_PATH: &str = concatcp!(BINARY_DIR, "busybox");
     pub const BOOTCTL_PATH: &str = concatcp!(BINARY_DIR, "bootctl");
 
+    /// 模块脚本/安装器该用哪个 bin 目录？
+    ///
+    /// 内核态（5.10+）用 KernelSU 的既有布局 `/data/adb/ksu/bin`；挂载态（<5.10）
+    /// 用它自己的 `/data/adb/xecpro/bin` —— 两个形态在设备上互不出现对方的痕迹
+    /// （`/data/adb/ksu` 本身就是"内核态 root"的指纹）。
+    pub fn binary_dir() -> String {
+        if crate::utils::is_mount_state() {
+            crate::defs::XECPRO_BIN_DIR.to_string()
+        } else {
+            BINARY_DIR.trim_end_matches('/').to_string()
+        }
+    }
+
+    /// 当前形态下 busybox 的路径（随 [`binary_dir`] 走）。
+    pub fn busybox_path() -> String {
+        if crate::utils::is_mount_state() {
+            format!("{}/busybox", crate::defs::XECPRO_BIN_DIR)
+        } else {
+            BUSYBOX_PATH.to_string()
+        }
+    }
+
     pub fn ensure_binaries(ignore_if_exist: bool) -> anyhow::Result<()> {
+        // 挂载态设备不铺 `/data/adb/ksu/bin/*`：那是内核态的布局与指纹。
+        // 挂载态自己的工具（xudc / su 垫片 / busybox）由 `xudc install-mount-state`
+        // 铺到 `/data/adb/xecpro/bin`，两边井水不犯河水。
+        if crate::utils::is_mount_state() {
+            return Ok(());
+        }
+
         for file in Asset::iter() {
             if file == "ksuinit"
                 || file == "waitsys"

@@ -216,33 +216,93 @@ pub fn umask(mask: u32) {
     process::umask(rustix::fs::Mode::from_raw_mode(mask));
 }
 
-/// 注意：这里以前有一个 `has_magisk()`（`which magisk` 探测），已被删除 ——
-/// 我们自己的 Magisk 兼容层会故意装 `magisk` 调用名，PATH 探测必然命中自己。
-/// 真 Magisk 的判定统一走 [`has_magisk_installed`]。
 /// 是否**真的**装了 Magisk（决定要不要把模块流水线让给 Magisk）。
 ///
-/// 判定只能基于"Magisk 自己的东西"，**绝不能看 `which magisk`**：
-/// 我们自己的 Magisk 兼容层会故意装一个 `magisk` 调用名（模块脚本普遍
-/// `command -v magisk` 探测并用 `magisk --path` 取 MAGISTMP），只看 PATH 会把
-/// 兼容层当成真 Magisk，于是跳过整条模块流水线、管理器也会显示"与 Magisk 冲突、
-/// 所有模块不可用" —— 这是把自己锁死的经典坑。
+/// 判定只能基于"Magisk 自己的东西"，**绝不能看 `which magisk`**，也绝不能只看
+/// `/data/adb/magisk` 这个目录本身：目录存在不等于装了 Magisk（空目录、残留目录、
+/// 别人往里面放的文件都算），一旦误判就会跳过整条模块流水线、管理器还会显示
+/// "因与 Magisk 有冲突，所有模块不可用" —— 这是把自己锁死。
 ///
 /// 铁证二选一：
 /// * `/data/adb/magisk.db` —— magiskd 的策略库，只有真跑过 Magisk 才会有；
 /// * `/data/adb/magisk/{magisk64,magisk32,magiskinit,magiskboot}` —— Magisk 自己的二进制。
-///
-/// 另外保留一个人工逃生口：`/data/adb/magisk/.xecpro-compat` 存在时一律当"没有"。
 pub fn has_magisk_installed() -> bool {
-    let dir = PathBuf::from(defs::ADB_DIR).join("magisk");
-    if dir.join(defs::MAGISK_COMPAT_MARKER).exists() {
-        return false;
-    }
     if Path::new("/data/adb/magisk.db").exists() {
         return true;
     }
+    let dir = PathBuf::from(defs::ADB_DIR).join("magisk");
     ["magisk64", "magisk32", "magiskinit", "magiskboot"]
         .iter()
         .any(|name| dir.join(name).exists())
+}
+
+/// 抹掉旧版内核态（LKM/GKI）在设备上留下的 Magisk 模仿痕迹。
+///
+/// 产品硬约束（用户裁决）：**内核态设备上不允许出现任何 Magisk 的东西；挂载态设备上
+/// 不允许出现任何内核态（LKM/GKI）的东西 —— 两个 root 形态完全独立。**
+///
+/// 曾经的"Magisk 兼容层"会往设备上放三种货真价实的 Magisk 指纹：
+/// 1. `bin/magisk` 调用名（软链到我们的 daemon）；
+/// 2. `/data/adb/magisk/` 目录（哪怕里面只有我们一个标记文件）；
+/// 3. `magisk --path` 建出来的 `/debug_ramdisk/.magisk`、`/sbin/.magisk`。
+///
+/// 只要其中任意一条在，Zygisk Next 这类按"root 实现"探测的组件就会在同一台设备上
+/// 同时看到 Magisk 和 KernelSU，直接判成"检测到多个 root 实现"并停摆 —— 兼容层
+/// 本身已经从代码里整体删除，这里负责把**已经装过旧版的设备**收干净。
+///
+/// 只删确证属于我们的残留：真 Magisk 的任何一个铁证存在时立刻返回，绝不碰别人的东西。
+pub fn purge_magisk_impersonation() {
+    if has_magisk_installed() {
+        return;
+    }
+
+    // 1) `bin/magisk` 调用名：只在它确实指向我们自己的 daemon 时才删，
+    //    免得误删用户/其他工具自己放的东西。
+    let link = PathBuf::from(defs::BINARY_DIR).join("magisk");
+    if let Ok(target) = std::fs::read_link(&link) {
+        let daemon = Path::new(defs::DAEMON_PATH);
+        if target == daemon || target.file_name() == daemon.file_name() {
+            let _ = std::fs::remove_file(&link);
+        }
+    }
+
+    // 2) `/data/adb/magisk/`：我们只往里放过一个标记文件。删掉标记后目录若为空
+    //    就删目录（`remove_dir` 遇到非空目录会失败，正好当保险）。
+    let dir = PathBuf::from(defs::ADB_DIR).join("magisk");
+    let marker = dir.join(defs::MAGISK_LEGACY_MARKER);
+    if marker.exists() {
+        let _ = std::fs::remove_file(&marker);
+    }
+    let _ = std::fs::remove_dir(&dir);
+
+    // 3) `magisk --path` 当过的 MAGISTMP：只删空目录，里面有任何真实文件都不动。
+    for tmp in ["/debug_ramdisk/.magisk", "/sbin/.magisk"] {
+        let _ = std::fs::remove_dir(tmp);
+    }
+
+    // 4) Zygisk Next / ReZygisk 判定"这台设备有 Magisk"的**真正**依据是这四个位置：
+    //    `/sbin/{magisk,magisk32,magisk64}` 与 `/debug_ramdisk/{magisk,magisk32,magisk64}`
+    //    （见 ReZygisk `zygiskd/src/root_impl/magisk.c`：命中即执行 `magisk -V`，
+    //    版本够新就算一家 Supported，再叠上 KernelSU 就是 Multiple → 停摆）。
+    //    真 Magisk 在那儿放的是真二进制；我们只删**指向自己 daemon 的软链**，
+    //    其余形态（真文件、指向别处的链接）一律不碰。
+    let daemon = Path::new(defs::DAEMON_PATH);
+    for probe in [
+        "/sbin/magisk",
+        "/sbin/magisk32",
+        "/sbin/magisk64",
+        "/debug_ramdisk/magisk",
+        "/debug_ramdisk/magisk32",
+        "/debug_ramdisk/magisk64",
+    ] {
+        let path = Path::new(probe);
+        let Ok(target) = std::fs::read_link(path) else {
+            continue;
+        };
+        if target.as_path() == daemon || target.file_name() == daemon.file_name() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
 }
 
 // Mirror the daemon onto every path a KernelSU-aware consumer may probe.
@@ -286,6 +346,21 @@ fn link_ksud_to_bin() -> Result<()> {
     ])
 }
 
+/// 当前设备是不是**挂载态**（<5.10 的非 GKI 内核）？
+///
+/// 非 Android 构建（CI 里的 x86_64 检查）没有内核版本可读，一律按内核态处理 ——
+/// 内核态那条路才是"什么额外东西都不铺"的安全默认值。
+pub(crate) fn is_mount_state() -> bool {
+    #[cfg(target_os = "android")]
+    {
+        crate::root_mode::current() == crate::root_mode::RootMode::MountState
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        false
+    }
+}
+
 /// Re-assert the KernelSU-compatibility daemon links.
 ///
 /// `install()` already creates them, but they live on `/data`, so anything that
@@ -294,14 +369,33 @@ fn link_ksud_to_bin() -> Result<()> {
 /// to reporting "no KernelSU". The boot path calls this before any module script
 /// runs so the official layout is guaranteed to be in place first.
 pub fn refresh_daemon_links() -> Result<()> {
+    // 挂载态设备不铺内核态的布局：`/data/adb/ksu/bin/{ksud,xudc}` 正是 Zygisk Next
+    // 这类组件用来判定"内核态 root"的指纹，挂载态设备上一个都不许出现（反之亦然）。
+    if is_mount_state() {
+        return Ok(());
+    }
+
     link_ksud_to_bin()?;
-    // Magisk 兼容调用名：模块脚本普遍 `command -v magisk` 探测，并在命中时
-    // `MAGISTMP=$(magisk --path)`；缺了这个符号链接，MAGISTMP 会变成空串，
-    // 于是脚本里的 `$MAGISTMP/xxx` 落到根目录。详见 magisk_compat.rs。
-    crate::magisk_compat::ensure_magisk_cli_links()
+
+    // 同一时刻把旧版 Magisk 兼容层的残留收干净：兼容层会在 `bin/` 下装一个
+    // `magisk` 调用名、在 `/data/adb/magisk/` 放标记，这两样都会让 Zygisk Next
+    // 在同一台设备上同时看到 Magisk 与 KernelSU，直接判成"多个 root 实现"停摆。
+    purge_magisk_impersonation();
+    Ok(())
 }
 
 pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Result<()> {
+    // 两个 root 形态互斥：内核态安装会铺 `/data/adb/xudc` + `/data/adb/ksu/bin/*`
+    // 这一整套 KernelSU 布局（Zygisk Next 之类正是按它认定"内核态 root"），
+    // 挂载态设备（<5.10）绝不能出现它们。挂载态的用户态部分走
+    // `xudc install-mount-state`（只写 `/data/adb/xecpro`）。
+    if is_mount_state() {
+        bail!(
+            "这台设备是挂载态 root（<5.10 非 GKI 内核），不走内核态安装路径：\
+             请用 `xudc install-mount-state`，两个形态不会共存"
+        );
+    }
+
     ensure_dir_exists(defs::ADB_DIR)?;
     let _ = std::fs::remove_file(defs::DAEMON_PATH);
     std::fs::copy(
@@ -315,6 +409,10 @@ pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Resul
     assets::ensure_binaries(false).with_context(|| "Failed to extract assets")?;
 
     link_ksud_to_bin()?;
+
+    // 安装新版本时就把旧版 Magisk 兼容层的残留收干净，不必等到下次重启：
+    // 装完新 APK 立刻是干净的，Zygisk Next 下一次探测就能正常工作。
+    purge_magisk_impersonation();
 
     if let Some(libadbroot) = libadbroot {
         ensure_dir_exists(defs::LIBRARY_DIR)?;

@@ -155,6 +155,15 @@ pub fn install() -> Result<()> {
     fs::set_permissions(&su_path, fs::Permissions::from_mode(0o755)).ok();
     println!("- su 垫片: {su_path}");
 
+    // busybox 也放在挂载态自己的 bin 目录里：模块脚本与安装器拿的 PATH 由
+    // `assets::binary_dir()` 决定，挂载态下它指的就是这里 —— `/data/adb/ksu/bin`
+    // 是内核态的布局，挂载态设备上一个字节都不许出现。
+    let bb_path = format!("{bin_dir}/busybox");
+    let bb_payload = crate::assets::get_asset("busybox").context("内置载荷里没有 busybox")?;
+    fs::write(&bb_path, bb_payload.as_ref().as_ref()).with_context(|| format!("写 {bb_path}"))?;
+    fs::set_permissions(&bb_path, fs::Permissions::from_mode(0o755)).ok();
+    println!("- busybox: {bb_path}");
+
     // 最小模块：magic mount 会把 system/bin/su 挂到 /system/bin/su
     let module_dir = format!("{}/xecpro-su", defs::MODULE_DIR);
     let module_bin = format!("{module_dir}/system/bin");

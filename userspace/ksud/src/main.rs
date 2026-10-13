@@ -68,14 +68,6 @@ mod lkm_image_btf;
 mod magic_mount;
 #[cfg(target_os = "android")]
 mod magica;
-#[cfg(all(target_arch = "aarch64", target_os = "android"))]
-mod ramdisk_patch;
-#[cfg(target_os = "android")]
-mod su_daemon;
-// Magisk 兼容层的 CLI（`magisk` 这个调用名）：脚本里 `magisk --path`/`-V`/
-// `--install-module` 等全靠它，缺了会让 `MAGISTMP=$(magisk --path)` 变空串。
-#[cfg(target_os = "android")]
-mod magisk_compat;
 #[cfg(target_os = "android")]
 mod metamodule;
 #[cfg(target_os = "android")]
@@ -84,10 +76,14 @@ mod module;
 mod module_config;
 #[cfg(target_os = "android")]
 mod profile;
+#[cfg(all(target_arch = "aarch64", target_os = "android"))]
+mod ramdisk_patch;
 #[cfg(target_os = "android")]
 mod resetprop;
 #[cfg(target_os = "android")]
 mod restorecon;
+#[cfg(target_os = "android")]
+mod su_daemon;
 // root 形态判定（内核态 vs 挂载态）的单一闸门：所有会改变 root 形态的操作都要过它
 #[cfg(target_os = "android")]
 mod root_mode;

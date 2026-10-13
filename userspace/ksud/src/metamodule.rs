@@ -232,7 +232,7 @@ pub fn exec_metauninstall_script(module_id: &str) -> Result<()> {
 
     info!("Executing metamodule metauninstall.sh for module: {module_id}");
 
-    let result = Command::new(assets::BUSYBOX_PATH)
+    let result = Command::new(assets::busybox_path())
         .args(["sh", metauninstall_path.to_str().unwrap()])
         .current_dir(metauninstall_path.parent().unwrap())
         .envs(crate::module::get_common_script_envs(
@@ -258,7 +258,7 @@ pub fn exec_mount_script(module_dir: &str) -> Result<()> {
 
     info!("Executing mount script for metamodule");
 
-    let result = Command::new(assets::BUSYBOX_PATH)
+    let result = Command::new(assets::busybox_path())
         .args(["sh", mount_script.to_str().unwrap()])
         .envs(crate::module::get_common_script_envs(
             get_metamodule_id().as_deref(),

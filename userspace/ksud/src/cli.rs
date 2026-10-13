@@ -766,11 +766,11 @@ pub fn run() -> Result<()> {
         crate::resetprop::resetprop_main(&all_args)
     }
 
-    // Magisk 兼容调用名：模块脚本里的 `magisk --path` / `magisk -V` /
-    // `magisk --install-module` / `magisk su` 都从这里进来。
-    if arg0 == "magisk" || arg0.ends_with("/magisk") {
-        return crate::magisk_compat::magisk_main();
-    }
+    // 这里曾经有一个 `magisk` 多调用名（Magisk 兼容层）。已整体删除：
+    // 内核态设备上不允许出现任何 Magisk 的东西（`magisk` 调用名、`/data/adb/magisk`、
+    // `magisk --path` 的 MAGISTMP），否则 Zygisk Next 会在同一台设备上同时看到
+    // Magisk 与 KernelSU，直接判成"检测到多个 root 实现"停摆。
+    // 详见 `userspace/ksud/src/utils.rs::purge_magisk_impersonation`。
 
     let cli = Args::parse();
 
