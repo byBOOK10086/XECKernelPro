@@ -733,10 +733,25 @@ suspend fun getAvailablePartitions(): List<String> = withContext(Dispatchers.IO)
 
 fun hasMagisk(): Boolean {
     val shell = getRootShell(true)
-    val result = shell.newJob().add("which magisk").exec()
+    // 不能只看 `which magisk`：我们自己的 Magisk 兼容层会**故意**装一个 magisk 调用名
+    // （模块脚本普遍用它探测），只看 PATH 会把兼容层当成真 Magisk，于是显示
+    // "因与 Magisk 有冲突，所有模块不可用" 并把整个模块列表藏起来 —— 自锁。
+    // 判定与 ksud 的 has_magisk_installed() 保持一致：只认 Magisk 自己的东西。
+    val probe = """
+        [ -e /data/adb/magisk/${MAGISK_COMPAT_MARKER} ] && exit 1
+        [ -e /data/adb/magisk.db ] && exit 0
+        for b in magisk64 magisk32 magiskinit magiskboot; do
+          [ -e "/data/adb/magisk/\$b" ] && exit 0
+        done
+        exit 1
+    """.trimIndent()
+    val result = shell.newJob().add(probe).exec()
     Log.i(TAG, "has magisk: ${result.isSuccess}")
     return result.isSuccess
 }
+
+// 与 ksud `defs::MAGISK_COMPAT_MARKER` 同名：人工逃生口（存在即当没装真 Magisk）。
+private const val MAGISK_COMPAT_MARKER = ".xecpro-compat"
 
 fun isSepolicyValid(rules: String?): Boolean {
     if (rules == null) {

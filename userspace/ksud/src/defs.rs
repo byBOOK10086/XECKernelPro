@@ -115,5 +115,9 @@ pub use android::*;
 /// 而且 /data 上的挂载会被 init 追踪，卸载/重挂都会出问题。
 pub const MAGIC_WORK_DIR: &str = "/dev/.xecpro_magic";
 
+/// 人工逃生口：`/data/adb/magisk/` 下出现这个文件，就一律当"没装真 Magisk"，
+/// 不再跳过模块流水线（判定见 `utils::has_magisk_installed`）。
+pub const MAGISK_COMPAT_MARKER: &str = ".xecpro-compat";
+
 /// 挂载态 root（<5.10）的工作目录：允许列表、su socket、载荷与日志都放这里。
 pub const XECPRO_DIR: &str = "/data/adb/xecpro";

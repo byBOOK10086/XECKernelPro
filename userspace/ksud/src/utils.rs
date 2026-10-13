@@ -216,23 +216,33 @@ pub fn umask(mask: u32) {
     process::umask(rustix::fs::Mode::from_raw_mode(mask));
 }
 
-pub fn has_magisk() -> bool {
-    which::which("magisk").is_ok()
-}
-
-/// Whether a real Magisk *installation* is present.
+/// 注意：这里以前有一个 `has_magisk()`（`which magisk` 探测），已被删除 ——
+/// 我们自己的 Magisk 兼容层会故意装 `magisk` 调用名，PATH 探测必然命中自己。
+/// 真 Magisk 的判定统一走 [`has_magisk_installed`]。
+/// 是否**真的**装了 Magisk（决定要不要把模块流水线让给 Magisk）。
 ///
-/// [`has_magisk`] only probes `PATH`, which is also satisfied by a stray
-/// `magisk` binary shipped by some module. Acting on that alone skips the whole
-/// module pipeline - built-in modules, and therefore Zygisk, included - on
-/// devices that never ran Magisk, so require Magisk's own data dir as well.
+/// 判定只能基于"Magisk 自己的东西"，**绝不能看 `which magisk`**：
+/// 我们自己的 Magisk 兼容层会故意装一个 `magisk` 调用名（模块脚本普遍
+/// `command -v magisk` 探测并用 `magisk --path` 取 MAGISTMP），只看 PATH 会把
+/// 兼容层当成真 Magisk，于是跳过整条模块流水线、管理器也会显示"与 Magisk 冲突、
+/// 所有模块不可用" —— 这是把自己锁死的经典坑。
+///
+/// 铁证二选一：
+/// * `/data/adb/magisk.db` —— magiskd 的策略库，只有真跑过 Magisk 才会有；
+/// * `/data/adb/magisk/{magisk64,magisk32,magiskinit,magiskboot}` —— Magisk 自己的二进制。
+///
+/// 另外保留一个人工逃生口：`/data/adb/magisk/.xecpro-compat` 存在时一律当"没有"。
 pub fn has_magisk_installed() -> bool {
     let dir = PathBuf::from(defs::ADB_DIR).join("magisk");
-    // 我们自己的 Magisk 兼容层也会占用这个目录（第三方模块安装器硬门禁要求
-    // /data/adb/magisk/util_functions.sh 存在），所以先看有没有兼容层标记：
-    // 有 .xecpro-compat 说明这是我们的垫片，不是真的 Magisk 安装 —— 否则一旦
-    // 造出这个目录，模块流水线会被自己跳过（自锁）。
-    dir.exists() && !dir.join(".xecpro-compat").exists() && has_magisk()
+    if dir.join(defs::MAGISK_COMPAT_MARKER).exists() {
+        return false;
+    }
+    if Path::new("/data/adb/magisk.db").exists() {
+        return true;
+    }
+    ["magisk64", "magisk32", "magiskinit", "magiskboot"]
+        .iter()
+        .any(|name| dir.join(name).exists())
 }
 
 // Mirror the daemon onto every path a KernelSU-aware consumer may probe.
