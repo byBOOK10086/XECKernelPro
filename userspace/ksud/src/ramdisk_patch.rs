@@ -9,9 +9,18 @@
 //!
 //! 与 `kpm_patch.rs` 同构：读镜像 → 改 → 重打包；`--flash` 走 `boot_txn` 回滚事务。
 //!
-//! v1 范围：**legacy rootfs / legacy SAR** 两类 ramdisk 布局（4.x/5.0 主流机型）。
-//! 需要内核 hexpatch 的机型（`skip_initramfs` → `want_initramfs`）暂不支持，
-//! 检测到就明确报错而不是"打了但起不来"。
+//! 支持两类布局：
+//!
+//! * **legacy rootfs**（ramdisk 根有 `init.rc`，Android 9 及更早）：真 init 启动时
+//!   就读这份，xecinit 直接追加阶段脚本即可；
+//! * **2SI**（ramdisk 根没有 `init.rc`，Android 10+ 的 4.19/5.4 内核）：真 init.rc 在
+//!   `/system/etc/init/hw/init.rc`（只读），所以走**第二段注入** —— 把原 init 里
+//!   `/system/bin/init` 这个字符串换成 ramdisk 根的 `/xecinit`，第一段 init 挂完
+//!   `/system` 后就会 exec 到我们，那时再去改真正的 init.rc。
+//!
+//! **不带 ramdisk 的 legacy SAR（A-only）暂不支持**：那条路要先自己 mount
+//! `/system` 再 `switch_root`（Magisk 的 `mount_system_root()`），做不到就会卡开机，
+//! 所以宁可明确报错也不给一个起不来的镜像。
 
 use std::fs;
 use std::io::Cursor;
@@ -31,6 +40,15 @@ const BACKUP_INIT: &str = ".xecpro_init";
 const CONFIG: &str = ".xecpro_config";
 /// 别人的补丁标记：发现任何一个就拒绝动手。
 const FOREIGN_MARKERS: [&str; 4] = [".backup/.magisk", "magisk.xz", "kernelsu.ko", "init.real"];
+/// 2SI 第二段载荷在 ramdisk 根的名字（cpio 里不带前导斜杠）。
+const STAGE2_NAME: &str = "xecinit";
+/// 第二段载荷的绝对路径。**必须 ≤ 16 字节**：它要被写进原 init 里
+/// `/system/bin/init` 那个字符串的位置（见 [`TWO_STAGE_INIT_STR`]）。
+const STAGE2_PAYLOAD: &str = "/xecinit";
+/// 第一段 init 用来 exec 第二段的字符串（AOSP `first_stage_init.cpp`）。
+const TWO_STAGE_INIT_STR: &[u8] = b"/system/bin/init";
+/// 首启自举脚本在 ramdisk 根的名字：第一次开机把 ramdisk 里的 xudc 铺到 `/data`。
+const BOOTSTRAP_SH: &str = "/xecpro-boot.sh";
 
 #[derive(clap::Args, Debug)]
 pub struct RamdiskPatchArgs {
@@ -56,7 +74,11 @@ pub struct RamdiskPatchArgs {
 pub fn patch_ramdisk_bytes(boot_data: &[u8]) -> Result<Vec<u8>> {
     let boot_image = BootImage::parse(boot_data).context("无法解析 boot 镜像")?;
     let ramdisk = boot_image.get_blocks().get_ramdisk().ok_or_else(|| {
-        anyhow!("这个镜像里没有 ramdisk（init_boot / vendor_boot 单独分区的布局 v1 暂不支持）")
+        anyhow!(
+            "这个镜像里没有 ramdisk。两种可能：① 不带 ramdisk 的 legacy SAR（A-only）机型 —— \
+             那条路要先 mount /system 再 switch_root，本版本还没做，别刷；\
+             ② ramdisk 在 init_boot / vendor_boot 单独分区的机型 —— 请改选 init_boot.img"
+        )
     })?;
 
     let (mut cpio, vendor_ramdisk_idx) = crate::boot_patch::extract_ramdisk(ramdisk)?;
@@ -81,50 +103,126 @@ pub fn patch_ramdisk_bytes(boot_data: &[u8]) -> Result<Vec<u8>> {
         }
     }
 
-    ensure!(
-        cpio.exists("init"),
-        "ramdisk 里没有 /init，不是可注入的启动 ramdisk"
-    );
-
-    // legacy SAR / 2SI 之类的布局靠 ramdisk 里有没有 init.rc 区分；v1 只承诺
-    // legacy rootfs/legacy SAR，其它布局明确告知。
+    // 布局判定：ramdisk 根有 init.rc → legacy rootfs，真 init 启动时会读它，
+    // 我们直接追加即可；没有 → 2SI（Android 10+），真正的 init.rc 在 system 分区
+    // 上，必须靠"第二段"注入（见 [`STAGE2_PAYLOAD`]）。
     let has_init_rc = cpio.exists("init.rc");
-    if !has_init_rc {
+    let two_stage = !has_init_rc;
+    if two_stage {
         println!(
-            "- 注意：ramdisk 根没有 init.rc（可能是 2SI/init_boot 布局）；\
-             v1 只验证过 legacy rootfs / legacy SAR，注入后请先确认能开机"
+            "- 布局：2SI（ramdisk 根没有 init.rc）。阶段脚本会在第二段注入 —— \
+             原 init 里的 `{}` 会被换成 `{STAGE2_PAYLOAD}`。",
+            String::from_utf8_lossy(TWO_STAGE_INIT_STR)
         );
     }
 
-    let orig_init_size = cpio
+    let orig_init = cpio
         .entry_by_name("init")
         .and_then(|entry| entry.data())
-        .map_or(0usize, <[u8]>::len);
+        .map(<[u8]>::to_vec)
+        .context("ramdisk 里没有 /init，不是可注入的启动 ramdisk")?;
+    let orig_init_size = orig_init.len();
 
     println!("- 备份原 init -> {BACKUP_INIT}（{orig_init_size} 字节）");
     cpio.mv("init", BACKUP_INIT)?;
+    if two_stage {
+        let patched = hexpatch_two_stage(&orig_init)?;
+        cpio.rm(BACKUP_INIT, false);
+        cpio.add(BACKUP_INIT, CpioEntry::regular(0o750, Box::new(patched)))?;
+    }
 
-    // 让 init 在 post-fs-data 阶段把用户态 daemon 拉起来（root 身份）。
-    // 走 overlay.d + xecinit 的"追加到 /init.rc"语义：不碰原 init.rc 的任何一行。
-    // 注意 seclabel：`u:r:su:s0` 在部分 user 版固件上不存在，那种机型需要先补
-    // sepolicy（P3-4），否则 init 会拒绝启动这个 service 并把原因写进 kmsg。
+    // 注入的 rc 要干三件事：把 daemon 拉起来（su 通道）、把三个阶段交回 xudc
+    // （magic mount 与模块脚本在 post-fs-data 跑，service/boot-completed 也照
+    // KernelSU 的约定跑，见 kernel/runtime/ksud_integration.c 里内核态用的那组
+    // trigger —— 挂载态没有内核 hook，只能自己写进 init.rc）。
+    //
+    // seclabel 一律写 `u:r:su:s0`；部分 user 版固件的策略里没有 su 域，那种机型
+    // 由 xecinit 在追加进真 init.rc 之前自动去掉这个标签（服务退化成以 init 的
+    // 上下文运行），不需要重新打一次 boot。
     let service_rc = format!(
-        "# xecpro: 挂载态 root 的用户态 daemon 与 su 通道\nservice xecpro_daemon {dir}/xudc daemon\n    class late_start\n    user root\n    group root\n    seclabel u:r:su:s0\n\non post-fs-data\n    mkdir {dir} 0700 root root\n    start xecpro_daemon\n",
+        r#"# xecpro: 挂载态 root 的启动阶段与 su 通道
+# 本文件由 `xudc ramdisk-patch` 注入，启动时由 xecinit 追加到真 init.rc。
+# 若本机 SELinux 策略里没有 su 域，xecinit 会自动改写下面的 seclabel。
+service xecpro_daemon {dir}/xudc daemon
+    class late_start
+    user root
+    group root
+    seclabel u:r:su:s0
+
+on post-fs-data
+    mkdir {dir} 0700 root root
+    start logd
+    exec -- /system/bin/sh {bootstrap}
+    start xecpro_daemon
+    exec u:r:su:s0 root -- {dir}/xudc post-fs-data
+
+on nonencrypted
+    exec u:r:su:s0 root -- {dir}/xudc services
+
+on property:vold.decrypt=trigger_restart_framework
+    exec u:r:su:s0 root -- {dir}/xudc services
+
+on property:sys.boot_completed=1
+    exec u:r:su:s0 root -- {dir}/xudc boot-completed
+"#,
+        dir = crate::defs::XECPRO_DIR,
+        bootstrap = BOOTSTRAP_SH
+    );
+
+    // 首启自举：第一次开机时 /data 是空的（用户当时还没有 root，没法自己铺用户态），
+    // 所以 ramdisk 里必须带一份 xudc，由这个脚本把它落到 `{dir}`：`install-mount-state`
+    // 会把 daemon、su 垫片、busybox 与最小模块一次铺好。之后每次开机只比一次内容。
+    let boot_script = format!(
+        r#"#!/system/bin/sh
+# xecpro 首启自举（由 xudc ramdisk-patch 注入，见 userspace/ksud/src/ramdisk_patch.rs）。
+DIR={dir}
+if [ ! -x "$DIR/xudc" ] || ! cmp -s /xudc "$DIR/xudc"; then
+    /xudc install-mount-state > /dev/kmsg 2>&1
+fi
+"#,
         dir = crate::defs::XECPRO_DIR
     );
+
+    // 目录条目必须显式加：Linux 的 initramfs 解包器只对 S_ISDIR 的成员建目录，
+    // 父目录不存在时 `overlay.d/xecpro.rc` 会被**静默丢弃**（Magisk 同样显式
+    // `mkdir 0750 overlay.d`）。少了这一行，注入会"成功"，但启动后 xecinit 只会
+    // 打印"没有 /overlay.d，跳过 overlay 合并"，daemon 永远起不来。
+    cpio.add("overlay.d", CpioEntry::dir(0o750))?;
     cpio.add(
         "overlay.d/xecpro.rc",
         CpioEntry::regular(0o644, Box::new(service_rc.into_bytes())),
     )?;
+    cpio.add(
+        BOOTSTRAP_SH.trim_start_matches('/'),
+        CpioEntry::regular(0o755, Box::new(boot_script.into_bytes())),
+    )?;
 
+    // 把当前这份 xudc（正在跑的就是它）也塞进 ramdisk：首启自举靠它。
+    let self_exe = std::env::current_exe().context("拿不到当前可执行文件路径")?;
+    let self_bytes = fs::read(&self_exe).with_context(|| format!("读 {}", self_exe.display()))?;
+    let self_size = self_bytes.len();
+    cpio.add("xudc", CpioEntry::regular(0o755, Box::new(self_bytes)))?;
+    println!(
+        "- 写入 {script} 与 ramdisk 内的 xudc（{self_size} 字节，首启自举用）",
+        script = BOOTSTRAP_SH
+    );
+
+    println!("- 写入 /init（xecinit）与 {CONFIG}");
     let payload = assets::get_asset("xecinit")
         .context("内置载荷里没有 xecinit —— 这次构建没带上 ramdisk init，无法注入")?;
-    let config = format!(
-        "XECPRO_RAMDISK=1\nPAYLOAD=xecinit\nVERSION={}\nORIG_INIT_SIZE={orig_init_size}\n",
-        env!("CARGO_PKG_VERSION")
-    );
-    println!("- 写入 /init（xecinit）与 {CONFIG}");
     cpio.add("init", CpioEntry::regular(0o750, payload))?;
+    if two_stage {
+        let stage2 = assets::get_asset("xecinit")
+            .context("内置载荷里没有 xecinit —— 这次构建没带上 ramdisk init，无法注入")?;
+        cpio.add(STAGE2_NAME, CpioEntry::regular(0o750, stage2))?;
+        println!("- 2SI 第二段载荷：{STAGE2_PAYLOAD}（ramdisk 根，{STAGE2_NAME}）");
+    }
+
+    let config = format!(
+        "XECPRO_RAMDISK=1\nPAYLOAD=xecinit\nVERSION={}\nORIG_INIT_SIZE={orig_init_size}\nLAYOUT={}\n",
+        env!("CARGO_PKG_VERSION"),
+        if two_stage { "2si" } else { "legacy-rootfs" }
+    );
     cpio.add(
         CONFIG,
         CpioEntry::regular(0o644, Box::new(config.into_bytes())),
@@ -143,7 +241,63 @@ pub fn patch_ramdisk_bytes(boot_data: &[u8]) -> Result<Vec<u8>> {
     patcher
         .patch(&mut repacked)
         .context("重打包 boot 镜像失败")?;
-    Ok(repacked.into_inner())
+    let out = repacked.into_inner();
+    println!(
+        "- 镜像大小：{} -> {} 字节（+{}；ramdisk 里带了 xecinit + xudc + 自举脚本）",
+        boot_data.len(),
+        out.len(),
+        out.len().saturating_sub(boot_data.len())
+    );
+    Ok(out)
+}
+
+/// 字节子串查找（`windows` 版本，够用且不引依赖）。
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    haystack.windows(needle.len()).position(|win| win == needle)
+}
+
+/// 把原 init 里 `/system/bin/init` 换成我们的第二段载荷路径（2SI 专用）。
+///
+/// 2SI 布局下第一段 init 挂完 `/system` 之后，会 exec 这个字符串指向的二进制当
+/// 第二段；换成 `/xecinit`（ramdisk 根，此时 `/` 就是 ramdisk）之后第二段就落到
+/// 我们手里，才有机会改真正的 `/system/etc/init/hw/init.rc`。做法与 Magisk 的
+/// `init/twostage.rs` 一致（它换成 `/data/magiskinit`）。
+///
+/// 替换后必须用 NUL 补齐到原串长度：原位置是 C 字符串字面量，后面紧跟的字节不能动。
+///
+/// 找不到这个字符串就直接报错：那说明这个布局我们不认识，与其交出一个"能开机但
+/// 没有 root"的镜像，不如让用户先别刷。
+fn hexpatch_two_stage(init: &[u8]) -> Result<Vec<u8>> {
+    ensure!(
+        STAGE2_PAYLOAD.len() <= TWO_STAGE_INIT_STR.len(),
+        "第二段载荷路径太长：{}",
+        STAGE2_PAYLOAD
+    );
+
+    let mut out = init.to_vec();
+    let mut hits = 0usize;
+    let mut from = 0usize;
+    while let Some(pos) = find_bytes(&out[from..], TWO_STAGE_INIT_STR) {
+        let at = from + pos;
+        out[at..at + TWO_STAGE_INIT_STR.len()].fill(0);
+        out[at..at + STAGE2_PAYLOAD.len()].copy_from_slice(STAGE2_PAYLOAD.as_bytes());
+        hits += 1;
+        from = at + TWO_STAGE_INIT_STR.len();
+    }
+
+    ensure!(
+        hits > 0,
+        "这个 2SI 镜像的原 init 里找不到 `{}` —— 布局不认识，先别刷（刷回原厂 boot 即可）",
+        String::from_utf8_lossy(TWO_STAGE_INIT_STR)
+    );
+    println!(
+        "- 2SI：原 init 里的 `{}` 已换成 `{STAGE2_PAYLOAD}`（{hits} 处）",
+        String::from_utf8_lossy(TWO_STAGE_INIT_STR)
+    );
+    Ok(out)
 }
 
 #[cfg(target_os = "android")]
@@ -161,18 +315,52 @@ fn read_block_device(path: &str) -> Result<Vec<u8>> {
     Ok(buf)
 }
 
+/// 块设备容量（字节）。`/sys/class/block/<name>/size` 是 512 字节扇区数。
+#[cfg(target_os = "android")]
+fn block_device_size(partition: &str) -> Option<u64> {
+    let real = fs::canonicalize(partition).ok()?;
+    let name = real.file_name()?.to_string_lossy().to_string();
+    let sectors: u64 = fs::read_to_string(format!("/sys/class/block/{name}/size"))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    Some(sectors * 512)
+}
+
 /// 一键注入：读当前 boot 分区 → 注入 → 写回。只允许在挂载态区间（<5.10）使用，
 /// 因为这条路线会顶掉 `/init`，在 GKI 设备上和内核态 root 互斥。
+///
+/// 分区按内核态那边同一套逻辑挑（`choose_boot_partition`）：A/B 槽位、
+/// 以及 ramdisk 在 `init_boot` 的机型都不会挑错。
 #[cfg(target_os = "android")]
 fn patch_ramdisk_flash() -> Result<()> {
     crate::root_mode::ensure_mount_state("ramdisk 注入（xecinit 挂载态 root）")?;
     let slot = crate::boot_patch::get_slot_suffix(false);
-    let partition = format!("/dev/block/by-name/boot{slot}");
-    println!("- 读取当前 boot 分区：{partition}");
+    let kmi = crate::boot_patch::get_current_kmi()?;
+    let name = crate::boot_patch::choose_boot_partition(&kmi, false, &None::<String>);
+    let partition = format!("/dev/block/by-name/{name}{slot}");
+    println!("- 读取当前 {name} 分区（kmi={kmi}）：{partition}");
     let boot_data = read_block_device(&partition)?;
     let repacked = patch_ramdisk_bytes(&boot_data)?;
+
+    // 注入要往 ramdisk 里多塞一份 xudc（13MB 上下），分区放不下就绝不能写：
+    // 写坏 boot 分区 = 变砖。容量读不到时只警告（用 --output 手动刷的那条路也走这里）。
+    match block_device_size(&partition) {
+        Some(size) if repacked.len() as u64 > size => bail!(
+            "注入后的镜像 {} 字节超过 {partition} 的容量 {size} 字节 —— 拒绝写入。\
+             请刷回原厂 boot（这台机型的 boot 分区放不下挂载态载荷）",
+            repacked.len()
+        ),
+        Some(size) => println!(
+            "- 分区容量 {size} 字节，注入后 {} 字节，放得下",
+            repacked.len()
+        ),
+        None => println!("! 读不到分区容量，无法预检大小；刷之前请自行确认能放下"),
+    }
+
     println!("- 写回 {partition}");
-    crate::boot_txn::prepare(&slot, "boot", false)?;
+    crate::boot_txn::prepare(&slot, &name, false)?;
     crate::boot_txn::arm(&repacked)?;
     crate::boot_patch::flash_partition(&partition, &repacked)?;
     println!("- 注入完成：重启后由 xecinit 接管 /init，再把控制权交回原 init。");

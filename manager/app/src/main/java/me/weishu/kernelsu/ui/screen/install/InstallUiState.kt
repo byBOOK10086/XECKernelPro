@@ -32,6 +32,13 @@ internal data class InstallUiState(
      */
     val kernelPatchBlockedReason: String?,
     /**
+     * 挂载态路线（<5.10 非 GKI 的正式路线）那项为什么不可用；`null` 表示可用。
+     *
+     * 判据是 `libxeccli.so`（= xudc）是否随包：管理器单独构建的 APK 不带这个载荷，
+     * 那种 APK 上要把原因摆出来并禁用，而不是让用户点到一半才失败。
+     */
+    val ramdiskPatchBlockedReason: String?,
+    /**
      * 当前 root 形态的一句话说明（内核态 5.10+ / 挂载态 5.10 以下）。
      *
      * 这是产品规则的单一口径在界面上的投影：两种形态互斥、不会共存，
@@ -55,6 +62,7 @@ internal data class InstallScreenActions(
     val onSelectBootImageForKpm: () -> Unit,
     val onSelectAnyKernel: () -> Unit,
     val onSelectBootImageForKpatch: () -> Unit,
+    val onSelectBootImageForMountState: () -> Unit,
     val onPrivilegeUpdate: () -> Unit,
     val onUploadLkm: () -> Unit,
     val onClearLkm: () -> Unit,

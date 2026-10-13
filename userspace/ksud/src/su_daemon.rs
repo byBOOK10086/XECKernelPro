@@ -11,6 +11,10 @@
 //! 客户端传什么都不作数；不在列表里一律 `-EPERM` 并记日志（不做"先放行再问"，
 //! 也不做定时弹窗 —— 授权动作由管理器显式调用 `su-grant`）。
 //!
+//! 唯一的例外是**首授权**：第一次开机时名单是空的，而"授权"本身要 root 才能做，
+//! 没有这一步就死锁。daemon 按包名认出管理器自己的 uid 放行一次
+//! （见 [`bootstrap_manager`]），等价于内核态里内核自动信任管理器 uid。
+//!
 //! 允许列表格式：一行一个 uid，`#` 起头是注释，空行忽略。
 
 use std::ffi::CString;
@@ -34,6 +38,8 @@ const DENIED: i32 = -1;
 const MAX_ARGS: usize = 64;
 const MAX_ARG_LEN: usize = 4096;
 const MAX_CWD_LEN: usize = 1024;
+/// Android 的 per-user uid 步长：`uid % PER_USER_RANGE` 就是 app id。
+const PER_USER_RANGE: u32 = 100_000;
 
 fn allow_path() -> String {
     format!("{}/allow.txt", defs::XECPRO_DIR)
@@ -125,6 +131,70 @@ fn write_allow(uids: &[u32]) -> Result<()> {
     fs::write(&path, text).with_context(|| format!("写 {path}"))?;
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).ok();
     Ok(())
+}
+
+/// 首授权的一次性标记：写过之后即使被手动撤销也不再自动加回来。
+fn bootstrap_marker_path() -> String {
+    format!("{}/.manager-bootstrapped", defs::XECPRO_DIR)
+}
+
+/// 从 `/data/system/packages.list` 里取某个包名的 uid。
+///
+/// 每行格式：`包名 uid debuggable dataDir seinfo [gids]`（AOSP `Settings.java`
+/// 写出来的就是这几列）。system_server 扫完包才写这个文件，而 daemon 是在收到
+/// 连接时才查它 —— 那时系统早已启动完毕。
+fn package_uid(pkg: &str) -> Option<u32> {
+    let text = fs::read_to_string("/data/system/packages.list").ok()?;
+    for line in text.lines() {
+        let mut fields = line.split_whitespace();
+        if fields.next() != Some(pkg) {
+            continue;
+        }
+        if let Some(uid) = fields.next().and_then(|value| value.parse::<u32>().ok()) {
+            return Some(uid);
+        }
+    }
+    None
+}
+
+/// 这个 uid 是不是管理器自己？只比 app id（`uid % PER_USER_RANGE`），
+/// 这样副用户里的管理器也认得出来（对端给的是它实际在用的那个 uid）。
+fn is_manager_uid(uid: u32) -> bool {
+    package_uid(defs::DEFAULT_PACKAGE_NAME)
+        .is_some_and(|manager| manager % PER_USER_RANGE == uid % PER_USER_RANGE)
+}
+
+/// 首授权：管理器不需要别人先给它授权。
+///
+/// 挂载态设备第一次开机时 `allow.txt` 是空的，而"授权"这个动作本身要 root 才能做
+/// （`xudc su-grant` 是 root 命令）—— 没有这一步就是死锁：没有任何 App 能用 su，
+/// 于是也没有任何 App 能给自己授权。内核态那边由内核自动信任管理器 uid，这里是等价物。
+///
+/// 只做一次：`allow.txt` 旁边留一个标记文件，之后即使被手动撤销也不再自动加回来
+/// （用户撤销必须算数）。
+fn bootstrap_manager(uid: u32) -> bool {
+    let marker = bootstrap_marker_path();
+    if Path::new(&marker).exists() {
+        return false;
+    }
+    if !is_manager_uid(uid) {
+        return false;
+    }
+
+    let mut uids = read_allow();
+    if !uids.contains(&uid) {
+        uids.push(uid);
+        if let Err(e) = write_allow(&uids) {
+            warn!("xecpro daemon: 首授权写允许列表失败：{e:#}");
+            return false;
+        }
+    }
+    let _ = fs::write(&marker, b"1\n");
+    info!(
+        "xecpro daemon: 首授权管理器 uid {uid}（包名 {}）",
+        defs::DEFAULT_PACKAGE_NAME
+    );
+    true
 }
 
 /// 安装挂载态 root 的用户态部分（管理器调用一次即可，之后重启生效）：
@@ -241,7 +311,8 @@ fn handle_client(mut stream: UnixStream) -> Result<()> {
     let (payload, fds) = recv_request(&stream)?;
     let request = parse_request(&payload)?;
 
-    if !is_allowed(uid) {
+    // 名单之外还有一次机会：首授权（管理器自己的 uid）。
+    if !is_allowed(uid) && !bootstrap_manager(uid) {
         warn!("xecpro daemon: 拒绝 uid {uid}（不在允许列表里）");
         return reply(&mut stream, DENIED);
     }

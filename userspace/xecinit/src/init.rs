@@ -17,6 +17,7 @@
 //! v1 的目标是"设备照常启动 + overlay.d 生效 + 判据落 kmsg"。`/data` 挂载、
 //! sepolicy 注入、拉起我们的 daemon 属于 v2。
 
+use std::fmt::Write as _;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -76,6 +77,12 @@ impl BootConfig {
 
 /// 入口。返回 `Err` 只用于日志；调用方无论如何都会兜底（见 `main.rs`）。
 pub fn run(argv: &[std::ffi::CString]) -> Result<(), String> {
+    // 第二段（2SI）：第一段 init 挂完 `/system` 之后会 exec `/xecinit`
+    // （注入器把原 init 里的 `/system/bin/init` 换成了它），并带上 `second_stage`。
+    if is_second_stage(argv) {
+        return run_second_stage(argv);
+    }
+
     mount_early_fs();
 
     let cfg = BootConfig::from_cmdline();
@@ -94,8 +101,7 @@ pub fn run(argv: &[std::ffi::CString]) -> Result<(), String> {
         return hand_off(argv);
     }
 
-    // 分支判定：v2 会分别处理 /data 挂载与 sepolicy，这里先把判据落到 kmsg，
-    // 真机排查时一眼就能看出走的是哪条路。
+    // 分支判定落到 kmsg，真机排查时一眼就能看出走的是哪条路。
     if cfg.skip_initramfs {
         kinfo!("分支：legacy SAR（skip_initramfs）");
     } else if cfg.force_normal_boot {
@@ -103,14 +109,139 @@ pub fn run(argv: &[std::ffi::CString]) -> Result<(), String> {
     } else if check_two_stage() {
         kinfo!("分支：2SI（first stage 路径）");
     } else {
-        kinfo!("分支：legacy rootfs（v1 主路径）");
+        kinfo!("分支：legacy rootfs");
     }
 
-    if let Err(e) = apply_overlay() {
-        kwarn!("overlay.d 应用失败（继续启动）：{e}");
+    // ramdisk 根有 `/init.rc` 才是"真 init 会读的那份"（legacy rootfs）：直接追加。
+    // 没有（2SI）时真 init.rc 在只读的 system 分区上，追加到 rootfs 是**死代码** ——
+    // 那种布局由第二段（`/system` 挂载后）去改，`/overlay.d` 原样留着给它用。
+    if Path::new("/init.rc").exists() {
+        if let Err(e) = apply_overlay() {
+            kwarn!("overlay.d 应用失败（继续启动）：{e}");
+        }
+    } else {
+        kinfo!("ramdisk 根没有 /init.rc：阶段脚本交给第二段注入（第一段不做，/overlay.d 留着）");
     }
 
     hand_off(argv)
+}
+
+/// 这一段是不是第二段 init？AOSP 的 first stage 用 `second_stage` 参数重新执行 init。
+fn is_second_stage(argv: &[std::ffi::CString]) -> bool {
+    argv.iter().any(|arg| arg.to_bytes() == b"second_stage")
+}
+
+/// 系统分区上真正的 init.rc（Android 10+）。
+const SYSTEM_INIT_RC: &str = "/system/etc/init/hw/init.rc";
+/// 第二段改写后的 init.rc 落在 ramdisk 根（可写）。
+const STAGED_INIT_RC: &str = "/xecinit.rc";
+
+/// 第二段：`/system` 已挂载，把 `overlay.d/*.rc` 注入真正的 init.rc 再交棒。
+///
+/// 系统分区只读，所以做法是：读原文件 → 追加 → 写到 ramdisk（可写）→
+/// `mount --bind` 盖回目标路径。随后 exec 的真 init 读到的就是我们那份。
+/// Magisk 用 overlayfs 做同一件事（`init/rootdir.cpp` 里 `mount_overlay("/")`），
+/// bind 挂载更简单，对内核也没有额外要求。
+fn run_second_stage(argv: &[std::ffi::CString]) -> Result<(), String> {
+    kinfo!(
+        "xecinit 第二段：/system 已挂载，把阶段脚本注入 {}",
+        SYSTEM_INIT_RC
+    );
+    match stage_system_init_rc() {
+        Ok(0) => kinfo!("overlay.d 里没有 *.rc，没什么要注入的"),
+        Ok(bytes) => kinfo!("已注入 {SYSTEM_INIT_RC}（追加 {bytes} 字节，bind 挂载生效）"),
+        Err(e) => kwarn!("注入 {SYSTEM_INIT_RC} 失败（继续交棒）：{e}"),
+    }
+    exec_system_init(argv)
+}
+
+fn stage_system_init_rc() -> Result<usize, String> {
+    let target = Path::new(SYSTEM_INIT_RC);
+    if !target.is_file() {
+        return Err(format!("{SYSTEM_INIT_RC} 不存在：这个布局还没支持"));
+    }
+    let sources = rc_files(Path::new(OVERLAY_DIR));
+    if sources.is_empty() {
+        return Ok(0);
+    }
+
+    let mut text =
+        fs::read_to_string(target).map_err(|e| format!("读 {}：{e}", target.display()))?;
+    let mut added = 0usize;
+    for src in &sources {
+        let data = fs::read(src).map_err(|e| format!("读 {}：{e}", src.display()))?;
+        let block = rewrite_seclabel(&String::from_utf8_lossy(&data));
+        let _ = write!(text, "\n# ---- xecinit: 来自 {} ----\n", src.display());
+        added += block.len();
+        text.push_str(&block);
+        if !block.ends_with('\n') {
+            text.push('\n');
+        }
+    }
+
+    let staged = Path::new(STAGED_INIT_RC);
+    fs::write(staged, text.as_bytes()).map_err(|e| format!("写 {}：{e}", staged.display()))?;
+    mount_bind(staged, target)?;
+    Ok(added)
+}
+
+/// `dir` 下的 `*.rc`（非递归；子目录只记一条日志 —— overlay.d 里目前只有一个 rc）。
+fn rc_files(dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    let Ok(entries) = fs::read_dir(dir) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            kwarn!("{} 里的子目录 {} 暂不处理", dir.display(), path.display());
+            continue;
+        }
+        if path.extension().is_some_and(|ext| ext == "rc") {
+            out.push(path);
+        }
+    }
+    out.sort();
+    out
+}
+
+/// 把 `src`（文件）bind 挂载到 `target` 上。
+fn mount_bind(src: &Path, target: &Path) -> Result<(), String> {
+    let src_c = cstr(&src.to_string_lossy())?;
+    let target_c = cstr(&target.to_string_lossy())?;
+    let rc = unsafe {
+        libc::mount(
+            src_c.as_ptr(),
+            target_c.as_ptr(),
+            std::ptr::null(),
+            libc::MS_BIND,
+            std::ptr::null(),
+        )
+    };
+    if rc != 0 {
+        return Err(format!(
+            "bind 挂载 {} -> {} 失败：{}",
+            src.display(),
+            target.display(),
+            std::io::Error::last_os_error()
+        ));
+    }
+    Ok(())
+}
+
+/// 把控制权交给系统分区上的真 init（第二段）。
+fn exec_system_init(argv: &[std::ffi::CString]) -> Result<(), String> {
+    let path = cstr("/system/bin/init")?;
+    let mut argv_ptrs: Vec<*const std::ffi::c_char> = argv.iter().map(|arg| arg.as_ptr()).collect();
+    if argv_ptrs.is_empty() {
+        argv_ptrs.push(path.as_ptr());
+    }
+    argv_ptrs.push(std::ptr::null());
+    unsafe { libc::execv(path.as_ptr(), argv_ptrs.as_ptr()) };
+    Err(format!(
+        "/system/bin/init execv 失败：{}",
+        std::io::Error::last_os_error()
+    ))
 }
 
 /// 挂 `/proc` `/sys` `/dev`。用各自的探测点判断"是否已经挂过"，
@@ -219,10 +350,49 @@ fn copy_overlay(from: &Path, to: &Path, applied: &mut usize) -> Result<(), Strin
     Ok(())
 }
 
+/// 本机 `SELinux` 策略里有没有这个 type？
+///
+/// 二进制策略把 type 名字以 NUL 分隔的字符串存在文件里，按 NUL 边界比对就是最省事、
+/// 也最不怕策略版本变化的判据（不用引 libselinux、不用解析策略结构）。
+/// 读不到策略时返回 `true`（当作"有"）：保持注入内容原样，让 init 自己判断。
+fn policy_has_type(name: &str) -> bool {
+    let Ok(data) = fs::read("/sys/fs/selinux/policy") else {
+        return true;
+    };
+    data.split(|byte| *byte == 0)
+        .any(|token| token == name.as_bytes())
+}
+
+/// 按本机策略改写注入 rc 里的 `SELinux` 标签。
+///
+/// 注入器统一写 `u:r:su:s0`，但**部分 user 版固件的策略里没有 su 域**：init 会拒绝
+/// 启动那个 service（原因只写进 kmsg，表现为"注入成功了但 su 用不了"）。这种机型上：
+///
+/// * `seclabel u:r:su:s0` 整行丢掉 → service 以 init 自己的上下文启动；
+/// * `exec u:r:su:s0 root -- cmd` → `exec -- cmd` → 连 `root` 一起省掉（init 在
+///   post-fs-data / boot-completed 阶段本来就是 root 身份）。
+fn rewrite_seclabel(text: &str) -> String {
+    if policy_has_type("su") {
+        return text.to_string();
+    }
+
+    kwarn!("本机 SELinux 策略里没有 su 域：注入的 service/exec 改为不带 seclabel");
+    let mut out = String::with_capacity(text.len());
+    for line in text.lines() {
+        if line.trim_start().starts_with("seclabel u:r:su:s0") {
+            continue;
+        }
+        out.push_str(&line.replace("exec u:r:su:s0 root -- ", "exec -- "));
+        out.push('\n');
+    }
+    out
+}
+
 /// 把一段 rc 追加到 `/init.rc`（不存在就创建）。原 rc 里的启动项一个都不能丢，
-/// 所以只能是追加，不能覆盖。
+/// 所以只能是追加，不能覆盖。追加前按本机策略改写 `SELinux` 标签（见 [`rewrite_seclabel`]）。
 fn append_to_init_rc(src: &Path, data: &[u8]) -> Result<(), String> {
     let target = Path::new("/init.rc");
+    let text = rewrite_seclabel(&String::from_utf8_lossy(data));
     let mut file = fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -231,15 +401,15 @@ fn append_to_init_rc(src: &Path, data: &[u8]) -> Result<(), String> {
     let header = format!("\n# ---- xecinit: 来自 {} ----\n", src.display());
     file.write_all(header.as_bytes())
         .map_err(|e| format!("写 {}: {e}", target.display()))?;
-    file.write_all(data)
+    file.write_all(text.as_bytes())
         .map_err(|e| format!("追加 {}: {e}", target.display()))?;
-    if !data.ends_with(b"\n") {
+    if !text.ends_with('\n') {
         let _ = file.write_all(b"\n");
     }
     kinfo!(
         "已把 {} 追加到 /init.rc（{} 字节）",
         src.display(),
-        data.len()
+        text.len()
     );
     Ok(())
 }

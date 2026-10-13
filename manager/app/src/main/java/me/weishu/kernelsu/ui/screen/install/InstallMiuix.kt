@@ -339,6 +339,7 @@ private fun SelectInstallMethod(
             is InstallMethod.SelectFileForKpm -> onSelectBootImageForKpm()
             is InstallMethod.DownloadFile -> onDownloadFile()
             is InstallMethod.AnyKernel -> onSelectAnyKernel()
+            is InstallMethod.RamdiskPatch -> onSelectBootImageForMountState()
             is InstallMethod.KernelPatch -> onSelectBootImageForKpatch()
             is InstallMethod.DirectInstall -> onSelected(option)
             is InstallMethod.DirectInstallToInactiveSlot -> confirmDialog.showConfirm(dialogTitle, dialogContent)
@@ -365,6 +366,8 @@ private fun SelectInstallMethod(
                     option is InstallMethod.DirectInstall ||
                     option is InstallMethod.DirectInstallToInactiveSlot
             val blockedReason = when {
+                // 挂载态路线的不可用原因是「本 APK 没带 xudc 载荷」，与 root/GKI 无关
+                option is InstallMethod.RamdiskPatch -> state.ramdiskPatchBlockedReason
                 // KernelPatch 的不可用原因是「本 APK 没带 kptools 载荷」，与 root/GKI 无关
                 option is InstallMethod.KernelPatch -> state.kernelPatchBlockedReason
                 gated -> state.gatedInstallBlockedReason

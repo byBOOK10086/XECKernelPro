@@ -375,7 +375,7 @@ XEC Project Team
     <string name="module_shortcut_permission_tip_default">If shortcut creation fails, please enable desktop shortcut permission for this app in system settings.</string>
     <string name="no_such_module">Module %s does not exist</string>
     <string name="module_unavailable">Module %s is disabled, updating, or pending removal</string>
-    <string name="select_file_tip_nogki">Non-GKI kernel (below 5.10): LKM patching does not apply — use the KernelPatch route below</string>
+    <string name="select_file_tip_nogki">Non-GKI kernel (below 5.10): LKM patching does not apply — use the mount-state route below</string>
     <string name="current_kmi">KMI version of this device: %s</string>
     <string name="current_device_kmi">This device KMI</string>
     <string name="settings_enable_blur">Blur</string>
@@ -699,4 +699,9 @@ See the log below for details.</string>
     <string name="terminal_fm_install_system">Install with system installer</string>
     <string name="terminal_fm_install_perm">Allow this app to install unknown apps first</string>
 
+    <string name="ramdisk_patch_install">Mount-state root (kernels below 5.10)</string>
+    <string name="ramdisk_patch_summary">Recommended for kernels below 5.10: injects xecinit into the ramdisk of a boot image you pick, with no root required. Flash the result as the boot partition, then reboot: you get a su channel, module mounting (magic mount) and the post-fs-data / service / boot-completed stages. Back up your stock boot image first.</string>
+    <string name="ramdisk_patch_unavailable">This APK has no bundled xudc payload (libxeccli.so), so the mount-state route is unavailable.</string>
+    <string name="ramdisk_patch_failed">Mount-state patch failed: %1$s</string>
+    <string name="ramdisk_patch_saved">Patched boot image saved. Flash it as the boot partition, then reboot.</string>
 </resources>
