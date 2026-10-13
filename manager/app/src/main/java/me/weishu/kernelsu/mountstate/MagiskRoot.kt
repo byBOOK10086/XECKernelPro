@@ -1,7 +1,6 @@
 package me.weishu.kernelsu.mountstate
 
 import com.topjohnwu.superuser.Shell
-import com.topjohnwu.superuser.ShellUtils
 import me.weishu.kernelsu.ui.util.getRootShell
 
 /**
@@ -149,7 +148,11 @@ command -v magisk 2>/dev/null || true
         if (!result.isSuccess) throw Unavailable(message("magisk --sqlite", result))
     }
 
-    private fun run(command: String): Shell.Result = ShellUtils.fastCmdResult(getRootShell(), command)
+    private fun run(command: String): Shell.Result {
+        val stdout = ArrayList<String>()
+        val stderr = ArrayList<String>()
+        return getRootShell().newJob().add(command).to(stdout, stderr).exec()
+    }
 
     /** 进 shell 的一切都要过这一层：SQL 里带单引号，包一层单引号后按 POSIX 规则转义。 */
     private fun quote(value: String): String = "'" + value.replace("'", "'\\''") + "'"

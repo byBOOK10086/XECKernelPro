@@ -398,5 +398,5 @@ private fun policyColors(policy: Int): Pair<Color, Color> = when (policy) {
     MagiskRoot.POLICY_ALLOW -> colorScheme.primary.copy(alpha = 0.8f) to colorScheme.onPrimary
     MagiskRoot.POLICY_DENY -> colorScheme.error.copy(alpha = 0.8f) to colorScheme.onError
     MagiskRoot.POLICY_RESTRICT -> colorScheme.secondary.copy(alpha = 0.8f) to colorScheme.onSecondary
-    else -> colorScheme.surfaceVariant to colorScheme.onSurfaceVariant
+    else -> colorScheme.surfaceVariant to colorScheme.onSurfaceVariantSummary
 }
