@@ -32,8 +32,11 @@ fn provision_builtin_modules() {
     }
 
     // SUSFS baseline (kernel-support probe; no-op on kernels without SUSFS).
+    // 内核态专有：挂载态没有 KSU 内核侧可探，跳过。
     #[cfg(target_arch = "aarch64")]
-    crate::susfs::provision_baseline();
+    if !utils::is_mount_state() {
+        crate::susfs::provision_baseline();
+    }
 }
 
 /// Run the built-in modules' `<stage>.sh` scripts.
@@ -53,19 +56,26 @@ fn exec_builtin_stage(stage: &str, wait: ScriptWait) {
 }
 
 pub fn on_post_fs_data() -> Result<()> {
+    // 挂载态（<5.10）没有内核驱动：凡是"跟驱动说话"的步骤都得跳过，否则整条
+    // 模块流水线会被 UAPI 校验挡在门外（那一句是 `return Ok(())`，会静默什么都不做）。
+    // 反过来，挂载态也不许铺内核态的东西（`/data/adb/ksu` 那一套）。
+    let mount_state = utils::is_mount_state();
+
     // Resolve a pending direct-flash transaction before any module, built-in
     // engine, SELinux, or SUSFS work can run. A successful rollback owns this
     // boot and must return immediately.
-    if crate::boot_txn::on_post_fs_data()? {
+    if !mount_state && crate::boot_txn::on_post_fs_data()? {
         warn!("boot transaction rollback completed; skipping module startup");
         return Ok(());
     }
-    if let Err(e) = ksucalls::ensure_uapi_version_matched() {
-        error!("{e:#}, skip on_post_fs_data");
-        return Ok(());
-    }
+    if !mount_state {
+        if let Err(e) = ksucalls::ensure_uapi_version_matched() {
+            error!("{e:#}, skip on_post_fs_data");
+            return Ok(());
+        }
 
-    ksucalls::report_post_fs_data();
+        ksucalls::report_post_fs_data();
+    }
 
     utils::umask(0);
 
@@ -85,7 +95,7 @@ pub fn on_post_fs_data() -> Result<()> {
     }
 
     #[cfg(target_arch = "aarch64")]
-    if let Err(e) = crate::kpm::booted_load() {
+    if !mount_state && let Err(e) = crate::kpm::booted_load() {
         warn!("kpm booted_load failed: {e}");
     }
 
@@ -149,8 +159,11 @@ pub fn on_post_fs_data() -> Result<()> {
     crate::module::clear_zygisk_failure_markers();
 
     // SUSFS baseline (kernel-support probe; no-op on kernels without SUSFS).
+    // 内核态专有：挂载态没有 KSU 内核侧可探，跳过。
     #[cfg(target_arch = "aarch64")]
-    crate::susfs::provision_baseline();
+    if !mount_state {
+        crate::susfs::provision_baseline();
+    }
 
     if let Err(e) = handle_updated_modules() {
         warn!("handle updated modules failed: {e}");
@@ -163,7 +176,9 @@ pub fn on_post_fs_data() -> Result<()> {
     // Refresh /metadata/watchdog/ksu/modules.rc so the next boot's kernel hook sees the
     // current module set. Acts as a safety net when state was changed outside
     // of ksud's normal mutation commands.
-    if let Err(e) = crate::module::regenerate_preinit_rc() {
+    // 内核态专有：这个文件是给 KSU 内核 hook 读的，挂载态既没有内核 hook，
+    // 也不该铺 `ksu` 名字的东西。
+    if !mount_state && let Err(e) = crate::module::regenerate_preinit_rc() {
         warn!("regenerate preinit rc failed: {e}");
     }
 
@@ -298,17 +313,22 @@ pub fn on_services() {
 }
 
 pub fn on_boot_completed() {
-    if let Err(e) = crate::boot_txn::commit_boot_success() {
-        error!("boot transaction commit failed: {e:#}; refusing boot-completed stages");
-        return;
-    }
+    // 挂载态没有内核驱动：boot 事务与 UAPI 校验都跳过，但 boot-completed 阶段
+    // 脚本必须照跑（模块靠它收尾）。
+    let mount_state = utils::is_mount_state();
+    if !mount_state {
+        if let Err(e) = crate::boot_txn::commit_boot_success() {
+            error!("boot transaction commit failed: {e:#}; refusing boot-completed stages");
+            return;
+        }
 
-    if let Err(e) = ksucalls::ensure_uapi_version_matched() {
-        error!("{e:#}, skip on_boot_completed");
-        return;
-    }
+        if let Err(e) = ksucalls::ensure_uapi_version_matched() {
+            error!("{e:#}, skip on_boot_completed");
+            return;
+        }
 
-    ksucalls::report_boot_complete();
+        ksucalls::report_boot_complete();
+    }
     info!("on_boot_completed triggered!");
 
     run_stage("boot-completed", ScriptWait::NoWait);

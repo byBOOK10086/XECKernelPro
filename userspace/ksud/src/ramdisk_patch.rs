@@ -457,10 +457,20 @@ fn patch_ramdisk_flash(legacy_sar: bool) -> Result<()> {
     }
 
     println!("- 写回 {partition}");
-    crate::boot_txn::prepare(&slot, &name, false)?;
-    crate::boot_txn::arm(&repacked)?;
+    // 备份原厂分区（只备一次）。挂载态没有内核 hook，写坏了**不可能自动回滚**，
+    // 手里有原厂镜像才是唯一可靠的恢复手段；备份放挂载态自己的目录
+    // （`/data/adb/xecpro/` —— 挂载态不许碰 `/data/adb/ksu` 那一套）。
+    let backup = format!("{}/boot-stock-{name}{slot}.img", crate::defs::XECPRO_DIR);
+    if Path::new(&backup).exists() {
+        println!("- 原厂备份已存在：{backup}");
+    } else {
+        crate::utils::ensure_dir_exists(crate::defs::XECPRO_DIR)?;
+        fs::write(&backup, &boot_data).with_context(|| format!("写备份 {backup}"))?;
+        println!("- 已备份原厂 {name}{slot} -> {backup}");
+    }
     crate::boot_patch::flash_partition(&partition, &repacked)?;
     println!("- 注入完成：重启后由 xecinit 接管 /init，再把控制权交回原 init。");
+    println!("  出问题刷回原厂镜像即可：{backup}");
     Ok(())
 }
 
