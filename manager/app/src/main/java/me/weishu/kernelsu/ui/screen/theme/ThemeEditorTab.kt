@@ -40,6 +40,7 @@ import me.weishu.kernelsu.ui.design.token.XC_GLASS_TOKENS
 import me.weishu.kernelsu.ui.design.token.XC_NEON_TOKENS
 import me.weishu.kernelsu.ui.design.token.XC_SHAPE_TOKENS
 import me.weishu.kernelsu.ui.design.token.Xc
+import me.weishu.kernelsu.ui.design.token.XcBlocks
 import me.weishu.kernelsu.ui.design.token.XcColors
 import me.weishu.kernelsu.ui.design.token.XcNeonColors
 import me.weishu.kernelsu.ui.design.token.xcColorsFor
@@ -122,17 +123,62 @@ private fun neonDefaults(c: XcNeonColors): Map<String, Color> = mapOf(
 )
 
 /**
+ * 区块 id -> 显示名。
+ *
+ * 刻意放在**编辑器**里而不是令牌层：[XcBlocks] 那一层至今没有任何 Android 资源依赖，
+ * 把 `R.string.*` 塞进去会让"纯设计令牌"变成"带资源的东西"。而"区块叫什么名字给人看"
+ * 本来就是界面的事。对不上的 id（比如新增了区块却忘了补名字）整行不画 —— 与其编一个
+ * 字段名，不如老实少一行（颜色令牌那一节也是这条规矩）。
+ */
+private fun blockLabelRes(id: String): Int? = when (id) {
+    XcBlocks.HOME_UPDATE -> R.string.theme_editor_block_home_update
+    XcBlocks.HOME_WARNING -> R.string.theme_editor_block_home_warning
+    XcBlocks.HOME_STATUS -> R.string.theme_editor_block_home_status
+    XcBlocks.HOME_PRIVILEGE -> R.string.theme_editor_block_home_privilege
+    XcBlocks.HOME_INFO -> R.string.theme_editor_block_home_info
+    XcBlocks.HOME_SUPPORT -> R.string.theme_editor_block_home_support
+    else -> null
+}
+
+/**
  * 正在取色的目标；为 null 时面板不显示。
  *
  * [neon] = 这次改的是模块页霓虹板（`Spec.neonDark/neonLight`）而不是颜色令牌：
  * 两者共用同一个取色面板，但确认时要落到不同的动作上。
+ *
+ * [blockId] = 这次改的是某张卡片的背景色（`Spec.blocks.<id>.color`），第三条路。
+ * 三者在面板里长得一样，落点却完全不同，所以必须由这个字段区分，而不是靠"token 名字
+ * 看着像区块 id"来猜。
  */
-private data class ColorTarget(val isDark: Boolean, val token: String, val neon: Boolean = false)
+private data class ColorTarget(
+    val isDark: Boolean,
+    val token: String,
+    val neon: Boolean = false,
+    val blockId: String? = null,
+)
+
+/**
+ * 草稿里区块背景色**当前生效的值**（= 用户改过的那个）。
+ *
+ * 直接用 `ThemeCodec.parseColor` 解 `blocks` 里的字符串，而不是从渲染用的那套背景对象
+ * 反推：编辑器里"这个区块的色块该画什么"必须与"保存时写进包里的东西"完全一致，
+ * 走一遍渲染对象就多了一层可能对不上的转换（渲染那边还会因为 `when` 而藏起来）。
+ * 解析不出来的（理论上进不来）当作没设色。
+ */
+private fun effectiveBlockColors(spec: ThemeCodec.Spec): Map<String, Int> {
+    if (spec.blocks.isEmpty()) return emptyMap()
+    val out = HashMap<String, Int>(spec.blocks.size)
+    for ((id, block) in spec.blocks) {
+        val argb = ThemeCodec.parseColor(block.color)
+        if (argb != null) out[id] = argb
+    }
+    return out
+}
 
 // ------------------------------------------------------------------ 主界面
 
 /**
- * 「主题编辑器」页：元信息 / 颜色 / 圆角 / 玻璃 / 霓虹 / 背景 / 保存。
+ * 「主题编辑器」页：元信息 / 颜色 / 圆角 / 玻璃 / 霓虹 / 背景 / 区块背景 / 保存。
  *
  * 这一页只做两件事：把 `ThemeEditorState.spec`（= 将要写进 theme.json 的东西）画出来，
  * 以及把每次改动交给 [ThemeActions]。草稿状态不在这里 —— 所有值都从 spec 派生，
@@ -165,16 +211,22 @@ fun ThemeEditorTab(
 
     // 面板正在改的那个令牌当前是什么色：覆盖优先，否则内置默认。
     val targetColor = target?.let { t ->
-        // 霓虹的目标色要从霓虹那两张表里取，不能落到颜色令牌上（两边是不同的键空间）。
-        val source = when {
-            t.neon && t.isDark -> spec.neonDark
-            t.neon -> spec.neonLight
-            t.isDark -> spec.dark
-            else -> spec.light
+        // 区块背景色没有"内置默认"（默认就是"没设过"），所以它单独一支：解不出来就留空。
+        if (t.blockId != null) {
+            ThemeCodec.parseColor(spec.blocks[t.blockId]?.color)?.let { Color(it) }
+        } else {
+            // 霓虹的目标色要从霓虹那两张表里取，不能落到颜色令牌上（两边是不同的键空间）。
+            val source = when {
+                t.neon && t.isDark -> spec.neonDark
+                t.neon -> spec.neonLight
+                t.isDark -> spec.dark
+                else -> spec.light
+            }
+            ThemeCodec.parseColor(source[t.token])?.let { Color(it) }
+                ?: (if (t.neon) neonDefaultColors else if (t.isDark) darkDefaults else lightDefaults)[t.token]
         }
-        ThemeCodec.parseColor(source[t.token])?.let { Color(it) }
-            ?: (if (t.neon) neonDefaultColors else if (t.isDark) darkDefaults else lightDefaults)[t.token]
     }
+    val blockColors = effectiveBlockColors(spec)
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -208,6 +260,17 @@ fun ThemeEditorTab(
             )
         }
         item(key = "background") { BackgroundCard(state, actions, backdrop) }
+        item(key = "blocks") {
+            BlocksCard(
+                spec = spec,
+                pendingBlocks = state.editor.pendingBlocks,
+                colors = blockColors,
+                enabled = !state.busy,
+                actions = actions,
+                backdrop = backdrop,
+                onPickColor = { id -> target = ColorTarget(isDark = false, token = id, blockId = id) },
+            )
+        }
         item(key = "save") { SaveRow(state, actions) }
         item(key = "tail") { Spacer(Modifier.height(12.dp)) }
     }
@@ -215,11 +278,18 @@ fun ThemeEditorTab(
     ColorPickerDialog(
         target = target,
         current = targetColor,
+        title = target?.blockId?.let { id -> blockLabelRes(id)?.let { stringResource(it) } },
         onDismiss = { target = null },
         onConfirm = { hex ->
             target?.let { t ->
-                if (t.neon) actions.onSetNeon(t.isDark, t.token, hex)
-                else actions.onSetColor(t.isDark, t.token, hex)
+                val blockId = t.blockId
+                if (blockId != null) {
+                    actions.onSetBlockColor(blockId, hex)
+                } else if (t.neon) {
+                    actions.onSetNeon(t.isDark, t.token, hex)
+                } else {
+                    actions.onSetColor(t.isDark, t.token, hex)
+                }
             }
         },
     )
@@ -551,6 +621,165 @@ private fun BackgroundRow(
     }
 }
 
+// ------------------------------------------------------------------ 区块背景
+
+/**
+ * 「区块背景」一节：六张首页卡片各一行。
+ *
+ * 为什么是"每张卡片一行"而不是一套全局设置：卡片背景本来就是**位置**语义的东西
+ * （`home.status` 指的是状态卡那个位置），用户想要的也往往是"就给信息卡换张图"。
+ *
+ * 一行里能改五样：[颜色]（点色块开既有的取色面板）、[图]（选图/清图，走既有的相册启动器，
+ * 只暂存在草稿里，保存时才落盘）、[透明度]、[黑纱]、[明档/暗档/两档]。外加一个「重置」把
+ * 整行退回"没设过"。跟背景图那两行一样，未保存前显示的是**草稿里那张**（它才是用户刚选的）。
+ */
+@Composable
+private fun BlocksCard(
+    spec: ThemeCodec.Spec,
+    pendingBlocks: Map<String, String>,
+    colors: Map<String, Int>,
+    enabled: Boolean,
+    actions: ThemeActions,
+    backdrop: LayerBackdrop?,
+    onPickColor: (String) -> Unit,
+) {
+    // 三档的显示名。用字面量"亮档/暗档"而不是拿 `when` 的关键字当文案：
+    // 关键字是给机器读的，界面上要写人话（"both" 在中文界面里没人看得懂）。
+    val modes = listOf(
+        ThemeCodec.BLOCK_LIGHT to stringResource(R.string.theme_editor_block_when_light),
+        ThemeCodec.BLOCK_DARK to stringResource(R.string.theme_editor_block_when_dark),
+        ThemeCodec.BLOCK_BOTH to stringResource(R.string.theme_editor_block_when_both),
+    )
+    SectionTitle(R.string.theme_editor_blocks, R.string.theme_editor_blocks_hint)
+    Spacer(Modifier.height(6.dp))
+    ThemeCard(backdrop) {
+        XcBlocks.HOME_ALL.forEach { id ->
+            val labelRes = blockLabelRes(id) ?: return@forEach
+            val block = spec.blocks[id] ?: ThemeCodec.BlockSpec()
+            BlockRow(
+                labelRes = labelRes,
+                block = block,
+                color = colors[id]?.let { Color(it) },
+                pending = pendingBlocks[id],
+                enabled = enabled,
+                modes = modes,
+                onPickColor = { onPickColor(id) },
+                onClearColor = { actions.onClearBlockColor(id) },
+                onPickImage = { actions.onPickBlockImage(id) },
+                onClearImage = { actions.onClearBlockImage(id) },
+                onStep = { token, step -> actions.onSetBlockNumber(id, token, step) },
+                onSetWhen = { mode -> actions.onSetBlockWhen(id, mode) },
+                onReset = { actions.onResetBlock(id) },
+            )
+        }
+    }
+}
+
+/**
+ * 一行区块背景。
+ *
+ * 行的形态照着既有的 `ColorTokenRow` / `BackgroundRow` 来（色块 + 名字 + 当前值 + 右侧
+ * 按钮），只是这一行的动作多几枚 —— 多出来的两行步进与三档开关放在名字下面，
+ * 免得把一行挤成横条。
+ */
+@Composable
+private fun BlockRow(
+    labelRes: Int,
+    block: ThemeCodec.BlockSpec,
+    color: Color?,
+    pending: String?,
+    enabled: Boolean,
+    modes: List<Pair<String, String>>,
+    onPickColor: () -> Unit,
+    onClearColor: () -> Unit,
+    onPickImage: () -> Unit,
+    onClearImage: () -> Unit,
+    onStep: (token: String, step: Int) -> Unit,
+    onSetWhen: (mode: String) -> Unit,
+    onReset: () -> Unit,
+) {
+    // 三态：草稿里清过（空串）/ 草稿里选了一张（content:// 或绝对路径）/ 没碰过（用包里的）。
+    val chosen = pending?.takeIf { it.isNotEmpty() }
+    val cleared = pending != null && pending.isEmpty()
+    val savedImage = if (cleared) null else block.image
+    val imageName = chosen?.substringAfterLast('/') ?: savedImage
+    val opacity = block.opacity.coerceIn(0f, 1f)
+    val dim = block.dim.coerceIn(0f, 1f)
+    // 明暗档不是默认值也算"动过"：只改了档位而没设颜色/图时它其实不会进包（见 ThemeCodec
+    // 的过滤），但界面得说得通 —— 点了档位却按不动「重置」会让人以为按钮坏了。
+    val touched = color != null || imageName != null || block.mode != ThemeCodec.BLOCK_BOTH
+
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SwatchBox(color = color, size = 26.dp, modifier = Modifier.clickable(enabled = enabled) { onPickColor() })
+            Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
+                Text(text = stringResource(labelRes), fontSize = 13.sp, color = Xc.colors.text)
+                MutedText(color?.let { hexOf(it) } ?: stringResource(R.string.theme_editor_block_no_color))
+            }
+            TextButton(
+                text = stringResource(R.string.theme_editor_block_color_clear),
+                onClick = onClearColor,
+                enabled = enabled && color != null,
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                // 只取最后一段：content:// 那条 URI 铺出来会把这一行撑爆（同 BackgroundRow）。
+                MutedText(imageName ?: stringResource(R.string.theme_editor_bg_none))
+            }
+            TextButton(
+                text = stringResource(R.string.theme_editor_pick_image),
+                onClick = onPickImage,
+                enabled = enabled,
+            )
+            TextButton(
+                text = stringResource(R.string.theme_editor_bg_clear),
+                onClick = onClearImage,
+                enabled = enabled && imageName != null,
+            )
+        }
+        StepRow(
+            label = stringResource(R.string.theme_editor_block_opacity),
+            value = String.format(Locale.US, "%.2f", opacity),
+            onMinus = { onStep("opacity", -1) },
+            onPlus = { onStep("opacity", 1) },
+        )
+        StepRow(
+            label = stringResource(R.string.theme_editor_block_dim),
+            value = String.format(Locale.US, "%.2f", dim),
+            onMinus = { onStep("dim", -1) },
+            onPlus = { onStep("dim", 1) },
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.theme_editor_block_when),
+                fontSize = 13.sp,
+                color = Xc.colors.text,
+                modifier = Modifier.weight(1f),
+            )
+            // 三档开关就画成三枚按钮：只有三档，做成下拉/弹层反而多两层交互。
+            modes.forEach { (mode, label) ->
+                TextButton(
+                    text = label,
+                    onClick = { onSetWhen(mode) },
+                    enabled = enabled && block.mode != mode,
+                    colors = if (block.mode == mode) ButtonDefaults.textButtonColorsPrimary() else ButtonDefaults.textButtonColors(),
+                )
+            }
+        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(
+                text = stringResource(R.string.theme_editor_reset_token),
+                onClick = onReset,
+                enabled = enabled && touched,
+            )
+        }
+    }
+}
+
 // ------------------------------------------------------------------ 保存
 
 /** 底部：保存 + 未保存提示。 */
@@ -581,6 +810,9 @@ private fun SaveRow(state: ThemeUiState, actions: ThemeActions) {
  * 没引 HSV 圆盘那类控件：主题改的多半是"这个绿再深一点"，预设色格 + 手写 hex 恰好覆盖
  * 这两种场景，还省掉一整套自绘控件。确认键只在校验通过时可点，输入框里始终是"将要写进
  * 主题包的那串字符"，所见即所得。
+ *
+ * [title] 为空时标题就是令牌名（颜色/霓虹那一套用法）；区块背景那边传显示名 ——
+ * 区块 id 是 `home.status` 这种给机器看的串，标题栏里写着它没人看得懂。
  */
 @Composable
 private fun ColorPickerDialog(
@@ -588,6 +820,7 @@ private fun ColorPickerDialog(
     current: Color?,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
+    title: String? = null,
 ) {
     // 换一个令牌就重置草稿（target 变了 remember 的 key 也变），否则会把上一个的输入带过来。
     var draft by remember(target) { mutableStateOf(current?.let { hexOf(it) }.orEmpty()) }
@@ -595,7 +828,7 @@ private fun ColorPickerDialog(
     val preview = normalized?.let { ThemeCodec.parseColor(it) }?.let { Color(it) }
 
     XDialog(show = target != null, onDismissRequest = onDismiss) {
-        XDialogTitle(text = target?.token.orEmpty(), summary = current?.let { hexOf(it) })
+        XDialogTitle(text = title ?: target?.token.orEmpty(), summary = current?.let { hexOf(it) })
         Row(
             modifier = Modifier.padding(top = 10.dp),
             verticalAlignment = Alignment.CenterVertically,

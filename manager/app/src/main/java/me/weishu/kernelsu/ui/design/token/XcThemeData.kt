@@ -14,7 +14,9 @@ import androidx.compose.ui.unit.dp
  * 约定：
  *  * 没被主题覆盖的令牌一律沿用默认值（[Default] 就是今天的样子）；
  *  * 背景图不进这里 —— 它走 `WallpaperStore` + `wallpaper_light/dark` 那条既有链路，
- *    这里只记住"这套主题想用哪张图"（应用主题时用）。
+ *    这里只记住"这套主题想用哪张图"（应用主题时用）；
+ *  * [blocks] 里的图**进**这里（而且只放已经落盘的绝对路径）—— 卡片背景图没有
+ *    "交给系统壁纸"那一步，它就是主题目录里的一个文件，渲染时按路径直接读。
  */
 @Immutable
 data class XcThemeData(
@@ -33,6 +35,13 @@ data class XcThemeData(
     val neonLight: XcNeonColors? = null,
     val backgroundDark: String? = null,
     val backgroundLight: String? = null,
+    /**
+     * 卡片（区块）背景：区块 id -> 生效背景。
+     *
+     * 默认空表 = 今天的样子（渲染侧只看"这张卡片有没有自己的背景"）。认不出的区块 id
+     * 可以留在这里，没人读就自然没效果 —— 与主题包格式的"未知键忽略"同一条口径。
+     */
+    val blocks: Map<String, XcBlockBackground> = emptyMap(),
 ) {
     fun colorsFor(isDark: Boolean, isAmoled: Boolean = false): XcColors = when {
         !isDark -> light

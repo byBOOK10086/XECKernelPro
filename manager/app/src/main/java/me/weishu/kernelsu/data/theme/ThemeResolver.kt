@@ -1,13 +1,16 @@
 package me.weishu.kernelsu.data.theme
 
 import android.content.Context
+import me.weishu.kernelsu.ui.design.token.XcBlockBackground
 import me.weishu.kernelsu.ui.design.token.XcGlass
 import me.weishu.kernelsu.ui.design.token.XcNeonColors
 import me.weishu.kernelsu.ui.design.token.XcShapesDefault
 import me.weishu.kernelsu.ui.design.token.XcThemeData
+import me.weishu.kernelsu.ui.design.token.clearXcBlockImages
 import me.weishu.kernelsu.ui.design.token.withOverrides
 import me.weishu.kernelsu.ui.design.token.xcColorsFor
 import me.weishu.kernelsu.ui.design.token.xcNeonFor
+import java.io.File
 
 /**
  * 主题（[ThemeCodec.Spec]）→ 设计令牌（[XcThemeData]）。
@@ -23,7 +26,13 @@ import me.weishu.kernelsu.ui.design.token.xcNeonFor
  */
 object ThemeResolver {
 
-    fun resolve(spec: ThemeCodec.Spec): XcThemeData {
+    fun resolve(spec: ThemeCodec.Spec): XcThemeData = resolve(spec, null)
+
+    /**
+     * [dir] 是这套主题资源落地的目录；为 null 时区块背景只带颜色、不带图
+     * （"不知道目录"就等于"不知道文件在不在"，宁可不画也不猜一个路径出来）。
+     */
+    fun resolve(spec: ThemeCodec.Spec, dir: File?): XcThemeData {
         val darkOverrides = parse(spec.dark)
         val lightOverrides = parse(spec.light)
         val dark = xcColorsFor(true).withOverrides(darkOverrides)
@@ -56,7 +65,37 @@ object ThemeResolver {
             neonLight = neonLight,
             backgroundDark = spec.backgroundDark,
             backgroundLight = spec.backgroundLight,
+            blocks = blocksOf(spec, dir),
         )
+    }
+
+    /**
+     * 区块背景 -> 令牌层的背景对象。
+     *
+     * 三条规则：
+     *  * 颜色用 [ThemeCodec.parseColor] 解析（解析不了就当没设，与颜色令牌一致）；
+     *  * 图**只在文件真的存在时**才带上绝对路径 —— 令牌层不做 IO，路径一旦发出去，
+     *    渲染侧就会照着它读盘，指向不存在的文件只会白跑一趟；
+     *  * 认不出的区块 id 照样传下去（不在这里过滤）：过滤是渲染侧的事（它不认识就不读），
+     *    在这里砍掉反而会让"以后加区块"必须同时改两处。
+     */
+    private fun blocksOf(spec: ThemeCodec.Spec, dir: File?): Map<String, XcBlockBackground> {
+        if (spec.blocks.isEmpty()) return emptyMap()
+        val out = LinkedHashMap<String, XcBlockBackground>(spec.blocks.size)
+        for ((id, block) in spec.blocks) {
+            val file = block.image
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { name -> dir?.let { File(it, name) } }
+                ?.takeIf { it.isFile }
+            out[id] = XcBlockBackground(
+                color = ThemeCodec.parseColor(block.color),
+                imagePath = file?.absolutePath,
+                opacity = block.opacity,
+                dim = block.dim,
+                mode = block.mode,
+            )
+        }
+        return out
     }
 
     /**
@@ -78,7 +117,7 @@ object ThemeResolver {
             cached = null
             return null
         }
-        val resolved = runCatching { resolve(entry.spec) }.getOrNull()
+        val resolved = runCatching { resolve(entry.spec, entry.dir) }.getOrNull()
         cachedId = id
         cached = resolved
         return resolved
@@ -94,6 +133,9 @@ object ThemeResolver {
     fun invalidate() {
         cachedId = null
         cached = null
+        // 解码好的卡片背景图也跟着失效：换主题 / 重装同一 id 之后，那些位图很可能
+        // 已经是旧文件的内容（重装会整目录替换）。不清就等于把旧图按新主题画出来。
+        clearXcBlockImages()
     }
 
     private fun parse(overrides: Map<String, String>): Map<String, Int> {

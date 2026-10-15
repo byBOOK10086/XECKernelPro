@@ -104,10 +104,30 @@ object ThemeRepository {
             File(staging, ThemeCodec.MANIFEST).writeText(ThemeCodec.toJson(spec), Charsets.UTF_8)
             val darkName = writeAsset(staging, "background-dark.jpg", assets.byName(spec.backgroundDark))
             val lightName = writeAsset(staging, "background-light.jpg", assets.byName(spec.backgroundLight))
+            // 区块图：写进去的名字**由区块 id 派生**（`ThemeCodec.blockAssetName`），
+            // 而不是沿用包里声明的那个名字 —— 派生名是渲染侧查文件的唯一依据，
+            // 声明名只用来在包里找图。找不到图（或图过大）时把 image 清掉：
+            // 留着一条指向不存在文件的配置，渲染侧每次都要多判一次"文件在不在"。
+            val blockNames = LinkedHashMap<String, String>()
+            spec.blocks.forEach { (id, block) ->
+                val name = ThemeCodec.blockAssetName(id)
+                if (writeAsset(staging, name, assets.byBlock(id, block.image)) != null) {
+                    blockNames[id] = name
+                }
+            }
             writeAsset(staging, "preview.jpg", assets.preview())
             val normalized = spec.copy(
                 backgroundDark = darkName ?: spec.backgroundDark?.takeIf { assets.byName(it) != null },
                 backgroundLight = lightName ?: spec.backgroundLight?.takeIf { assets.byName(it) != null },
+                // 三种情况：这次带了图（派生名）/这次没带但包里找得到（保留声明名）/
+                // 这次没带、包里也找不到（比如"以已装主题为底稿"再装时那张图已经不在了）
+                // ⇒ 清成 null。最后那种必须清：留着一个指向不存在文件的文件名，
+                // 渲染侧每次都要白读一次盘才知道它不在。
+                blocks = spec.blocks.mapValues { (id, block) ->
+                    val image = blockNames[id]
+                        ?: block.image?.takeIf { assets.byName(it) != null }
+                    block.copy(image = image)
+                },
             )
             File(staging, ThemeCodec.MANIFEST).writeText(ThemeCodec.toJson(normalized), Charsets.UTF_8)
             when (origin) {
@@ -144,7 +164,7 @@ object ThemeRepository {
         return dir.deleteRecursively()
     }
 
-    /** 导出成 `.xectheme`（含背景图与预览图）。 */
+    /** 导出成 `.xectheme`（含背景图、区块图与预览图）。 */
     fun export(context: Context, id: String): ByteArray {
         val entry = find(context, id) ?: throw ThemeCodec.InvalidTheme("主题 $id 不在本地")
         val backgrounds = LinkedHashMap<String, ByteArray>()
@@ -153,6 +173,11 @@ object ThemeRepository {
             File(entry.dir, name).takeIf { it.isFile }?.let { backgrounds[name] = it.readBytes() }
         }
         spec.backgroundLight?.let { name ->
+            File(entry.dir, name).takeIf { it.isFile }?.let { backgrounds[name] = it.readBytes() }
+        }
+        // 区块图直接按 spec 里记的名字读：`install()` 已经把名字归一成派生名了。
+        spec.blocks.forEach { (_, block) ->
+            val name = block.image ?: return@forEach
             File(entry.dir, name).takeIf { it.isFile }?.let { backgrounds[name] = it.readBytes() }
         }
         val preview = File(entry.dir, "preview.jpg").takeIf { it.isFile }?.readBytes()

@@ -72,9 +72,12 @@ import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.component.miuix.WarningCard
 import me.weishu.kernelsu.ui.component.rebootlistpopup.RebootListPopupMiuix
 import me.weishu.kernelsu.ui.component.statustag.StatusTag
+import me.weishu.kernelsu.ui.design.glass.rememberXcBlock
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.island.IslandTopBar
 import me.weishu.kernelsu.ui.design.token.Xc
+import me.weishu.kernelsu.ui.design.token.XcBlockBackground
+import me.weishu.kernelsu.ui.design.token.XcBlocks
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.util.BlurredBar
 import me.weishu.kernelsu.ui.util.module.LatestVersionInfo
@@ -108,6 +111,10 @@ fun HomePagerMiuix(
     val scrollBehavior = MiuixScrollBehavior()
     val enableBlur = LocalEnableBlur.current
     val backdrop = rememberBlurBackdrop(enableBlur)
+    // 首页六张卡片各自的专属背景（主题 `blocks` 里的一条；没主题就是 null = 今天的样子）。
+    // 在**这里**取告警那一块、再传给七处 WarningCard：告警卡在全 App 复用（日志页也在用），
+    // 区块背景是"首页那张卡"的语义，不该跟着组件跑到别的页面去。
+    val warningBlock = rememberXcBlock(XcBlocks.HOME_WARNING)
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
@@ -140,26 +147,40 @@ fun HomePagerMiuix(
                             UpdateCard(state = state, actions = actions)
                         }
                         if (state.showManagerPrBuildWarning) {
-                            WarningCard(stringResource(id = R.string.home_pr_build_warning), level = WarningLevel.Notice)
+                            WarningCard(
+                                stringResource(id = R.string.home_pr_build_warning),
+                                level = WarningLevel.Notice,
+                                block = warningBlock,
+                            )
                         } else if (state.showKernelPrBuildWarning) {
-                            WarningCard(stringResource(id = R.string.home_pr_kernel_warning), level = WarningLevel.Notice)
+                            WarningCard(
+                                stringResource(id = R.string.home_pr_kernel_warning),
+                                level = WarningLevel.Notice,
+                                block = warningBlock,
+                            )
                         }
                         if (state.showGkiWarning) {
-                            WarningCard(stringResource(id = R.string.home_gki_warning), level = WarningLevel.Notice)
+                            WarningCard(
+                                stringResource(id = R.string.home_gki_warning),
+                                level = WarningLevel.Notice,
+                                block = warningBlock,
+                            )
                         }
                         if (state.requiresNewKernel) {
                             WarningCard(
                                 stringResource(
                                     id = if (state.lkmMode == true) R.string.require_kernel_version else R.string.require_kernel_version_gki
                                 ),
-                                onClick = if (state.lkmMode == true) actions.onInstallClick else null
+                                onClick = if (state.lkmMode == true) actions.onInstallClick else null,
+                                block = warningBlock,
                             )
                         }
                         if (state.requiresNewManager) {
                             WarningCard(
                                 stringResource(
                                     id = R.string.require_manager_version
-                                )
+                                ),
+                                block = warningBlock,
                             )
                         }
                         if (state.showLkmUpdate) {
@@ -167,18 +188,20 @@ fun HomePagerMiuix(
                                 message = stringResource(R.string.home_lkm_update_available),
                                 level = WarningLevel.Notice,
                                 onClick = actions.onInstallClick,
+                                block = warningBlock,
                             )
                         }
                         if (state.showRootWarning) {
-                            WarningCard(stringResource(id = R.string.grant_root_failed))
+                            WarningCard(stringResource(id = R.string.grant_root_failed), block = warningBlock)
                         }
                         if (state.showDaemonMissingWarning) {
-                            WarningCard(stringResource(id = R.string.home_daemon_missing))
+                            WarningCard(stringResource(id = R.string.home_daemon_missing), block = warningBlock)
                         }
                         StatusCard(
                             state = state,
                             actions = actions,
                             backdrop = backdrop,
+                            block = rememberXcBlock(XcBlocks.HOME_STATUS),
                         )
                         // 未激活界面「提权」导航：GhostLock 一键提权控制台。
                         // 已激活（ksuVersion != null）时不出现——那时提权没有意义，
@@ -188,6 +211,7 @@ fun HomePagerMiuix(
                             PrivilegeEntryCard(
                                 onClick = actions.onPrivilegeClick,
                                 backdrop = backdrop,
+                                block = rememberXcBlock(XcBlocks.HOME_PRIVILEGE),
                             )
                         }
                         InfoCard(
@@ -197,11 +221,13 @@ fun HomePagerMiuix(
                             susfsVariant = state.susfsVariant,
                             modifier = Modifier.fillMaxWidth(),
                             backdrop = backdrop,
+                            block = rememberXcBlock(XcBlocks.HOME_INFO),
                         )
                         SupportLinks(
                             onOpenUrl = actions.onOpenUrl,
                             modifier = Modifier.fillMaxWidth(),
                             backdrop = backdrop,
+                            block = rememberXcBlock(XcBlocks.HOME_SUPPORT),
                         )
                         Spacer(
                             Modifier.height(
@@ -225,6 +251,9 @@ private fun UpdateCard(
     val title = stringResource(id = R.string.module_changelog)
     val updateText = stringResource(id = R.string.module_update)
     val updateDialog = rememberConfirmDialog(onConfirm = { actions.onOpenUrl(newVersion.downloadUrl) })
+    // 更新卡是"有新版本"的那一张，用的是更新那一条区块背景；它下面的七处 WarningCard
+    // 才是告警那一条。两者分开，用户才能只给"有更新"这张设背景。
+    val updateBlock = rememberXcBlock(XcBlocks.HOME_UPDATE)
 
     AnimatedVisibility(
         visible = state.hasUpdate,
@@ -245,7 +274,8 @@ private fun UpdateCard(
                         confirm = updateText
                     )
                 }
-            }
+            },
+            block = updateBlock,
         )
     }
 }
@@ -298,12 +328,16 @@ private fun TopBar(
  * `backdrop` 由 `HomePagerMiuix` 透传（本组件是 private，自己拿不到页面级那一份）。
  * 默认 `null`，所以各处 `@Preview` 与任何旧调用点都不必改：为 `null` 时玻璃自动降级成
  * 不透明实色 + 亮边，预览里也不会去构造 AGSL 着色器。
+ *
+ * [block] 是这一大块（`home.status`）的专属背景，三支分支共用同一条 —— 用户设的是
+ * "状态卡"这个位置，不该因为设备恰好是挂载态/未安装态就换个观感。
  */
 @Composable
 private fun StatusCard(
     state: HomeUiState,
     actions: HomeActions,
     backdrop: LayerBackdrop? = null,
+    block: XcBlockBackground? = null,
 ) {
     Column {
         when {
@@ -346,6 +380,7 @@ private fun StatusCard(
                                 backdrop = backdrop,
                                 shape = Xc.shapes.md,
                                 tint = Xc.colors.success.copy(alpha = if (Xc.colors.isDark) 0.22f else 0.15f),
+                                block = block,
                             ),
                         colors = CardDefaults.defaultColors(
                             // 卡底必须透明：miuix Card 的底色画在本 modifier 链内侧，
@@ -452,6 +487,7 @@ private fun StatusCard(
                                 backdrop = backdrop,
                                 shape = Xc.shapes.md,
                                 tint = Xc.colors.success.copy(alpha = if (Xc.colors.isDark) 0.22f else 0.15f),
+                                block = block,
                             ),
                         colors = CardDefaults.defaultColors(color = Color.Transparent),
                         onClick = actions.onInstallClick,
@@ -519,7 +555,7 @@ private fun StatusCard(
                     Card(
                         modifier = Modifier
                             .weight(1f)
-                            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
+                            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md, block = block),
                         colors = CardDefaults.defaultColors(color = Color.Transparent),
                         onClick = {
                             if (!state.isLateLoadMode) {
@@ -556,7 +592,7 @@ private fun StatusCard(
 
             else -> {
                 Card(
-                    modifier = Modifier.xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
+                    modifier = Modifier.xGlassBody(backdrop = backdrop, shape = Xc.shapes.md, block = block),
                     colors = CardDefaults.defaultColors(color = Color.Transparent),
                     onClick = {
                         if (!state.isLateLoadMode) {
@@ -587,16 +623,19 @@ private fun StatusCard(
 /**
  * 未激活界面「提权」入口：一键提权控制台（GhostLock，CVE-2026-43499）。
  * 与上面的未安装卡片同款玻璃语言；识别不了的机型里给手动 profile 操作空间。
+ *
+ * [block] = `home.privilege`（这张卡片自己的背景）。
  */
 @Composable
 private fun PrivilegeEntryCard(
     onClick: () -> Unit,
     backdrop: LayerBackdrop? = null,
+    block: XcBlockBackground? = null,
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
+            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md, block = block),
         colors = CardDefaults.defaultColors(color = Color.Transparent),
         onClick = onClick,
         pressFeedbackType = PressFeedbackType.Tilt,
@@ -623,17 +662,19 @@ private fun PrivilegeEntryCard(
     }
 }
 
+/** 支持链接卡；[block] = `home.support`。 */
 @Composable
 private fun SupportLinks(
     onOpenUrl: (String) -> Unit,
     modifier: Modifier = Modifier,
     backdrop: LayerBackdrop? = null,
+    block: XcBlockBackground? = null,
 ) {
     val learnMoreUrl = stringResource(R.string.home_learn_kernelsu_url)
     var showDevelopers by remember { mutableStateOf(false) }
 
     Card(
-        modifier = modifier.xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
+        modifier = modifier.xGlassBody(backdrop = backdrop, shape = Xc.shapes.md, block = block),
         colors = CardDefaults.defaultColors(color = Color.Transparent),
     ) {
         ArrowPreference(
@@ -687,6 +728,12 @@ private fun SupportLinks(
     }
 }
 
+/**
+ * 设备信息卡：两张叠在一起的玻璃卡（"版本"一叠 + "安全状态"一叠）。
+ *
+ * [block] = `home.info`，只画在**第一张**上：区块背景是"整块卡片"的观感，
+ * 两张卡中间还隔着 12dp 的间距，两边各铺一张图会看起来像两张互不相干的卡。
+ */
 @Composable
 private fun InfoCard(
     systemInfo: SystemInfo,
@@ -695,6 +742,7 @@ private fun InfoCard(
     susfsVariant: String? = null,
     modifier: Modifier = Modifier,
     backdrop: LayerBackdrop? = null,
+    block: XcBlockBackground? = null,
 ) {
     @Composable
     fun InfoText(
@@ -755,7 +803,7 @@ private fun InfoCard(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
+                .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md, block = block),
             colors = CardDefaults.defaultColors(color = Color.Transparent),
         ) {
             Column(modifier = Modifier.padding(16.dp)) {

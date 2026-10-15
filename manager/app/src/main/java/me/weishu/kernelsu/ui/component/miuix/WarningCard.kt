@@ -13,12 +13,20 @@ import androidx.compose.ui.unit.sp
 import me.weishu.kernelsu.ui.component.WarningLevel
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.token.Xc
+import me.weishu.kernelsu.ui.design.token.XcBlockBackground
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
 
+/**
+ * 语义色告警卡。
+ *
+ * [block] 是**卡片专属背景**（首页那条 `home.warning`）。默认 `null` = 今天的样子，
+ * 所以本文件外的既有调用点（首页七处、日志页三处）与 `@Preview` 一行都不用改；
+ * 首页传它，日志页不传 —— 区块是"哪张卡片"的位置语义，跟着页面走，不跟着组件走。
+ */
 @Composable
 fun WarningCard(
     message: String,
@@ -27,6 +35,7 @@ fun WarningCard(
     onClick: (() -> Unit)? = null,
     action: (@Composable () -> Unit)? = null,
     backdrop: LayerBackdrop? = null,
+    block: XcBlockBackground? = null,
 ) {
     Card(
         // 告警卡是全 App 复用最广的容器（首页 7 处、日志页 3 处）。
@@ -39,6 +48,7 @@ fun WarningCard(
             backdrop = backdrop,
             shape = Xc.shapes.md,
             tint = level.tintColor(),
+            block = block,
         ),
         onClick = { onClick?.invoke() },
         colors = CardDefaults.defaultColors(

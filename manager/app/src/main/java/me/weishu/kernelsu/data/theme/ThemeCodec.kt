@@ -16,6 +16,7 @@ import java.util.zip.ZipOutputStream
  * theme.json
  * background-dark.jpg
  * background-light.jpg
+ * block-home-status.jpg
  * preview.jpg
  * ```
  *
@@ -45,7 +46,42 @@ object ThemeCodec {
     private val HEX_RE = Regex("^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$")
     private val FORBIDDEN_SUFFIX = listOf(".sh", ".so", ".apk", ".dex", ".jar", ".bin", ".elf")
 
+    /** `when` 的三个取值。字符串而不是枚举：未知取值要能被安静地忽略掉。 */
+    const val BLOCK_BOTH = "both"
+    const val BLOCK_DARK = "dark"
+    const val BLOCK_LIGHT = "light"
+
+    /**
+     * 区块背景图在包里的条目名。
+     *
+     * 用 id 派生名字（而不是让主题作者自己起名）是为了让**包内声明与包内文件天然一致**：
+     * `theme.json` 里写 `"image": "block-home-status.jpg"`，zip 里就必须有这个条目，
+     * 安装时也写到主题目录里的同一个名字 —— 少一处手写映射，就少一处对不上。
+     */
+    fun blockAssetName(blockId: String): String = "block-" + blockId.replace('.', '-') + ".jpg"
+
     class InvalidTheme(message: String) : Exception(message)
+
+    /**
+     * 一个首页卡片的背景。
+     *
+     * 三样东西都是可选的，但至少要有一样（解析时两条都空就整条丢掉）：
+     *  * [color] `#AARRGGBB`（**已归一**，跟颜色令牌同一档写法）；
+     *  * [image] 包内条目名（= [blockAssetName]，安装后是主题目录里的文件名）；
+     *  * [opacity] / [dim] / [mode] 只影响渲染，不影响"这条有没有内容"。
+     *
+     * 全部字段都带默认值：主题作者只写 `"color"` 也是合法的。
+     */
+    data class BlockSpec(
+        val color: String? = null,
+        val image: String? = null,
+        /** 整体不透明度 0.0~1.0，默认 1.0。 */
+        val opacity: Float = 1f,
+        /** 压在图上的一层黑纱 0.0~1.0，默认 0.0（只调图，不用改图本身）。 */
+        val dim: Float = 0f,
+        /** 明暗档：见 [BLOCK_BOTH] / [BLOCK_DARK] / [BLOCK_LIGHT]。 */
+        val mode: String = BLOCK_BOTH,
+    )
 
     /** 一个主题：元数据 + 令牌覆盖 + 资源条目名（图片本体在 [ThemeAssets] 里）。 */
     data class Spec(
@@ -69,6 +105,14 @@ object ThemeCodec {
         val neonLight: Map<String, String> = emptyMap(),
         val backgroundDark: String? = null,
         val backgroundLight: String? = null,
+        /**
+         * 卡片（区块）背景：区块 id -> 背景定义，只写用户真的动过的那些。
+         *
+         * 键空间与设计令牌刻意分开：区块是"首页某张卡片"这种**位置**语义，不是颜色语义，
+         * 而且它同时带图、透明度与明暗档，塞不进任何一张既有的"名字 -> 字符串"表里。
+         * 认不出的区块 id 一律保留但不渲染（前向兼容：新版本加区块，旧版本安静忽略）。
+         */
+        val blocks: Map<String, BlockSpec> = emptyMap(),
     ) {
         /** 商店卡片上的缩略色块用。 */
         val accentHex: String get() = dark["accent"] ?: light["accent"] ?: ""
@@ -96,6 +140,17 @@ object ThemeCodec {
             if (name.isNullOrEmpty()) return null
             return files[name] ?: files.entries.firstOrNull { it.key.equals(name, true) }?.value
         }
+
+        /**
+         * 取某个区块的图。
+         *
+         * 认两种写法：spec 里声明的 `image`（主题作者的写法）与**约定名**
+         * [blockAssetName]（由区块 id 推出，我们编辑器导出的写法）。后者是必须的：编辑器保存时
+         * 把图写进主题目录就算完事，不保证 spec 已经改过 `image`；只认声明名会让
+         * "刚选的图"在保存那一刻丢掉。
+         */
+        fun byBlock(blockId: String, declared: String?): ByteArray? =
+            byName(declared) ?: byName(blockAssetName(blockId))
     }
 
     data class Package(val spec: Spec, val assets: Assets)
@@ -196,6 +251,8 @@ object ThemeCodec {
         val backgroundDark = bg?.optString("dark", "")?.takeIf { it.isNotEmpty() }
         val backgroundLight = bg?.optString("light", "")?.takeIf { it.isNotEmpty() }
 
+        val blocks = blockMap(json.optJSONObject("blocks"))
+
         return Spec(
             id = id,
             name = name,
@@ -213,7 +270,48 @@ object ThemeCodec {
             neonLight = neonLight,
             backgroundDark = backgroundDark,
             backgroundLight = backgroundLight,
+            blocks = blocks,
         )
+    }
+
+    /**
+     * 解析 `blocks` 对象。
+     *
+     * 宽容度与格式的其它部分一致，但有一条**比别处更宽**：认不出的区块 id、认不出的字段、
+     * 甚至名字不像区块 id 的键，全都安静丢掉而不是抛 [InvalidTheme]。理由是区块是"往界面上
+     * 贴东西"，一个新版主题带 12 个区块、老管理器只认识 6 个时，老管理器必须能装能用，
+     * 而不是报"主题包不合法"。
+     */
+    private fun blockMap(obj: JSONObject?): Map<String, BlockSpec> {
+        if (obj == null) return emptyMap()
+        val out = LinkedHashMap<String, BlockSpec>()
+        obj.keys().forEach { id ->
+            val key = id.trim()
+            if (!ID_RE.matches(key)) return@forEach
+            val item = obj.optJSONObject(id) ?: return@forEach
+            val color = normalizeHex(item.optString("color", ""))
+            val image = item.optString("image", "").trim().takeIf { it.isNotEmpty() }
+            // 既没颜色也没图 = 这条什么都没说，留着只会让编辑器多出一行空设置。
+            if (color == null && image == null) return@forEach
+            val opacity = item.optDouble("opacity", 1.0).takeIf { it.isFinite() }?.toFloat()
+            val dim = item.optDouble("dim", 0.0).takeIf { it.isFinite() }?.toFloat()
+            val mode = item.optString("when", BLOCK_BOTH).trim().lowercase()
+            out[key] = BlockSpec(
+                color = color,
+                image = image,
+                opacity = (opacity ?: 1f).coerceIn(0f, 1f),
+                dim = (dim ?: 0f).coerceIn(0f, 1f),
+                mode = if (mode == BLOCK_DARK || mode == BLOCK_LIGHT) mode else BLOCK_BOTH,
+            )
+        }
+        return out
+    }
+
+    /** 单条颜色的归一：`#RRGGBB` / `#AARRGGBB` -> `#AARRGGBB`；不合格返回 null（不抛）。 */
+    private fun normalizeHex(value: String): String? {
+        val text = value.trim()
+        if (!HEX_RE.matches(text)) return null
+        return if (text.length == 7) "#FF" + text.substring(1) else text.uppercase()
     }
 
     private fun colorMap(obj: JSONObject?, where: String): Map<String, String> {
@@ -222,11 +320,9 @@ object ThemeCodec {
         obj.keys().forEach { key ->
             val value = obj.optString(key, "").trim()
             if (value.isEmpty()) return@forEach
-            if (!HEX_RE.matches(value)) {
-                throw InvalidTheme("$where.$key 不是 #RRGGBB / #AARRGGBB：\"$value\"")
-            }
             // 统一成 #AARRGGBB 便于后面直接解析；不够 8 位就补满不透明的 FF。
-            out[key] = if (value.length == 7) "#FF" + value.substring(1) else value.uppercase()
+            out[key] = normalizeHex(value)
+                ?: throw InvalidTheme("$where.$key 不是 #RRGGBB / #AARRGGBB：\"$value\"")
         }
         return out
     }
@@ -259,6 +355,22 @@ object ThemeCodec {
             put("background", JSONObject().apply {
                 spec.backgroundDark?.let { put("dark", it) }
                 spec.backgroundLight?.let { put("light", it) }
+            })
+        }
+        // 只写用户动过的区块；连"既没颜色也没图"的空条目都不写进去（写了等于给主题
+        // 加了一条什么都不做的配置，读的人只会以为是 bug）。
+        val painted = spec.blocks.filterValues { it.color != null || it.image != null }
+        if (painted.isNotEmpty()) {
+            put("blocks", JSONObject().apply {
+                painted.forEach { (id, block) ->
+                    put(id, JSONObject().apply {
+                        block.color?.let { put("color", it) }
+                        block.image?.let { put("image", it) }
+                        put("opacity", block.opacity.toDouble())
+                        put("dim", block.dim.toDouble())
+                        put("when", block.mode)
+                    })
+                }
             })
         }
     }.toString(2)

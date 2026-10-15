@@ -40,7 +40,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import me.weishu.kernelsu.ui.design.glass.xGlassRim
+import me.weishu.kernelsu.ui.design.glass.xcBlockBackground
 import me.weishu.kernelsu.ui.design.token.Xc
+import me.weishu.kernelsu.ui.design.token.XcBlockBackground
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurColors
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
@@ -127,6 +129,7 @@ internal fun Modifier.xClearGlassLayer(
     glassEnabled: Boolean,
     adaptive: Boolean,
     specular: Float,
+    block: XcBlockBackground? = null,
 ): Modifier {
     val surface = Xc.colors.surface
     val shaderSupported = remember { isRuntimeShaderSupported() }
@@ -147,8 +150,12 @@ internal fun Modifier.xClearGlassLayer(
     // 先合成成不透明实色，三档共用。
     val solidTint = if (tint.alpha >= 1f) tint else tint.compositeOver(surface)
 
+    // 卡片专属背景（首页六张卡片各一条）：挂在玻璃本体之前，画法只有一份
+    // （`XGlassSurface.kt` 的 [xcBlockBackground]）。默认 null = 既有调用点零变化。
+    val based = if (block == null) sized else sized.xcBlockBackground(block)
+
     return when {
-        active && shaderSupported -> sized
+        active && shaderSupported -> based
             .drawBackdrop(
                 backdrop = backdrop!!,
                 shape = { shape },
@@ -179,7 +186,7 @@ internal fun Modifier.xClearGlassLayer(
             .xGlassRim(shape, effectiveRimColor, rim)
 
         // 回退一档：毛玻璃（RenderEffect，API 31-32）
-        active -> sized
+        active -> based
             .textureBlur(
                 backdrop = backdrop!!,
                 shape = shape,
@@ -194,7 +201,7 @@ internal fun Modifier.xClearGlassLayer(
             .xGlassRim(shape, effectiveRimColor, rim)
 
         // 没有 backdrop（用户关掉模糊 / 设备不支持 / 预览）：实色 + 描边
-        else -> sized
+        else -> based
             .background(solidTint, shape)
             .clip(shape)
             .xGlassRim(shape, effectiveRimColor, rim)

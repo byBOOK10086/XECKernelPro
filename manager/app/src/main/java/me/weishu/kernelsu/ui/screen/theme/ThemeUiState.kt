@@ -65,6 +65,14 @@ data class ThemeEditorState(
     /** 未保存前选中的背景图（content:// 字符串）。 */
     val pendingDarkBackground: String? = null,
     val pendingLightBackground: String? = null,
+    /**
+     * 未保存前选中的**区块背景图**：区块 id -> 图（`content://` 字符串或已装文件的绝对路径）
+     * 或**空串**（= 用户在草稿里清掉了这张图，保存时要删掉）。
+     *
+     * 空串是必须的：`null` 与"没碰过"没法区分，只有三态（碰过并清空 / 碰过并选了一张 /
+     * 没碰过）才能让"以已装主题为底稿"这条路径在保存时不把原有图又捞回来。
+     */
+    val pendingBlocks: Map<String, String> = emptyMap(),
     val savedAt: Long = 0L,
 )
 
@@ -94,6 +102,20 @@ data class ThemeActions(
     val onResetNeon: (isDark: Boolean, token: String) -> Unit,
     val onPickBackground: (isDark: Boolean) -> Unit,
     val onClearBackground: (isDark: Boolean) -> Unit,
+    /**
+     * 卡片（区块）背景：`blocks.<区块 id>` 那一条。
+     *
+     * 四个动作都按区块 id 走（不是按"第几行"）：id 是写进主题包的键，界面上的顺序只是
+     * 展示顺序，两者不该互相绑定。
+     */
+    val onSetBlockColor: (id: String, hex: String) -> Unit,
+    val onClearBlockColor: (id: String) -> Unit,
+    val onPickBlockImage: (id: String) -> Unit,
+    val onClearBlockImage: (id: String) -> Unit,
+    /** 透明度 / 黑纱的步进（`-` / `+` 各一条，界面只传方向）。 */
+    val onSetBlockNumber: (id: String, token: String, step: Int) -> Unit,
+    val onSetBlockWhen: (id: String, mode: String) -> Unit,
+    val onResetBlock: (id: String) -> Unit,
     val onSaveEditor: () -> Unit,
     val onPublish: (String) -> Unit,
     /**

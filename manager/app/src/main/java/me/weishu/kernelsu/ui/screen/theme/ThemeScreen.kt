@@ -47,6 +47,8 @@ fun ThemeScreen() {
     var pendingExportName by remember { mutableStateOf("theme.xectheme") }
     // 后台槽位：true = 浅色档。
     var pendingBackgroundLight by remember { mutableStateOf<Boolean?>(null) }
+    // 正在等相册回调的区块 id（区块六行共用同一个系统相册启动器）。
+    var pendingBlockImage by remember { mutableStateOf<String?>(null) }
     // 发布成功后拿到直链，弹一个"已提交 + 直链"的对话框。
     var publishLink by remember { mutableStateOf<String?>(null) }
     // 商城页顶部「发布我的主题」打开的选主题对话框。
@@ -113,6 +115,15 @@ fun ThemeScreen() {
         if (uri == null || light == null) return@rememberLauncherForActivityResult
         viewModel.pickBackground(isDark = !light, uri = uri)
     }
+    // 区块背景图：与背景图那条完全同款（同一个 PickVisualMedia），只是回调要知道是哪一块。
+    val blockImageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        val blockId = pendingBlockImage
+        pendingBlockImage = null
+        if (uri == null || blockId == null) return@rememberLauncherForActivityResult
+        viewModel.pickBlockImage(blockId, uri)
+    }
     // 系统照片选择器：不需要任何存储权限，拿到的只是一次性的读权限 URI。
     val imageOnly = remember { PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly) }
 
@@ -161,6 +172,16 @@ fun ThemeScreen() {
             backgroundLauncher.launch(imageOnly)
         },
         onClearBackground = { isDark -> viewModel.clearBackground(isDark) },
+        onSetBlockColor = viewModel::setBlockColor,
+        onClearBlockColor = viewModel::clearBlockColor,
+        onPickBlockImage = { id ->
+            pendingBlockImage = id
+            blockImageLauncher.launch(imageOnly)
+        },
+        onClearBlockImage = viewModel::clearBlockImage,
+        onSetBlockNumber = viewModel::setBlockNumber,
+        onSetBlockWhen = viewModel::setBlockWhen,
+        onResetBlock = viewModel::resetBlock,
         onSaveEditor = {
             val problem = viewModel.validateEditor()
             when (problem) {
