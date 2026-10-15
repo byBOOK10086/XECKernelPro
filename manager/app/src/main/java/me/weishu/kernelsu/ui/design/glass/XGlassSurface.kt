@@ -10,7 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -317,12 +318,13 @@ private fun DrawScope.drawXcBlockImage(image: ImageBitmap, alpha: Float) {
     val left = (size.width - scaledWidth) / 2f
     val top = (size.height - scaledHeight) / 2f
     clipRect(left, top, left + scaledWidth, top + scaledHeight) {
+        // 这个 drawImage 重载要的是整数像素矩形（IntOffset/IntSize），不是 Offset/Size。
         drawImage(
             image = image,
-            srcOffset = Offset.Zero,
-            srcSize = Size(imageWidth, imageHeight),
-            dstOffset = Offset(left, top),
-            dstSize = Size(scaledWidth, scaledHeight),
+            srcOffset = IntOffset.Zero,
+            srcSize = IntSize(image.width, image.height),
+            dstOffset = IntOffset(left.toInt(), top.toInt()),
+            dstSize = IntSize(scaledWidth.toInt(), scaledHeight.toInt()),
             alpha = alpha,
         )
     }

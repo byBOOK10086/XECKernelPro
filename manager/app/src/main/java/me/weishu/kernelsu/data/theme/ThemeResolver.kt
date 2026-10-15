@@ -6,7 +6,7 @@ import me.weishu.kernelsu.ui.design.token.XcGlass
 import me.weishu.kernelsu.ui.design.token.XcNeonColors
 import me.weishu.kernelsu.ui.design.token.XcShapesDefault
 import me.weishu.kernelsu.ui.design.token.XcThemeData
-import me.weishu.kernelsu.ui.design.token.clearXcBlockImages
+import me.weishu.kernelsu.ui.design.glass.clearXcBlockImages
 import me.weishu.kernelsu.ui.design.token.withOverrides
 import me.weishu.kernelsu.ui.design.token.xcColorsFor
 import me.weishu.kernelsu.ui.design.token.xcNeonFor

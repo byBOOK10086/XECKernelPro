@@ -1,6 +1,7 @@
 package me.weishu.kernelsu.ui.design.glass
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.graphics.ImageBitmap
@@ -34,18 +35,16 @@ private const val XC_BLOCK_MAX_EDGE = 512
  * 主线程读到的是"当时这一刻已经解好的那些"。
  *
  * 失效只有一条路：[clearXcBlockImages]，由 `ThemeResolver.invalidate()` 调用 —— 换主题、
- * 保存主题、删除主题都会走到那里，所以不存在"换了主题还画着旧图"。键里带主题 id 是第二道
- * 保险：万一有哪条改主题的路没清缓存，键变了也不会命中旧条目。
+ * 保存主题、删除主题都会走到那里，所以不存在"换了主题还画着旧图"。键就是**文件路径**：
+ * 路径本身带着主题 id（`filesDir/themes/<id>/block-….jpg`），重装同一 id 会整目录替换、
+ * 路径不变但内容变了 —— 那种情况正是靠 [clearXcBlockImages] 兜住的，不是靠键。
  */
-private val XcBlockImageCache = mutableStateMapOf<String, ImageBitmap>()
+internal val XcBlockImageCache = mutableStateMapOf<String, ImageBitmap>()
 
 /** 清空解码缓存（主题变了必须清，见上）。 */
 fun clearXcBlockImages() {
     XcBlockImageCache.clear()
 }
-
-private fun cacheKey(themeId: String, blockId: String, path: String): String =
-    "$themeId|$blockId|$path"
 
 /**
  * 取某个区块当前生效的背景，并把它的图解好。
@@ -66,10 +65,9 @@ private fun cacheKey(themeId: String, blockId: String, path: String): String =
 fun rememberXcBlock(id: String, isDark: Boolean = isInDarkTheme()): XcBlockBackground? {
     val block = Xc.block(id)
     val path = block?.imagePath
-    val themeId = Xc.themeId
     val visible = block != null && block.visibleIn(isDark)
     // 这一档不画它的区块根本没有"图要解"这回事（key = null 就是"不用解"）。
-    val key = if (!visible || path == null) null else cacheKey(themeId, id, path)
+    val key = if (!visible || path == null) null else path
     val ready by produceState<Boolean>(
         // 颜色和透明/黑纱都是纯数据：没图可解时这里一开始就算"准备好了"，
         // 少跑一次多余的组合（真正的取舍在下面那个 `path == null`）。
