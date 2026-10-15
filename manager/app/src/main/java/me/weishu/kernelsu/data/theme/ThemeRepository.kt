@@ -60,7 +60,11 @@ object ThemeRepository {
         val dir = themesDir(context)
         if (!dir.isDirectory) return emptyList()
         return dir.listFiles().orEmpty()
-            .filter { it.isDirectory }
+            // 点开头的一律不算主题：install() 的暂存目录是 `.staging-<id>`，异常退出可能留下半包，
+            // 那种目录里也有 theme.json，不排掉就会在列表里冒充一个同 id 的主题。
+            // 这里只**跳过**不删：install() 正在写自己的暂存目录时 list() 可能并发跑，
+            // 删掉等于把正在安装的主题拆了。
+            .filter { it.isDirectory && !it.name.startsWith(".") }
             .mapNotNull { runCatching { load(it) }.getOrNull() }
             .sortedBy { it.spec.name.lowercase() }
     }
