@@ -224,6 +224,21 @@ private fun spansToAnnotatedString(spans: List<TermSpan>, baseColor: Color): Ann
 /** 单引号包 shell 字面量。 */
 private fun q(s: String): String = "'" + s.replace("'", "'\\''") + "'"
 
+/**
+ * 「执行文件」的输入形态识别：只认**整条输入就是一个路径**（`/x`、`./x`、`../x`）且不含
+ * shell 元字符的情况；其余一律按真 shell 命令交给 shell —— 不能把 `ls | grep x` 这种
+ * 命令行误当文件去执行。
+ *
+ * 存在性检查留给调用方（要经 shell 的 `[ -f ]`），这里只做形态与路径解析。
+ */
+private fun execFileCandidate(command: String, cwd: String): String? {
+    if (command.isEmpty()) return null
+    if (!command.startsWith("/") && !command.startsWith("./") && !command.startsWith("../")) return null
+    if (command.any { it == ' ' || it == '\t' || it == '\n' }) return null
+    if (command.any { it in "|&;<>()\$`\\\"'*?[]{}~!" }) return null
+    return if (command.startsWith("/")) command else cwd.trimEnd('/') + "/" + command
+}
+
 /** 终端会话：一个持久 sh（root 可用时是 su），cwd 自跟踪。 */
 private class TerminalSession {
     var isRoot: Boolean = false
@@ -336,6 +351,24 @@ fun TerminalScreen() {
         running = true
         scope.launch {
             try {
+                // 「整条输入就是一个已存在的文件路径」这一种形态走文件执行通道：
+                // /sdcard 是 noexec 挂载、下载来的脚本也常常没有 +x，直接丢给 shell
+                // 只会得到 Permission denied（用户看到的"终端不能执行文件"）。
+                // FsShell.runFile 会先复制到 /data/local/tmp 再跑，脚本用 sh、ELF 直接执行，
+                // 依赖 +x 与挂载 exec 位的两种失败都绕开了。
+                val candidate = execFileCandidate(cmd, session.cwd.value)
+                if (candidate != null) {
+                    val exists = session.run("[ -f ${q(candidate)} ] && echo yes").first == 0
+                    if (exists) {
+                        val run = FsShell.runFile(candidate)
+                        if (run.output.isNotEmpty()) appendRaw(run.output.split('\n'))
+                        if (run.code != 0) {
+                            val msg = run.error.ifEmpty { "exit ${run.code}" }
+                            appendRaw(listOf("\u001b[31m$msg\u001b[0m"))
+                        }
+                        return@launch
+                    }
+                }
                 val (rc, out) = session.run(cmd)
                 appendRaw(out)
                 if (rc != 0) appendRaw(listOf("\u001b[31mexit $rc\u001b[0m"))
@@ -573,7 +606,11 @@ fun TerminalScreen() {
                             viewerText = out.joinToString("\n")
                         }
                     }
-                    FileAction.EXECUTE -> submit("sh ${q(path)}")
+                    // 走 submit 的文件执行通道：复制到 /data/local/tmp 再跑（脚本用 sh、
+                    // ELF 直接执行）。旧实现 `sh <路径>` 对 ELF 必失败，且 /sdcard 是
+                    // noexec 挂载、下载的文件也常常没有 +x —— 那条路用户只会看到
+                    // Permission denied / can't execute。
+                    FileAction.EXECUTE -> submit(path)
                     FileAction.DELETE -> submit("rm -rf ${q(path)}")
                     FileAction.PERMISSIONS -> permTarget = path
                     FileAction.COPY_PATH -> {

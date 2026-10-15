@@ -12,6 +12,10 @@ RUNTIME=/data/adb/tricky_store
 COMPAT_DIR=/data/adb/modules/tricky_store
 LOG_FILE="$RUNTIME/.engine.log"
 
+# 外部 tricky_store 模块占位时的存活宽限期（秒）：宽限期内看到 TEESimulator 进程就让位，
+# 看不到就用 --takeover 接管。可用环境变量覆盖，便于本地/真机调参。
+TAKEOVER_DELAY=${TAKEOVER_DELAY:-90}
+
 log_line() {
     printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$LOG_FILE" 2>/dev/null
 }
@@ -76,8 +80,28 @@ label_data_path "$RUNTIME"
 # 模块同时向 keystore2 注入两个引擎：两套 grant ledger、两套证书缓存互相打架，
 # 检测方看到的就是"密钥行为异常"。
 if external_engine_active; then
-    log_line "INFO builtin TEERS stand down: external module directory is present"
-    exit 0
+    if [ "$1" = "--takeover" ]; then
+        log_line "WARN builtin TEERS: taking over — an external tricky_store module is present but no TEESimulator process is alive"
+    else
+        # 「占位」不等于「真的在拦」。旧实现只看到外部模块目录存在就让位并 exit，
+        # 于是外部引擎一旦起不来（旧版引擎、Android 16 上注入失败、被系统杀掉而它自己
+        # 没有看护、模块还在但运行时文件被清掉……），整台设备就变成
+        # **完全没有拦截**：检测方永远拿到真实 TEE 证明 —— 表现就是用户报的
+        # "bootloader 解锁 + 信任根异常"，而模块列表里一切正常、没有任何报错。
+        # 所以让位之后补一次存活核对：宽限期结束还看不到 TEESimulator 进程就用
+        # --takeover 重新进来，由本模块的引擎接管。外部引擎活着时这一步不会发生，
+        # 不会出现双引擎互杀（那正是当初要 stand down 的原因）。
+        log_line "INFO builtin TEERS stand down: external module directory is present (liveness check in ${TAKEOVER_DELAY}s)"
+        (
+            sleep "$TAKEOVER_DELAY"
+            if [ -n "$(pidof TEESimulator 2>/dev/null)" ]; then
+                echo "$(date '+%F %T') INFO builtin TEERS: external engine is alive, staying down" >> "$LOG_FILE" 2>/dev/null
+                exit 0
+            fi
+            sh "$0" --takeover >> "$LOG_FILE" 2>&1
+        ) >/dev/null 2>&1 &
+        exit 0
+    fi
 fi
 
 VER=$(sed -n 's/^versionCode=//p' "$MODPATH/module.prop" 2>/dev/null)

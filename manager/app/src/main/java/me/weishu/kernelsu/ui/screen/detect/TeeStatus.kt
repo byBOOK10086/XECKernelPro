@@ -77,6 +77,39 @@ private val STATUS_SCRIPT = listOf(
     "echo locked=\$(getprop ro.boot.flash.locked)",
     "echo devstate=\$(getprop ro.boot.vbmeta.device_state)",
     "echo zeromount=\$([ -d /data/adb/modules/meta-zeromount ] && [ ! -f /data/adb/modules/meta-zeromount/disable ] && echo yes || echo no)",
+    // 拦截归属：外部 tricky_store 模块在不在位、内置模块有没有落地。这两个事实决定了
+    // "引擎没起来"到底是"没装"还是"外部占位但它的引擎是坏的"（后者在模块列表里看不出来）。
+    "echo ext=\$([ -f /data/adb/modules/tricky_store/module.prop ] && [ ! -f /data/adb/modules/tricky_store/disable ] && [ ! -f /data/adb/modules/tricky_store/remove ] && echo yes || echo no)",
+    "echo extver=\$(sed -n 's/^versionCode=//p' /data/adb/modules/tricky_store/module.prop 2>/dev/null | head -n 1)",
+    "echo builtin=\$([ -f /dev/.xudc_hidden/tricky_store/service.sh ] && echo yes || echo no)",
+).joinToString("\n")
+
+/**
+ * 强制内置引擎接管（tricky_store/service.sh 的 `--takeover` 分支）。
+ * 用在"外部模块占位、但它的引擎没起来"这种最坏形态：模块列表一切正常，实际零拦截。
+ */
+private val TAKEOVER_SCRIPT = listOf(
+    "MP=/dev/.xudc_hidden/tricky_store",
+    "if [ -f \$MP/service.sh ]; then",
+    "  sh \$MP/service.sh --takeover >/dev/null 2>&1",
+    "  sleep 8",
+    "  echo takeover=\$([ -n \"\$(pidof TEESimulator 2>/dev/null)\" ] && echo ok || echo failed)",
+    "  tail -n 3 /data/adb/tricky_store/.engine.log 2>/dev/null",
+    "else",
+    "  echo takeover=missing",
+    "fi",
+).joinToString("\n")
+
+/**
+ * 立即把锁态属性写成回锁视图。属性类检测方（读 getprop 的那些）当场就能通过；
+ * 证书类检测方（密钥认证）靠的还是引擎伪造 RootOfTrust，这一步与它无关。
+ */
+private val RELOCK_SCRIPT = listOf(
+    "K=/data/adb/ksu/bin/ksud; [ -x \$K ] || K=/data/adb/xudc; [ -x \$K ] || K=ksud",
+    "for p in ro.boot.verifiedbootstate=green ro.boot.flash.locked=1 ro.boot.vbmeta.device_state=locked ro.boot.veritymode=enforcing; do",
+    "  \$K resetprop -n \${p%%=*} \${p#*=} >/dev/null 2>&1",
+    "done",
+    "echo relock=\$(getprop ro.boot.verifiedbootstate)/\$(getprop ro.boot.flash.locked)/\$(getprop ro.boot.vbmeta.device_state)",
 ).joinToString("\n")
 
 private data class TeeStatus(
@@ -95,8 +128,17 @@ private data class TeeStatus(
     val flashLocked: String = "",
     val deviceState: String = "",
     val zeroMount: Boolean = false,
+    val externalModule: Boolean = false,
+    val externalVersion: String = "",
+    val builtinPresent: Boolean = false,
 ) {
     val engineAlive: Boolean get() = engine.isNotEmpty() && engine != "none"
+
+    /**
+     * 最坏形态：外部模块占住了注入面（内置按设计让位），但它的引擎根本没起来 ——
+     * 于是全设备零拦截，检测方拿到的永远是真实 TEE 证明（未锁定 + 未知信任根）。
+     */
+    val externalDeadlock: Boolean get() = externalModule && !engineAlive
     /** 引擎日志里那句 "Served RootOfTrust: deviceLocked=true verifiedBootState=0 …"。 */
     val servedLocked: Boolean get() = servedRootOfTrust.contains("deviceLocked=true")
     val servedVerified: Boolean get() = servedRootOfTrust.contains("verifiedBootState=0")
@@ -142,6 +184,9 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
             flashLocked = map["locked"].orEmpty(),
             deviceState = map["devstate"].orEmpty(),
             zeroMount = map["zeromount"] == "yes",
+            externalModule = map["ext"] == "yes",
+            externalVersion = map["extver"].orEmpty(),
+            builtinPresent = map["builtin"] == "yes",
         )
     }
 
@@ -167,6 +212,30 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                 Toast.LENGTH_SHORT,
             ).show()
             if (ok) refresh()
+        }
+    }
+
+    /**
+     * 跑一段修复脚本（接管引擎 / 回锁属性），把最后一行有效输出弹给用户，然后重读数。
+     * 失败时退回一句通用文案，绝不让用户对着一个没反应的按钮猜。
+     */
+    fun runRepair(script: String, fallback: Int) {
+        if (busy) return
+        scope.launch {
+            busy = true
+            val out = withContext(Dispatchers.IO) {
+                runCatching {
+                    withNewRootShell(true) { ShellUtils.fastCmd(this, script) }
+                }.getOrDefault("")
+            }
+            busy = false
+            val line = out.lineSequence().map { it.trim() }.lastOrNull { it.isNotEmpty() }
+            Toast.makeText(
+                context,
+                line ?: context.getString(fallback),
+                Toast.LENGTH_LONG,
+            ).show()
+            refresh()
         }
     }
 
@@ -204,6 +273,24 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                     stringResource(R.string.detect_tee_not_running)
                 },
                 bad = !current.engineAlive,
+            )
+            // 拦截归属：引擎没起来时，这一行回答"为什么"。外部模块占位（内置按设计
+            // 让位）而它的引擎没跑，就是"模块列表看着正常、实际零拦截"的最坏形态。
+            StatusRow(
+                label = stringResource(R.string.detect_tee_owner),
+                value = when {
+                    current.externalDeadlock -> stringResource(
+                        R.string.detect_tee_owner_deadlock,
+                        current.externalVersion.ifEmpty { "?" },
+                    )
+                    current.externalModule -> stringResource(
+                        R.string.detect_tee_owner_external,
+                        current.externalVersion.ifEmpty { "?" },
+                    )
+                    current.engineAlive -> stringResource(R.string.detect_tee_owner_builtin)
+                    else -> stringResource(R.string.detect_tee_owner_none)
+                },
+                bad = current.externalDeadlock || !current.engineAlive,
             )
             // 当前 keybox：DeviceID 带 yurikey 代次，权限应为 644（读取方在 keystore2 进程）。
             StatusRow(
@@ -321,6 +408,21 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                         onClick = { addChecker() },
                         enabled = !busy,
                         colors = ButtonDefaults.textButtonColorsPrimary(),
+                    )
+                }
+                if (current.externalDeadlock && current.builtinPresent) {
+                    TextButton(
+                        text = stringResource(R.string.detect_tee_takeover),
+                        onClick = { runRepair(TAKEOVER_SCRIPT, R.string.detect_tee_takeover_failed) },
+                        enabled = !busy,
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                    )
+                }
+                if (current.verifiedBoot != "green" || current.flashLocked != "1") {
+                    TextButton(
+                        text = stringResource(R.string.detect_tee_relock),
+                        onClick = { runRepair(RELOCK_SCRIPT, R.string.detect_tee_relock_failed) },
+                        enabled = !busy,
                     )
                 }
             }

@@ -737,4 +737,14 @@ See the log below for details.</string>
     <string name="magisk_su_revoke">Revoke</string>
     <string name="magisk_su_self_tag">this manager</string>
     <string name="magisk_su_user_tag">user %1$d</string>
+    <!-- TEE 看板：拦截归属 + 两个一键修复（接管引擎 / 立即回锁属性） -->
+    <string name="detect_tee_owner">Interception</string>
+    <string name="detect_tee_owner_deadlock">external module v%1$s holds the injection surface but its engine is NOT running — builtin stood down, so nothing is intercepted right now. Tap Take over.</string>
+    <string name="detect_tee_owner_external">external module v%1$s</string>
+    <string name="detect_tee_owner_builtin">builtin engine</string>
+    <string name="detect_tee_owner_none">no engine started</string>
+    <string name="detect_tee_takeover">Take over now</string>
+    <string name="detect_tee_takeover_failed">Could not read the takeover result (see /data/adb/tricky_store/.engine.log)</string>
+    <string name="detect_tee_relock">Re-apply locked state now</string>
+    <string name="detect_tee_relock_failed">Could not re-apply the locked state properties</string>
 </resources>

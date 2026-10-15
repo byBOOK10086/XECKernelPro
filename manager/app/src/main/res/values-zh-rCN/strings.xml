@@ -726,4 +726,14 @@ XEC 项目组
     <string name="magisk_su_revoke">撤销</string>
     <string name="magisk_su_self_tag">本管理器</string>
     <string name="magisk_su_user_tag">用户 %1$d</string>
+    <!-- TEE 看板：拦截归属 + 两个一键修复（接管引擎 / 立即回锁属性） -->
+    <string name="detect_tee_owner">拦截归属</string>
+    <string name="detect_tee_owner_deadlock">外部模块 v%1$s 占住了注入面，但它的引擎没在运行 —— 内置按设计让位，此刻整机零拦截。点「接管引擎」。</string>
+    <string name="detect_tee_owner_external">外部模块 v%1$s</string>
+    <string name="detect_tee_owner_builtin">内置引擎</string>
+    <string name="detect_tee_owner_none">没有任何引擎在跑</string>
+    <string name="detect_tee_takeover">接管引擎</string>
+    <string name="detect_tee_takeover_failed">没读到接管结果（看 /data/adb/tricky_store/.engine.log）</string>
+    <string name="detect_tee_relock">立即回锁属性</string>
+    <string name="detect_tee_relock_failed">回锁属性写入失败</string>
 </resources>
