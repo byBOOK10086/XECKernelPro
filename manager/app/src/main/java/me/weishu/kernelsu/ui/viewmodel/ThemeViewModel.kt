@@ -47,6 +47,16 @@ class ThemeViewModel : ViewModel() {
     private var pendingDark: String? = null
     private var pendingLight: String? = null
 
+    companion object {
+        /**
+         * 主题包上传到的子目录（`/uploads/pending`）。
+         *
+         * 主题仓库的 `ingest-pending.yml` 每 10 分钟扫一次这里自动收录，
+         * 所以"发布"不需要用户有 GitHub 账号、也不需要打开 github.com。
+         */
+        private const val PUBLISH_DIR = "pending"
+    }
+
     init {
         refreshLocal()
         loadStore()
@@ -183,10 +193,12 @@ class ThemeViewModel : ViewModel() {
     }
 
     /**
-     * 发布：把主题包传到 XEC 网盘，返回直链（调用方把它填进主题仓库的提交表单）。
+     * 发布：把主题包传到 XEC 网盘，返回直链（调用方把它展示/复制给用户）。
      *
-     * 走 OpenList 的专用上传账号（与远程模块助手同一条通道），所以**不需要 GitHub 账号**
-     * 也能拿到可分享的直链；进商城索引那一步才需要开 issue（人工/机器人校验）。
+     * 走 OpenList 的专用上传账号（与远程模块助手同一条通道），所以**不需要 GitHub 账号**。
+     * 包落在 `/uploads/pending/`：主题仓库的定时任务（`ingest-pending.yml`，每 10 分钟一轮）
+     * 扫这个目录、校验、按 sha256 去重后自动收进索引 —— **不用去 GitHub 开 issue**。
+     * 直链同样可以贴进 issue 表单，那条路仍然保留（想留言/想要回执时用）。
      */
     fun publish(id: String, onDone: (Boolean, String?) -> Unit) {
         _ui.update { it.copy(busy = true) }
@@ -198,7 +210,13 @@ class ThemeViewModel : ViewModel() {
                     val tmp = File(context.cacheDir, name)
                     tmp.writeBytes(bytes)
                     try {
-                        RemoteUploader.upload(context, Uri.fromFile(tmp), name) { _, _ -> }
+                        RemoteUploader.upload(
+                            context,
+                            Uri.fromFile(tmp),
+                            name,
+                            { _, _ -> },
+                            dir = PUBLISH_DIR,
+                        )
                     } finally {
                         tmp.delete()
                     }

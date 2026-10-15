@@ -10,6 +10,15 @@ name: Build XECKernelPro
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        # 默认 false：手动跑一次只是**出构建产物**（内测 APK），不会创建 Release、不动版本号。
+        # 要发版必须显式勾上，或者推 v* 标签（标签触发永远发版）。
+        # 这条闸门是 2026-10-15 加的：之前手动 dispatch 一定会走到 release job，
+        # 内测构建得靠"盯着 run 手动取消"，一次没取消干净就会把没确认的版本发出去。
+        description: '创建 GitHub Release（发版）。只出内测包请保持关闭'
+        type: boolean
+        default: false
   push:
     tags:
       - "v*"
@@ -432,9 +441,11 @@ jobs:
 
   # 发布 GitHub Release，让老版本的“检查更新”能发现新版本。
   # 关键点：release APK 文件名末尾必须带 _<versionCode>，checkNewVersion() 用它做版本比较。
+  # 触发条件：推 v* 标签（永远发版）；手动 dispatch 必须显式勾上 publish=true。
+  # 不勾就只出产物（内测包），版本号、标签、Release 都不会动。
   release:
     needs: [repack, build-ksud, build-ksuinit]
-    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.publish)
     runs-on: ubuntu-latest
     permissions:
       contents: write

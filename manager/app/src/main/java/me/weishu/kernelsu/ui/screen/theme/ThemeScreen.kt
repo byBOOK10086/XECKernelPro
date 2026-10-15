@@ -47,8 +47,10 @@ fun ThemeScreen() {
     var pendingExportName by remember { mutableStateOf("theme.xectheme") }
     // 后台槽位：true = 浅色档。
     var pendingBackgroundLight by remember { mutableStateOf<Boolean?>(null) }
-    // 发布成功后拿到直链，弹一个"复制 + 打开提交表单"的对话框。
+    // 发布成功后拿到直链，弹一个"已提交 + 直链"的对话框。
     var publishLink by remember { mutableStateOf<String?>(null) }
+    // 商城页顶部「发布我的主题」打开的选主题对话框。
+    var publishPicker by remember { mutableStateOf(false) }
 
     fun toast(text: String) {
         Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
@@ -184,6 +186,7 @@ fun ThemeScreen() {
                 }
             }
         },
+        onOpenPublishPicker = { publishPicker = true },
     )
 
     ThemeScreenMiuix(
@@ -191,5 +194,7 @@ fun ThemeScreen() {
         actions = actions,
         publishLink = publishLink,
         onDismissPublish = { publishLink = null },
+        publishPicker = publishPicker,
+        onDismissPublishPicker = { publishPicker = false },
     )
 }

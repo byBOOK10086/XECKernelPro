@@ -96,4 +96,11 @@ data class ThemeActions(
     val onClearBackground: (isDark: Boolean) -> Unit,
     val onSaveEditor: () -> Unit,
     val onPublish: (String) -> Unit,
+    /**
+     * 商城页顶部的「发布我的主题」入口：打开一个列出本机主题的对话框。
+     *
+     * 单独留这个动作是因为「发布」原先只藏在「我的主题」每张卡片的按钮里，
+     * 用户根本找不到（实际上报的就是这个）。
+     */
+    val onOpenPublishPicker: () -> Unit,
 )

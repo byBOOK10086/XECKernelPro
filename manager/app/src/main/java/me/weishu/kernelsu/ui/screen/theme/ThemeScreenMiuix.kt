@@ -16,20 +16,26 @@ import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -73,6 +79,8 @@ fun ThemeScreenMiuix(
     actions: ThemeActions,
     publishLink: String?,
     onDismissPublish: () -> Unit,
+    publishPicker: Boolean = false,
+    onDismissPublishPicker: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val layoutDirection = LocalLayoutDirection.current
@@ -169,10 +177,83 @@ fun ThemeScreenMiuix(
         }
     }
 
+    // 发布前的"选一个主题"对话框：入口在商城页顶部（也仍然在「我的」每张卡片上）。
+    XDialog(show = publishPicker, onDismissRequest = onDismissPublishPicker) {
+        XDialogTitle(
+            text = stringResource(R.string.themes_publish_picker_title),
+            summary = stringResource(R.string.themes_publish_picker_hint),
+        )
+        if (state.mine.isEmpty()) {
+            Text(
+                text = stringResource(R.string.themes_publish_picker_empty),
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                color = Xc.colors.textSecondary,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp),
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 320.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp),
+            ) {
+                state.mine.forEach { entry ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = entry.spec.name,
+                                fontSize = 15.sp,
+                                color = Xc.colors.text,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                // 版本与 id 一起显示：重名主题靠 id 区分，用户提交 issue 时也要填它。
+                                text = "v" + entry.spec.version + "  ·  " + entry.spec.id,
+                                fontSize = 12.sp,
+                                color = Xc.colors.textMuted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        TextButton(
+                            text = stringResource(R.string.themes_publish),
+                            onClick = {
+                                onDismissPublishPicker()
+                                actions.onPublish(entry.spec.id)
+                            },
+                            enabled = !state.busy,
+                            colors = ButtonDefaults.textButtonColorsPrimary(),
+                        )
+                    }
+                }
+            }
+        }
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            TextButton(
+                text = stringResource(R.string.close),
+                onClick = onDismissPublishPicker,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.textButtonColors(),
+            )
+        }
+    }
+
     XDialog(show = publishLink != null, onDismissRequest = onDismissPublish) {
         XDialogTitle(
             text = stringResource(R.string.themes_publish),
-            summary = stringResource(R.string.themes_publish_uploaded, publishLink.orEmpty()),
+            summary = stringResource(R.string.themes_publish_pending),
         )
         Column(Modifier.padding(horizontal = 18.dp, vertical = 6.dp)) {
             Text(

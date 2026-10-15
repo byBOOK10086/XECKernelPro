@@ -35,10 +35,30 @@ object RemoteUploader {
     }
 
     /** 上传单个文件到仓库，成功返回公网直链；失败抛 IOException。 */
-    fun upload(context: Context, uri: Uri, rawName: String, onProgress: (Long, Long) -> Unit): String {
+    fun upload(context: Context, uri: Uri, rawName: String, onProgress: (Long, Long) -> Unit): String =
+        upload(context, uri, rawName, onProgress, dir = "")
+
+    /**
+     * 上传到 `/uploads` 下的子目录（[dir] 为空 = 直接放 `/uploads`）。
+     *
+     * 主题包走 `pending`：主题仓库有一个定时任务扫这个目录自动收录，
+     * **用户不用去 GitHub 开 issue**（国内手机上 github.com 常常打不开，
+     * 那是"上传了但商城一直不出现"的主因）。同一个直链照样能贴进 issue 表单，
+     * 两条路都通。
+     */
+    fun upload(
+        context: Context,
+        uri: Uri,
+        rawName: String,
+        onProgress: (Long, Long) -> Unit,
+        dir: String,
+    ): String {
         val token = login()
+        val clean = dir.trim('/').replace(Regex("[^A-Za-z0-9._-]"), "")
+        if (clean.isNotEmpty()) ensureDir(token, clean)
         val name = "${System.currentTimeMillis()}_${sanitizeName(rawName)}"
-        val encodedPath = URLEncoder.encode("/$name", "UTF-8").replace("+", "%20")
+        val remote = if (clean.isEmpty()) "/$name" else "/$clean/$name"
+        val encodedPath = URLEncoder.encode(remote, "UTF-8").replace("+", "%20")
         val conn = URL("$BASE/api/fs/put").openConnection() as HttpURLConnection
         try {
             conn.requestMethod = "PUT"
@@ -84,7 +104,30 @@ object RemoteUploader {
         } finally {
             conn.disconnect()
         }
-        return "$BASE$PUBLIC_DIR/" + URLEncoder.encode(name, "UTF-8").replace("+", "%20")
+        val publicDir = if (clean.isEmpty()) PUBLIC_DIR else "$PUBLIC_DIR/$clean"
+        return "$BASE$publicDir/" + URLEncoder.encode(name, "UTF-8").replace("+", "%20")
+    }
+
+    /** 建子目录（已存在时 OpenList 也返回成功）；失败不致命，put 会再报一次。 */
+    private fun ensureDir(token: String, dir: String) {
+        val conn = URL("$BASE/api/fs/mkdir").openConnection() as HttpURLConnection
+        try {
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.connectTimeout = 15000
+            conn.readTimeout = 15000
+            conn.setRequestProperty("Authorization", token)
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.outputStream.use {
+                it.write(JSONObject().put("path", "/$dir").toString().toByteArray())
+            }
+            conn.responseCode
+            runCatching { (conn.inputStream ?: conn.errorStream)?.close() }
+        } catch (e: Exception) {
+            // 目录已经存在 / 服务器不支持：都不影响后面的 PUT，让它自己去报错。
+        } finally {
+            conn.disconnect()
+        }
     }
 
     /** 选中文件的大小（拿不到返回 -1）；上传前用它做 500MB 上限判断。 */

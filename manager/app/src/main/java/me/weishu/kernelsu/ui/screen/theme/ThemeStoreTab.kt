@@ -2,6 +2,7 @@ package me.weishu.kernelsu.ui.screen.theme
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,7 +20,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -94,6 +97,16 @@ fun ThemeStoreTab(
                 loading = state.storeLoading,
                 onSearch = actions.onSearch,
                 onRefresh = actions.onRefreshStore,
+            )
+
+            // 上传入口放在列表上方、空态与失败态都看得见的地方：
+            // 以前"发布"只藏在「我的主题」的卡片按钮里，用户找不到（上报的原话就是
+            // "主题商店无法上传"）。入口必须长在商城里，而不是在自己的主题里。
+            PublishEntryCard(
+                themeCount = state.mine.size,
+                enabled = !state.busy,
+                onClick = actions.onOpenPublishPicker,
+                backdrop = backdrop,
             )
 
             when {
@@ -193,6 +206,69 @@ private fun StoreHeader(
             color = Xc.colors.textMuted,
             modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 2.dp),
         )
+    }
+}
+
+/**
+ * 商城顶部的「发布我的主题」入口。
+ *
+ * 存在的理由就是上报的那句话："主题商店无法上传" —— 发布按钮原先只在
+ * 「我的主题」每张卡片里，商城里没有任何入口。入口长在商城里才符合直觉：
+ * 用户看到商城 → 想让自己的主题也出现在这里 → 这里就该有一个按钮。
+ */
+@Composable
+private fun PublishEntryCard(
+    themeCount: Int,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    backdrop: LayerBackdrop?,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 6.dp)
+            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md)
+            .clickable(enabled = enabled, onClick = onClick),
+        colors = CardDefaults.defaultColors(color = Color.Transparent),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Upload,
+                tint = Xc.colors.accent,
+                contentDescription = null,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.themes_publish_entry_title),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Xc.colors.text,
+                )
+                Text(
+                    text = if (themeCount > 0) {
+                        stringResource(R.string.themes_publish_entry_summary, themeCount)
+                    } else {
+                        stringResource(R.string.themes_publish_entry_empty)
+                    },
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    color = Xc.colors.textMuted,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            Icon(
+                imageVector = Icons.Rounded.ChevronRight,
+                tint = Xc.colors.textMuted,
+                contentDescription = null,
+            )
+        }
     }
 }
 
