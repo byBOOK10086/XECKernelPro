@@ -178,7 +178,7 @@ boot_hash_audit() {
 es_engine_lines() {
     _n="${1:-400}"
     command -v logcat >/dev/null 2>&1 || return 1
-    _out=$(logcat -d -v brief -t "$_n" -s TEESimulator:V 2>/dev/null) || _out=""
+    _out=$(logcat -d -v brief -t "$_n" -s keymint_svc:V 2>/dev/null) || _out=""
     if [ -z "$_out" ]; then
         _out=$(logcat -d -v brief -t "$_n" 2>/dev/null | grep -F 'TEESimulator')
     fi

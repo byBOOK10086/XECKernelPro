@@ -31,8 +31,19 @@ AOSP libbinder/libutils 头文件子集（Apache-2.0）、Linux 内核 UAPI 头�
 
 - **2026-10-07 起**：`service.sh` 重写为内置模块形态——引擎资产从模块目录
   （`/dev/.xudc_hidden/tricky_store`）原子 staging 到运行目录 `/data/adb/tricky_store`，
-  版本标记 `.engine_version` 最后落盘（中途失败下次开机重试）、外部模块在位时主动让位、
-  DEX 里写死的上游兼容目录 `/data/adb/modules/tricky_store` 只放 `libcertgen.so`。
+  版本标记 `.engine_version` 最后落盘（中途失败下次开机重试）、外部模块在位时主动让位。
+- **2026-10-15（去指纹 + 自检自愈）**：
+  1) **不再创建 `/data/adb/modules/tricky_store` 兼容目录**，并在开机时删除历史遗留的那份。
+     它唯一的作用是迁就 DEX 里写死的 `NativeCertGen.initialize("/data/adb/modules/
+     tricky_store/libcertgen.so")`；本批把那行改成从运行目录取（`App.kt`，从 vendored
+     源码重建 DEX），TA_enhanced 判断"TS 是否安装"用的是它自己的 tmpfs 路径，不依赖它。
+     该目录名是能读 `/data/adb` 的扫描器最容易命中的指纹。
+  2) 引擎日志从 `$RUNTIME/.engine.log` 挪到 `/data/adb/.xudc_secure/engine.log`
+     （带一次性内容迁移），日志里写着 DeviceID 与 keybox 指纹，是最强信号之一。
+  3) 新增**开机自检 + 自愈** `tee_selfcheck`：每 2 分钟（以及开机 75s、看护循环、
+     管理器触发文件）核对"引擎在不在跑 / keybox 链末是不是有效的 Google 根 / 验机工具
+     是否在拦截名单 / 锁态属性有没有漂移"，能修的自己修（每类每次开机限额），结论写进
+     `/data/adb/.xudc_secure/tee-selfcheck.txt` 供管理器「TEE 引擎与拦截」直接显示。
 - **2026-10-08**：`service.sh` 增加启动前密钥取证：记录实时 keybox 的 sha/年龄/权限，
   识别"当前用的仍是模块自带出厂 keybox"，并在权限不是 644 时修正（读它的
   `KeyBoxManager` 运行在 keystore2 进程里，0600 打不开）。

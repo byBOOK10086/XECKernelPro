@@ -3,14 +3,27 @@
 # 同目录 NOTICE.md「本地修改」。上游：Enginex0/TEESimulator-RS（GPL-3.0）。
 # Built-in TEESimulator-RS engine init.
 #
-# The bundled classes.dex is kept byte-for-byte compatible with the upstream
-# engine. Its native cert generator path is satisfied through a compatibility
-# directory because rewriting DEX string_ids without rebuilding the DEX is not
-# safe. The engine itself runs from /data/adb/tricky_store.
+# The bundled classes.dex is compiled from this repository's vendored engine source
+# (third_party/TEESimulator-RS). The native cert generator is loaded from the
+# engine's own runtime directory; there is no upstream compatibility directory
+# any more (see the compat note further down).
+# The engine runs from /data/adb/tricky_store.
 MODPATH=${0%/*}
 RUNTIME=/data/adb/tricky_store
-COMPAT_DIR=/data/adb/modules/tricky_store
-LOG_FILE="$RUNTIME/.engine.log"
+# 管理器副本 / 自检 / 日志都放这里（.xudc_secure）。**日志从 RUNTIME 挪出来**是
+# 2026-10-15 这批去指纹的一部分：`.engine.log` 是整个模块信号最强的文件（里面写着
+# DeviceID、keybox 指纹与失败原因），而 `/data/adb/tricky_store/` 这个名字本身就是
+# 检测方（能读 /data/adb 的那些 root 级扫描器）第一个看的地方。
+DATA=/data/adb/.xudc_secure
+mkdir -p "$DATA" 2>/dev/null
+chmod 755 "$DATA" 2>/dev/null
+LOG_FILE="$DATA/engine.log"
+# 一次性迁移：老版本把日志写在 RUNTIME 下，升级后把内容并过来再删掉旧文件，
+# 否则"历史日志没了"会让下一次排查从零开始，而旧文件留在原路径又等于没改。
+if [ -f "$RUNTIME/.engine.log" ]; then
+    cat "$RUNTIME/.engine.log" >> "$LOG_FILE" 2>/dev/null
+    rm -f "$RUNTIME/.engine.log" 2>/dev/null
+fi
 
 # 外部 tricky_store 模块占位时的存活宽限期（秒）：宽限期内看到 TEESimulator 进程就让位，
 # 看不到就用 --takeover 接管。可用环境变量覆盖，便于本地/真机调参。
@@ -94,7 +107,7 @@ if external_engine_active; then
         log_line "INFO builtin TEERS stand down: external module directory is present (liveness check in ${TAKEOVER_DELAY}s)"
         (
             sleep "$TAKEOVER_DELAY"
-            if [ -n "$(pidof TEESimulator 2>/dev/null)" ]; then
+            if [ -n "$(pidof keymint_svc 2>/dev/null)" ]; then
                 echo "$(date '+%F %T') INFO builtin TEERS: external engine is alive, staying down" >> "$LOG_FILE" 2>/dev/null
                 exit 0
             fi
@@ -179,14 +192,21 @@ else
     log_line "INFO engine: assets already current (stamp=$STAMP, module versionCode $VER)"
 fi
 
-# The bundled DEX still names this absolute upstream path. This directory has
-# no module.prop, so it is not enumerated as an installed module.
-mkdir -p "$COMPAT_DIR" || exit 1
-printf 'xecpro compatibility directory\n' > "$COMPAT_DIR/.xecpro_compat" || exit 1
-chmod 600 "$COMPAT_DIR/.xecpro_compat" 2>/dev/null
-stage_file "$RUNTIME/libcertgen.so" "$COMPAT_DIR/libcertgen.so" 644 || exit 1
-label_data_path "$COMPAT_DIR"
-label_data_path "$COMPAT_DIR/libcertgen.so"
+# 上游兼容目录（`/data/adb/modules/tricky_store`）**不再创建**。
+#
+# 它以前存在的唯一理由是 DEX 里写死了 `NativeCertGen.initialize("/data/adb/modules/
+# tricky_store/libcertgen.so")`；本批已经把这行改成从运行时目录取（
+# `third_party/TEESimulator-RS/.../App.kt`），TA_enhanced 判断"TS 是否安装"用的也是
+# 它自己的 tmpfs 路径（common/common.sh 里的 `TS=/dev/.xudc_hidden/tricky_store`），
+# 不依赖这个目录。
+#
+# 为什么必须去掉：`/data/adb/modules/tricky_store/` 这个名字是**能读 /data/adb 的
+# root 级扫描器**最容易命中的指纹（模块列表里就是一个名叫 tricky_store 的目录），
+# 而它对我们没有任何功能作用。
+if [ -d /data/adb/modules/tricky_store ]; then
+    rm -rf /data/adb/modules/tricky_store 2>/dev/null && \
+        log_line "INFO compat: removed the legacy /data/adb/modules/tricky_store directory (upstream path no longer needed)"
+fi
 
 # ---------------------------------------------------------------------------
 # keybox 播种 / 自愈升级
@@ -262,33 +282,70 @@ _kb_root_hashes() {
     done
 }
 
-# 0 = 每条带证书的链，链末都在已知 Google 根表里
-# 1 = 结构可用但链末不是已知 Google 根（自签根/软件根/第三方箱子）
-# 2 = 无法判定（缺 sha256sum / 文件不可读）—— 此时**不动**实时副本
-_kb_root_ok() {
-    [ -s "$1" ] || return 2
-    command -v sha256sum >/dev/null 2>&1 || return 2
-    local _h _n=0
-    for _h in $(_kb_root_hashes "$1"); do
+# 允许的 Google 根 → 到期日（YYYYMMDD，UTC）。设备侧不解析证书（Android 上没有 openssl），
+# 只做日期字符串比较（字典序即时间序），日期取不到时按"未过期"放行、绝不误杀。
+#
+# 为什么光比对指纹不够：2026-05 那次 Google **第一代**硬件根到期（2016-05-27 ~ 2026-05-25）
+# 就是活教材 —— 链末指纹"确实是 Google 的根"，可证书已经过期，检测方照样报
+# 「证书链不受信任 / 信任根异常」。所以在表里的根也得分"有效/过期"两种。
+_kb_root_expiry() {
+    case "$1" in
+        5be402bf9aa353b635a748a9e017de182c02e030a2e274fe3100435ee031c5ff) printf '20341118' ;;
+        49f3601ef04c09e4e008db8ca140233820fedec82dba1ea45714f7e54dc3bb54) printf '20420315' ;;
+        afce17777720cb8316b8bcc2268dfd299b0a69dbac46e3444734c1929d0bffcf) printf '20350715' ;;
+        *) printf '' ;;
+    esac
+}
+
+# 一份 keybox 的链末状态（唯一实现，_kb_root_ok / _kb_write_root_status / 自检都用它）：
+#   google  = 每条链末都是表里的 Google 根，且都还没到期
+#   expired = 链末确实是 Google 根，但**已经过期**（检测方会报证书链不受信任）
+#   other   = 结构能用但链末不是表里的根（自签根/软件根/第三方箱子）
+#   unknown = 没法判定（缺 sha256sum）
+#   missing = 文件不存在或为空
+_kb_root_state() {
+    local _f="$1" _h _n=0 _exp _expired=0 _today
+    [ -s "$_f" ] || { printf 'missing'; return 0; }
+    command -v sha256sum >/dev/null 2>&1 || { printf 'unknown'; return 0; }
+    _today=$(date -u +%Y%m%d 2>/dev/null)
+    for _h in $(_kb_root_hashes "$_f"); do
         _n=$((_n + 1))
         case " $_KB_ROOTS " in
             *" $_h "*) ;;
-            *) return 1 ;;
+            *) printf 'other'; return 0 ;;
         esac
+        _exp=$(_kb_root_expiry "$_h")
+        if [ -n "$_exp" ] && [ -n "$_today" ] && [ "$_today" \> "$_exp" ]; then
+            _expired=1
+        fi
     done
-    [ "$_n" -gt 0 ] || return 1
-    return 0
+    [ "$_n" -gt 0 ] || { printf 'other'; return 0; }
+    [ "$_expired" = "1" ] && { printf 'expired'; return 0; }
+    printf 'google'
+}
+
+# 0 = 每条带证书的链，链末都在已知 Google 根表里**且未过期**
+# 1 = 结构可用但链末不是已知 Google 根（自签根/软件根/第三方箱子）或已过期
+# 2 = 无法判定（缺 sha256sum / 文件不可读）—— 此时**不动**实时副本
+_kb_root_ok() {
+    local _state
+    _state=$(_kb_root_state "$1")
+    case "$_state" in
+        google) return 0 ;;
+        unknown) return 2 ;;
+        missing) return 2 ;;
+        *) return 1 ;;
+    esac
 }
 
 # 结论写给管理器（TeeStatus「根证书」一行直接 cat 它，避免在 root shell 里重算哈希）。
 _kb_write_root_status() {
     local _hit=0 _total=0 _h _state
-    if [ ! -s "$_KB_LIVE" ]; then
-        printf 'missing 0/0 -\n' > "$RUNTIME/.keybox_root" 2>/dev/null
-        return 0
-    fi
-    if ! command -v sha256sum >/dev/null 2>&1; then
-        printf 'unknown 0/0 %s\n' "$(_kb_device_id "$_KB_LIVE")" > "$RUNTIME/.keybox_root" 2>/dev/null
+    _state=$(_kb_root_state "$_KB_LIVE")
+    if [ "$_state" = "missing" ] || [ "$_state" = "unknown" ]; then
+        printf '%s 0/0 %s\n' "$_state" "$(_kb_device_id "$_KB_LIVE")" \
+            > "$RUNTIME/.keybox_root" 2>/dev/null
+        chmod 644 "$RUNTIME/.keybox_root" 2>/dev/null
         return 0
     fi
     for _h in $(_kb_root_hashes "$_KB_LIVE"); do
@@ -297,8 +354,6 @@ _kb_write_root_status() {
             *" $_h "*) _hit=$((_hit + 1)) ;;
         esac
     done
-    _state=other
-    [ "$_total" -gt 0 ] && [ "$_hit" -eq "$_total" ] && _state=google
     printf '%s %s/%s %s\n' "$_state" "$_hit" "$_total" "$(_kb_device_id "$_KB_LIVE")" \
         > "$RUNTIME/.keybox_root" 2>/dev/null
     chmod 644 "$RUNTIME/.keybox_root" 2>/dev/null
@@ -476,13 +531,13 @@ log_line "INFO TEESimulator supervisor launched (pid=$!)"
 #   3) 白名单覆盖数（不在列表里的包根本不会被拦截）。
 capture_engine_state() {
     local pid dump
-    pid=$(pidof TEESimulator 2>/dev/null)
+    pid=$(pidof keymint_svc 2>/dev/null)
     if [ -n "$pid" ]; then
         log_line "INFO engine: TEESimulator alive (pid=$pid)"
     else
         log_line "WARN engine: TEESimulator NOT running — keystore is not intercepted, attestation stays the real TEE one (untrusted key + unlocked bootloader)"
     fi
-    dump=$(/system/bin/logcat -d -s TEESimulator:* 2>/dev/null \
+    dump=$(/system/bin/logcat -d -s keymint_svc:* 2>/dev/null \
         | grep -E "Finished parsing|Key store file not found|Fatal error parsing|Injection process failed|Interceptors initialized|Backdoor not found|Successfully rebuilt|Served RootOfTrust|Failed to patch|No keybox found|Rewrote the software-enforced" \
         | tail -n 8)
     if [ -n "$dump" ]; then
@@ -493,7 +548,178 @@ capture_engine_state() {
     log_target_coverage
 }
 
+# ---------------------------------------------------------------------------
+# 开机自检 + 自愈（管理器「TEE 引擎与拦截」直接读这份结论）
+# ---------------------------------------------------------------------------
+# 存在的理由（2026-10-15 用户反馈那批验机截图）：用户能看到的只有验机工具的红字，
+# 而从"引擎没起来 / 箱子链末过期 / 名单没覆盖 / 锁态没伪装"到那句红字之间，**没有任何
+# 界面给出因果**。日志里其实全都有，但没人会去读 logcat —— 于是同一台设备四张截图四种
+# 状态，连用户自己都说不清哪张是"根本没拦到"。
+#
+# 这里每轮做三件事：读事实 → 算结论 → **能修的自己修**（每类每次开机限额，避免刷日志），
+# 结论写进 $DATA/tee-selfcheck.txt（KEY=VALUE，管理器一行 sed 就能读）。
+# 写在 $DATA 而不是 $RUNTIME：引擎目录会被 vendor 的更新流程整目录重写。
+SELFCHECK_FILE="$DATA/tee-selfcheck.txt"
+REPAIR_COUNT_FILE="$DATA/.tee-repair-count"
+
+# 每类修复的配额：$1=类别 $2=上限。0 = 还能修（已计数），1 = 配额用完。
+_bump_repair() {
+    local _k="$1" _cap="$2" _n=0
+    [ -f "$REPAIR_COUNT_FILE" ] && \
+        _n=$(sed -n "s/^$_k=//p" "$REPAIR_COUNT_FILE" 2>/dev/null | head -n 1)
+    case "$_n" in ''|*[!0-9]*) _n=0 ;; esac
+    [ "$_n" -ge "$_cap" ] && return 1
+    _n=$((_n + 1))
+    {
+        grep -v "^$_k=" "$REPAIR_COUNT_FILE" 2>/dev/null
+        printf '%s=%s\n' "$_k" "$_n"
+    } > "$REPAIR_COUNT_FILE.tmp" 2>/dev/null && \
+        mv -f "$REPAIR_COUNT_FILE.tmp" "$REPAIR_COUNT_FILE" 2>/dev/null
+    return 0
+}
+
+# 锁态属性回写：优先 ksud（内核态路线），退回 Magisk 的 resetprop。
+# 逐条只在"当前值不对"时才写，避免每次自检都刷一遍属性区。
+_selfcheck_set_prop() {
+    local _cur
+    _cur=$(getprop "$1" 2>/dev/null)
+    [ "$_cur" = "$2" ] && return 0
+    local _c
+    for _c in /data/adb/ksu/bin/ksud /data/adb/xudc resetprop; do
+        if [ -x "$_c" ] || command -v "$_c" >/dev/null 2>&1; then
+            "$_c" resetprop -n "$1" "$2" >/dev/null 2>&1 && return 0
+        fi
+    done
+    return 1
+}
+
+tee_selfcheck() {
+    local _pid _files _kb_state _target _checker _vvb _lc _served _perr
+    local _vbs _locked _dev _verity _verdict _repair=""
+
+    _pid=$(pidof keymint_svc 2>/dev/null)
+    _files=missing
+    if [ -f "$RUNTIME/daemon" ] && [ -f "$RUNTIME/classes.dex" ] && \
+       [ -f "$RUNTIME/libTEESimulator.so" ] && [ -x "$RUNTIME/inject" ]; then
+        _files=ok
+    fi
+    _kb_state=$(_kb_root_state "$_KB_LIVE")
+    _target=$(grep -cvE '^[[:space:]]*(#|$)' "$RUNTIME/target.txt" 2>/dev/null)
+    case "$_target" in ''|*[!0-9]*) _target=0 ;; esac
+    # 覆盖检查容忍 `包名!` / `包名?` 与行尾空白（引擎把模式后缀当同一目标）。
+    _checker=$(grep -qE '^[[:space:]]*wu\.keyChain\.test[!?]?[[:space:]]*$' \
+        "$RUNTIME/target.txt" 2>/dev/null && echo yes || echo no)
+    _vvb=$(grep -qE '^[[:space:]]*io\.github\.vvb2060\.keyattestation[!?]?[[:space:]]*$' \
+        "$RUNTIME/target.txt" 2>/dev/null && echo yes || echo no)
+    # 一次 logcat，两处复用（两次 -d 在低端机上要几百毫秒）。
+    _lc=$(/system/bin/logcat -d -s keymint_svc:* 2>/dev/null | tail -n 800)
+    _served=$(printf '%s\n' "$_lc" | grep -c 'Served RootOfTrust')
+    _perr=$(printf '%s\n' "$_lc" | grep -c -E 'Failed to patch|No keybox found|Failed to modify hardware')
+    _vbs=$(getprop ro.boot.verifiedbootstate 2>/dev/null)
+    _locked=$(getprop ro.boot.flash.locked 2>/dev/null)
+    _dev=$(getprop ro.boot.vbmeta.device_state 2>/dev/null)
+    _verity=$(getprop ro.boot.veritymode 2>/dev/null)
+
+    # 1) 引擎没跑（资产在位却起不来 = 注入失败/被杀），自己拉起来。
+    if [ -z "$_pid" ] && [ "$_files" = "ok" ]; then
+        if _bump_repair engine 3; then
+            log_line "WARN selfcheck: 引擎未运行 —— 自动重启 supervisor"
+            ( cd "$RUNTIME" && ./supervisor ./daemon "$RUNTIME" >> "$LOG_FILE" 2>&1 & )
+            _repair="${_repair}engine,"
+            sleep 10
+            _pid=$(pidof keymint_svc 2>/dev/null)
+            [ -n "$_pid" ] && log_line "INFO selfcheck: 引擎已恢复（pid=$_pid）" || \
+                log_line "ERROR selfcheck: 重启后仍未看到 TEESimulator（注入失败）"
+        fi
+    fi
+
+    # 2) 箱子链末不是有效 Google 根（含"是 Google 根但已过期"）：换回内置的那份。
+    #    只有在**内置副本本身合格**时才换，否则等于拿一个坏箱子换另一个坏箱子。
+    if [ "$_kb_state" != "google" ] && _kb_root_ok "$_KB_SHIPPED"; then
+        if _bump_repair keybox 2; then
+            if stage_file "$_KB_SHIPPED" "$_KB_LIVE" 644; then
+                _kb_write_root_status
+                _kb_state=$(_kb_root_state "$_KB_LIVE")
+                log_line "WARN selfcheck: keybox 链末状态不是有效 Google 根 —— 已换回内置副本（现在 $_kb_state）"
+                _repair="${_repair}keybox,"
+            else
+                log_line "ERROR selfcheck: 换回内置 keybox 失败"
+            fi
+        fi
+    fi
+
+    # 3) 验机工具不在白名单（引擎是穷举白名单，不在表里的包原样拿真实证明）。
+    if [ "$_checker" != "yes" ] || [ "$_vvb" != "yes" ]; then
+        if _bump_repair coverage 3; then
+            merge_baseline "$RUNTIME/target.txt" "$MODPATH/target.baseline.txt"
+            sync_conf target.txt
+            log_line "WARN selfcheck: 验机工具未覆盖（checker=$_checker vvb=$_vvb）—— 已合并 baseline 并对账"
+            _repair="${_repair}coverage,"
+            _checker=yes
+            _vvb=yes
+        fi
+    fi
+
+    # 4) 锁态属性漂移（别的模块/系统把它改回去了）。
+    if [ "$_vbs" != "green" ] || [ "$_locked" != "1" ] || \
+       [ "$_dev" != "locked" ] || [ "$_verity" != "enforcing" ]; then
+        if _bump_repair props 6; then
+            _selfcheck_set_prop ro.boot.verifiedbootstate green
+            _selfcheck_set_prop ro.boot.flash.locked 1
+            _selfcheck_set_prop ro.boot.vbmeta.device_state locked
+            _selfcheck_set_prop ro.boot.veritymode enforcing
+            log_line "WARN selfcheck: 锁态属性漂移（vbs=$_vbs locked=$_locked dev=$_dev verity=$_verity）—— 已回写"
+            _repair="${_repair}props,"
+            _vbs=$(getprop ro.boot.verifiedbootstate 2>/dev/null)
+            _locked=$(getprop ro.boot.flash.locked 2>/dev/null)
+            _dev=$(getprop ro.boot.vbmeta.device_state 2>/dev/null)
+            _verity=$(getprop ro.boot.veritymode 2>/dev/null)
+        fi
+    fi
+
+    # 结论文案给管理器用；这里只算"最坏的那一环"，顺序就是用户该关心的顺序。
+    if [ -z "$_pid" ]; then
+        _verdict=engine_down
+    elif [ "$_kb_state" != "google" ]; then
+        _verdict="keybox_${_kb_state}"
+    elif [ "$_checker" != "yes" ] || [ "$_vvb" != "yes" ]; then
+        _verdict=coverage_missing
+    elif [ "$_vbs" != "green" ] || [ "$_locked" != "1" ]; then
+        _verdict=locked_props_missing
+    else
+        _verdict=ok
+    fi
+
+    {
+        printf 'at=%s\n' "$(date +%s 2>/dev/null || echo 0)"
+        printf 'engine=%s\n' "${_pid:-none}"
+        printf 'enginefiles=%s\n' "$_files"
+        printf 'kbroot=%s\n' "$_kb_state"
+        printf 'target=%s\n' "$_target"
+        printf 'checker=%s\n' "$_checker"
+        printf 'vvb=%s\n' "$_vvb"
+        printf 'served=%s\n' "$_served"
+        printf 'patcherr=%s\n' "$_perr"
+        printf 'vbs=%s\n' "$_vbs"
+        printf 'locked=%s\n' "$_locked"
+        printf 'devstate=%s\n' "$_dev"
+        printf 'verity=%s\n' "$_verity"
+        printf 'verdict=%s\n' "$_verdict"
+        printf 'repair=%s\n' "${_repair:-none}"
+    } > "$SELFCHECK_FILE.tmp" 2>/dev/null && \
+        mv -f "$SELFCHECK_FILE.tmp" "$SELFCHECK_FILE" 2>/dev/null
+    chmod 644 "$SELFCHECK_FILE" 2>/dev/null
+
+    # 只在结论变化时写日志：15s/2min 一轮的循环里每次都写会把日志冲爆。
+    if [ "$_verdict" != "$(cat "$DATA/.tee-selfcheck-last" 2>/dev/null)" ]; then
+        printf '%s\n' "$_verdict" > "$DATA/.tee-selfcheck-last" 2>/dev/null
+        log_line "INFO selfcheck: verdict=$_verdict engine=${_pid:-none} kbroot=$_kb_state target=$_target checker=$_checker vvb=$_vvb served=$_served patcherr=$_perr vbs=$_vbs locked=$_locked repair=${_repair:-none}"
+    fi
+}
+
 ( sleep 45; capture_engine_state ) >/dev/null 2>&1 &
+# 75s（引擎状态回读之后）先跑一轮自检：开机那一下的失败要在用户打开验机工具**之前**修掉。
+( sleep 75; tee_selfcheck ) >/dev/null 2>&1 &
 
 # 引擎看护：45s 那次回读只回答"开机时起没起来"。注入链一旦在运行期断掉（进程被杀、
 # 崩溃、被别的模块顶掉），keystore 就重新变回"没被接管"，检测方又拿到真实 TEE 证明；
@@ -505,9 +731,11 @@ engine_watchdog() {
     local _pid _now _attempts=0 _last_try=0
     while :; do
         sleep 300
-        _pid=$(pidof TEESimulator 2>/dev/null)
+        _pid=$(pidof keymint_svc 2>/dev/null)
         if [ -n "$_pid" ]; then
             _attempts=0
+            # 引擎活着也要每轮自检一次：箱子过期、名单落后、属性被改回去都发生在这里。
+            tee_selfcheck
             continue
         fi
         _now=$(date +%s 2>/dev/null || echo 0)
@@ -522,7 +750,7 @@ engine_watchdog() {
         log_target_coverage
         ( cd "$RUNTIME" && ./supervisor ./daemon "$RUNTIME" >> "$LOG_FILE" 2>&1 & )
         sleep 30
-        if [ -n "$(pidof TEESimulator 2>/dev/null)" ]; then
+        if [ -n "$(pidof keymint_svc 2>/dev/null)" ]; then
             log_line "INFO engine: supervisor 重启成功，引擎已恢复接管"
             _attempts=0
         else
@@ -544,6 +772,17 @@ engine_watchdog() {
     _tick=$((_tick + 1))
     if [ $((_tick % 4)) -eq 0 ]; then
         run_consistency_audit "$RUNTIME" "$DATA" log_line
+    fi
+    # 每 2 分钟一轮自检（含自愈）：引擎被杀、箱子被换、属性被改回去都在这个粒度内发现。
+    if [ $((_tick % 8)) -eq 0 ]; then
+        tee_selfcheck
+    fi
+    # 管理器「一键自检并修复」按的是一个触发文件：写它比让管理器自己重算一遍
+    # （root shell 里拼 awk/sha256sum，出错是静默的）可靠得多，也保证"设备侧只有
+    # 一份自检实现"。
+    if [ -f "$DATA/.tee-selfcheck-now" ]; then
+        rm -f "$DATA/.tee-selfcheck-now" 2>/dev/null
+        tee_selfcheck
     fi
     if [ $((_tick % 20)) -eq 0 ]; then
         _af_added=$(target_autofill "$RUNTIME/target.txt" "$_af_conf" log_line)

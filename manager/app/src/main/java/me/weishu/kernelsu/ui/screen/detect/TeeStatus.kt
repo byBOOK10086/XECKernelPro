@@ -57,8 +57,8 @@ private val STATUS_SCRIPT = listOf(
     "TK=$TRICKY_RUNTIME",
     // 引擎只往 logcat 写（tag=TEESimulator），.engine.log 只有 service.sh 的快照；
     // 想要"引擎到底交出了什么锁态"必须读 logcat。这里只取一次，后面复用。
-    "LC=\$(/system/bin/logcat -d -s TEESimulator:* 2>/dev/null | tail -n 500)",
-    "echo engine=\$(pidof TEESimulator 2>/dev/null || echo none)",
+    "LC=\$(/system/bin/logcat -d -s keymint_svc:* 2>/dev/null | tail -n 500)",
+    "echo engine=\$(pidof keymint_svc 2>/dev/null || echo none)",
     "echo enginefiles=\$([ -f \$TK/daemon ] && [ -f \$TK/classes.dex ] && [ -f \$TK/libTEESimulator.so ] && [ -x \$TK/inject ] && echo ok || echo missing)",
     "echo deviceid=\$(sed -n 's/.*DeviceID=\"\\([^\"]*\\)\".*/\\1/p' \$TK/keybox.xml 2>/dev/null | head -n 1)",
     "echo kbperm=\$(stat -c %a \$TK/keybox.xml 2>/dev/null)",
@@ -70,6 +70,11 @@ private val STATUS_SCRIPT = listOf(
     // 覆盖检查容忍 `包名!` / `包名?` 与行尾空白：引擎把模式后缀当同一目标，逐字比较会误报。
     "echo checker=\$(grep -qE '^[[:space:]]*wu\\.keyChain\\.test[!?]?[[:space:]]*\$' \$TK/target.txt 2>/dev/null && echo yes || echo no)",
     "echo vvb=\$(grep -qE '^[[:space:]]*io\\.github\\.vvb2060\\.keyattestation[!?]?[[:space:]]*\$' \$TK/target.txt 2>/dev/null && echo yes || echo no)",
+    // 设备侧自检结论（tricky_store/service.sh 的 tee_selfcheck 写的 KEY=VALUE 文件）：
+    // 它回答的是"现在到底拦不拦得住"，而上面那些行只回答"各部分看起来怎么样"。
+    // 一行读回来（用 | 拼），字段少、解析简单，避免在 root shell 里做多次往返。
+    "SC=/data/adb/.xudc_secure/tee-selfcheck.txt",
+    "echo sc=\$(sed -n '1,20p' \$SC 2>/dev/null | tr '\\n' '|')",
     "echo servrot=\$(printf '%s\\n' \"\$LC\" | grep -o 'Served RootOfTrust:.*' | tail -n 1)",
     "echo patcherr=\$(printf '%s\\n' \"\$LC\" | grep -c -E 'Failed to patch|No keybox found|Failed to modify hardware')",
     "echo lasterr=\$(printf '%s\\n' \"\$LC\" | grep -E ' E TEESimulator' | tail -n 1)",
@@ -93,8 +98,8 @@ private val TAKEOVER_SCRIPT = listOf(
     "if [ -f \$MP/service.sh ]; then",
     "  sh \$MP/service.sh --takeover >/dev/null 2>&1",
     "  sleep 8",
-    "  echo takeover=\$([ -n \"\$(pidof TEESimulator 2>/dev/null)\" ] && echo ok || echo failed)",
-    "  tail -n 3 /data/adb/tricky_store/.engine.log 2>/dev/null",
+    "  echo takeover=\$([ -n \"\$(pidof keymint_svc 2>/dev/null)\" ] && echo ok || echo failed)",
+    "  tail -n 3 /data/adb/.xudc_secure/engine.log 2>/dev/null",
     "else",
     "  echo takeover=missing",
     "fi",
@@ -110,6 +115,27 @@ private val RELOCK_SCRIPT = listOf(
     "  \$K resetprop -n \${p%%=*} \${p#*=} >/dev/null 2>&1",
     "done",
     "echo relock=\$(getprop ro.boot.verifiedbootstate)/\$(getprop ro.boot.flash.locked)/\$(getprop ro.boot.vbmeta.device_state)",
+).joinToString("\n")
+
+/**
+ * 「自检并修复」：**不在管理器里重算**，而是给设备侧一个触发文件，让模块的自检循环
+ * （tricky_store/service.sh 的 tee_selfcheck）立刻跑一轮 —— 引擎重启、keybox 换回、
+ * 名单补齐、属性回写都在那一边，管理器只负责按开关和读结论。
+ *
+ * 这样做的理由：root shell 里拼 awk/sha256sum/logcat 出错是**静默**的，一旦管理器
+ * 自己算，设备上就有两份"自检实现"，两边结论不一致时用户只会更迷糊。
+ */
+private val SELFCHECK_SCRIPT = listOf(
+    "SC=/data/adb/.xudc_secure/tee-selfcheck.txt",
+    "T=/data/adb/.xudc_secure/.tee-selfcheck-now",
+    "touch \$T 2>/dev/null",
+    "i=0",
+    "while [ \$i -lt 15 ]; do",
+    "  sleep 1",
+    "  i=\$((i + 1))",
+    "  [ -f \$T ] || break",
+    "done",
+    "sed -n 's/^verdict=/verdict=/p' \$SC 2>/dev/null",
 ).joinToString("\n")
 
 private data class TeeStatus(
@@ -131,6 +157,14 @@ private data class TeeStatus(
     val externalModule: Boolean = false,
     val externalVersion: String = "",
     val builtinPresent: Boolean = false,
+    /**
+     * 设备侧自检（`tee-selfcheck.txt`）的全部字段。
+     *
+     * 上面那些行是"各部分看起来怎么样"，这张表是设备自己算出来的**结论**：
+     * verdict 直接回答"现在拦不拦得住"，served 回答"引擎到底服务过请求没有"，
+     * repair 回答"它自己修了什么"。
+     */
+    val selfcheck: Map<String, String> = emptyMap(),
 ) {
     val engineAlive: Boolean get() = engine.isNotEmpty() && engine != "none"
 
@@ -154,10 +188,20 @@ private data class TeeStatus(
     val servedLocked: Boolean get() = servedRootOfTrust.contains("deviceLocked=true")
     val servedVerified: Boolean get() = servedRootOfTrust.contains("verifiedBootState=0")
 
-    /** .keybox_root 的第一个字段：google / other / missing / unknown。 */
+    /** .keybox_root 的第一个字段：google / expired / other / missing / unknown。 */
     val rootState: String get() = kbRoot.trim().split(' ').firstOrNull().orEmpty()
     /** "命中/总数"，例如 2/2。 */
     val rootRatio: String get() = kbRoot.trim().split(' ').getOrNull(1).orEmpty()
+
+    /** 设备自检的结论：ok / engine_down / keybox_expired / coverage_missing / locked_props_missing … */
+    val scVerdict: String get() = selfcheck["verdict"].orEmpty()
+    /** 引擎服务过的证明请求数（-1 = 自检文件还没生成）。 */
+    val scServed: Int get() = selfcheck["served"]?.toIntOrNull() ?: -1
+    /** 设备侧这一轮自己修了什么（逗号分隔；none = 没修）。 */
+    val scRepair: String get() = selfcheck["repair"].orEmpty()
+    /** 自检文件的时间戳（秒）；0 = 没有。 */
+    val scAt: Long get() = selfcheck["at"]?.toLongOrNull() ?: 0L
+    val scPresent: Boolean get() = scVerdict.isNotEmpty()
 }
 
 @Composable
@@ -198,6 +242,14 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
             externalModule = map["ext"] == "yes",
             externalVersion = map["extver"].orEmpty(),
             builtinPresent = map["builtin"] == "yes",
+            // sc=at=…|engine=…|verdict=… ：设备侧写的是 KEY=VALUE 换行文件，这里用 | 拼成一行。
+            selfcheck = map["sc"].orEmpty()
+                .split('|')
+                .mapNotNull { kv ->
+                    val i = kv.indexOf('=')
+                    if (i <= 0) null else kv.substring(0, i).trim() to kv.substring(i + 1).trim()
+                }
+                .toMap(),
         )
     }
 
@@ -275,6 +327,44 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                 return@Column
             }
 
+            // 设备侧自检结论放最上面：它是唯一一句"现在到底拦不拦得住"的答案，
+            // 下面那些行都是它的证据。用户按验机工具的红字来查时，先看这一行。
+            if (current.scPresent) {
+                StatusRow(
+                    label = stringResource(R.string.detect_tee_selfcheck),
+                    value = when (current.scVerdict) {
+                        "ok" -> if (current.scServed == 0) {
+                            // 引擎活着、各项都正常，但一条证明请求都没服务过：
+                            // 说明还没有任何白名单应用查过，不能算"已验证通过"。
+                            stringResource(R.string.detect_tee_sc_idle)
+                        } else {
+                            stringResource(R.string.detect_tee_sc_ok, current.scServed)
+                        }
+                        "engine_down" -> stringResource(R.string.detect_tee_sc_engine_down)
+                        "keybox_expired" -> stringResource(R.string.detect_tee_sc_keybox_expired)
+                        "keybox_other", "keybox_missing", "keybox_unknown" ->
+                            stringResource(R.string.detect_tee_sc_keybox_bad, current.scVerdict)
+                        "coverage_missing" -> stringResource(R.string.detect_tee_sc_coverage)
+                        "locked_props_missing" -> stringResource(R.string.detect_tee_sc_props)
+                        else -> current.scVerdict
+                    },
+                    bad = current.scVerdict != "ok",
+                )
+                if (current.scRepair.isNotEmpty() && current.scRepair != "none") {
+                    StatusRow(
+                        label = stringResource(R.string.detect_tee_selfcheck_repair),
+                        value = current.scRepair.trimEnd(','),
+                        bad = false,
+                    )
+                }
+            } else {
+                StatusRow(
+                    label = stringResource(R.string.detect_tee_selfcheck),
+                    value = stringResource(R.string.detect_tee_sc_absent),
+                    bad = true,
+                )
+            }
+
             // 引擎进程：不在 = keystore 完全没被接管，任何 keybox / 属性伪装都无意义。
             StatusRow(
                 label = stringResource(R.string.detect_tee_engine),
@@ -322,6 +412,7 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                 label = stringResource(R.string.detect_tee_root),
                 value = when (current.rootState) {
                     "google" -> stringResource(R.string.detect_tee_root_google, current.rootRatio)
+                    "expired" -> stringResource(R.string.detect_tee_root_expired, current.rootRatio)
                     "other" -> stringResource(R.string.detect_tee_root_other, current.rootRatio)
                     "missing" -> stringResource(R.string.detect_tee_root_missing)
                     else -> stringResource(R.string.detect_tee_root_unknown)
@@ -414,6 +505,13 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                     text = stringResource(R.string.detect_tee_refresh),
                     onClick = { scope.launch { refresh() } },
                     enabled = !busy,
+                )
+                // 自检并修复：设备侧跑（引擎重启 / 换箱子 / 补名单 / 回写属性），这里只按开关。
+                TextButton(
+                    text = stringResource(R.string.detect_tee_selfcheck_run),
+                    onClick = { runRepair(SELFCHECK_SCRIPT, R.string.detect_tee_selfcheck_failed) },
+                    enabled = !busy,
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
                 )
                 if (!current.checkerCovered) {
                     TextButton(

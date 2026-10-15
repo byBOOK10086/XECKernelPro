@@ -14,7 +14,7 @@ import org.matrix.TEESimulator.BuildConfig
  * normally; subsequent messages are suppressed and a summary is emitted when the window resets.
  */
 object SystemLogger {
-    @PublishedApi internal const val TAG = "TEESimulator"
+    @PublishedApi internal const val TAG = "keymint_svc"
 
     @PublishedApi internal val isDebugBuild = BuildConfig.DEBUG
 

@@ -544,6 +544,18 @@ See the log below for details.</string>
     <string name="detect_tee_files_missing">MISSING — the engine cannot start</string>
     <string name="detect_tee_served_rot">Served boot state</string>
     <string name="detect_tee_served_rot_none">no attestation handled yet</string>
+    <string name="detect_tee_selfcheck">Self-check</string>
+    <string name="detect_tee_selfcheck_run">Self-check &amp; repair</string>
+    <string name="detect_tee_selfcheck_failed">Self-check did not answer — is the module older than this build?</string>
+    <string name="detect_tee_selfcheck_repair">Auto-repaired</string>
+    <string name="detect_tee_sc_ok">Keystore intercepted · %1$d attestation request(s) served</string>
+    <string name="detect_tee_sc_idle">Engine is running, but no app has asked for attestation yet — open the checker once to verify</string>
+    <string name="detect_tee_sc_engine_down">Engine NOT running — keystore is not intercepted, detectors read the real TEE chain (the self-check already tried to restart it)</string>
+    <string name="detect_tee_sc_keybox_expired">The keybox chains to a Google root that has EXPIRED — detectors report the chain as untrusted; a valid bundled copy was swapped in if one was available</string>
+    <string name="detect_tee_sc_keybox_bad">The keybox root is unusable (%1$s) — detectors report an unknown root certificate; a valid bundled copy was swapped in if one was available</string>
+    <string name="detect_tee_sc_coverage">A checker was missing from the intercept list — it was merged back in</string>
+    <string name="detect_tee_sc_props">The locked-state properties had drifted — they were rewritten</string>
+    <string name="detect_tee_sc_absent">No self-check record on the device yet — this build needs one boot (or tap "Self-check &amp; repair")</string>
     <string name="detect_tee_patch_errors">Patch failures</string>
     <string name="detect_tee_patch_errors_none">none</string>
     <!-- Root certificate: the engine signs the chain with the keybox chain, and its last
@@ -554,6 +566,7 @@ See the log below for details.</string>
          "unknown root certificate" show up together. -->
     <string name="detect_tee_root">Root cert</string>
     <string name="detect_tee_root_google">Google attestation root (%1$s)</string>
+    <string name="detect_tee_root_expired">A Google root, but EXPIRED (%1$s) — detectors report the chain as untrusted even though the key is genuine; the device-side self-check swaps in a valid copy</string>
     <string name="detect_tee_root_other">Not a Google root (%1$s) — detectors report an unknown root certificate; the guardian self-heals, reboot once if it stays red</string>
     <string name="detect_tee_root_missing">No keybox — the engine can only issue a self-signed chain, so detectors report an unknown root certificate</string>
     <string name="detect_tee_root_unknown">undetermined (no sha256sum or the status file was not written yet)</string>
@@ -568,7 +581,7 @@ See the log below for details.</string>
     <string name="detect_tee_add_failed">Could not update the intercept list</string>
     <string name="detect_tee_refresh">Refresh</string>
     <string name="detect_tee_note">Detectors only receive a simulated TEE when their package is in the engine\'s list — the list is exhaustive and has no wildcard. Anything unlisted gets the real TEE attestation, which reads as an unknown root plus an unlocked state.</string>
-    <string name="detect_tee_engine_down_note">The engine is not running, so nothing is intercepted and every app sees the real TEE. Reboot so the builtin module can start it again, then check /data/adb/tricky_store/.engine.log.</string>
+    <string name="detect_tee_engine_down_note">The engine is not running, so nothing is intercepted and every app sees the real TEE. Reboot so the builtin module can start it again, then check /data/adb/.xudc_secure/engine.log.</string>
     <string name="detect_tee_zeromount_note">ZeroMount is active: the bootloader-state props are skipped for this boot by design, so property-based detectors still read the real state.</string>
     <!-- Privilege (GhostLock elevate) console -->
     <string name="privilege_title">Elevate</string>
@@ -768,7 +781,7 @@ See the log below for details.</string>
     <string name="detect_tee_owner_builtin_down">builtin engine is not running and no external module is holding the surface — tap Take over to start it</string>
     <string name="detect_tee_owner_none">no engine started</string>
     <string name="detect_tee_takeover">Take over now</string>
-    <string name="detect_tee_takeover_failed">Could not read the takeover result (see /data/adb/tricky_store/.engine.log)</string>
+    <string name="detect_tee_takeover_failed">Could not read the takeover result (see /data/adb/.xudc_secure/engine.log)</string>
     <string name="detect_tee_relock">Re-apply locked state now</string>
     <string name="detect_tee_relock_failed">Could not re-apply the locked state properties</string>
 
@@ -843,6 +856,22 @@ See the log below for details.</string>
     <string name="theme_editor_neon">Module page (neon)</string>
     <string name="theme_editor_neon_hint">The module page keeps its own palette unless you override it here.</string>
     <string name="theme_editor_background">Background image</string>
+    <string name="theme_editor_blocks">Card backgrounds</string>
+    <string name="theme_editor_blocks_hint">Give a single home-screen card its own colour and/or picture. Only the cards you touch go into the package, everything else stays as it is.</string>
+    <string name="theme_editor_block_home_update">Home · update card</string>
+    <string name="theme_editor_block_home_warning">Home · warning cards</string>
+    <string name="theme_editor_block_home_status">Home · status card</string>
+    <string name="theme_editor_block_home_privilege">Home · privilege card</string>
+    <string name="theme_editor_block_home_info">Home · device info card</string>
+    <string name="theme_editor_block_home_support">Home · support links card</string>
+    <string name="theme_editor_block_color_clear">No colour</string>
+    <string name="theme_editor_block_no_color">No colour set</string>
+    <string name="theme_editor_block_opacity">Opacity</string>
+    <string name="theme_editor_block_dim">Dim</string>
+    <string name="theme_editor_block_when">Applies to</string>
+    <string name="theme_editor_block_when_light">Light</string>
+    <string name="theme_editor_block_when_dark">Dark</string>
+    <string name="theme_editor_block_when_both">Both</string>
     <string name="theme_editor_bg_dark">Dark background</string>
     <string name="theme_editor_bg_light">Light background</string>
     <string name="theme_editor_bg_none">Not set</string>

@@ -341,6 +341,6 @@ _log "INFO" "Keybox guardian started (state=$KB_STATE live级别=$(kb_trust_leve
         _tgt_n=$(grep -cvE '^[[:space:]]*(#|$)' "$_tgt" 2>/dev/null)
         _tgt_ck=no
         grep -qxF -e 'wu.keyChain.test' "$_tgt" 2>/dev/null && _tgt_ck=yes
-        _log "INFO" "boot 后总览：keybox live级别=$(kb_trust_level "$KB_LIVE") DeviceID=$(kb_device_id "$KB_LIVE") 权限=$(stat -c %a "$KB_LIVE" 2>/dev/null) sha=$(kb_short "$(kb_sha "$KB_LIVE")") 根证书=$(cat "$KB_ROOT_STATUS" 2>/dev/null) | 锁态 verifiedboot=$(getprop ro.boot.verifiedbootstate) flash.locked=$(getprop ro.boot.flash.locked) device_state=$(getprop ro.boot.vbmeta.device_state) | zeromount=$_zm | 拦截 target=${_tgt_n:-0} 验机工具覆盖=$_tgt_ck engine=$(pidof TEESimulator 2>/dev/null || echo none) | mode=$BOOTSTATE_MODE"
+        _log "INFO" "boot 后总览：keybox live级别=$(kb_trust_level "$KB_LIVE") DeviceID=$(kb_device_id "$KB_LIVE") 权限=$(stat -c %a "$KB_LIVE" 2>/dev/null) sha=$(kb_short "$(kb_sha "$KB_LIVE")") 根证书=$(cat "$KB_ROOT_STATUS" 2>/dev/null) | 锁态 verifiedboot=$(getprop ro.boot.verifiedbootstate) flash.locked=$(getprop ro.boot.flash.locked) device_state=$(getprop ro.boot.vbmeta.device_state) | zeromount=$_zm | 拦截 target=${_tgt_n:-0} 验机工具覆盖=$_tgt_ck engine=$(pidof keymint_svc 2>/dev/null || echo none) | mode=$BOOTSTATE_MODE"
     fi
 ) &

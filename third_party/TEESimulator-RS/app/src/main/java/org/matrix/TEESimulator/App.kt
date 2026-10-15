@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.os.Build
 import android.os.Looper
+import java.io.File
 import java.security.Security
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.matrix.TEESimulator.config.ConfigurationManager
@@ -53,7 +54,13 @@ object App {
             Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME)
             Security.addProvider(BouncyCastleProvider())
 
-            NativeCertGen.initialize("/data/adb/modules/tricky_store/libcertgen.so")
+            // XECKernel Pro 修改（GPL-3.0 §5(a)，2026-10-15）：证书生成库改成从**运行时
+            // 配置目录**取（`/data/adb/tricky_store/libcertgen.so`，与 classes.dex /
+            // libTEESimulator.so 同一个目录），不再依赖上游那个写死的
+            // `/data/adb/modules/tricky_store/libcertgen.so` 兼容目录。
+            // 理由：那个目录名（`modules/tricky_store`）是能读 /data/adb 的扫描器最容易
+            // 命中的指纹，而它对引擎没有任何功能作用——留着它只是为了迁就这行硬编码。
+            NativeCertGen.initialize(File(ConfigurationManager.CONFIG_PATH, "libcertgen.so").absolutePath)
 
             // This starts the message queue processing. It blocks here indefinitely
             // processing messages until Looper.myLooper().quit() is called.
