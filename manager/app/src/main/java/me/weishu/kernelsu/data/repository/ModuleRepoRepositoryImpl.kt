@@ -51,7 +51,7 @@ class ModuleRepoRepositoryImpl : ModuleRepoRepository {
             // 只改 URL 不认对象形状的话，官方源会在 JSONArray(body) 上抛异常，于是又默默
             // 回退到自建仓库 —— 用户点「官方源」却看到自家模块，且没有任何提示。
             val trimmed = body.trimStart()
-            val json = if (trimmed.startsWith("{")) {
+            val json = if (trimmed.startsWith('{')) {
                 JSONObject(trimmed).optJSONArray("modules") ?: JSONArray()
             } else {
                 JSONArray(trimmed)

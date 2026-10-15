@@ -67,6 +67,8 @@ data class SettingsScreenActions(
     val onSetCheckUpdate: (Boolean) -> Unit,
     val onSetCheckModuleUpdate: (Boolean) -> Unit,
     val onOpenTheme: () -> Unit,
+    /** 主题商城 / 我的主题 / 编辑器（换肤与分享）。 */
+    val onOpenThemes: () -> Unit,
     val onOpenWallpaper: () -> Unit,
     val onOpenProfileTemplate: () -> Unit,
     val onOpenRemoteAssistant: () -> Unit,

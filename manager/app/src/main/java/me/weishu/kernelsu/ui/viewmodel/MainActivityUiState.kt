@@ -1,6 +1,7 @@
 package me.weishu.kernelsu.ui.viewmodel
 
 import androidx.compose.runtime.Immutable
+import me.weishu.kernelsu.ui.design.token.XcThemeData
 import me.weishu.kernelsu.ui.theme.AppSettings
 
 @Immutable
@@ -27,4 +28,12 @@ data class MainActivityUiState(
      * 模糊后的壁纸，观感接近 iOS 桌面——壁纸被糊掉，图标与材质浮在上面。
      */
     val wallpaperBlur: Int,
+    /**
+     * 当前生效的主题（null = 默认外观）。
+     *
+     * 主题系统的**唯一注入点**：根层把它交给 `XcTheme`，颜色/形状/玻璃三组令牌一起换掉，
+     * 全 App 随之重组一次。放这里而不是各页自己读：换主题要让整棵树刷新，
+     * 而 `MainActivityViewModel` 已经在监听 settings 的 SharedPreferences（`theme_id`）。
+     */
+    val theme: XcThemeData? = null,
 )

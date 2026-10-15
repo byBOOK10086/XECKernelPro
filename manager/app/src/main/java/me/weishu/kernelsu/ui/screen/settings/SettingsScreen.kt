@@ -44,6 +44,8 @@ fun SettingPager(
         onSetCheckUpdate = viewModel::setCheckUpdate,
         onSetCheckModuleUpdate = viewModel::setCheckModuleUpdate,
         onOpenTheme = { navigator.push(Route.ColorPalette) },
+        // 主题商城/编辑器是独立一屏：调色屏改的是"当前外观"，主题屏管的是"整套皮肤"。
+        onOpenThemes = { navigator.push(Route.Themes) },
         onOpenWallpaper = { navigator.push(Route.Wallpaper) },
         onOpenProfileTemplate = { navigator.push(Route.AppProfileTemplate) },
         onOpenRemoteAssistant = { navigator.push(Route.RemoteAssistant) },

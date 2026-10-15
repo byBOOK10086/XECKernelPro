@@ -99,6 +99,7 @@ import me.weishu.kernelsu.ui.screen.hidepack.OneTapHideScreen
 import me.weishu.kernelsu.ui.screen.kpm.KpmScreen
 import me.weishu.kernelsu.ui.screen.remote.RemoteAssistantScreen
 import me.weishu.kernelsu.ui.screen.terminal.TerminalScreen
+import me.weishu.kernelsu.ui.screen.theme.ThemeScreen
 import me.weishu.kernelsu.ui.screen.install.InstallScreen
 import me.weishu.kernelsu.ui.screen.module.ModuleActionSheet
 import me.weishu.kernelsu.ui.screen.module.ModulePager
@@ -221,7 +222,11 @@ open class MainActivity : ComponentActivity() {
             ) {
                 // XcTheme 必须包在 KernelSUTheme 外面：miuix 主题内部会重新下发
                 // 一次 LocalIndication，圆角高光只有在它之内才覆盖得住。
-                XcTheme(isDark = isInDarkTheme(), isAmoled = appSettings.colorMode.isAmoled) {
+                XcTheme(
+                    isDark = isInDarkTheme(),
+                    isAmoled = appSettings.colorMode.isAmoled,
+                    theme = uiState.theme,
+                ) {
                     KernelSUTheme(appSettings = appSettings) {
                         // 对话框的玻璃要采"整个窗口"的图层，所以 backdrop 只能建在根层：
                         // 各页自己的 rememberBlurBackdrop 只覆盖那一页，而对话框宿主是
@@ -346,6 +351,7 @@ open class MainActivity : ComponentActivity() {
                                             entry<Route.Sulog> { SulogScreen() }
                                             entry<Route.ColorPalette> { ColorPaletteScreen() }
                                             entry<Route.Wallpaper> { WallpaperScreen() }
+                entry<Route.Themes> { ThemeScreen() }
                                             entry<Route.AppProfileTemplate> { AppProfileTemplateScreen() }
                                             entry<Route.TemplateEditor> { key -> TemplateEditorScreen(key.template, key.readOnly) }
                                             entry<Route.AppProfile> { key -> AppProfileScreen(key.uid) }

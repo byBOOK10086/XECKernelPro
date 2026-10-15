@@ -59,6 +59,18 @@ sealed interface Route : NavKey, Parcelable {
     @Serializable
     data object Wallpaper : Route
 
+    /**
+     * 主题：商城 / 我的主题 / 编辑器三合一。
+     *
+     * 用 `data object` 而不是带参数的 route：导航参数会被 marshall 成 ByteArray 走
+     * `rememberSaveable`（进程死亡时进 Binder，约 1MB 上限），而主题包可以有背景图。
+     * 屏内按 id 读 [me.weishu.kernelsu.data.theme.ThemeRepository] 即可，参数只带一个
+     * "进来先看哪个 Tab"这种小东西也没必要 —— Tab 状态是可丢弃的 UI 状态。
+     */
+    @Parcelize
+    @Serializable
+    data object Themes : Route
+
     @Parcelize
     @Serializable
     data object AppProfileTemplate : Route

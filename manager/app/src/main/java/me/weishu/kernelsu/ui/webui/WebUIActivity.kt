@@ -22,6 +22,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import me.weishu.kernelsu.data.theme.ThemeRepository
+import me.weishu.kernelsu.data.theme.ThemeResolver
 import me.weishu.kernelsu.ui.design.token.XcTheme
 import me.weishu.kernelsu.ui.theme.KernelSUTheme
 import me.weishu.kernelsu.ui.theme.ThemeController
@@ -42,11 +44,17 @@ open class WebUIActivity : ComponentActivity() {
             val context = LocalContext.current
             val prefs = context.getSharedPreferences("settings", MODE_PRIVATE)
             var appSettings by remember { mutableStateOf(ThemeController.getAppSettings()) }
+            // 主题也要跟过来：模块 WebUI 是这个 App 的一部分，只包深浅色会导致
+            // 从模块页点进 WebUI 时配色突然变回默认皮肤。
+            var theme by remember { mutableStateOf(ThemeResolver.active(context)) }
 
             DisposableEffect(prefs) {
                 val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
                     if (key in listOf("color_mode", "key_color", "color_style", "color_spec")) {
                         appSettings = ThemeController.getAppSettings()
+                    }
+                    if (key == ThemeRepository.KEY_ACTIVE) {
+                        theme = ThemeResolver.active(context)
                     }
                 }
                 prefs.registerOnSharedPreferenceChangeListener(listener)
@@ -55,7 +63,11 @@ open class WebUIActivity : ComponentActivity() {
 
             // WebUI 跑在独立 Activity 里，令牌层要自己再包一遍——否则这边取到的
             // Xc.colors 会一直是默认深色，跟主界面的深浅色对不上。
-            XcTheme(isDark = isInDarkTheme(), isAmoled = appSettings.colorMode.isAmoled) {
+            XcTheme(
+                isDark = isInDarkTheme(),
+                isAmoled = appSettings.colorMode.isAmoled,
+                theme = theme,
+            ) {
                 KernelSUTheme(appSettings = appSettings) {
                     MainContent(activity = this, onFinish = { finish() })
                 }

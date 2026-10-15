@@ -133,12 +133,21 @@ private val XcNeonLight = XcNeonColors(
 
 fun xcNeonFor(isDark: Boolean): XcNeonColors = if (isDark) XcNeonDark else XcNeonLight
 
+/**
+ * 主题对霓虹板的覆盖（null = 用内置板子）。
+ *
+ * 这块板子当初**刻意**不进 `XcTheme`，为的是"模块页的花哨配色不外溢到别的页面"。
+ * 主题系统沿用这个约定：只有主题包显式写了 `neon.dark/light` 才覆盖，而且覆盖的也只是
+ * 模块页自己的取值；没写就完全是原来的样子（默认 null ⇒ 行为零变化）。
+ */
+val LocalXcNeonOverride = staticCompositionLocalOf<XcNeonColors?> { null }
+
 /** 模块页取色的唯一入口；只在模块页内使用。 */
 object XcNeon {
     val colors: XcNeonColors
         @Composable
         @ReadOnlyComposable
-        get() = xcNeonFor(isInDarkTheme())
+        get() = LocalXcNeonOverride.current ?: xcNeonFor(isInDarkTheme())
 
     /** `linear-gradient(135deg, #8b5cf6, #06b6d4)`（FAB / 进度条取色同源）。 */
     val gradient: Brush

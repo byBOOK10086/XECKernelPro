@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import me.weishu.kernelsu.data.repository.SettingsRepository
 import me.weishu.kernelsu.data.repository.SettingsRepositoryImpl
+import me.weishu.kernelsu.data.theme.ThemeRepository
+import me.weishu.kernelsu.data.theme.ThemeResolver
 import me.weishu.kernelsu.ksuApp
 import me.weishu.kernelsu.ui.theme.ThemeController
 
@@ -52,6 +54,9 @@ class MainActivityViewModel(
             wallpaperLight = settingRepo.wallpaperLight,
             wallpaperDark = settingRepo.wallpaperDark,
             wallpaperBlur = settingRepo.wallpaperBlur,
+            // 主题：按 id 读一次本地主题包并解析成令牌。ThemeResolver 内部有"同一个 id 不重复
+            // 读盘"的缓存，所以这个监听回调（每次外观设置变化都会进来）不会反复做磁盘 IO。
+            theme = ThemeResolver.active(ksuApp),
         )
     }
 
@@ -71,6 +76,8 @@ class MainActivityViewModel(
             "wallpaper_dark",
             // 背景模糊拖动条：松手即生效，同样不需要重启。
             "wallpaper_blur",
+            // 主题：应用/换掉/恢复默认都要立刻整树刷新。
+            ThemeRepository.KEY_ACTIVE,
         )
     }
 }

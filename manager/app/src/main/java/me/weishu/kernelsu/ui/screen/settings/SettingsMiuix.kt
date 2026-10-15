@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.LayersClear
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material.icons.rounded.Wallpaper
@@ -175,6 +176,22 @@ fun SettingPagerMiuix(
                                 )
                             },
                             onClick = actions.onOpenTheme
+                        )
+                        // 主题商城与编辑器：调色屏改的是"当前外观"，这里管整套皮肤
+                        // （配色 + 圆角 + 玻璃 + 背景），可以下载别人的、也可以自己做完发布。
+                        val themesTitle = stringResource(id = R.string.settings_themes)
+                        ArrowPreference(
+                            title = themesTitle,
+                            summary = stringResource(id = R.string.settings_themes_summary),
+                            startAction = {
+                                Icon(
+                                    Icons.Rounded.Style,
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    contentDescription = themesTitle,
+                                    tint = colorScheme.onBackground
+                                )
+                            },
+                            onClick = actions.onOpenThemes
                         )
                         // 自定义背景与主题是同一层的决定：主题决定玻璃令牌，背景决定玻璃折射谁。
                         // 摘要直接说清"哪几档被换掉了"，避免用户进去才发现只改了浅色档。

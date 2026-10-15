@@ -2,6 +2,7 @@ package me.weishu.kernelsu.ui.util
 
 import android.content.Context
 import android.net.Uri
+import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onEach
@@ -25,6 +26,20 @@ fun sha256Of(context: Context, uri: Uri): String? = runCatching {
             digest.update(buf, 0, n)
         }
     } ?: return@runCatching null
+    digest.digest().joinToString("") { "%02x".format(it) }
+}.getOrNull()
+
+/** 同上，但直接对一个本地文件算（主题包、下载到私有目录的产物）。 */
+fun sha256Of(file: File): String? = runCatching {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+        val buf = ByteArray(64 * 1024)
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            digest.update(buf, 0, n)
+        }
+    }
     digest.digest().joinToString("") { "%02x".format(it) }
 }.getOrNull()
 

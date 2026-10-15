@@ -148,6 +148,22 @@ object WallpaperStore {
      */
     suspend fun import(context: Context, uri: Uri, slot: String): String = withContext(Dispatchers.IO) {
         val bitmap = decodeSource(ImageDecoder.createSource(context.contentResolver, uri), STORE_MAX_EDGE)
+        encodeIntoSlot(context, bitmap, slot)
+    }
+
+    /**
+     * 同 [import]，但来源是**本地文件**（主题包里的背景图就是这种）。
+     *
+     * 同样走一遍重编码：主题作者可能塞进一张 20MB 的原图，直接拷进私有目录会白占空间、
+     * 每次冷启动还要多解一遍。
+     */
+    suspend fun importFile(context: Context, source: File, slot: String): String = withContext(Dispatchers.IO) {
+        val bitmap = decodeSource(ImageDecoder.createSource(source), STORE_MAX_EDGE)
+        encodeIntoSlot(context, bitmap, slot)
+    }
+
+    /** 编码落盘 + 清同槽位旧文件；两个 import 入口共用。 */
+    private fun encodeIntoSlot(context: Context, bitmap: Bitmap, slot: String): String {
         val target = File(dir(context), "$slot-${System.currentTimeMillis()}.jpg")
         try {
             FileOutputStream(target).use { out ->
@@ -162,7 +178,14 @@ object WallpaperStore {
             bitmap.recycle()
         }
         prune(context, slot, keep = target.name)
-        target.name
+        return target.name
+    }
+
+    /** 删掉某个槽位的全部文件（主题被卸载/恢复默认时清自己留下的那张，不碰别人的）。 */
+    fun discardSlot(context: Context, slot: String) {
+        dir(context).listFiles()?.forEach { file ->
+            if (file.name.startsWith("$slot-")) file.delete()
+        }
     }
 
     /** 丢弃一张壁纸（切回内置池或换成纯色档时调用）。纯色档没有文件，直接忽略。 */

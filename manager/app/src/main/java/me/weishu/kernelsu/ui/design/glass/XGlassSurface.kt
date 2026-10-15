@@ -21,6 +21,8 @@ import me.weishu.kernelsu.ui.component.liquid.vibrancy
 import me.weishu.kernelsu.ui.design.clear.LocalWallpaperBackdrop
 import me.weishu.kernelsu.ui.design.clear.xClearGlassLayer
 import me.weishu.kernelsu.ui.design.token.Xc
+import me.weishu.kernelsu.ui.design.token.scaleAlpha
+import me.weishu.kernelsu.ui.design.token.scaleBy
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurColors
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
@@ -51,10 +53,12 @@ fun XGlassSurface(
     backdrop: LayerBackdrop?,
     modifier: Modifier = Modifier,
     shape: Shape = Xc.shapes.lg,
-    tint: Color = Xc.colors.glassTint,
-    blurRadius: Dp = 6.dp,
-    refraction: Dp = 24.dp,
-    rimColor: Color = Xc.colors.glassRim,
+    // 主题可调的三个旋钮：覆色浓度、模糊半径、亮边强度。全部是**倍率**（默认 1 = 原样），
+    // 所以没有主题时这里算出来的值与过去逐字节一致。
+    tint: Color = Xc.colors.glassTint.scaleAlpha(Xc.glass.tintAlpha),
+    blurRadius: Dp = 6.dp.scaleBy(Xc.glass.blurRadius),
+    refraction: Dp = 24.dp.scaleBy(Xc.glass.refraction),
+    rimColor: Color = Xc.colors.glassRim.scaleAlpha(Xc.glass.rimAlpha),
     rim: Boolean = true,
     innerHighlight: Boolean = true,
     glassEnabled: Boolean = true,
@@ -120,10 +124,10 @@ fun XGlassSurface(
 internal fun Modifier.xGlassBody(
     backdrop: LayerBackdrop?,
     shape: Shape = Xc.shapes.md,
-    tint: Color = Xc.colors.clearGlassTint,
-    blurRadius: Dp = 2.dp,
-    refraction: Dp = 34.dp,
-    rimColor: Color = Xc.colors.glassRim,
+    tint: Color = Xc.colors.clearGlassTint.scaleAlpha(Xc.glass.tintAlpha),
+    blurRadius: Dp = 2.dp.scaleBy(Xc.glass.blurRadius),
+    refraction: Dp = 34.dp.scaleBy(Xc.glass.refraction),
+    rimColor: Color = Xc.colors.glassRim.scaleAlpha(Xc.glass.rimAlpha),
     rim: Boolean = true,
     innerHighlight: Boolean = true,
     glassEnabled: Boolean = true,
@@ -139,7 +143,7 @@ internal fun Modifier.xGlassBody(
     rim = rim,
     glassEnabled = glassEnabled,
     adaptive = true,
-    specular = 1f,
+    specular = Xc.glass.specular,
 )
 
 /**
