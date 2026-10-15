@@ -511,16 +511,16 @@ private fun BackgroundCard(
             saved = spec.backgroundDark,
             pending = state.editor.pendingDarkBackground,
             enabled = !state.busy,
-            onPick = { actions.onPickBackground(isDark = true) },
-            onClear = { actions.onClearBackground(isDark = true) },
+            onPick = { actions.onPickBackground(true) },
+            onClear = { actions.onClearBackground(true) },
         )
         BackgroundRow(
             titleRes = R.string.theme_editor_bg_light,
             saved = spec.backgroundLight,
             pending = state.editor.pendingLightBackground,
             enabled = !state.busy,
-            onPick = { actions.onPickBackground(isDark = false) },
-            onClear = { actions.onClearBackground(isDark = false) },
+            onPick = { actions.onPickBackground(false) },
+            onClear = { actions.onClearBackground(false) },
         )
     }
 }
