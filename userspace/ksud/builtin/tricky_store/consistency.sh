@@ -165,7 +165,7 @@ boot_hash_audit() {
 }
 
 # --- 引擎日志快照 --------------------------------------------------------
-# 引擎自己会把两条关键判定写到 logcat（tag=TEESimulator，info 级，release 版也有）：
+# 引擎自己会把两条关键判定写到 logcat（tag=keymint_svc，info 级，release 版也有）：
 #   1. 「TEE functionality check successful / failed」
 #      → target.txt 里不带后缀的条目走 AUTO，AUTO 的解析结果就是：
 #        可用 → PATCH（真机 TEE 签发、只改内容）；不可用 → GENERATE（整条链模块合成）
@@ -180,7 +180,8 @@ es_engine_lines() {
     command -v logcat >/dev/null 2>&1 || return 1
     _out=$(logcat -d -v brief -t "$_n" -s keymint_svc:V 2>/dev/null) || _out=""
     if [ -z "$_out" ]; then
-        _out=$(logcat -d -v brief -t "$_n" 2>/dev/null | grep -F 'TEESimulator')
+        # 兜底：老内核（tag 还是旧名）或 logcat -s 被 SELinux 挡下时按关键字捞。
+        _out=$(logcat -d -v brief -t "$_n" 2>/dev/null | grep -E 'TEESimulator|keymint_svc')
     fi
     [ -n "$_out" ] || return 1
     printf '%s\n' "$_out"

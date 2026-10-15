@@ -210,9 +210,41 @@ kb_trust_level() {
     # 任何一条链的链末不在已知根表里 -> 级别 1（grep -v 有输出即存在未命中项）
     if printf '%s\n' "$_roots" | grep -vxF -f "$KB_ROOTS_CUR" 2>/dev/null | grep -q .; then
         printf '1'
-    else
-        printf '0'
+        return
     fi
+    # 全部命中还不够：**链末的 Google 根可能已经过期**（2026-05-25 那代第一代硬件根就是
+    # 活教材）——指纹对得上、证书却过期，检测方照样报「证书链不受信任」。过期的按级别 1
+    # 处理，让下面的自愈流程用"上次可信副本/模块内置副本"把它顶掉。
+    if kb_root_expired "$_f"; then
+        printf '1'
+        return
+    fi
+    printf '0'
+}
+
+# 允许的 Google 根 → 到期日（YYYYMMDD，UTC）。与 tricky_store/service.sh 的
+# `_kb_root_expiry` **必须逐字一致**（守卫 check_tee_contract.py 会比对两张表）。
+# 设备侧不解析证书，只做日期字符串比较（字典序即时间序）；取不到日期就按未过期放行。
+kb_root_expiry() {
+    case "$1" in
+        5be402bf9aa353b635a748a9e017de182c02e030a2e274fe3100435ee031c5ff) printf '20341118' ;;
+        49f3601ef04c09e4e008db8ca140233820fedec82dba1ea45714f7e54dc3bb54) printf '20420315' ;;
+        afce17777720cb8316b8bcc2268dfd299b0a69dbac46e3444734c1929d0bffcf) printf '20350715' ;;
+        *) printf '' ;;
+    esac
+}
+
+# 0 = 这份箱子里有链末是**已过期**的允许根；1 = 没有（或判不了）
+kb_root_expired() {
+    local _f="$1" _h _exp _today
+    _today=$(date -u +%Y%m%d 2>/dev/null)
+    [ -n "$_today" ] || return 1
+    for _h in $(kb_root_hashes "$_f"); do
+        _exp=$(kb_root_expiry "$_h")
+        [ -n "$_exp" ] || continue
+        [ "$_today" \> "$_exp" ] && return 0
+    done
+    return 1
 }
 
 # 供管理器读取的"根证书"结论：google <命中>/<总数> DeviceID sha16
@@ -236,7 +268,13 @@ kb_write_root_status() {
 $_roots
 EOF
         if [ "$_total" -gt 0 ] && [ "$_hit" -eq "$_total" ]; then
-            _line="google $_hit/$_total $(kb_device_id "$_f") $(kb_short "$(kb_sha "$_f")")"
+            if kb_root_expired "$_f"; then
+                # 指纹全中但根已过期：**不能报 google**，否则管理器会显示"一切正常"，
+                # 而验机工具那边正在报"证书链不受信任"。设备侧自检看到 expired 会换回内置副本。
+                _line="expired $_hit/$_total $(kb_device_id "$_f") $(kb_short "$(kb_sha "$_f")")"
+            else
+                _line="google $_hit/$_total $(kb_device_id "$_f") $(kb_short "$(kb_sha "$_f")")"
+            fi
         else
             _line="other $_hit/$_total $(kb_device_id "$_f") $(kb_short "$(kb_sha "$_f")")"
         fi
