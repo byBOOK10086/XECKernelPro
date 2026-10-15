@@ -765,6 +765,7 @@ See the log below for details.</string>
     <string name="detect_tee_owner_deadlock">external module v%1$s holds the injection surface but its engine is NOT running — builtin stood down, so nothing is intercepted right now. Tap Take over.</string>
     <string name="detect_tee_owner_external">external module v%1$s</string>
     <string name="detect_tee_owner_builtin">builtin engine</string>
+    <string name="detect_tee_owner_builtin_down">builtin engine is not running and no external module is holding the surface — tap Take over to start it</string>
     <string name="detect_tee_owner_none">no engine started</string>
     <string name="detect_tee_takeover">Take over now</string>
     <string name="detect_tee_takeover_failed">Could not read the takeover result (see /data/adb/tricky_store/.engine.log)</string>

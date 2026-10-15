@@ -139,6 +139,17 @@ private data class TeeStatus(
      * 于是全设备零拦截，检测方拿到的永远是真实 TEE 证明（未锁定 + 未知信任根）。
      */
     val externalDeadlock: Boolean get() = externalModule && !engineAlive
+
+    /**
+     * 内置引擎该在跑却没跑。
+     *
+     * 与 [externalDeadlock] 的区别：这一种是**没有任何外部模块占位**时引擎自己没起来
+     * （资产没落盘、supervisor 崩了、注入失败、被系统杀掉而看护还没轮到）。用户看到的表现
+     * 与前者完全一样（验机报"引导加载程序已解锁 / 信任根异常"，而模块列表里一切正常），
+     * 但原来看板只在"外部模块占位"时才给一键接管按钮 —— 这一种形态**没有任何按钮可点**，
+     * 只能干瞪眼。所以按钮的判据改成"引擎没跑且内置资产在位"。
+     */
+    val builtinDown: Boolean get() = builtinPresent && !engineAlive
     /** 引擎日志里那句 "Served RootOfTrust: deviceLocked=true verifiedBootState=0 …"。 */
     val servedLocked: Boolean get() = servedRootOfTrust.contains("deviceLocked=true")
     val servedVerified: Boolean get() = servedRootOfTrust.contains("verifiedBootState=0")
@@ -288,9 +299,11 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                         current.externalVersion.ifEmpty { "?" },
                     )
                     current.engineAlive -> stringResource(R.string.detect_tee_owner_builtin)
+                    // 内置资产在位但引擎没跑：没有外部模块背锅，就是它自己没起来。
+                    current.builtinPresent -> stringResource(R.string.detect_tee_owner_builtin_down)
                     else -> stringResource(R.string.detect_tee_owner_none)
                 },
-                bad = current.externalDeadlock || !current.engineAlive,
+                bad = current.builtinDown || !current.engineAlive,
             )
             // 当前 keybox：DeviceID 带 yurikey 代次，权限应为 644（读取方在 keystore2 进程）。
             StatusRow(
@@ -410,7 +423,7 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                         colors = ButtonDefaults.textButtonColorsPrimary(),
                     )
                 }
-                if (current.externalDeadlock && current.builtinPresent) {
+                if (current.builtinDown) {
                     TextButton(
                         text = stringResource(R.string.detect_tee_takeover),
                         onClick = { runRepair(TAKEOVER_SCRIPT, R.string.detect_tee_takeover_failed) },
