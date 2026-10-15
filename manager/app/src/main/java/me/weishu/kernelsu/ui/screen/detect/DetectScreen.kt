@@ -351,6 +351,17 @@ private fun DetectPagerMiuix(
                             color = neon.textSub,
                             modifier = Modifier.padding(top = 6.dp),
                         )
+                        // 内置验机工具自己带一条反拦截探针（把自己导入的证书读回来比对，
+                        // 见 tricky_store/target.baseline.txt 里 wu.keyChain.test 的注释）。
+                        // 只要引擎覆盖了它，那行「检测到TrickyStore或类似模块」必然出现——
+                        // 用户反复当成"模块没修好"来报，所以在这里就说清楚。
+                        Text(
+                            text = stringResource(R.string.detect_about_tricky_note),
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp,
+                            color = neon.textSub,
+                            modifier = Modifier.padding(top = 10.dp),
+                        )
                     }
                 }
             }

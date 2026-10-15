@@ -21,6 +21,15 @@
 # XEC 管理器内置的验机工具（密钥链完整性检测，wu.keyChain.test）。
 # 必须覆盖：它正是我们自己的验机入口，不覆盖时它看到的是未经模拟的真实 TEE 链，
 # 界面必然报"未知认证根证书 / 不完整的根证书 / 无效的信任根状态"。
+#
+# ⚠️ 2026-10-15 反编译确认（keychain-check.apk，versionName 2.0.5）：它有一条**反拦截自检**——
+# `com.wuying.CheckAtt.start()` 把自己硬编码的箱子（DeviceID="sw"、自签 CN=Wuying）用
+# setEntry 写进 AndroidKeyStore（别名 Wuying_cert）再读回来，只要读回的证书里没有 "Wuying"
+# 就判 "Tampered Attestation"，界面随即打印「检测到TrickyStore或类似模块」。
+# 也就是说：**只要我们拦它，这一行必然出现**（我们改写了它自己那份证书）；不拦它，它又会
+# 照实报真实链与真实锁态。这不是配置错误，是它的设计（第三方工具没有这种探针）。
+# 结论：保留覆盖（头几行"已锁定 / Google 根"才是用户要看的），把这一行的含义写进管理器
+# 验机页的说明文案里，而不是去改引擎行为。
 wu.keyChain.test
 
 # vvb2060 的「密钥认证」——中文社区最常用的锁态/keybox 检测工具，界面首行就是

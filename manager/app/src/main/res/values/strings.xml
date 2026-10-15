@@ -441,6 +441,7 @@ XEC Project Team
     <string name="detect_uninstall_failed">Uninstall failed</string>
     <string name="detect_about_title">About this checker</string>
     <string name="detect_about_body">Bundled verification tool: validates key chain integrity, bootloader lock state and environment anomalies. Use it to confirm that the built-in TEE key simulation and boot-state spoofing are actually working.</string>
+    <string name="detect_about_tricky_note">Known behaviour: this tool carries its own anti-interception probe — it imports a self-signed certificate under its own alias and reads it back. Once the engine covers it, the row “TrickyStore or a similar module detected” therefore ALWAYS appears; it does not mean the spoofing failed. Judge by the “bootloader locked / Google attestation root” rows, and by the TEE panel above for the engine verdict. Third-party checkers (vvb2060 Key Attestation, Play Integrity) have no such probe.</string>
     <!-- Remote Module Assistant -->
     <string name="remote_assistant_title">Remote Module Assistant</string>
     <string name="remote_assistant_subtitle">Share and receive module direct links</string>

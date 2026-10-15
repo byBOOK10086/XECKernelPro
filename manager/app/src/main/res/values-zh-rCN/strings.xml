@@ -432,6 +432,7 @@ XEC 项目组
     <string name="detect_uninstall_failed">卸载失败</string>
     <string name="detect_about_title">关于这个检测工具</string>
     <string name="detect_about_body">内置验机工具：校验密钥链有效性、bootloader 锁定状态与环境异常。用于验证内置 TEE 密钥模拟与回锁伪装是否真实生效。</string>
+    <string name="detect_about_tricky_note">已知行为：这个工具自带一条反拦截探针——它把自己签的一张证书以固定别名写进系统密钥库再读回来比对。所以只要引擎覆盖了它，界面上那行「检测到TrickyStore或类似模块」必然出现，它不代表伪装失败。判断成败请看「引导加载程序已锁定 / 谷歌硬件根证书」两行，以及上方 TEE 看板的引擎结论。第三方验机工具（vvb2060 密钥认证、Play Integrity）没有这种探针。</string>
     <!-- 远程模块助手 -->
     <string name="remote_assistant_title">远程模块助手</string>
     <string name="remote_assistant_subtitle">模块直链的分享与接收</string>
