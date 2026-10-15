@@ -26,8 +26,17 @@ object ModuleRepoSettings {
     const val RAW_FALLBACK_URL =
         "https://raw.githubusercontent.com/byBOOK10086/XECKernelPro-Modules/main/modules.json"
 
-    /** 官方仓库，只做最后兜底。 */
-    const val OFFICIAL_URL = "https://modules.kernelsu.org/modules.json"
+    /**
+     * 官方仓库，只做最后兜底。
+     *
+     * 官方索引已经搬到 `api/v1`，并且形状从裸数组变成了 `{schemaVersion, modules:[…]}`：
+     * 老的 `modules.json` 现在返回 404 —— 点「官方源」时第三顺位必然落空，用户实际看到的是
+     * 第二顺位的自建仓库，界面却什么异常都不报。两个形状 [ModuleRepoRepositoryImpl] 都认。
+     */
+    const val OFFICIAL_URL = "https://modules.kernelsu.org/api/v1/modules.json"
+
+    /** 历史官方地址：只用于识别用户缓存下来的旧地址，不再作为下载源。 */
+    const val OFFICIAL_LEGACY_URL = "https://modules.kernelsu.org/modules.json"
 
     private const val PREFS = "settings"
     private const val KEY_MODULE_REPO_URL = "module_repo_url"
@@ -57,7 +66,7 @@ object ModuleRepoSettings {
             "XECKernelPro 模块仓库（jsDelivr）"
 
         url.contains("XECKernelPro-Modules") -> "XECKernelPro 模块仓库（GitHub raw）"
-        url == OFFICIAL_URL -> "官方模块仓库"
+        url == OFFICIAL_URL || url == OFFICIAL_LEGACY_URL -> "官方模块仓库"
         else -> hostOf(url)
     }
 }

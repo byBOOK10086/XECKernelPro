@@ -17,6 +17,7 @@ import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.data.repository.SettingsRepository
 import me.weishu.kernelsu.data.repository.SettingsRepositoryImpl
 import me.weishu.kernelsu.getKernelVersion
+import me.weishu.kernelsu.mountstate.MagiskRoot
 import me.weishu.kernelsu.ksuApp
 import me.weishu.kernelsu.ui.screen.home.HomeUiState
 import me.weishu.kernelsu.ui.screen.home.SystemInfo
@@ -39,7 +40,17 @@ class HomeViewModel(
     fun refresh() {
         viewModelScope.launch {
             val baseState = withContext(Dispatchers.IO) { buildState() }
-            _uiState.update { baseState }
+            // 挂载态（唯一判据：没有 KSU 驱动应答且内核低于 5.10）：root 就是 Magisk 自己的，
+            // 首页要把正在跑的 magiskd 版本显示出来。snapshot() 会开一条 root shell，
+            // 所以只在 IO 线程里读；这条闸门之外（内核态，含 <5.10 的 KPatch）一次都不会执行到它。
+            val magiskVersion = if (baseState.isMountState) {
+                withContext(Dispatchers.IO) {
+                    runCatching { MagiskRoot.snapshot().version }.getOrNull()
+                }
+            } else {
+                null
+            }
+            _uiState.update { baseState.copy(magiskVersion = magiskVersion) }
             // 始终拉取一次版本信息，用于首页展示累计下载量；更新提示仍由 checkUpdateEnabled 控制
             val latestVersionInfo = withContext(Dispatchers.IO) { checkNewVersion() }
             _uiState.update { it.copy(latestVersionInfo = latestVersionInfo) }

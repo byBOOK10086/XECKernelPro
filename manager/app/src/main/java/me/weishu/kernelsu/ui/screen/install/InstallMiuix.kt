@@ -295,8 +295,9 @@ internal fun InstallScreenMiuix(
                                     summary = stringResource(id = R.string.enable_adb_summary),
                                     onCheckedChange = actions.onSelectEnableAdb
                                 )
-                                // Magisk 路线专属选项（= boot_patch.sh 的四个环境变量；
-                                // LEGACYSAR 由设备自动判定后直接传给脚本）。
+                                // Magisk 路线专属选项（= boot_patch.sh 的五个环境变量）。
+                                // 前四项默认 false（官方默认行为）；LEGACYSAR 的默认值是设备
+                                // 自动判定（官方判据），用户没动过时 summary 上标「自动」。
                                 // **只在选中该路线时出现** —— GKI / 内核态用户看不到任何
                                 // Magisk 相关的选项，这是"两套路线互不污染"在界面上的落实。
                                 if (uiState.installMethod is InstallMethod.MagiskPatch) {
@@ -323,6 +324,19 @@ internal fun InstallScreenMiuix(
                                         checked = uiState.magiskRecoveryMode,
                                         summary = stringResource(id = R.string.magisk_patch_recovery_mode_summary),
                                         onCheckedChange = actions.onSelectMagiskRecoveryMode
+                                    )
+                                    // LEGACYSAR：默认值是设备自动判定（Magisk 官方判据），
+                                    // 没动过就在 summary 上标「自动」；判错了可以在这里强制打开。
+                                    CheckboxPreference(
+                                        title = stringResource(id = R.string.magisk_patch_legacy_sar),
+                                        checked = uiState.magiskLegacySar,
+                                        summary = if (uiState.magiskLegacySarIsAuto) {
+                                            stringResource(id = R.string.magisk_patch_legacy_sar_summary) +
+                                                " (" + stringResource(id = R.string.magisk_patch_legacy_sar_auto) + ")"
+                                        } else {
+                                            stringResource(id = R.string.magisk_patch_legacy_sar_summary)
+                                        },
+                                        onCheckedChange = actions.onSelectMagiskLegacySar
                                     )
                                 }
                             }

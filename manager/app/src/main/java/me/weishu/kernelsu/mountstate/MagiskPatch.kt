@@ -1,6 +1,7 @@
 package me.weishu.kernelsu.mountstate
 
 import android.content.Context
+import android.system.Os
 import java.io.File
 
 /**
@@ -8,7 +9,9 @@ import java.io.File
  *
  * 这里不含任何 boot 修补算法 —— 只做三件事：
  *  1. 把 Magisk 官方载荷按 `boot_patch.sh` 头部写明的目录契约摆到同一个目录里
- *     （`magiskboot`/`magiskinit`/`magisk`/`init-ld`/`stub.apk`/`busybox`）；
+ *     （`magiskboot`/`magiskinit`/`magisk`/`init-ld`/`stub.apk`/`busybox`），并用
+ *     `busybox --install -s <workdir>` 铺出 applet 软链、把 `<workdir>` 放在 PATH 最前
+ *     （官方 `grep_prop()` 依赖 busybox 的 `dos2unix` applet 才能取回继承的 SHA1）；
  *  2. 用 `/system/bin/sh` 跑官方脚本（`BOOTMODE=true` 的安装器模式，日志走 stdout）；
  *  3. 把脚本自己写出的 `new-boot.img` 取回来交给上层导出。
  *
@@ -17,7 +20,14 @@ import java.io.File
  * 我们一个字节都不改。
  *
  * 为什么放 jniLibs：`useLegacyPackaging = true` 会把 native 库解压到
- * `nativeLibraryDir` 并带可执行位，所以原地复制/改名就能 exec（kptools 同理）。
+ * `nativeLibraryDir` 并带可执行位，所以脚本里的 `./magiskboot` 能跑起来。
+ *
+ * **载荷不能拷进 app 私有目录再跑**：Android 10+ 的 W^X 让 `untrusted_app` 对
+ * `app_data_file`（含 `cacheDir`）没有 execute，拷进去的 `magiskboot`/`busybox`
+ * 一律 `Permission denied`。官方 App 的做法是**软链接**——
+ * `MagiskInstaller.kt::extractFiles()` 的非 stub 分支就是
+ * `Os.symlink(lib.path, "$installDir/$name")`：execve 沿软链解析到 `nativeLibraryDir`
+ * 里的真实 inode，SELinux 检查的也是那个 inode，于是脚本能正常调用它。这里照抄。
  *
  * **只在非 GKI（<5.10）分支使用**：GKI / 内核态（5.10+）路线一行都不碰 Magisk。
  */
@@ -117,8 +127,18 @@ object MagiskPatch {
                 val from = File(nativeDir, src)
                 if (!from.isFile) error("missing payload: ${from.absolutePath}")
                 val to = File(workDir, dst)
-                from.copyTo(to, overwrite = true)
-                to.setExecutable(true, false)
+                to.delete()
+                // 软链而不是拷贝：cacheDir 属于 app_data_file，Android 10+ 的 W^X 下
+                // untrusted_app 对它没有 execute，拷进来的二进制跑不起来（见类头注释）。
+                try {
+                    Os.symlink(from.absolutePath, to.absolutePath)
+                } catch (e: Exception) {
+                    // 极少数设备/文件系统不允许在这里建软链：退回拷贝（老行为），
+                    // 并把"能不能执行"的后果交给脚本输出，别把可用性赌在软链上。
+                    from.copyTo(to, overwrite = true)
+                    to.setExecutable(true, false)
+                    onLog("[!] symlink failed for ${to.name} (${e.message}); copied instead")
+                }
             }
             for ((asset, exec) in ASSET_PAYLOAD) {
                 val to = File(workDir, File(asset).name)
@@ -126,6 +146,40 @@ object MagiskPatch {
                 if (exec) to.setExecutable(true, false)
             }
         }.onFailure { return PatchResult(false, null, "cannot stage magisk payload: ${it.message}") }
+
+        // 1b) busybox 的 applet 必须能**按名字**调用：官方 `grep_prop()`
+        //（util_functions.sh:49 `cat $FILES 2>/dev/null | dos2unix | sed ...`）
+        // 里的 `dos2unix` 就是一个 busybox applet，而 boot_patch.sh:161
+        //（`SHA1=$(grep_prop SHA1 config.orig)`）正靠它取回**继承的 SHA1** ——
+        // 取不到就等于丢掉原厂备份链（还原到原厂 / OTA 不再可用）。
+        // 官方 magiskd 也是这么装的：在放 busybox 的目录里跑 `busybox --install -s`
+        //（`setup_magisk_env()`），applet 软链与 busybox 同目录；再靠 PATH 让脚本找到它们。
+        val busybox = File(workDir, "busybox")
+        if (!busybox.isFile) {
+            return PatchResult(false, null, "missing payload: ${busybox.absolutePath}")
+        }
+        val installLog = try {
+            val install =
+                ProcessBuilder(busybox.absolutePath, "--install", "-s", workDir.absolutePath)
+                    .directory(workDir)
+                    .redirectErrorStream(true)
+                    .start()
+            val output = install.inputStream.bufferedReader().use { it.readText() }.trim()
+            val code = install.waitFor()
+            if (code != 0) "busybox --install -s exited $code: $output" else output
+        } catch (e: Exception) {
+            // 连 staged 的 busybox 都起不来，脚本里的 ./magiskboot 也一定起不来 —— 直接报错
+            return PatchResult(false, null, "cannot run staged busybox: ${e.message}")
+        }
+        if (installLog.isNotEmpty()) onLog("[*] busybox --install -s: $installLog")
+        // 不硬失败：设备自带 toybox 的 dos2unix 时，缺一个 applet 也不影响刷原厂镜像；
+        // 但要把后果写清楚（只有"再修补已打过 Magisk 的镜像"这一条路会丢 SHA1）。
+        if (!File(workDir, "dos2unix").exists() && !File("/system/bin/dos2unix").exists()) {
+            onLog(
+                "[!] no dos2unix applet in PATH: patching an already Magisk-patched image " +
+                    "will lose the inherited SHA1 (stock backup chain)"
+            )
+        }
 
         // 2) 把用户选的镜像放进工作目录
         val input = File(workDir, "boot.img")
@@ -143,8 +197,12 @@ object MagiskPatch {
                 .apply {
                     val env = environment()
                     env["BOOTMODE"] = "true"
-                    // ensure_bb() 找的是 $TMPDIR/busybox；abort() 也会 rm -rf $TMPDIR
+                    // TMPDIR 在这里**保护不了**工作目录：util_functions.sh:763 会把 TMPDIR
+                    // 硬写成 /dev/tmp（abort() 的 `rm -rf $TMPDIR` 删的也是它，不是这里）。
+                    // 仍然照传，只当脚本在 source util_functions.sh 之前就用 TMPDIR 的兜底。
                     env["TMPDIR"] = workDir.absolutePath
+                    // workDir 必须排在最前：1b) 装好的 busybox applet 软链就在这里，
+                    // 官方 grep_prop() 依赖的 `dos2unix` 只有靠它才能被解析到。
                     env["PATH"] = workDir.absolutePath + ":" + (env["PATH"] ?: "/system/bin")
                     env["KEEPVERITY"] = options.keepVerity.toString()
                     env["KEEPFORCEENCRYPT"] = options.keepForceEncrypt.toString()

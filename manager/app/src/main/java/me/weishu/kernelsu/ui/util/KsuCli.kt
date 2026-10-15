@@ -692,9 +692,25 @@ private fun readMagic(channel: DataSourceChannel): String {
 
 fun reboot(reason: String = "") {
     if (reason == "soft_reboot") {
-        execKsud("soft-reboot", true, true)
+        // 挂载态（<5.10，方案甲 = Magisk 路线）内核里没有 KSU 驱动：`ksud soft-reboot` 的
+        // UAPI 校验一定过不去（soft_reboot.rs 现在会真的报错、退出码非 0），软重启在这条
+        // 路线上根本不存在。不能"叫了就当成功"—— 用户勾了"用软重启代替重启"、装完模块，
+        // 结果什么都没发生。挂载态直接退回**真重启**：reason 传空串，别让 init 收到
+        // "soft_reboot" 这种它不认识的 reason（内核态行为一个字不改）。
+        if (isMountState) {
+            Log.w(TAG, "mount state has no KSU driver; soft reboot unavailable, rebooting")
+            rebootNow("")
+            return
+        }
+        val ok = execKsud("soft-reboot", true, true)
+        Log.i(TAG, "ksud soft-reboot result: $ok")
         return
     }
+    rebootNow(reason)
+}
+
+/** [reboot] 的真重启尾巴（挂载态的 `soft_reboot` 也落到这里）。 */
+private fun rebootNow(reason: String) {
     val shell = getRootShell()
     if (reason == "recovery") {
         // KEYCODE_POWER = 26, hide incorrect "Factory data reset" message

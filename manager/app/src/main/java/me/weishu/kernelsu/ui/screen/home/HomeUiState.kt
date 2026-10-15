@@ -27,9 +27,25 @@ data class HomeUiState(
     val latestVersionInfo: LatestVersionInfo,
     val currentManagerVersionCode: Long,
     val systemInfo: SystemInfo,
+    /**
+     * 挂载态下正在跑的 magiskd 版本（`magisk -v`）；其它形态恒为 null。
+     *
+     * 只在挂载态探测（见 `HomeViewModel.refresh()`）：内核态首页一次都不引用 Magisk。
+     */
+    val magiskVersion: String? = null,
 ) {
     val isSELinuxPermissive: Boolean
         get() = systemInfo.selinuxStatus == "Permissive"
+
+    /**
+     * 挂载态（唯一判据）：没有 KSU 驱动应答（[ksuVersion] == null）且内核低于 5.10。
+     *
+     * 没有驱动时 `Natives.isManager` 为 false，所以 [ksuVersion] 为 null 与
+     * `Natives.version <= 0` 等价；GKI 设备即使还没装内核也仍然是内核态
+     * （用户还没装内核，不能把它显示成 Magisk 那一套）。
+     */
+    val isMountState: Boolean
+        get() = ksuVersion == null && !kernelVersion.isGKI()
 
     val showGkiWarning: Boolean
         get() = ksuVersion != null && lkmMode == false

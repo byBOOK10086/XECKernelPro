@@ -90,8 +90,11 @@ ls /data/adb/modules
 | 卡在第一屏 | 刷回原厂：`fastboot flash boot boot.img`（Recovery 模式则刷 `recovery.img`） |
 | 脚本报 `Cannot find BusyBox` | 本 APK 没带全载荷（管理器单独构建的包会这样），换发版 APK |
 | 脚本报 `Boot image patched by unsupported programs` | 你选的是已经打过 Magisk（或别的方案）的镜像，刷回原厂再打 |
+| 脚本日志里有 `no dos2unix applet in PATH` | busybox 的 applet 没铺出来；刷原厂镜像不受影响，但**再修补已打过 Magisk 的镜像会丢掉继承的 SHA1**（还原原厂 / OTA 失效），请换发版 APK |
 | 刷完没有 root | 确认刷的是**打过补丁的那份**镜像、且分区选对（boot / recovery） |
 | 管理器里点授权没反应 | 第一次的授权框在 Magisk 那边（官方 App 或它自动装的隐藏 stub），去那里点"允许" |
+| 管理器里改了权限/通知/Zygisk，刷新后还是旧值 | 管理器每次写都会**回读校验**：写失败会抛错并记在日志里（`magisk --sqlite: statement did not take effect`），界面因此显示旧值。先确认 Magisk 已授权本管理器（超级用户页能读出表就说明有 root） |
+| 勾了"用软重启代替重启"，装完模块却像没重启 | 挂载态**没有**软重启（内核里没有 KSU 驱动）。管理器会退回**真重启**，设备会真的重启一次；若只是弹提示而设备没动，说明管理器版本旧 |
 | 想彻底卸载 | 刷回原厂镜像，删掉 `/data/adb/magisk` 与 `/data/adb/modules` |
 
 ---
@@ -110,6 +113,12 @@ Magisk 自己的策略表（`/data/adb/magisk.db` 的 `policies` 表），通过
 | **撤销** | 删掉 `policies` 里那一行（下次调用 su 会重新询问） |
 | **Zygisk** 开关 | `settings` 表 `zygisk`（由 magiskd 开机装载，**改完要重启**） |
 | **DenyList 强制**开关 + 名单条数 | `magisk --denylist enable/disable/status/ls`（名单本身在 Magisk App 里配） |
+
+> **每一条写都回读校验。** `magisk --sqlite` 的退出码恒为 0（官方 v30.7 客户端收到行就
+> `return Ok(0)`，magiskd 那侧把 SQL 的返回值直接丢掉），所以"写完不回读"等于没有错误处理：
+> 点允许/拒绝/撤销、开关 Zygisk 都可能静默不生效。管理器每次都写完立刻在**同一条 root
+> shell** 里读回那一行/那个开关，对不上就抛错（界面刷新后仍是旧值，日志里写明原因）；
+> `--denylist` 也一样，按官方判据（`status` 的退出码）回读强制状态。
 
 **双向**：Magisk App 与管理器读写的是同一张表 ——
 
@@ -136,6 +145,9 @@ Magisk 自己的策略表（`/data/adb/magisk.db` 的 `policies` 表），通过
   由 Magisk 自己跑才对；内核态设备那条路才用 `ksud module install`，两条路线不混用工具链。
 - **启用 / 禁用 / 卸载**：两边共用同一套标记文件（模块目录下的 `disable` / `remove`），
   所以在管理器里操作，Magisk 下次开机同样生效。
+- **装完模块的重启**：设置里的「用软重启代替重启」在挂载态**不适用** —— 内核里没有 KSU
+  驱动，`ksud soft-reboot` 必然失败（CLI 现在会真的报错退出非 0）。管理器不会假装成功，
+  而是退回**真重启**（内核态仍然走 `ksud soft-reboot`，行为不变）。
 
 ---
 
@@ -146,6 +158,10 @@ Magisk 自己的策略表（`/data/adb/magisk.db` 的 `policies` 表），通过
 2. **没有真机验证过**（这套流程的每一步都是官方脚本在做，但我们没有 <5.10 的设备实测过
    管理器这一层）。首次刷机请守着、并留好原厂镜像。
 3. **Magisk 是 GPL-3.0**：随 APK 分发的载荷原样取自官方 v30.7（未修改），版本与逐文件
-   sha256 在 CI 里钉死，署名与源码见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)；
+   sha256 在 CI 里钉死，也逐条列在 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)
+   （含"哪个值来自上游发布件、哪个是可复现的逐文件摘要"与复算方法）；署名与源码见那份声明；
    策略表结构、取值与 CLI 行为属于**接口事实**，据此自行实现，没有搬运 Magisk 的实现代码。
-4. 自研的挂载态实现（`xudc ramdisk-patch` + `xecinit`）仍留在仓库里作实验，**不再从界面提供**。
+4. 自研的挂载态实现（`xudc ramdisk-patch` + `xecinit` + `xecsu` + magic mount）仍留在仓库里
+   作实验，**不再从界面提供**；只要设备上已经有官方 Magisk，这些隐藏入口
+   （`ramdisk-patch` / `install-mount-state` / `daemon` / `magic-mount` / `su-*`）会直接
+   拒绝执行并提示走 Magisk 路线 —— 同一台设备上不会同时跑两套挂载态 root。

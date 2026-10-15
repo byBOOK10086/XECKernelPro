@@ -51,6 +51,14 @@ private val POLICY_CHOICES = listOf(
     MagiskRoot.POLICY_RESTRICT to R.string.magisk_su_policy_restrict,
 )
 
+/**
+ * [MagiskRoot] 找不到 magisk CLI 时那条错误的开头（`Unavailable("magisk CLI not found: ...")`）。
+ *
+ * 只有这一类错误要额外给"CLI 找不到"的专门说明；其余错误（例如 magiskd 拒绝本次 root
+ * 请求）把原始文本显示出来就够了。
+ */
+private const val CLI_MISSING_MARKER = "magisk CLI not found"
+
 @Immutable
 data class MagiskSuperUserActions(
     val onRefresh: () -> Unit,
@@ -116,12 +124,17 @@ fun MagiskSuperUserPagerMiuix(
                 )
             }
             item { SectionTitle(stringResource(R.string.magisk_su_policies)) }
-            if (uiState.entries.isEmpty()) {
-                item { HintCard(stringResource(R.string.magisk_su_empty)) }
-            } else {
-                items(uiState.entries, key = { it.uid }) { entry ->
-                    PolicyCard(entry, actions, uiState.rootGranted)
-                }
+            when {
+                // 出错时（magisk CLI 找不到 / magiskd 拒绝 root）策略表根本没读到，
+                // "还没有应用申请过 root"那句话是错的 —— 原始错误文本在路线卡里给，
+                // 这里只保留真正的"表里一行都没有"。
+                uiState.entries.isEmpty() && uiState.error == null ->
+                    item { HintCard(stringResource(R.string.magisk_su_empty)) }
+
+                uiState.entries.isNotEmpty() ->
+                    items(uiState.entries, key = { it.uid }) { entry ->
+                        PolicyCard(entry, actions, uiState.rootGranted)
+                    }
             }
             item { Spacer(Modifier.height(bottomInnerPadding + 12.dp)) }
         }
@@ -194,12 +207,21 @@ private fun RouteCard(
                 ),
             )
             uiState.error?.let { error ->
+                // 先给原始错误文本（诊断信息），再按错误类型补一条可操作的说明。
                 Text(
                     text = error,
                     fontSize = 11.sp,
                     color = colorScheme.error,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
+                if (error.contains(CLI_MISSING_MARKER)) {
+                    Text(
+                        text = stringResource(R.string.magisk_su_cli_missing),
+                        fontSize = 11.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                }
             }
             ToggleRow(
                 title = stringResource(R.string.magisk_su_zygisk),
@@ -226,6 +248,15 @@ private fun RouteCard(
                     modifier = Modifier.padding(start = 8.dp, top = 2.dp),
                     text = stringResource(R.string.magisk_su_open_magisk),
                     onClick = onOpenMagisk,
+                )
+            } else {
+                // 包名被随机化（Magisk 的"隐藏应用"）时 getLaunchIntentForPackage 返回 null，
+                // 按钮会整块消失；这时必须说清去哪儿批准本管理器，否则这一页看起来就是坏的。
+                Text(
+                    text = stringResource(R.string.magisk_su_hidden_note),
+                    fontSize = 11.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
             }
         }

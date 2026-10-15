@@ -17,7 +17,10 @@ import me.weishu.kernelsu.ui.util.withNewRootShell
  * - 一行生效的条件是 `until = 0 或 until > now`；因此新授权写 `until = 0`（永久），
  *   改已有行时保留还没过期的 `until`（Magisk 应用可以发限时授权，不能悄悄变成永久）
  * - `magisk --sqlite` 只服务 root（magiskd 对 `SQLITE_CMD` 要求 uid 0），输出一行一行的
- *   `列=值|列=值`；SQL 失败不改退出码，所以写完必须回读
+ *   `列=值|列=值`；**退出码恒为 0** —— 客户端读到行就 `return Ok(0)`
+ *   （v30.7 `native/src/core/magisk.rs:253-262`），magiskd 那侧把 SQL 的返回值直接丢掉
+ *   （`native/src/core/daemon.rs:137-139` 的 `db_exec_for_cli(client).ok()`），所以每一次写
+ *   都必须回读校验（见 [execVerified]），不然静默失败
  *
  * 效果是双向的：Magisk 应用和本管理器读写同一张表，一边改另一边立刻一致 ——
  * 本管理器的 root 授权也在里面（它同样是通过 `su` 申请 root 的普通 app）。
@@ -92,28 +95,59 @@ command -v magisk 2>/dev/null || true
 
     /**
      * 写一行策略。四个值都给全：Magisk 自己也是整行替换，缺列会被当成 0。
+     * 写完立刻回读这一行（[execVerified]），有一个字段对不上就抛 [Unavailable]。
      */
     fun writePolicy(uid: Int, policy: Int, until: Long, logging: Boolean, notification: Boolean) {
         val log = if (logging) 1 else 0
         val notify = if (notification) 1 else 0
-        exec(
-            "INSERT OR REPLACE INTO policies (uid,policy,until,logging,notification) " +
-                "VALUES ($uid,$policy,$until,$log,$notify)"
-        )
+        execVerified(
+            statement = "INSERT OR REPLACE INTO policies (uid,policy,until,logging,notification) " +
+                "VALUES ($uid,$policy,$until,$log,$notify)",
+            verify = "SELECT uid,policy,until,logging,notification FROM policies WHERE uid=$uid",
+        ) { rows ->
+            val row = rows.firstOrNull() ?: return@execVerified false
+            row["uid"] == "$uid" &&
+                row["policy"] == "$policy" &&
+                row["until"] == "$until" &&
+                row["logging"] == "$log" &&
+                row["notification"] == "$notify"
+        }
     }
 
-    fun removePolicy(uid: Int) = exec("DELETE FROM policies WHERE uid=$uid")
+    /**
+     * 撤销一行。回读用 `count(*)`：它**一定**返回一行（表在就是 0），所以"一行都没读到"
+     * 只可能是 SELECT 本身失败（例如表不存在），不会被误当成"已经删掉了"。
+     */
+    fun removePolicy(uid: Int) = execVerified(
+        statement = "DELETE FROM policies WHERE uid=$uid",
+        verify = "SELECT count(*) AS remaining FROM policies WHERE uid=$uid",
+    ) { rows -> rows.firstOrNull()?.values?.firstOrNull() == "0" }
 
     fun setDenylistEnforced(enabled: Boolean) {
-        val result = withNewRootShell {
-            runMagisk(this, if (enabled) "--denylist enable" else "--denylist disable")
+        // 同一个坑：`--denylist enable/disable` 的成功只说明 magiskd 收下了请求，
+        // 所以按官方判据回读一次 —— `--denylist status` 退出码为 0 ⟺ 正在强制
+        // （`native/src/core/deny/cli.cpp:152`：`res != DenyResponse::ENFORCED`；
+        // 官方 App 的 `Info.kt:104` 也是这么读的）。
+        val enforced = withNewRootShell {
+            val shell = this
+            val result =
+                runMagisk(shell, if (enabled) "--denylist enable" else "--denylist disable")
+            if (!result.isSuccess) throw Unavailable(message("magisk --denylist", result))
+            runMagisk(shell, "--denylist status").isSuccess
         }
-        if (!result.isSuccess) throw Unavailable(message("magisk --denylist", result))
+        if (enforced != enabled) {
+            throw Unavailable(
+                "magisk --denylist: status did not change (enforced=$enforced, wanted=$enabled)"
+            )
+        }
     }
 
     /** Zygisk 由 magiskd 在开机时装载，改完要重启才生效（Magisk 应用也是这么提示的）。 */
-    fun setZygisk(enabled: Boolean) =
-        exec("INSERT OR REPLACE INTO settings (key,value) VALUES ('zygisk',${if (enabled) 1 else 0})")
+    fun setZygisk(enabled: Boolean) = execVerified(
+        statement =
+            "INSERT OR REPLACE INTO settings (key,value) VALUES ('zygisk',${if (enabled) 1 else 0})",
+        verify = "SELECT value FROM settings WHERE key='zygisk'",
+    ) { rows -> rows.firstOrNull()?.get("value") == if (enabled) "1" else "0" }
 
     /**
      * 挂载态下安装模块的命令：交给 **Magisk 官方安装器**（`magisk --install-module`）。
@@ -184,9 +218,31 @@ command -v magisk 2>/dev/null || true
         }
     }
 
-    private fun exec(sql: String) {
-        val result = withNewRootShell { runMagisk(this, "--sqlite ${quote(sql)}") }
-        if (!result.isSuccess) throw Unavailable(message("magisk --sqlite", result))
+    /**
+     * 写一条 SQL，并**在同一条 root shell 里回读校验**；对不上就抛 [Unavailable]。
+     *
+     * 为什么非回读不可：`magisk --sqlite` 的退出码恒为 0。客户端收到行就 `return Ok(0)`
+     * （官方 v30.7 `native/src/core/magisk.rs:253-262`），magiskd 那侧 `db_exec_for_cli()`
+     * 把 SQL 的返回值也丢了（`native/src/core/daemon.rs:137-139`）—— SQL 写失败时既没有
+     * 非 0 退出码、也没有任何输出。不回读就等于"点了允许/拒绝/撤销，界面刷新后还是旧值"。
+     *
+     * 写与回读共用一条 shell：挂载态的 `su` 每次都要授权，一次操作只该弹一次框；而 magiskd
+     * 只有一条 SQLite 连接，写完之后回读一定看得到刚写进去的值。[matches] 全对上才算成功。
+     */
+    private fun execVerified(
+        statement: String,
+        verify: String,
+        matches: (List<Map<String, String>>) -> Boolean,
+    ) {
+        val rows = withNewRootShell {
+            val shell = this
+            val written = runMagisk(shell, "--sqlite ${quote(statement)}")
+            if (!written.isSuccess) throw Unavailable(message("magisk --sqlite", written))
+            query(shell, verify)
+        }
+        if (!matches(rows)) {
+            throw Unavailable("magisk --sqlite: statement did not take effect: $statement")
+        }
     }
 
     private fun run(shell: Shell, command: String): Shell.Result {

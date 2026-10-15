@@ -45,7 +45,17 @@ class ModuleRepoRepositoryImpl : ModuleRepoRepository {
                 throw Exception("Fetch failed: ${response.code} @ $url")
             }
             val body = response.body.string()
-            val json = JSONArray(body)
+            // 两种索引形状都要认：
+            //   * 自建仓库 / 历史官方：裸数组 [ {moduleId, moduleName, latestRelease{…}} ]
+            //   * 官方 v1：           {schemaVersion, buildId, modules:[ {id, name, stable{…}} ]}
+            // 只改 URL 不认对象形状的话，官方源会在 JSONArray(body) 上抛异常，于是又默默
+            // 回退到自建仓库 —— 用户点「官方源」却看到自家模块，且没有任何提示。
+            val trimmed = body.trimStart()
+            val json = if (trimmed.startsWith("{")) {
+                JSONObject(trimmed).optJSONArray("modules") ?: JSONArray()
+            } else {
+                JSONArray(trimmed)
+            }
             return (0 until json.length()).mapNotNull { idx ->
                 json.optJSONObject(idx)?.let { item -> parseRepoModule(item) }
             }
@@ -53,16 +63,21 @@ class ModuleRepoRepositoryImpl : ModuleRepoRepository {
     }
 
     private fun parseRepoModule(item: JSONObject): RepoModule? {
-        val moduleId = item.optString("moduleId", "")
+        // 官方 v1 用 id/name/stable{version,versionCode,publishedAt}/stars，
+        // 自建仓库用 moduleId/moduleName/latestRelease{…}/stargazerCount。
+        val moduleId = item.optString("moduleId", "").ifEmpty { item.optString("id", "") }
         if (moduleId.isEmpty()) return null
-        val moduleName = item.optString("moduleName", "")
+        val moduleName = item.optString("moduleName", "").ifEmpty { item.optString("name", "") }
         val authorsArray = item.optJSONArray("authors")
         val authorList = if (authorsArray != null) {
             (0 until authorsArray.length())
                 .mapNotNull { idx ->
                     val authorObj = authorsArray.optJSONObject(idx) ?: return@mapNotNull null
                     val name = authorObj.optString("name", "").trim()
-                    var link = authorObj.optString("link", "").trim()
+                    // 自建仓库写 link，官方 v1 写 url
+                    var link = authorObj.optString("link", "")
+                        .ifEmpty { authorObj.optString("url", "") }
+                        .trim()
                     if (link.startsWith("`") && link.endsWith("`") && link.length >= 2) {
                         link = link.substring(1, link.length - 1)
                     }
@@ -74,18 +89,25 @@ class ModuleRepoRepositoryImpl : ModuleRepoRepository {
         val authors = if (authorList.isNotEmpty()) authorList.joinToString(", ") { it.name } else item.optString("authors", "")
         val summary = item.optString("summary", "")
         val metamodule = item.optBoolean("metamodule", false)
-        val stargazerCount = item.optInt("stargazerCount", 0)
+        val stargazerCount = item.optInt("stargazerCount", item.optInt("stars", 0))
         val updatedAt = item.optString("updatedAt", "")
-        val createdAt = item.optString("createdAt", "")
+        val createdAt = item.optString("createdAt", "").ifEmpty { updatedAt }
 
         var latestRelease = ""
         var latestReleaseTime = ""
         var latestVersionCode = 0
         var latestAsset: ReleaseAsset? = null
-        val lr = item.optJSONObject("latestRelease")
+        // 自建仓库直接在列表里带下载地址；官方 v1 的列表条目只有 stable{…}，
+        // 资产要等详情页（releases[].zip）才有，所以这里允许 latestAsset 为空。
+        val lr = item.optJSONObject("latestRelease") ?: item.optJSONObject("stable")
         if (lr != null) {
-            val lrName = lr.optString("name", lr.optString("version", ""))
-            val lrTime = lr.optString("time", "")
+            val official = item.optJSONObject("latestRelease") == null
+            val lrName = if (official) {
+                lr.optString("version", "")
+            } else {
+                lr.optString("name", lr.optString("version", ""))
+            }
+            val lrTime = lr.optString("time", "").ifEmpty { lr.optString("publishedAt", "") }
             var lrUrl = lr.optString("downloadUrl", "")
             lrUrl = lrUrl.trim().let {
                 var s = it
@@ -100,7 +122,12 @@ class ModuleRepoRepositoryImpl : ModuleRepoRepository {
             latestReleaseTime = lrTime
             if (lrUrl.isNotEmpty()) {
                 val fileName = lrUrl.substringAfterLast('/')
-                latestAsset = ReleaseAsset(name = fileName, downloadUrl = lrUrl, size = 0L)
+                latestAsset = ReleaseAsset(
+                    name = fileName,
+                    downloadUrl = lrUrl,
+                    size = lr.optLong("size", 0L),
+                    sha256 = lr.optString("sha256", "").trim(),
+                )
             }
         }
 

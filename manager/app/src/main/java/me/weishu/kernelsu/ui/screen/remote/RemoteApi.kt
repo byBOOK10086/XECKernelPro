@@ -34,19 +34,6 @@ object RemoteApi {
         }
     }
 
-    private fun get(path: String, token: String): JSONObject {
-        val conn = URL("$BASE$path").openConnection() as HttpURLConnection
-        try {
-            conn.requestMethod = "GET"
-            conn.connectTimeout = TIMEOUT_MS
-            conn.readTimeout = TIMEOUT_MS
-            conn.setRequestProperty("Authorization", "Bearer $token")
-            return readBody(conn)
-        } finally {
-            conn.disconnect()
-        }
-    }
-
     private fun readBody(conn: HttpURLConnection): JSONObject {
         val code = conn.responseCode
         val text = (if (code in 200..299) conn.inputStream else conn.errorStream)
@@ -71,9 +58,13 @@ object RemoteApi {
         return Session(r.getString("token"), r.getString("username"), r.optBoolean("is_admin"))
     }
 
-    /** 校验本地缓存的 token 是否仍有效；失效返回 null。 */
+    /**
+     * 校验本地缓存的 token 是否仍有效；失效返回 null。
+     *
+     * 服务端只把 /api/me 注册在 POST 上（GET 一律 404），所以这里带空 JSON 体 POST。
+     */
     fun me(token: String): Session? = try {
-        val r = get("/api/me", token)
+        val r = post("/api/me", JSONObject(), token)
         if (r.optBoolean("ok")) Session(token, r.getString("username"), r.optBoolean("is_admin")) else null
     } catch (e: Exception) {
         null

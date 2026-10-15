@@ -15,6 +15,10 @@ import me.weishu.kernelsu.getKernelVersion
  * 判据只用两件**不需要 root**的事实：驱动是否应答（[Natives.version]）、内核是否 GKI。
  * 注意 GKI 设备上没有驱动时仍然是内核态（用户还没装内核）——不能因为"没 root"就把
  * 内核态设备显示成 Magisk 那一套。
+ *
+ * 等价写法（全管理器唯一口径，安装页 / 模块页 / 首页都从这里取）：
+ * `mountState = Natives.version <= 0 && !getKernelVersion().isGKI()`。
+ * <5.10 但**有** KSU 驱动（KPatch 注入）属于内核态，不是挂载态。
  */
 enum class RootRoute {
     Kernel,

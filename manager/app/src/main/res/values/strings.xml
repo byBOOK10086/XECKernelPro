@@ -92,9 +92,11 @@ Aborted — the device was NOT rebooted.</string>
     <string name="module_repos_source_official">Official</string>
     <string name="module_repos_source_save">Save &amp; refresh</string>
     <string name="module_repos_source_current">Repository: %1$s</string>
-    <string name="module_repos_source_fallback">%1$s unreachable · using the official repo</string>
+    <string name="module_repos_source_fallback">%1$s unreachable · using %2$s</string>
     <string name="module_repos_source_bad_url">Enter an http(s) URL</string>
     <string name="module_repos_source_code">Source code</string>
+    <string name="module_repos_detail_no_readme">No description provided for this module.</string>
+    <string name="module_repos_detail_no_release">No downloadable release yet.</string>
     <string name="confirm">Confirm</string>
     <string name="uninstall">Uninstall</string>
     <string name="enable">Enable</string>
@@ -223,6 +225,7 @@ XEC Project Team
     <string name="module_update">Update</string>
     <string name="module_downloading">Downloading module: %s</string>
     <string name="module_start_downloading">Start downloading: %s</string>
+    <string name="module_download_hash_mismatch">Checksum mismatch: the downloaded file was discarded. Try another source or download again.</string>
     <string name="module_action_success">Module action executed successfully.</string>
     <string name="new_version_available">New version %s is available, click to upgrade!</string>
     <string name="launch_app">Launch</string>
@@ -491,6 +494,17 @@ See the log below for details.</string>
     <string name="remote_key_force_label">Force script for this batch (optional)</string>
     <string name="remote_keypad_title">Manual keys (press while the installer waits)</string>
     <string name="remote_keypad_idle">Injects a real volume-key event as root. Tap one to test this device.</string>
+    <string name="remote_share_offline">Generate offline code (no sign-in needed)</string>
+    <string name="remote_share_offline_done">Offline code copied. The receiver pastes it into Receive.</string>
+    <string name="remote_share_offline_empty">Nothing to encode yet. Paste a link or upload a module first.</string>
+    <string name="remote_recv_stop">Stop</string>
+    <string name="remote_recv_stopped">Stopped by you.</string>
+    <string name="remote_hub_logged_out">Signed out</string>
+    <string name="remote_hub_expired">Your sign-in expired, please sign in again</string>
+    <string name="remote_upload_oversize">%1$s is larger than 500 MB, the receiver cannot download it.</string>
+    <string name="remote_upload_partial">Uploaded %1$d file(s); failed: %2$s</string>
+    <string name="remote_submit_index">Submit to the module index</string>
+    <string name="remote_submit_index_note">Uploaded files only have a direct link. Submit them once with the GitHub form to list them in the module repo, otherwise the receiver needs the code or link.</string>
     <!-- 自定义背景：本机私有目录里的浅/深两档壁纸，作为全应用液态玻璃的折射源。 -->
     <string name="settings_wallpaper">Custom background</string>
     <string name="settings_wallpaper_summary">Use your own image behind the whole app.</string>
@@ -593,7 +607,11 @@ See the log below for details.</string>
     <string name="kernel_patch_unavailable">This APK has no bundled kptools payload (the build did not include the KernelPatch binaries), so kernel patching is unavailable.</string>
     <string name="kernel_patch_failed">Kernel patch failed: %1$s</string>
     <string name="kernel_patch_saved">Patched boot image saved. Flash it as the boot partition, then reboot.</string>
-    <string name="home_working_kpatch">Magisk route (kernel below 5.10)</string>
+    <string name="home_working_kpatch">KernelPatch route (kernel below 5.10)</string>
+    <!-- Mount-state (<5.10, no KSU driver): root is Magisk's own root (方案甲). -->
+    <string name="home_working_magisk">Magisk route (mount state, kernel below 5.10)</string>
+    <string name="home_magisk_version">Magisk daemon: %1$s</string>
+    <string name="home_magisk_version_unknown">not detected</string>
 
     <!-- Native terminal (MT-style) -->
     <string name="terminal_tab">Tab</string>
@@ -711,6 +729,9 @@ See the log below for details.</string>
     <string name="magisk_patch_vbmeta_flag_summary">Pass PATCHVBMETAFLAG=true to Magisk. Only for devices that need the vbmeta flags patched.</string>
     <string name="magisk_patch_recovery_mode">Recovery mode (A-only legacy SAR)</string>
     <string name="magisk_patch_recovery_mode_summary">Pass RECOVERYMODE=true: patch a recovery image instead of boot. Needed on A-only system-as-root devices whose boot image has no ramdisk.</string>
+    <string name="magisk_patch_legacy_sar">Legacy SAR (A-only system-as-root)</string>
+    <string name="magisk_patch_legacy_sar_summary">Pass LEGACYSAR=true: hexpatch skip_initramfs to want_initramfs in the kernel. Auto is Magisk\'s own test (the root of /proc/mounts is /dev/root); force it on if the kernel is not detected correctly.</string>
+    <string name="magisk_patch_legacy_sar_auto">Auto</string>
     <!-- 挂载态（5.10 以下，方案甲）：root 就是 Magisk 的 root，超级用户页读写 Magisk 的策略表 -->
     <string name="magisk_su_refresh">Refresh</string>
     <string name="magisk_su_route_title">Magisk route (mount state)</string>
@@ -728,6 +749,8 @@ See the log below for details.</string>
     <string name="magisk_su_sync_note">Same table as the Magisk app: changes here are visible there at once, and grants or revocations made in Magisk show up here.</string>
     <string name="magisk_su_empty">No app has asked for root yet. A request shows up here right after an app calls su.</string>
     <string name="magisk_su_open_magisk">Open the Magisk app</string>
+    <string name="magisk_su_cli_missing">The magisk CLI was not found, so the policy table cannot be read. Make sure Magisk is installed and that this manager has been granted root.</string>
+    <string name="magisk_su_hidden_note">If the Magisk app is hidden behind a random package name, open the hidden icon (set in Magisk settings) and approve this manager there.</string>
     <string name="magisk_su_policy_query">Ask</string>
     <string name="magisk_su_policy_allow">Allow</string>
     <string name="magisk_su_policy_deny">Deny</string>

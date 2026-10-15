@@ -3,8 +3,8 @@
 //! 产品规则（2026-10-12 定）：
 //!   * 5.10 及以上（GKI）→ **内核态 root**：原版 KernelSU 的做法，内核里带 KSU
 //!     （内置 `CONFIG_KSU=y` 或 `kernelsu.ko` 的 LKM），模块用 overlayfs/metamodule 挂载；
-//!   * 5.10 以下（非 GKI）→ **挂载态 root**：KernelPatch/kpimg 注入 boot 镜像提供
-//!     root 通道，模块用挂载（magic mount / system 挂载）生效。
+//!   * 5.10 以下（非 GKI）→ **挂载态 root**：内核里没有 KSU 驱动，root 由**官方 Magisk**
+//!     提供（管理器驱动官方 `boot_patch.sh` 修补 boot/recovery，模块与 Zygisk 也归 Magisk）。
 //!
 //! 两者**互不干扰、不会共存**：任何会改变 root 形态的操作都必须先过这里的闸门。
 //! 以前这道规则散落在 `boot_patch.rs::ensure_gki_kernel()` 和
@@ -28,8 +28,10 @@ pub fn kernel_version() -> Result<(i32, i32, i32)> {
 pub fn is_gki_kernel() -> bool {
     match kernel_version() {
         Ok((major, minor, _patch)) => (major == 5 && minor >= 10) || major > 5,
-        // 版本读不出来时按"内核态"处理：宁可不给挂载态开闸（挂载态是破坏性写 boot）
-        Err(_) => true,
+        // 读不到版本时按"**不是** GKI"（= 挂载态）处理，跟着管理器走：`Kernels.kt`
+        // 解析失败返回 -1，`isGKI()` 就是 false。两侧口径必须一致，不然同一台设备上
+        // 会出现"一边认内核态、一边认挂载态"，两条路线的闸门互相打架。
+        Err(_) => false,
     }
 }
 
@@ -37,7 +39,7 @@ pub fn is_gki_kernel() -> bool {
 pub enum RootMode {
     /// 内核态：内置 KSU / LKM，5.10+
     KernelState,
-    /// 挂载态：ramdisk/KPatch 注入 + magic mount 挂模块，<5.10
+    /// 挂载态：内核里没有 KSU 驱动、内核 <5.10 —— root 由**官方 Magisk** 提供（方案甲）
     MountState,
 }
 
@@ -52,7 +54,9 @@ impl RootMode {
     pub const fn describe(self) -> &'static str {
         match self {
             Self::KernelState => "内核态 root（原版 KernelSU：内置 KSU / kernelsu.ko，5.10+）",
-            Self::MountState => "挂载态 root（KernelPatch 注入 + 挂载，5.10 以下）",
+            Self::MountState => {
+                "挂载态 root（内核 <5.10 且没有 KSU 驱动：root 由官方 Magisk 提供）"
+            }
         }
     }
 }

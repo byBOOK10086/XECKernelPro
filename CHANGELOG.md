@@ -4,6 +4,111 @@
 
 ---
 
+## 未发版 · 2026-10-15 · 挂载态 Magisk 路线收尾 + 模块仓库官方源搬家 + 远程模块助手补完
+
+> 类型：缺陷修复 + 功能补完（对外可见：挂载态首页/安装页、超级用户页授权与开关、5.10 以下的
+> 修补流程、模块仓库源、远程模块助手的分享与接收）
+> 提交范围：本地修复，待随下一版发版
+
+### 修复：挂载态（5.10 以下）的设备终于显示成「Magisk 路线」
+
+- 首页原来只用 `ksuVersion != null` 判断"在跑"，挂载态设备（没有 KSU 驱动）因此掉进
+  `home_unsupported`，显示"现在只支持 GKI 内核" —— 而它正是 Magisk 路线的目标机型。
+  现在路线判据统一成一处（`ui/util/RootRoute.kt` 的 `isMountState` = 没有 KSU 驱动应答
+  且内核 <5.10）：首页/灵动岛显示「Magisk 路线（5.10 以下挂载态）」+ 正在跑的 magiskd 版本，
+  GhostLock 提权入口（内核态专有）在挂载态不再出现。
+- 「<5.10 但有 KSU 驱动（KPatch）」是**内核态**：它现在只看到 KernelPatch 那一项，再也看不到
+  任何 Magisk 入口；反过来"内核态 + 另有真 Magisk"才算冲突（模块页照旧提示）。
+
+### 修复：挂载态 Magisk 修补流程的载荷不再拷进 app 私有目录（Android 10+ 的 W^X）
+
+- `cacheDir` 属于 `app_data_file`，Android 10+ 的 `untrusted_app` 对它**没有 execute**，
+  拷进去的 `magiskboot`/`busybox` 会被 `Permission denied`。改成官方 App 的做法
+  （`MagiskInstaller.kt::extractFiles` 的非 stub 分支）：把 `nativeLibraryDir` 里的载荷
+  **软链接**到工作目录，execve 解析到真实 inode，脚本里的 `./magiskboot` 才跑得起来。
+- LEGACYSAR 也从"只看 `ro.build.system_root_image`"改成 Magisk 官方判据（`/proc/mounts` 的根
+  是 `/dev/root`），并在安装页给出手动覆盖开关（默认显示「自动」，判错可以强行打开/关闭）；
+  自动探测挪到 IO 线程，不再压在组合期。
+
+### 修复：挂载态的每一处写入都会回读校验（原来可能静默失败）
+
+- `magisk --sqlite` 的退出码**恒为 0**（官方 v30.7：客户端读到行就 `return Ok(0)`，magiskd
+  那侧把 SQL 的返回值丢掉），所以只写不回读等于没有错误处理。现在 `writePolicy`（允许/拒绝/
+  询问/受限、通知、日志）、`removePolicy`（撤销）、`setZygisk` 都在**同一条 root shell** 里
+  写完立刻读回同一行/同一开关，对不上就抛 `MagiskRoot.Unavailable`；DenyList 强制开关按官方
+  判据（`--denylist status` 的退出码）回读。依旧是同一张表、不建影子表、不缓存。
+
+### 修复：挂载态装完模块不再"假装软重启"
+
+- `ksud soft-reboot` 在挂载态必然失败（内核里没有 KSU 驱动，UAPI 校验过不去），原来只记一行
+  日志就 `Ok(())`，管理器于是显示"已重启"而设备根本没重启。现在 ksud 真的返回错误（退出码
+  非 0），管理器在挂载态直接**退回真重启**；内核态行为不变。
+
+### 修复：busybox 的 applet 真的可用（二次修补不再丢 SHA1）
+
+- 载荷里的 `busybox` 原来只是摆在工作目录里、没人铺 applet：官方 `grep_prop()` 依赖的
+  `dos2unix` 因此可能解析不到，`boot_patch.sh` 取 `config.orig` 的 SHA1 失败 → 原厂备份链
+  断掉（还原原厂 / OTA 失效）。现在按官方 magiskd 的做法跑 `busybox --install -s <workdir>`
+  并让 `<workdir>` 排在 PATH 最前；同时改正了"`TMPDIR` 保护工作目录"的错误注释
+  （`util_functions.sh` 会把 `TMPDIR` 重写成 `/dev/tmp`）。
+
+### 修复：超级用户页的首次授权引导（Magisk 被隐藏时不再是一页坏界面）
+
+- `magisk` CLI 探测失败时先显示原始错误，再补一条"CLI 找不到、请确认已安装并已授权"的说明；
+  只有真正"表里一行都没有"才显示"还没有应用申请过 root"。Magisk 包名被随机化（隐藏应用）
+  时，"打开 Magisk 应用"按钮会消失，现在改为显示"去隐藏图标里批准本管理器"的说明。
+
+### 变更：自研挂载态入口在没有 KSU 驱动且已装官方 Magisk 时拒绝执行
+
+- `ramdisk-patch` / `install-mount-state` / `daemon` / `mount-state-status` / `magic-mount` /
+  `su-list|su-grant|su-revoke` 这些入口，在**没有 KSU 驱动应答**且检测到官方 Magisk
+  （`/data/adb/magisk.db` 或 Magisk 自己的二进制）时报错退出并指向 Magisk 路线 —— 同一台机器
+  上不会再出现第二套 root 实现。判据用驱动是否应答，所以内核态设备（含 <5.10 的 KPatch）
+  即使另装了 Magisk，`daemon`/`su-*` 这些正常功能照旧可用。
+- `xudc root-mode` 与 `root_mode.rs` 的措辞不再声称挂载态是"KernelPatch 注入 + 挂载"的自研
+  实现。口径统一：内核版本读不出来时按"非 GKI"（= 挂载态）处理，与管理器 `Kernels.kt` 一致。
+
+### 修复：模块仓库的「官方源」不再指向已经 404 的旧地址
+
+- 官方索引已搬到 `https://modules.kernelsu.org/api/v1/modules.json`（旧 `modules.json` 现在
+  返回 404，且形状从裸数组变成 `{schemaVersion, modules:[…]}`）。管理器现在两个地址、两种形状
+  都认，字段也做了映射（`id/name/stable{version,versionCode,publishedAt}/stars/authors[].url`）；
+  点「官方源」看到的就是官方仓库，不再"选了官方、看到自家模块"。
+- 详情页：官方 v1 的说明是单独一个 HTML 路径（`api/v1/modules/<id>/readme`），资产在
+  `releases[].zip` 里。旧的 `module/<id>.json` 已 404，过去任何模块点进"说明"都永远转圈。
+  现在两个协议都试，并且"确实没有说明/没有可下载版本"会给出空态，不再无限转圈或白屏。
+- 自建仓库的模块详情页不再硬编码两个必然 404 的外链（官方站点详情页、不存在的
+  `KernelSU-Modules-Repo` 组织），改用作者链接 + 详情里返回的主页/源码地址。
+- 源回退提示改成"`%1$s` 不可用 · 已改用 `%2$s`"，说清真正生效的是哪一个源。
+
+### 新增：模块 zip 的 sha256 端到端校验
+
+- 模块仓库的索引由 `scripts/build_index.py` 在生成 `modules.json` 时写入每个 zip 的
+  `latestRelease.sha256`（自建仓库以实际字节复算，作者仓库以实际下载内容复算）；管理器下载完
+  校验一次，不匹配的文件当场丢弃、不进入"可安装"状态（哈希在 IO 线程算，不卡界面）。
+
+### 补完：远程模块助手（分享 / 接收）
+
+- **免登录出码**：以前唯一的出码入口要求登录 Hub；现在可以直接把链接编成 XEC2 加密码
+  （`RemoteModuleCodec.encodeAll`）复制走，接收端本来就支持。
+- **停止**：刷入过程中可以叫停（在模块之间生效；`flashModule()` 是阻塞调用，代码注释里写明）。
+- **上传**：多选上传时部分失败不再丢掉已成功的链接；超过 500 MB（接收端硬上限）在选文件时
+  就拦下；上传体改成定长流式（进度是真实网络进度，也不再整包进内存）；上传成功但未入库时
+  给出"提交到模块仓库索引"的入口与说明。
+- **会话**：`/api/me` 改用 POST（服务端只在 POST 上注册，GET 一律 404），进页面校验一次缓存
+  的登录态，过期就清掉并提示；退出登录的提示文案也修正了。
+- 定位：新增 `_scratch/check_modrepo_contract.py`（71 条断言）把"官方索引地址/双 schema/
+  详情页空态/sha256 贯通/App↔Hub 路由/两个端口/新增字符串成对"钉住，并且联网核对
+  `modules.kernelsu.org/api/v1/modules.json` 与自建索引里声明的 sha256 是否等于 zip 真实字节。
+
+### 构建：载荷在打包/重签之后再复核一次
+
+- CI 的 repack job 新增一步，拆开**签发出去的** APK，逐条核对 15 个 Magisk 载荷条目的
+  sha256（与下载步骤同一份 pin），掉了或变了就 fail；`THIRD_PARTY_NOTICES.md` 也补齐了
+  APK 摘要与 15 个逐文件摘要，并写明哪些来自上游发布件、哪些可复现及复算方法。
+
+---
+
 ## v31103–v31107 · 2026-10-13 · 5.10 以下改走 Magisk 官方修补（方案甲）+ 管理器双向管 root
 
 > 类型：路线切换 + 新增功能（对外可见：<5.10 的安装方式、超级用户页、模块安装通道）

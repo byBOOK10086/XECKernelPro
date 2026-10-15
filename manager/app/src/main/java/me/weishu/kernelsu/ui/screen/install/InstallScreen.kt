@@ -19,8 +19,10 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.dropUnlessResumed
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.getKernelVersion
 import me.weishu.kernelsu.kpatch.KPatch
@@ -37,6 +39,7 @@ import me.weishu.kernelsu.ui.util.getCurrentKmi
 import me.weishu.kernelsu.ui.util.getDefaultPartition
 import me.weishu.kernelsu.ui.util.getSlotSuffix
 import me.weishu.kernelsu.ui.util.isAbDevice
+import me.weishu.kernelsu.ui.util.isMountState
 import me.weishu.kernelsu.ui.util.probeRemoteBootPartitions
 import me.weishu.kernelsu.ui.util.rootAvailable
 import top.yukonga.miuix.kmp.basic.SnackbarHostState as MiuixSnackbarHostState
@@ -68,6 +71,9 @@ fun InstallScreen() {
     var magiskKeepForceEncrypt by rememberSaveable { mutableStateOf(false) }
     var magiskPatchVbmetaFlag by rememberSaveable { mutableStateOf(false) }
     var magiskRecoveryMode by rememberSaveable { mutableStateOf(false) }
+    // legacy SAR（boot_patch.sh 的第五个环境变量）：默认跟随设备自动判定值，
+    // null = 用户还没显式设置过 → 一直算"自动"。用户改过就按用户的，不再被探测结果覆盖。
+    var magiskLegacySar by rememberSaveable { mutableStateOf<Boolean?>(null) }
 
     val currentKmi by produceState(initialValue = "") { value = getCurrentKmi() }
     val partitions by produceState(initialValue = emptyList()) { value = getAvailablePartitions() }
@@ -77,6 +83,10 @@ fun InstallScreen() {
     val rootAvailable by produceState<Boolean?>(initialValue = null) { value = rootAvailable() }
     val isAbDevice by produceState(initialValue = false) { value = isAbDevice() }
     val isGkiDevice by produceState<Boolean?>(initialValue = null) { value = getKernelVersion().isGKI() }
+    // 路线判据只有一处（ui/util/RootRoute.kt 的 isMountState）：没有 KSU 驱动应答且内核
+    // 低于 5.10。Magisk 官方修补只在挂载态出现；<5.10 但有 KSU 驱动（KPatch）是内核态，
+    // 不能把挂载态那套 UI 露给它。remember 掉：不必每次重组都去问一遍驱动。
+    val isMountStateDevice = remember { isMountState }
     // KernelPatch 载荷是否真的随这个 APK 打包（kptools 在 nativeLibraryDir 里）。
     // 发版工作流会下载并校验 sha256；管理器单独构建的工作流（build-manager.yml）不会。
     // 不探测就会在 5.10 以下设备上给出一个「点了必失败」的入口。
@@ -88,10 +98,15 @@ fun InstallScreen() {
     val magiskPatchAvailable by produceState<Boolean?>(initialValue = null) {
         value = runCatching { MagiskPatch.available(context) }.getOrDefault(false)
     }
-    // legacy SAR 自动判定（官方脚本靠这个环境变量决定要不要改内核 skip_initramfs）
-    val deviceLegacySar by produceState(initialValue = false) {
-        value = runCatching { MagiskPatch.detectLegacySar() }.getOrDefault(false)
+    // legacy SAR 自动判定（官方脚本靠这个环境变量决定要不要改内核 skip_initramfs）。
+    // 判据要读 /proc/mounts，不能压在组合 / 主线程上，扔到 IO 里算。
+    val magiskLegacySarDetected by produceState(initialValue = false) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { MagiskPatch.detectLegacySar() }.getOrDefault(false)
+        }
     }
+    // 实际传给脚本的值：用户没动过就是自动判定值（"自动"）。
+    val magiskLegacySarEffective = magiskLegacySar ?: magiskLegacySarDetected
 
     val selectFileTip = stringResource(id = R.string.select_file_tip, defaultPartition)
     val selectFileTipNoGki = stringResource(id = R.string.select_file_tip_nogki)
@@ -105,11 +120,11 @@ fun InstallScreen() {
     // 产出 new-boot.img 再导出。不需要 root，也不进 Flash 流程。
     val magiskPatchTip = stringResource(id = R.string.magisk_patch_summary)
     val magiskPatchUnavailableTip = stringResource(id = R.string.magisk_patch_unavailable)
-    // root 形态说明：探测完成前不显示（避免首帧闪一个错的口径）
-    val rootModeTip = when (isGkiDevice) {
-        true -> stringResource(id = R.string.root_mode_kernel)
-        false -> stringResource(id = R.string.root_mode_mount)
-        null -> null
+    // root 形态说明：判据只有一处（isMountState），首帧就是准的。
+    val rootModeTip = if (isMountStateDevice) {
+        stringResource(id = R.string.root_mode_mount)
+    } else {
+        stringResource(id = R.string.root_mode_kernel)
     }
     val installRequiresRoot = stringResource(id = R.string.install_requires_root)
     val installRequiresGki = stringResource(id = R.string.install_requires_gki)
@@ -128,16 +143,21 @@ fun InstallScreen() {
         isGkiDevice == false -> installRequiresGki
         else -> null
     }
-    // KernelPatch 路线只在非 GKI（<5.10）设备上出现；出现了但 APK 里没有 kptools
-    // （载荷缺失）时把原因写到 summary 上并禁用，而不是让用户点到一半才失败。
+    // KernelPatch 路线只在 5.10 以下的内核态（有 KSU 驱动，非挂载态）设备上出现；出现了
+    // 但 APK 里没有 kptools（载荷缺失）时把原因写到 summary 上并禁用，而不是让用户点到
+    // 一半才失败。
     val kernelPatchBlockedReason: String? =
-        if (isGkiDevice == false && kpatchAvailable == false) kernelPatchUnavailableTip else null
+        if (isGkiDevice == false && !isMountStateDevice && kpatchAvailable == false) {
+            kernelPatchUnavailableTip
+        } else {
+            null
+        }
     // Magisk 路线同理，但判据是官方载荷（magiskboot 等）在不在。
     val magiskPatchBlockedReason: String? =
-        if (isGkiDevice == false && magiskPatchAvailable == false) magiskPatchUnavailableTip else null
+        if (isMountStateDevice && magiskPatchAvailable == false) magiskPatchUnavailableTip else null
     // `isGkiDevice` 必须留在 key 里：探测完成时它从 null 变成 true/false，
     // 下面 SelectFile 的 summary 要跟着从「非 GKI」提示换成 GKI 提示。
-    val installMethodOptions = remember(isAbDevice, isGkiDevice, kpatchAvailable, magiskPatchAvailable, kernelPatchBlockedReason, magiskPatchBlockedReason, selectFileTip, selectFileTipNoGki, selectFileKpmTip, downloadFileMsg, anyKernelTip, kernelPatchTip, magiskPatchTip) {
+    val installMethodOptions = remember(isAbDevice, isGkiDevice, isMountStateDevice, kpatchAvailable, magiskPatchAvailable, kernelPatchBlockedReason, magiskPatchBlockedReason, selectFileTip, selectFileTipNoGki, selectFileKpmTip, downloadFileMsg, anyKernelTip, kernelPatchTip, magiskPatchTip) {
         buildList {
             add(InstallMethod.SelectFile(summary = if (isGkiDevice == true) selectFileTip else selectFileTipNoGki))
             add(InstallMethod.SelectFileForKpm(summary = selectFileKpmTip))
@@ -146,11 +166,13 @@ fun InstallScreen() {
             add(InstallMethod.DirectInstall)
             if (isAbDevice) add(InstallMethod.DirectInstallToInactiveSlot)
             add(InstallMethod.PrivilegeUpdate)
-            // 自动检测内核匹配刷写方案：非 GKI（<5.10）内核才有下面两条。
-            // 第一条（Magisk 官方修补）是正式路线；第二条 KernelPatch 只剩内核通道，
-            // 留作实验入口。GKI 设备继续走上面的直刷。
-            if (isGkiDevice == false) {
+            // 两条非 GKI 路线按形态二分，互斥：
+            //  - 挂载态（没有 KSU 驱动 + <5.10）：Magisk 官方修补是正式路线；
+            //  - 内核态（<5.10 但有 KSU 驱动，KPatch）：只剩 KernelPatch 通道。
+            // GKI 设备走上面的直刷；非 GKI 但有驱动的设备不许看到任何 Magisk 入口。
+            if (isMountStateDevice) {
                 add(InstallMethod.MagiskPatch(summary = magiskPatchBlockedReason ?: magiskPatchTip))
+            } else if (isGkiDevice == false) {
                 add(InstallMethod.KernelPatch(summary = kernelPatchBlockedReason ?: kernelPatchTip))
             }
         }
@@ -362,6 +384,8 @@ fun InstallScreen() {
         magiskKeepForceEncrypt = magiskKeepForceEncrypt,
         magiskPatchVbmetaFlag = magiskPatchVbmetaFlag,
         magiskRecoveryMode = magiskRecoveryMode,
+        magiskLegacySar = magiskLegacySarEffective,
+        magiskLegacySarIsAuto = magiskLegacySar == null,
         canSelectPartition = installMethod is InstallMethod.DirectInstall ||
             installMethod is InstallMethod.DirectInstallToInactiveSlot ||
             installMethod is InstallMethod.DownloadFile,
@@ -394,6 +418,7 @@ fun InstallScreen() {
         onSelectMagiskKeepForceEncrypt = { magiskKeepForceEncrypt = it },
         onSelectMagiskPatchVbmetaFlag = { magiskPatchVbmetaFlag = it },
         onSelectMagiskRecoveryMode = { magiskRecoveryMode = it },
+        onSelectMagiskLegacySar = { magiskLegacySar = it },
         onPrivilegeUpdate = dropUnlessResumed { navigator.push(Route.Privilege(updateMode = true)) },
         onUploadLkm = {
             selectLkmLauncher.launch(Intent(Intent.ACTION_GET_CONTENT).apply { type = "application/octet-stream" })
@@ -433,7 +458,8 @@ fun InstallScreen() {
                                 keepForceEncrypt = magiskKeepForceEncrypt,
                                 patchVbmetaFlag = magiskPatchVbmetaFlag,
                                 recoveryMode = magiskRecoveryMode,
-                                legacySar = deviceLegacySar,
+                                // 用户没动过就传自动判定值（见上面的 LEGACYSAR 复选项）。
+                                legacySar = magiskLegacySarEffective,
                             )
                             val result = MagiskPatch.patch(context, bootFile, options) { }
                             if (result.success && result.output != null) {

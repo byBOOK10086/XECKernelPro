@@ -8,7 +8,9 @@ data class ReleaseAssetArg(
     val name: String,
     val downloadUrl: String,
     val size: Long,
-    val downloadCount: Int
+    val downloadCount: Int,
+    /** 仓库索引里的 zip sha256（空串 = 该源没提供，不做校验）。 */
+    val sha256: String = "",
 ) : Parcelable
 
 @Parcelize

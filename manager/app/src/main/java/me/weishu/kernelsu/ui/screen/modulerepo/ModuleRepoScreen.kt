@@ -51,7 +51,9 @@ fun ModuleRepoScreen() {
                 authorsList = module.authorList.map { AuthorArg(it.name, it.link) },
                 latestRelease = module.latestRelease,
                 latestReleaseTime = module.latestReleaseTime,
-                latestAsset = module.latestAsset?.let { ReleaseAssetArg(it.name, it.downloadUrl, it.size, 0) },
+                latestAsset = module.latestAsset?.let {
+                    ReleaseAssetArg(it.name, it.downloadUrl, it.size, 0, it.sha256)
+                },
                 releases = emptyList()
             )
             navigator.push(Route.ModuleRepoDetail(args))
@@ -68,8 +70,12 @@ fun ModuleRepoDetailScreen(module: RepoModuleArg) {
     var readmeHtml by remember(module.moduleId) { mutableStateOf<String?>(null) }
     var readmeLoaded by remember(module.moduleId) { mutableStateOf(false) }
     var detailReleases by remember(module.moduleId) { mutableStateOf<List<ReleaseArg>>(emptyList()) }
-    var webUrl by remember(module.moduleId) { mutableStateOf("https://modules.kernelsu.org/module/${module.moduleId}") }
-    var sourceUrl by remember(module.moduleId) { mutableStateOf("https://github.com/KernelSU-Modules-Repo/${module.moduleId}") }
+    // 详情页的两个外链兜底：官方站点只索引它自己的模块，自建仓库的模块在官方站点的
+    // 详情页与官方模块组织下都是 404 —— 过去这里硬编码了这两个必然打不开的地址。
+    // 改成先空着，有作者链接就用作者链接，详情返回后再用官网主页 / 源码地址覆盖。
+    val authorLink = module.authorsList.firstOrNull()?.link.orEmpty()
+    var webUrl by remember(module.moduleId) { mutableStateOf(authorLink) }
+    var sourceUrl by remember(module.moduleId) { mutableStateOf(authorLink) }
 
     LaunchedEffect(module.moduleId) {
         if (module.moduleId.isNotEmpty()) {
@@ -78,8 +84,12 @@ fun ModuleRepoDetailScreen(module: RepoModuleArg) {
                     val detail = fetchModuleDetail(module.moduleId)
                     if (detail != null) {
                         readmeHtml = detail.readmeHtml
-                        if (detail.url.isNotEmpty() && detail.url != "null") {
-                            webUrl = detail.url
+                        // 官网主页优先于站点详情页地址（v1 的详情不再给站点 URL）。
+                        when {
+                            detail.homepageUrl.isNotEmpty() && detail.homepageUrl != "null" ->
+                                webUrl = detail.homepageUrl
+
+                            detail.url.isNotEmpty() && detail.url != "null" -> webUrl = detail.url
                         }
                         if (detail.sourceUrl.isNotEmpty() && detail.sourceUrl != "null") {
                             sourceUrl = detail.sourceUrl
@@ -89,7 +99,9 @@ fun ModuleRepoDetailScreen(module: RepoModuleArg) {
                                 tagName = r.tagName,
                                 name = r.name,
                                 publishedAt = r.publishedAt,
-                                assets = r.assets.map { a -> ReleaseAssetArg(a.name, a.downloadUrl, a.size, a.downloadCount) },
+                                assets = r.assets.map { a ->
+                                    ReleaseAssetArg(a.name, a.downloadUrl, a.size, a.downloadCount, a.sha256)
+                                },
                                 descriptionHTML = r.descriptionHTML
                             )
                         }

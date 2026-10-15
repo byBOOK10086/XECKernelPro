@@ -1,11 +1,32 @@
 package me.weishu.kernelsu.ui.util
 
+import android.content.Context
 import android.net.Uri
+import java.security.MessageDigest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onEach
 import me.weishu.kernelsu.ksuApp
 import me.weishu.kernelsu.ui.util.module.LatestVersionInfo
 import okhttp3.Request
+
+/**
+ * 计算一个（已经下载到本地的）文件的 sha256，小写十六进制。
+ *
+ * 模块仓库的索引里带 zip 的 sha256；下载完成后校验一次，中转/CDN 被替换或传输被截断都能当场发现，
+ * 而不是把一个来路不明的 zip 交给安装器。读不到文件返回 null（调用方按"无法判定"处理）。
+ */
+fun sha256Of(context: Context, uri: Uri): String? = runCatching {
+    val digest = MessageDigest.getInstance("SHA-256")
+    context.contentResolver.openInputStream(uri)?.use { input ->
+        val buf = ByteArray(64 * 1024)
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            digest.update(buf, 0, n)
+        }
+    } ?: return@runCatching null
+    digest.digest().joinToString("") { "%02x".format(it) }
+}.getOrNull()
 
 /**
  * @author weishu

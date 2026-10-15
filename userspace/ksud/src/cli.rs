@@ -1,4 +1,4 @@
-use anyhow::{Context, Ok, Result};
+use anyhow::{Context, Ok, Result, bail};
 use clap::Parser;
 use std::path::PathBuf;
 
@@ -746,6 +746,37 @@ pub enum SusfsConfigCmd {
     List,
 }
 
+/// 自研挂载态（`xecinit` 注入 + `xecsu` + magic mount）那些入口的闸门。
+///
+/// 产品硬约束（用户裁决）：5.10 以下的挂载态 root 只走**官方 Magisk**。自研那套留在仓库里
+/// 做实验，但只要设备上已经有官方 Magisk，它就必须退场 —— 否则同一台机器上会多跑一套
+/// root 实现，Zygisk Next / ReZygisk 按"root 实现"探测时会判成
+/// `Multiple root implementations` 直接停摆。
+///
+/// **只在"没有 KSU 驱动 + 装了官方 Magisk"时拦**。这几个命令里 `daemon` / `su-list` /
+/// `su-grant` / `su-revoke` / `magic-mount` 在内核态是正常功能：一台内核态设备上另装官方
+/// Magisk 是既有的"两套 root 并存"冲突（模块页会报出来），但它的 KSU 侧功能必须照常可用，
+/// 否则等于因为装了 Magisk 就把内核态设备的 root 管理整套弄坏。判据用驱动是否应答
+/// （`ksucalls::get_version() > 0`，与管理器 `Natives.version > 0` 同一口径）——
+/// 注意不能只看内核版本：<5.10 + KPatch 驱动的设备内核版本同样 <5.10，但它是内核态。
+///
+/// Magisk 的判据复用 `utils::has_magisk_installed()`（`/data/adb/magisk.db`，或 Magisk
+/// 自己的 `magisk64/magisk32/magiskinit/magiskboot`）：不看 `which magisk`，也不看
+/// `/data/adb/magisk` 目录本身（空目录、残留目录都会把自己锁死）。
+fn deny_self_developed_mount_state(op: &str) -> Result<()> {
+    if ksucalls::get_version() > 0 {
+        // 内核态：这些命令是正常功能，不在这里拦。
+        return Ok(());
+    }
+    if !utils::has_magisk_installed() {
+        return Ok(());
+    }
+    bail!(
+        "{op}：本机已经装了官方 Magisk，自研挂载态 root 退场 —— 5.10 以下的挂载态请走官方 \
+         Magisk 路线（管理器安装页选「Magisk 修补（5.10 以下的内核）」），两套 root 不会共存"
+    )
+}
+
 pub fn run() -> Result<()> {
     android_logger::init_once(
         Config::default()
@@ -806,7 +837,7 @@ pub fn run() -> Result<()> {
                     crate::root_mode::is_gki_kernel()
                 );
                 println!(
-                    "可用路线：内核态={} · 挂载态={}（KernelPatch 一键嵌入 / kpimg）",
+                    "可用路线：内核态={} · 挂载态={}（挂载态的 root 由官方 Magisk 提供）",
                     if kernel_state_ok {
                         "可用"
                     } else {
@@ -819,7 +850,7 @@ pub fn run() -> Result<()> {
                     },
                 );
                 println!(
-                    "互斥规则：5.10+ 只走内核态（内置 KSU / LKM），5.10 以下只走挂载态（KernelPatch + 挂载），不会共存"
+                    "互斥规则：5.10+ 只走内核态（内置 KSU / LKM），5.10 以下只走挂载态（root 由官方 Magisk 提供），不会共存"
                 );
             }
             Ok(())
@@ -1096,17 +1127,39 @@ pub fn run() -> Result<()> {
         #[cfg(target_arch = "aarch64")]
         Commands::BootPatchKpm(kpm_args) => crate::kpm_patch::patch_kpm(&kpm_args),
         #[cfg(target_arch = "aarch64")]
-        Commands::RamdiskPatch(ramdisk_args) => crate::ramdisk_patch::patch_ramdisk(&ramdisk_args),
-        Commands::Daemon { once } => crate::su_daemon::run_daemon(once),
-        Commands::InstallMountState => crate::su_daemon::install(),
-        Commands::MountStateStatus => crate::su_daemon::self_test(),
+        Commands::RamdiskPatch(ramdisk_args) => {
+            // 自研注入器（xecinit + xecsu）：设备上已有官方 Magisk 时退场，
+            // 否则会往同一台机器上再塞一套 root（见 deny_self_developed_mount_state）。
+            deny_self_developed_mount_state("ramdisk-patch")?;
+            crate::ramdisk_patch::patch_ramdisk(&ramdisk_args)
+        }
+        Commands::Daemon { once } => {
+            deny_self_developed_mount_state("daemon")?;
+            crate::su_daemon::run_daemon(once)
+        }
+        Commands::InstallMountState => {
+            deny_self_developed_mount_state("install-mount-state")?;
+            crate::su_daemon::install()
+        }
+        Commands::MountStateStatus => {
+            deny_self_developed_mount_state("mount-state-status")?;
+            crate::su_daemon::self_test()
+        }
         Commands::SuList => {
+            deny_self_developed_mount_state("su-list")?;
             crate::su_daemon::su_list();
             Ok(())
         }
-        Commands::SuGrant { uid } => crate::su_daemon::su_grant(uid),
-        Commands::SuRevoke { uid } => crate::su_daemon::su_revoke(uid),
+        Commands::SuGrant { uid } => {
+            deny_self_developed_mount_state("su-grant")?;
+            crate::su_daemon::su_grant(uid)
+        }
+        Commands::SuRevoke { uid } => {
+            deny_self_developed_mount_state("su-revoke")?;
+            crate::su_daemon::su_revoke(uid)
+        }
         Commands::MagicMount { work, dry_run } => {
+            deny_self_developed_mount_state("magic-mount")?;
             crate::magic_mount::cli_magic_mount(work, dry_run)
         }
         Commands::Resetprop { args } => {

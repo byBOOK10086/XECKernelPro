@@ -12,7 +12,9 @@ data class Author(
 data class ReleaseAsset(
     val name: String,
     val downloadUrl: String,
-    val size: Long
+    val size: Long,
+    /** 仓库索引给出的 zip 摘要（小写十六进制）；空串 = 该源没有提供，跳过校验。 */
+    val sha256: String = "",
 )
 
 @Immutable

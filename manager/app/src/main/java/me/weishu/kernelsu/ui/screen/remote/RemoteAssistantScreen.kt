@@ -53,16 +53,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.dialog.XDialog
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
@@ -88,6 +92,10 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipFile
 
 private const val REMOTE_DIR = "remote_modules"
+
+/** 模块索引的 GitHub 表单：上传只给直链，进仓库列表需要走一次这个提交。 */
+private const val SUBMIT_INDEX_URL =
+    "https://github.com/byBOOK10086/XECKernelPro-Modules/issues/new?template=upload-module.yml"
 
 /** `~` 锚点的兜底等待上限：提示一直没出现就跳过这一步，别把整条流水线挂死。 */
 private const val PROMPT_TIMEOUT_MS = 20_000L
@@ -308,7 +316,7 @@ private suspend fun runRemoteDeploy(
         onStep("解析 $label")
         val links: List<String> = if (entry.uppercase().startsWith("XEC-")) {
             if (redeemToken == null) {
-                log("✗ $label 短码需要登录后使用")
+                log("✗ $label ${context.getString(R.string.remote_hub_not_logged)}")
                 failures.add("短码 $label")
                 continue
             }
@@ -332,6 +340,9 @@ private suspend fun runRemoteDeploy(
         }
         log("→ 第 $label 条包含 ${links.size} 个模块")
         for ((li, link) in links.withIndex()) {
+            // 取消只在模块之间生效：flashModule() 是阻塞调用，中途打断会留下半刷的
+            // 模块，所以这里给「下一个模块开始前」一个可取消的挂起点。
+            yield()
             val tag = if (links.size > 1) "$label-${li + 1}" else label
             val parsed = RemoteEntry.parse(link)
             if (!parsed.url.startsWith("http", ignoreCase = true)) {
@@ -389,6 +400,8 @@ fun RemoteAssistantScreen() {
 
     var uploading by remember { mutableStateOf(false) }
     var uploadStatus by remember { mutableStateOf<String?>(null) }
+    // 至少有一个文件上传成功：用于显示「提交到模块索引」的提示（部分成功也算）。
+    var uploadSucceeded by remember { mutableStateOf(false) }
     var shortCode by remember { mutableStateOf<String?>(null) }
     var showWarn by remember { mutableStateOf(false) }
 
@@ -406,6 +419,8 @@ fun RemoteAssistantScreen() {
     var hubMsg by remember { mutableStateOf<String?>(null) }
     var pendingCodes by remember { mutableStateOf(emptyList<String>()) }
     var running by remember { mutableStateOf(false) }
+    // 刷入协程的句柄：保留它才能让用户在模块之间叫停（见 startFlash 的说明）。
+    var flashJob by remember { mutableStateOf<Job?>(null) }
     var done by remember { mutableStateOf(false) }
     var flashed by remember { mutableIntStateOf(0) }
     var failedAt by remember { mutableStateOf<String?>(null) }
@@ -414,6 +429,7 @@ fun RemoteAssistantScreen() {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    val uriHandler = LocalUriHandler.current
 
     fun copyCode(code: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -426,7 +442,7 @@ fun RemoteAssistantScreen() {
         account = null
         hubMsg = null
         shortCode = null
-        Toast.makeText(context, R.string.remote_share_copied, Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, R.string.remote_hub_logged_out, Toast.LENGTH_SHORT).show()
     }
 
     fun submitAuth() {
@@ -514,14 +530,40 @@ fun RemoteAssistantScreen() {
         }
     }
 
+    /**
+     * 离线出码：完全不经过服务端，直接把链接编成 XEC2 加密码。
+     *
+     * 没账号、不想登录、或者服务端不可达时，这是唯一还能把模块传出去的路子；
+     * 按键脚本照旧挂在链接 fragment 上（与短码同一套 annotate 逻辑）。
+     */
+    fun generateOfflineCode() {
+        val links = shareInputs.indices.mapNotNull { i ->
+            val raw = shareInputs[i].trim()
+            if (raw.isEmpty()) null else RemoteEntry.annotate(raw, sharePlans.getOrElse(i) { "" })
+        }
+        if (links.isEmpty()) {
+            Toast.makeText(context, R.string.remote_share_offline_empty, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val encoded = runCatching { RemoteModuleCodec.encodeAll(links) }
+        val code = encoded.getOrNull()
+        if (code != null) {
+            copyCode(code)
+            Toast.makeText(context, R.string.remote_share_offline_done, Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, R.string.remote_hub_fail, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     fun startUpload(uris: List<Uri>) {
         if (uris.isEmpty()) return
         uploading = true
         uploadStatus = null
+        uploadSucceeded = false
         scope.launch {
-            val outcome = withContext(Dispatchers.IO) {
-                val links = mutableListOf<String>()
-                var error: String? = null
+            val uploaded = mutableListOf<String>()
+            var error: String? = null
+            withContext(Dispatchers.IO) {
                 for ((i, uri) in uris.withIndex()) {
                     if (error != null) break
                     val name = RemoteUploader.displayName(context, uri)
@@ -530,29 +572,35 @@ fun RemoteAssistantScreen() {
                         if (!name.endsWith(".zip", ignoreCase = true)) {
                             throw IllegalArgumentException("不是 zip 模块包")
                         }
+                        // 接收端硬上限 500MB：这里先拦，别让用户白等一场注定失败的下载。
+                        if (RemoteUploader.querySize(context, uri) > RemoteDownloader.MAX_FILE_BYTES) {
+                            throw IllegalArgumentException(
+                                context.getString(R.string.remote_upload_oversize, name)
+                            )
+                        }
                         val link = RemoteUploader.upload(context, uri, name) { read, total ->
                             val pct = if (total > 0) "${read * 100 / total}%" else "${read / 1024 / 1024} MB"
                             mainHandler.post { uploadStatus = "$name（${i + 1}/${uris.size}）$pct" }
                         }
-                        links.add(link)
+                        uploaded.add(link)
                     } catch (e: Exception) {
                         error = "$name：${e.message}"
                     }
                 }
-                links to error
             }
-            val (links, error) = outcome
-            if (error != null) {
-                uploadStatus = "✗ $error"
-            } else if (links.isNotEmpty()) {
-                // 上传成功的直链追加进输入框，与手工粘贴的外链一并出码。
-                // 脚本槽位必须同步追加，否则 shareInputs 与 sharePlans 会错位，
-                // 把 A 模块的脚本挂到 B 模块的链接上。
-                links.forEach {
-                    shareInputs.add(it)
-                    sharePlans.add("")
-                }
-                uploadStatus = context.getString(R.string.remote_upload_done, links.size)
+            // 已经传成功的链接一律保留：中途失败不能把上传成果一起丢掉。
+            // shareInputs 与 sharePlans 必须同步追加，否则脚本槽位会整体错位，
+            // 把 A 模块的脚本挂到 B 模块的链接上。
+            uploaded.forEach {
+                shareInputs.add(it)
+                sharePlans.add("")
+            }
+            if (uploaded.isNotEmpty()) uploadSucceeded = true
+            uploadStatus = when {
+                error == null -> context.getString(R.string.remote_upload_done, uploaded.size)
+                uploaded.isNotEmpty() ->
+                    context.getString(R.string.remote_upload_partial, uploaded.size, error ?: "")
+                else -> "✗ $error"
             }
             uploading = false
         }
@@ -573,21 +621,31 @@ fun RemoteAssistantScreen() {
         flashed = 0
         failedAt = null
         step = context.getString(R.string.remote_recv_running)
-        scope.launch {
-            val outcome = withContext(Dispatchers.IO) {
-                runRemoteDeploy(
-                    context = context,
-                    entries = codes,
-                    redeemToken = account?.token,
-                    forcedPlanText = forcedPlan,
-                    log = { line -> mainHandler.post { logLines.add(line) } },
-                    onStep = { s -> mainHandler.post { step = s } },
-                )
+        // 刷入可以叫停，但要说清楚限制：flashModule() 本身是阻塞调用、中途打断会
+        // 留下半刷的模块，所以取消只在「上一个模块刷完、下一个还没开始」之间生效。
+        flashJob = scope.launch {
+            try {
+                val outcome = withContext(Dispatchers.IO) {
+                    runRemoteDeploy(
+                        context = context,
+                        entries = codes,
+                        redeemToken = account?.token,
+                        forcedPlanText = forcedPlan,
+                        log = { line -> mainHandler.post { logLines.add(line) } },
+                        onStep = { s -> mainHandler.post { step = s } },
+                    )
+                }
+                flashed = outcome.flashed
+                failedAt = outcome.failedAt
+                done = true
+            } catch (e: CancellationException) {
+                logLines.add(context.getString(R.string.remote_recv_stopped))
+                throw e
+            } finally {
+                // 正常结束与被取消都要把 UI 从「运行中」放出来，否则按钮永远回不来。
+                running = false
+                flashJob = null
             }
-            flashed = outcome.flashed
-            failedAt = outcome.failedAt
-            done = true
-            running = false
         }
     }
 
@@ -609,6 +667,18 @@ fun RemoteAssistantScreen() {
 
     LaunchedEffect(logLines.size) {
         if (logLines.isNotEmpty()) listState.animateScrollToItem(logLines.size - 1)
+    }
+
+    // 进页面只校验一次缓存的会话（服务端 token 30 天有效）：失效就清会话并提示，
+    // 但不弹登录卡——只用离线出码的人不该被拦住。键是 Unit，所以重组不会重复打网。
+    LaunchedEffect(Unit) {
+        val acc = account ?: return@LaunchedEffect
+        val session = withContext(Dispatchers.IO) { RemoteApi.me(acc.token) }
+        if (session == null) {
+            RemoteAuth.clear(context)
+            account = null
+            Toast.makeText(context, R.string.remote_hub_expired, Toast.LENGTH_SHORT).show()
+        }
     }
 
     Scaffold(
@@ -807,6 +877,22 @@ fun RemoteAssistantScreen() {
                                 modifier = Modifier.padding(top = 4.dp),
                             )
                         }
+                        if (uploadSucceeded) {
+                            // 「上传成功」只是有了直链，不等于进了模块仓库：列进索引要
+                            // 走一次 GitHub 表单，这里把入口直接放在结果旁边。
+                            Text(
+                                text = stringResource(R.string.remote_submit_index_note),
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp,
+                                color = Xc.colors.textSecondary,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                            TextButton(
+                                text = stringResource(R.string.remote_submit_index),
+                                onClick = { uriHandler.openUri(SUBMIT_INDEX_URL) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                         shareInputs.forEachIndexed { i, _ ->
                             Column(
                                 modifier = Modifier
@@ -892,6 +978,15 @@ fun RemoteAssistantScreen() {
                             enabled = !uploading && !hubBusy && shareInputs.any { it.isNotBlank() },
                             colors = ButtonDefaults.textButtonColorsPrimary(),
                         )
+                        // 不登录也能出码：本地编码成 XEC2 加密码，接收端照样能刷。
+                        TextButton(
+                            text = stringResource(R.string.remote_share_offline),
+                            onClick = { generateOfflineCode() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp),
+                            enabled = !uploading && shareInputs.any { it.isNotBlank() },
+                        )
                     }
                 }
                 shortCode?.let { code ->
@@ -940,6 +1035,15 @@ fun RemoteAssistantScreen() {
                             fontSize = 12.sp,
                             lineHeight = 16.sp,
                             color = Xc.colors.textSecondary,
+                        )
+                        // miuix 的 TextField 没有 placeholder 参数（本仓库与依赖里都
+                        // 查不到这种用法），所以把提示放在输入框上方渲染一次。
+                        Text(
+                            text = stringResource(R.string.remote_recv_link_placeholder),
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            color = Xc.colors.textSecondary,
+                            modifier = Modifier.padding(top = 4.dp),
                         )
                         recvInputs.forEachIndexed { i, _ ->
                             Row(
@@ -1008,6 +1112,17 @@ fun RemoteAssistantScreen() {
                             enabled = !running && recvInputs.any { it.isNotBlank() },
                             colors = ButtonDefaults.textButtonColorsPrimary(),
                         )
+                        // 停止要等当前模块刷完才落地：flashModule() 是阻塞调用，
+                        // 强行打断会留下半刷的模块。
+                        if (running) {
+                            TextButton(
+                                text = stringResource(R.string.remote_recv_stop),
+                                onClick = { flashJob?.cancel() },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp),
+                            )
+                        }
                     }
                 }
 

@@ -182,8 +182,9 @@ fun HomePagerMiuix(
                         )
                         // 未激活界面「提权」导航：GhostLock 一键提权控制台。
                         // 已激活（ksuVersion != null）时不出现——那时提权没有意义，
-                        // 更新走「修补方式 → 提权更新」。
-                        if (state.ksuVersion == null) {
+                        // 更新走「修补方式 → 提权更新」。挂载态也不出现：那条路的 root
+                        // 是 Magisk 的 su，GhostLock 是内核态（late-load）专有机制。
+                        if (state.ksuVersion == null && !state.isMountState) {
                             PrivilegeEntryCard(
                                 onClick = actions.onPrivilegeClick,
                                 backdrop = backdrop,
@@ -268,10 +269,14 @@ private fun TopBar(
     // 灵动岛：顶栏本身就是岛的展开态（无玻璃底）；上滑收缩成岛。
     IslandTopBar(
         islandTitle = stringResource(R.string.app_name),
-        islandLive = state.ksuVersion?.let {
-            stringResource(R.string.home_working_version, "$it-${state.kernelUAPIVersion}")
-        } ?: stringResource(R.string.island_not_working),
-        statusActive = state.ksuVersion != null,
+        islandLive = when {
+            state.ksuVersion != null ->
+                stringResource(R.string.home_working_version, "${state.ksuVersion}-${state.kernelUAPIVersion}")
+            // 挂载态也是"在跑"：路线名用 Magisk 路线，不能显示成未工作（会和状态卡自相矛盾）。
+            state.isMountState -> stringResource(R.string.home_working_magisk)
+            else -> stringResource(R.string.island_not_working)
+        },
+        statusActive = state.ksuVersion != null || state.isMountState,
     ) {
         TopAppBar(
             // 展开态没有玻璃底：透明浮在页面上。
@@ -421,6 +426,87 @@ private fun StatusCard(
                                             )
                                         }
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 挂载态（唯一判据：没有 KSU 驱动应答且内核低于 5.10）：root 就是 Magisk 自己的，
+            // 状态卡按"工作正常"渲染，路线行写 Magisk 路线，版本行显示正在跑的 magiskd 版本。
+            // 这一支必须排在下面 isGKI()/Unsupported 之前 —— 否则 <5.10 的挂载态设备
+            //（Magisk 路线的目标机型）会掉进 home_unsupported 分支。
+            state.isMountState -> {
+                val magiskVersionText = state.magiskVersion?.takeIf { it.isNotBlank() }
+                    ?: stringResource(id = R.string.home_magisk_version_unknown)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .xGlassBody(
+                                backdrop = backdrop,
+                                shape = Xc.shapes.md,
+                                tint = Xc.colors.success.copy(alpha = if (Xc.colors.isDark) 0.22f else 0.15f),
+                            ),
+                        colors = CardDefaults.defaultColors(color = Color.Transparent),
+                        onClick = actions.onInstallClick,
+                        pressFeedbackType = PressFeedbackType.Tilt
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(140.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .offset(27.dp, 31.dp),
+                                contentAlignment = Alignment.BottomEnd
+                            ) {
+                                Icon(
+                                    modifier = Modifier.size(110.dp),
+                                    imageVector = Icons.Rounded.CheckCircleOutline,
+                                    tint = Xc.colors.success,
+                                    contentDescription = null
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp, 10.dp),
+                                contentAlignment = Alignment.BottomStart,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.home_working_magisk),
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp, 14.dp),
+                                contentAlignment = Alignment.TopStart,
+                            ) {
+                                Column {
+                                    Text(
+                                        text = stringResource(id = R.string.home_working),
+                                        fontSize = 22.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Spacer(Modifier.height(1.dp))
+                                    Text(
+                                        text = stringResource(
+                                            R.string.home_magisk_version,
+                                            magiskVersionText
+                                        ),
+                                        fontSize = 15.sp,
+                                    )
                                 }
                             }
                         }

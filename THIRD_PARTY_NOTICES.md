@@ -227,6 +227,50 @@ vendored 源码树（`third_party/`）始终**零修改**：上述修复全部�
   | `assets/{boot_patch.sh,util_functions.sh,stub.apk}` | `manager/app/src/main/assets/magisk/` |
   | `lib/<abi>/{libmagiskboot,libmagiskinit,libmagisk,libinit-ld,libbusybox,libmagiskpolicy}.so` | `manager/app/src/main/jniLibs/<abi>/`（ABI：arm64-v8a、x86_64） |
 
+  **固定的 sha256**（值逐字取自 `.github/workflows/build-xecpro.yml` 的
+  *Fetch Magisk payload* 步骤，那里下载后逐个 `sha256sum -c -` 校验，
+  打包/重签之后再由 *Verify Magisk payload survived repack + sign* 步骤复核一遍）：
+
+  - **上游发布件的摘要**（GitHub Release 上 `Magisk-v30.7.apk` 这一个文件的 sha256，
+    来自上游发布件本身，不是本仓库算出来的）：
+
+    | 文件 | sha256 |
+    |---|---|
+    | `Magisk-v30.7.apk` | `e0d32d2123532860f97123d927b1bb86c4e08e6fd8a48bfc6b5bee0afae9ebd5` |
+
+  - **逐个载荷文件的 sha256（可复现）**：下面 15 个值是把上面那个已钉住摘要的 APK 用
+    `unzip -p` 取出对应条目、对**解压后的内容**算出来的；APK 条目里的内容就是随本 APK
+    分发出去的载荷字节（AGP 与 `repack_apk.py` 都不改条目内容），所以任何人拿到同一个
+    上游 APK 都能复算出同一组值（复算方法见本节末）：
+
+    | APK 里的条目 | 本地落地位置 | sha256 |
+    |---|---|---|
+    | `assets/boot_patch.sh` | `assets/magisk/boot_patch.sh` | `20de7208d610a267aaafafe09846c4458a240ba51656d05252fc1c9c7e7ada8f` |
+    | `assets/util_functions.sh` | `assets/magisk/util_functions.sh` | `efe385ffdb72c7fc9b5bcef4267acc4f68ad73b2ac02bb577328f77ea66643eb` |
+    | `assets/stub.apk` | `assets/magisk/stub.apk` | `f0230e0864be255d963befa929ae1c0bb85c4df3e3578bb6cecc3049b6881eb0` |
+    | `lib/arm64-v8a/libmagiskboot.so` | `jniLibs/arm64-v8a/libmagiskboot.so` | `d7440e2cd89899426e809554bf793baef9804ccbe5a52ce34a8b6242725d3c77` |
+    | `lib/arm64-v8a/libmagiskinit.so` | `jniLibs/arm64-v8a/libmagiskinit.so` | `383670a7ba3a6a4b79e5f3467e1da4b66a5df66a9b356ab9f70916854dd6b468` |
+    | `lib/arm64-v8a/libmagisk.so` | `jniLibs/arm64-v8a/libmagisk.so` | `2d8419018dda41f7d9aca94c0ca8f926f3b8447ca5cf7fb71faeb8d05e29694e` |
+    | `lib/arm64-v8a/libinit-ld.so` | `jniLibs/arm64-v8a/libinit-ld.so` | `c71e69780bb7ce6d6c26b2d794a3c631689bed130519762716fee285a10417f0` |
+    | `lib/arm64-v8a/libbusybox.so` | `jniLibs/arm64-v8a/libbusybox.so` | `4d60ab3f5a59ebb2ca863f2f514e6924401b581e9b64f602665c008177626651` |
+    | `lib/arm64-v8a/libmagiskpolicy.so` | `jniLibs/arm64-v8a/libmagiskpolicy.so` | `9837db9db475eb74b6715f081768cb6a1f2fb5a2b2ac15755686062501bace27` |
+    | `lib/x86_64/libmagiskboot.so` | `jniLibs/x86_64/libmagiskboot.so` | `a18ecbd7981179494b7d281453d6c4e25b5c719e7d2ef7f6eba3c6be3043c58e` |
+    | `lib/x86_64/libmagiskinit.so` | `jniLibs/x86_64/libmagiskinit.so` | `24557786f59662376cc9bf204a025d8beb505b9a86cc50a4d1227b34ef2464b6` |
+    | `lib/x86_64/libmagisk.so` | `jniLibs/x86_64/libmagisk.so` | `a1cc6bea9e8618f8e3dea95a9068b161a256c9e19985fb7dc33c15a50a73e0cb` |
+    | `lib/x86_64/libinit-ld.so` | `jniLibs/x86_64/libinit-ld.so` | `54c9f44f160d822c0d0ee9b5f816dfc8be5210f5a3e45b2cebf7404108a74759` |
+    | `lib/x86_64/libbusybox.so` | `jniLibs/x86_64/libbusybox.so` | `060844b0769f7a50262854af027c4d6076a212d160a51309b53057cfb7122900` |
+    | `lib/x86_64/libmagiskpolicy.so` | `jniLibs/x86_64/libmagiskpolicy.so` | `0021aaefac5f5a49dfa5996df44a8a67cd6ec014ade72c2358802bd2cc82650f` |
+
+    复算这 15 个值（只需 `curl` / `sha256sum` / `unzip`，无需本仓库的构建产物）：
+
+    ```sh
+    curl -fsSLO https://github.com/topjohnwu/Magisk/releases/download/v30.7/Magisk-v30.7.apk
+    echo "e0d32d2123532860f97123d927b1bb86c4e08e6fd8a48bfc6b5bee0afae9ebd5  Magisk-v30.7.apk" \
+      | sha256sum -c -
+    unzip -p Magisk-v30.7.apk assets/boot_patch.sh | sha256sum
+    unzip -p Magisk-v30.7.apk lib/arm64-v8a/libmagiskboot.so | sha256sum
+    ```
+
   下载与校验在 CI 完成：`.github/workflows/build-xecpro.yml` 的
   *Fetch Magisk payload* 步骤按 **APK 与每个载荷文件各自的 sha256** 校验，
   载荷不进源码树。上游 https://github.com/topjohnwu/Magisk （tag `v30.7`）；

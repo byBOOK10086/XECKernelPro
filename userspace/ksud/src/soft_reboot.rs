@@ -150,9 +150,12 @@ fn wait_for_boot_completed() -> Result<()> {
 
 pub fn soft_reboot() -> Result<()> {
     // check it avoid user click "soft_reboot" in manager when version mismatch
+    // 但这里不能只记一行日志就 `Ok(())`：退出码 0 会让管理器把"模块已装好、正在软重启"
+    // 当成成功，而实际上什么都没发生（挂载态没有 KSU 驱动，UAPI 永远对不上 → 静默空转）。
+    // 返回真错误：CLI 非 0 退出，管理器那边据此退回真重启（见 KsuCli.kt::reboot）。
     if let Err(e) = ksucalls::ensure_uapi_version_matched() {
-        error!("{e:#}, skip soft_reboot");
-        return Ok(());
+        error!("soft_reboot unavailable: {e:#}");
+        bail!("soft_reboot 需要 KernelSU 驱动；本机没有（挂载态 root 走官方 Magisk）: {e:#}");
     }
 
     utils::daemonize_with(true, || -> Result<()> {

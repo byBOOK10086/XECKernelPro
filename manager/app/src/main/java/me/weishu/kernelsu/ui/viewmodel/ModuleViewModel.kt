@@ -23,7 +23,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.R
-import me.weishu.kernelsu.getKernelVersion
 import me.weishu.kernelsu.data.model.Module
 import me.weishu.kernelsu.data.model.ModuleUpdateInfo
 import me.weishu.kernelsu.data.repository.ModuleRepository
@@ -38,6 +37,7 @@ import me.weishu.kernelsu.ui.screen.module.ModuleEffect
 import me.weishu.kernelsu.ui.screen.module.ModuleUiState
 import me.weishu.kernelsu.ui.util.PinyinUtil
 import me.weishu.kernelsu.ui.util.hasMagisk
+import me.weishu.kernelsu.ui.util.isMountState
 import me.weishu.kernelsu.ui.util.module.fetchModuleDetail
 import me.weishu.kernelsu.ui.util.module.fetchReleaseDescriptionHtml
 import okhttp3.Request
@@ -123,11 +123,12 @@ class ModuleViewModel(
     fun refreshEnvironmentState() {
         viewModelScope.launch {
             val magiskInstalled = withContext(Dispatchers.IO) { hasMagisk() }
-            // <5.10（非 GKI）设备上 Magisk **就是**这条路的 root 实现本身（方案甲：
-            // 管理器驱动官方 boot_patch.sh），不是"冲突"。真正的冲突只可能发生在
-            // 内核态设备上：KSU 驱动 + 另一个真 Magisk 同时存在。
-            val magiskRoute = magiskInstalled &&
-                withContext(Dispatchers.IO) { !getKernelVersion().isGKI() }
+            // 路线判据只有一处（ui/util/RootRoute.kt 的 isMountState）：没有 KSU 驱动应答
+            // 且内核低于 5.10。<5.10（非 GKI）设备上 Magisk **就是**这条路的 root 实现本身
+            // （方案甲：管理器驱动官方 boot_patch.sh），不是"冲突"；真正的冲突只可能发生在
+            // 内核态设备上（KSU 驱动 + 另一个真 Magisk 同时存在，含 <5.10 但有驱动的 KPatch）。
+            val mountState = withContext(Dispatchers.IO) { isMountState }
+            val magiskRoute = magiskInstalled && mountState
             val isSafeMode = Natives.isSafeMode
             _uiState.update {
                 it.copy(

@@ -75,6 +75,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.ListPopupDefaults
 import me.weishu.kernelsu.ui.component.PagerNavigationSpringSpec
@@ -99,6 +100,7 @@ import me.weishu.kernelsu.ui.util.BlurredBar
 import me.weishu.kernelsu.ui.util.download
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
 import me.weishu.kernelsu.ui.util.rememberContentReady
+import me.weishu.kernelsu.ui.util.sha256Of
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
@@ -516,7 +518,14 @@ fun ModuleRepoScreenMiuix(
                             item {
                                 Text(
                                     text = if (fellBack) {
-                                        stringResource(R.string.module_repos_source_fallback, sourceHost)
+                                        // 说清楚「谁不可用」与「现在用的是谁」：过去第二个占位符
+                                        // 写死成"官方源"，而官方源排第三顺位、真正接住的通常是
+                                        // 第二顺位的自建仓库 raw，用户会以为自己在看官方仓库。
+                                        stringResource(
+                                            R.string.module_repos_source_fallback,
+                                            ModuleRepoSettings.labelOf(ModuleRepoSettings.primaryUrl),
+                                            sourceHost,
+                                        )
                                     } else {
                                         stringResource(R.string.module_repos_source_current, sourceHost)
                                     },
@@ -697,6 +706,20 @@ private fun ReadmePage(
                             }
                         }
                     }
+                } else if (readmeLoaded) {
+                    // 说明加载完但确实没有内容：过去这里和"还在加载"共用同一个
+                    // 转圈分支，于是任何拿不到说明的模块（自建仓库的模块、官方站点
+                    // 上不存在的模块）都会永远转圈 —— 用户分不清"没说明"和"卡住了"。
+                    Box(
+                        modifier = Modifier.fillParentMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.module_repos_detail_no_readme),
+                            fontSize = 14.sp,
+                            color = colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
                 } else {
                     Box(
                         modifier = Modifier.fillParentMaxSize(),
@@ -715,6 +738,7 @@ private fun ReadmePage(
 @Composable
 fun ReleasesPage(
     detailReleases: List<ReleaseArg>,
+    detailLoaded: Boolean,
     innerPadding: PaddingValues,
     scrollBehavior: ScrollBehavior,
     backdrop: LayerBackdrop?,
@@ -743,6 +767,23 @@ fun ReleasesPage(
             ),
             overscrollEffect = null,
         ) {
+            if (detailLoaded && detailReleases.isEmpty()) {
+                // 没有版本时过去是纯白屏：用户分不清"这个模块没有可下载版本"和"还在加载"。
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillParentMaxSize()
+                            .padding(top = 80.dp),
+                        contentAlignment = Alignment.TopCenter,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.module_repos_detail_no_release),
+                            fontSize = 14.sp,
+                            color = colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                }
+            }
             if (detailReleases.isNotEmpty()) {
                 item {
                     Spacer(Modifier.height(6.dp))
@@ -865,7 +906,8 @@ fun ReleasesPage(
                                         var progress by remember(fileName, asset.downloadUrl) { mutableIntStateOf(0) }
                                         var downloadedUri by remember(fileName, asset.downloadUrl) { mutableStateOf<Uri?>(null) }
                                         val isDownloaded = downloadedUri != null
-                                        val onClickDownload = remember(fileName, asset.downloadUrl) {
+                                        val expectedSha = asset.sha256
+                                        val onClickDownload = remember(fileName, asset.downloadUrl, expectedSha) {
                                             {
                                                 val startText = context.getString(R.string.module_start_downloading, fileName)
                                                 setPendingDownload {
@@ -875,8 +917,31 @@ fun ReleasesPage(
                                                             asset.downloadUrl,
                                                             fileName,
                                                             onDownloaded = { uri ->
-                                                                isDownloading = false
-                                                                downloadedUri = uri
+                                                                // 索引给了 sha256 就校验：不匹配的文件当场丢弃，
+                                                                // 不进入"可安装"状态（否则被替换过的 zip 会被直接安装）。
+                                                                // 回调在主线程（DownloadManager 用 mainHandler.post），
+                                                                // 所以整个哈希过程必须挪到 IO，否则大模块会卡住界面。
+                                                                if (expectedSha.isEmpty()) {
+                                                                    isDownloading = false
+                                                                    downloadedUri = uri
+                                                                } else {
+                                                                    scope.launch(Dispatchers.IO) {
+                                                                        val actual = sha256Of(context, uri)
+                                                                        withContext(Dispatchers.Main) {
+                                                                            isDownloading = false
+                                                                            if (expectedSha.equals(actual, ignoreCase = true)) {
+                                                                                downloadedUri = uri
+                                                                            } else {
+                                                                                downloadedUri = null
+                                                                                Toast.makeText(
+                                                                                    context,
+                                                                                    R.string.module_download_hash_mismatch,
+                                                                                    Toast.LENGTH_LONG,
+                                                                                ).show()
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
                                                             },
                                                             onDownloading = { isDownloading = true },
                                                             onProgress = { p -> scope.launch(Dispatchers.Main) { progress = p } })
@@ -1236,6 +1301,7 @@ fun ModuleRepoDetailScreenMiuix(
 
                 1 -> ReleasesPage(
                     detailReleases = state.detailReleases,
+                    detailLoaded = state.readmeLoaded,
                     innerPadding = innerPadding,
                     scrollBehavior = scrollBehavior,
                     backdrop = backdrop,

@@ -49,6 +49,9 @@ object RemoteUploader {
             conn.setRequestProperty("File-Path", encodedPath)
             conn.setRequestProperty("Content-Type", "application/octet-stream")
             val total = querySize(context, uri)
+            // 先声明 body 长度：HttpURLConnection 不再把整个 zip 缓存在内存里，
+            // 进度也不会等到写完全部才跳到 100%；大小拿不到时退回分块传输。
+            if (total > 0) conn.setFixedLengthStreamingMode(total) else conn.setChunkedStreamingMode(64 * 1024)
             context.contentResolver.openInputStream(uri)?.use { input ->
                 conn.outputStream.use { output ->
                     val buf = ByteArray(64 * 1024)
@@ -84,7 +87,8 @@ object RemoteUploader {
         return "$BASE$PUBLIC_DIR/" + URLEncoder.encode(name, "UTF-8").replace("+", "%20")
     }
 
-    private fun querySize(context: Context, uri: Uri): Long =
+    /** 选中文件的大小（拿不到返回 -1）；上传前用它做 500MB 上限判断。 */
+    fun querySize(context: Context, uri: Uri): Long =
         context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)
             ?.use { c -> if (c.moveToFirst()) c.getLong(0) else -1L } ?: -1L
 

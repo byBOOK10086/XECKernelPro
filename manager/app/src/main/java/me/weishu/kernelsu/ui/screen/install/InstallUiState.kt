@@ -44,6 +44,13 @@ internal data class InstallUiState(
     val magiskPatchVbmetaFlag: Boolean,
     val magiskRecoveryMode: Boolean,
     /**
+     * LEGACYSAR 的实际取值：用户没动过时就是设备自动判定值（界面上标注「自动」），
+     * 直接传给 `boot_patch.sh` 的 `LEGACYSAR`。
+     */
+    val magiskLegacySar: Boolean,
+    /** [magiskLegacySar] 是自动判定出来的（用户还没显式设置过）。 */
+    val magiskLegacySarIsAuto: Boolean,
+    /**
      * 当前 root 形态的一句话说明（内核态 5.10+ / 挂载态 5.10 以下）。
      *
      * 这是产品规则的单一口径在界面上的投影：两种形态互斥、不会共存，
@@ -72,6 +79,7 @@ internal data class InstallScreenActions(
     val onSelectMagiskKeepForceEncrypt: (Boolean) -> Unit,
     val onSelectMagiskPatchVbmetaFlag: (Boolean) -> Unit,
     val onSelectMagiskRecoveryMode: (Boolean) -> Unit,
+    val onSelectMagiskLegacySar: (Boolean) -> Unit,
     val onPrivilegeUpdate: () -> Unit,
     val onUploadLkm: () -> Unit,
     val onClearLkm: () -> Unit,

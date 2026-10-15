@@ -364,6 +364,66 @@ jobs:
             -S "$KEY_PASSWORD" \
             --strip
 
+      - name: Verify Magisk payload survived repack + sign
+        # repack 与签名是另一个 job：下载、解包那一步校验过了，打包/重签这一环再掉载荷
+        # （AGP 的资源过滤、repack_apk.py 的条目遍历、--strip …）就没人拦得住，而管理器会
+        # 把整条 Magisk 路线静默灰掉。这里直接拆开**签发出去的**那个 APK 逐条对齐 sha256。
+        # 15 条 pin 与 build-manager 的 *Fetch Magisk payload* 步骤逐字节一致（同一个上游
+        # v30.7 APK 的条目内容；APK 里条目的解压内容 = 分发出去的载荷字节，可直接 `unzip -p` 复算）。
+        run: |
+          set -euo pipefail
+          # 要检查的就是**签发出去的**那份 release 件：repack_apk.py 的输入是
+          # *Place manager apk and xudc artifacts* 那一步放进
+          # manager/app/build/outputs/apk/release/ 的 APK（find_latest_apk() 取 mtime 最新
+          # 那个），输出固定为 dist/<输入 APK 的 stem>.apk（output_name 未配置，见
+          # repack_apk.py 的 output_name / signed_path），也正是 *Upload branded APK*
+          # 上传的 dist/*.apk 里的签名件。这里照着同一条链算路径，不猜名字、不用通配符。
+          APK_NAME=$(find manager/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' \
+            -printf '%T@ %f\n' 2>/dev/null | sort -n | tail -n 1 | cut -d' ' -f2- || true)
+          [ -n "$APK_NAME" ] || {
+            echo "::error::no manager APK under manager/app/build/outputs/apk/release"
+            exit 1
+          }
+          APK="dist/${APK_NAME}"
+          [ -f "$APK" ] || { echo "::error::repacked release APK not found: ${APK}"; exit 1; }
+          echo "checking payload in ${APK}"
+
+          verify() {  # verify <apk-entry> <sha256>
+            local entry="$1" sha="$2" tmp
+            tmp="$(mktemp)"
+            if ! unzip -p "$APK" "$entry" > "$tmp"; then
+              rm -f "$tmp"
+              echo "::error::Magisk payload entry missing from the repacked APK: ${entry}"
+              exit 1
+            fi
+            if ! echo "${sha}  ${tmp}" | sha256sum -c -; then
+              rm -f "$tmp"
+              echo "::error::Magisk payload entry changed during repack/sign: ${entry}"
+              exit 1
+            fi
+            rm -f "$tmp"
+          }
+
+          verify assets/magisk/boot_patch.sh 20de7208d610a267aaafafe09846c4458a240ba51656d05252fc1c9c7e7ada8f
+          verify assets/magisk/util_functions.sh efe385ffdb72c7fc9b5bcef4267acc4f68ad73b2ac02bb577328f77ea66643eb
+          verify assets/magisk/stub.apk f0230e0864be255d963befa929ae1c0bb85c4df3e3578bb6cecc3049b6881eb0
+
+          verify lib/arm64-v8a/libmagiskboot.so d7440e2cd89899426e809554bf793baef9804ccbe5a52ce34a8b6242725d3c77
+          verify lib/arm64-v8a/libmagiskinit.so 383670a7ba3a6a4b79e5f3467e1da4b66a5df66a9b356ab9f70916854dd6b468
+          verify lib/arm64-v8a/libmagisk.so 2d8419018dda41f7d9aca94c0ca8f926f3b8447ca5cf7fb71faeb8d05e29694e
+          verify lib/arm64-v8a/libinit-ld.so c71e69780bb7ce6d6c26b2d794a3c631689bed130519762716fee285a10417f0
+          verify lib/arm64-v8a/libbusybox.so 4d60ab3f5a59ebb2ca863f2f514e6924401b581e9b64f602665c008177626651
+          verify lib/arm64-v8a/libmagiskpolicy.so 9837db9db475eb74b6715f081768cb6a1f2fb5a2b2ac15755686062501bace27
+
+          verify lib/x86_64/libmagiskboot.so a18ecbd7981179494b7d281453d6c4e25b5c719e7d2ef7f6eba3c6be3043c58e
+          verify lib/x86_64/libmagiskinit.so 24557786f59662376cc9bf204a025d8beb505b9a86cc50a4d1227b34ef2464b6
+          verify lib/x86_64/libmagisk.so a1cc6bea9e8618f8e3dea95a9068b161a256c9e19985fb7dc33c15a50a73e0cb
+          verify lib/x86_64/libinit-ld.so 54c9f44f160d822c0d0ee9b5f816dfc8be5210f5a3e45b2cebf7404108a74759
+          verify lib/x86_64/libbusybox.so 060844b0769f7a50262854af027c4d6076a212d160a51309b53057cfb7122900
+          verify lib/x86_64/libmagiskpolicy.so 0021aaefac5f5a49dfa5996df44a8a67cd6ec014ade72c2358802bd2cc82650f
+
+          echo "all 15 Magisk payload entries survived repack + sign"
+
       - name: Upload branded APK
         uses: actions/upload-artifact@v7
         with:

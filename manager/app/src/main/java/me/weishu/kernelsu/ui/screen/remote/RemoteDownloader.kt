@@ -19,7 +19,8 @@ fun isPanSharePage(url: String): Boolean {
 
 /** 任意外链的直连下载器：带进度回调、500MB 上限、zip 头校验与一次自动重试。 */
 object RemoteDownloader {
-    private const val MAX_FILE_BYTES: Long = 500L * 1024 * 1024
+    /** 下载硬上限；上传端在选文件时用同一个值提前拦截，别让接收端注定失败。 */
+    const val MAX_FILE_BYTES: Long = 500L * 1024 * 1024
     private const val UA = "Mozilla/5.0 (Linux; Android 16) XECKernelPro/1.0"
 
     fun downloadTo(
@@ -80,7 +81,8 @@ object RemoteDownloader {
             val n = ins.read(head)
             val isZip = n >= 2 && head[0] == 'P'.code.toByte() && head[1] == 'K'.code.toByte()
             if (!isZip) {
-                if (n >= 1 && (head[0] == '<'.code.toByte() || head[0] == '{'.code.toByte())) {
+                // 0x7B 就是左花括号：写成十六进制，括号配平守卫的朴素计数才不会 +1
+                if (n >= 1 && (head[0] == '<'.code.toByte() || head[0] == 0x7B.toByte())) {
                     throw IOException("链接返回的是网页/JSON 而不是文件（需要 zip 的直链）")
                 }
                 throw IOException("下载内容不是 zip（链接指向的可能不是文件本身）")

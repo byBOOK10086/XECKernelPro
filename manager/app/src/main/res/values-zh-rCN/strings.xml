@@ -80,9 +80,11 @@
     <string name="module_repos_source_official">官方源</string>
     <string name="module_repos_source_save">保存并刷新</string>
     <string name="module_repos_source_current">仓库源：%1$s</string>
-    <string name="module_repos_source_fallback">%1$s 不可用 · 已回退官方源</string>
+    <string name="module_repos_source_fallback">%1$s 不可用 · 已改用 %2$s</string>
     <string name="module_repos_source_bad_url">请输入 http(s) 地址</string>
     <string name="module_repos_source_code">源码</string>
+    <string name="module_repos_detail_no_readme">这个模块没有提供说明。</string>
+    <string name="module_repos_detail_no_release">暂无可下载版本。</string>
     <string name="uninstall">卸载</string>
     <string name="enable">启用</string>
     <string name="disable">关闭</string>
@@ -206,6 +208,7 @@ XEC 项目组
     <string name="module_update">更新</string>
     <string name="module_downloading">正在下载模块：%s</string>
     <string name="module_start_downloading">开始下载：%s</string>
+    <string name="module_download_hash_mismatch">校验和不匹配：下载的文件已丢弃，请换一个来源或重新下载。</string>
     <string name="new_version_available">发现新版本：%s，点击升级！</string>
     <string name="launch_app">启动</string>
     <string name="force_stop_app">强制停止</string>
@@ -482,6 +485,17 @@ XEC 项目组
     <string name="remote_key_force_label">本次强制脚本（可空）</string>
     <string name="remote_keypad_title">手动补按键（安装脚本等待时按）</string>
     <string name="remote_keypad_idle">以 root 注入真实的音量键事件；先点一下可以自检这台设备能否注入。</string>
+    <string name="remote_share_offline">生成加密码（免登录）</string>
+    <string name="remote_share_offline_done">加密码已复制。接收端粘到「接收」页即可。</string>
+    <string name="remote_share_offline_empty">还没有可编码的链接：先粘一条直链或上传一个模块。</string>
+    <string name="remote_recv_stop">停止</string>
+    <string name="remote_recv_stopped">已按你的要求停止。</string>
+    <string name="remote_hub_logged_out">已退出登录</string>
+    <string name="remote_hub_expired">登录已过期，请重新登录</string>
+    <string name="remote_upload_oversize">%1$s 超过 500 MB，接收端下不动。</string>
+    <string name="remote_upload_partial">已上传 %1$d 个文件；失败：%2$s</string>
+    <string name="remote_submit_index">提交到模块仓库索引</string>
+    <string name="remote_submit_index_note">上传的文件只有直链。要让模块出现在模块仓库列表里，需要用 GitHub 表单提交一次；否则只能靠加密码或直链分发。</string>
     <!-- 自定义背景：本机私有目录里的浅/深两档壁纸，作为全应用液态玻璃的折射源。 -->
     <string name="settings_wallpaper">自定义背景</string>
     <string name="settings_wallpaper_summary">用自己的图片作为全应用背景。</string>
@@ -582,7 +596,10 @@ XEC 项目组
     <string name="kernel_patch_unavailable">本 APK 未内置 kptools 载荷（该构建未包含 KernelPatch 二进制），无法打内核补丁。</string>
     <string name="kernel_patch_failed">内核补丁失败：%1$s</string>
     <string name="kernel_patch_saved">补丁后的 boot 镜像已保存。请刷入 boot 分区后重启。</string>
-    <string name="home_working_kpatch">Magisk 路线（5.10 以下挂载态）</string>
+    <string name="home_working_kpatch">KernelPatch 路线（5.10 以下，内核态）</string>
+    <string name="home_working_magisk">Magisk 路线（5.10 以下挂载态）</string>
+    <string name="home_magisk_version">Magisk 守护进程：%1$s</string>
+    <string name="home_magisk_version_unknown">未探测到</string>
 
     <!-- 原生终端（MT 管理器式） -->
     <string name="terminal_tab">补全</string>
@@ -700,6 +717,9 @@ XEC 项目组
     <string name="magisk_patch_vbmeta_flag_summary">给 Magisk 传 PATCHVBMETAFLAG=true。只有需要改 vbmeta flags 的机型才用。</string>
     <string name="magisk_patch_recovery_mode">Recovery 模式（A-only legacy SAR）</string>
     <string name="magisk_patch_recovery_mode_summary">给 Magisk 传 RECOVERYMODE=true：改打 recovery 镜像。boot 里没有 ramdisk 的 A-only system-as-root 机型用这个。</string>
+    <string name="magisk_patch_legacy_sar">Legacy SAR（A-only system-as-root）</string>
+    <string name="magisk_patch_legacy_sar_summary">给 Magisk 传 LEGACYSAR=true：对内核 hexpatch skip_initramfs → want_initramfs。「自动」用的是 Magisk 官方判据（/proc/mounts 的根是 /dev/root）；判错了可以在这里强制打开。</string>
+    <string name="magisk_patch_legacy_sar_auto">自动</string>
     <!-- 挂载态（5.10 以下，方案甲）：root 就是 Magisk 的 root，超级用户页读写 Magisk 的策略表 -->
     <string name="magisk_su_refresh">刷新</string>
     <string name="magisk_su_route_title">Magisk 路线（挂载态）</string>
@@ -717,6 +737,8 @@ XEC 项目组
     <string name="magisk_su_sync_note">和 Magisk 应用是同一张表：这里改动那边立刻可见，在 Magisk 里授权或撤销这边也会跟着变。</string>
     <string name="magisk_su_empty">还没有应用申请过 root。有应用调用 su 之后就会出现在这里。</string>
     <string name="magisk_su_open_magisk">打开 Magisk 应用</string>
+    <string name="magisk_su_cli_missing">找不到 magisk 命令，读不到策略表。请确认 Magisk 已安装，且本管理器已经拿到 root 授权。</string>
+    <string name="magisk_su_hidden_note">如果 Magisk 应用被随机包名隐藏了，请打开那个隐藏图标（名字在 Magisk 设置里）在里面批准本管理器。</string>
     <string name="magisk_su_policy_query">询问</string>
     <string name="magisk_su_policy_allow">允许</string>
     <string name="magisk_su_policy_deny">拒绝</string>
