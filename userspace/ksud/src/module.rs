@@ -374,12 +374,59 @@ fn builtin_runtime_missing(module_id: &str) -> Vec<String> {
 pub fn apply_builtin_sepolicy(module_id: &str) -> Result<()> {
     let rule = builtin_runtime_dir(module_id).join("sepolicy.rule");
     if !rule.exists() {
+        record_policy_status(module_id, "none");
         return Ok(());
     }
-    sepolicy::apply_file(&rule)
-        .with_context(|| format!("apply sepolicy {} failed", rule.display()))?;
-    info!("built-in module {module_id}: sepolicy.rule applied");
-    Ok(())
+    let outcome = match sepolicy::apply_file(&rule) {
+        Ok(()) => {
+            info!("built-in module {module_id}: sepolicy.rule applied");
+            "ok".to_string()
+        }
+        Err(e) => {
+            // 记到文件里：策略打不上 = 注入必失败（keystore2 打不开要注入的 .so），
+            // 而这条链以前在设备上完全不可见。
+            let msg = e.to_string();
+            warn!("built-in module {module_id}: apply sepolicy failed: {msg}");
+            format!("failed:{}", msg.replace(['\n', '|'], " "))
+        }
+    };
+    record_policy_status(module_id, &outcome);
+    if outcome == "ok" {
+        Ok(())
+    } else {
+        bail!("apply sepolicy {} failed: {outcome}", rule.display())
+    }
+}
+
+/// 把 sepolicy 的应用结果写进 `/data/adb/.xudc_secure/policy-status.txt`
+///（`tee=ok` / `ta=failed:…`），管理器在「内置模块」卡片里直接显示。
+///
+/// 为什么需要它：策略是不是真的打上了，设备侧没有便宜的验证手段（读不了内核策略表），
+/// 而"打不上"正是注入失败里最隐蔽的一种 —— ksud 自己知道结果，就该写下来。
+fn record_policy_status(module_id: &str, outcome: &str) {
+    let key = builtin_key(module_id).unwrap_or(module_id);
+    let path = Path::new(defs::BUILTIN_FLAG_PATH).with_file_name("policy-status.txt");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+
+    let mut lines: Vec<String> = std::fs::read_to_string(&path)
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| !line.starts_with("at=") && !line.starts_with(&format!("{key}=")))
+        .map(str::to_string)
+        .collect();
+    lines.push(format!("at={now}"));
+    lines.push(format!("{key}={outcome}"));
+
+    let body = lines.join("\n") + "\n";
+    let tmp = path.with_extension("txt.tmp");
+    if std::fs::write(&tmp, body).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+        if let Err(e) = restore_syscon(&path) {
+            warn!("label {} failed: {e}", path.display());
+        }
+    }
 }
 
 /// 把当前**开着**的内置模块的 sepolicy 全部重打一遍（幂等）。
@@ -566,6 +613,15 @@ fn builtin_status_of(
 ) -> serde_json::Value {
     let missing = builtin_assets_missing(module_id);
     let runtime_missing = builtin_runtime_missing(module_id);
+    // sepolicy 打上了没有：ksud 自己记录的结果（打不上 = 注入必失败）。
+    let policy = std::fs::read_to_string(
+        Path::new(defs::BUILTIN_FLAG_PATH).with_file_name("policy-status.txt"),
+    )
+    .unwrap_or_default()
+    .lines()
+    .find_map(|line| line.strip_prefix(&format!("{key}=")))
+    .unwrap_or("unknown")
+    .to_string();
     serde_json::json!({
         "key": key,
         "id": module_id,
@@ -577,6 +633,7 @@ fn builtin_status_of(
         "assets": if missing.is_empty() { "ok".to_string() } else { format!("missing:{}", missing.join(",")) },
         // 运行目录里的落地情况（解密之后、service.sh 跑之前）。
         "runtimeassets": if runtime_missing.is_empty() { "ok".to_string() } else { format!("missing:{}", runtime_missing.join(",")) },
+        "policy": policy,
     })
 }
 

@@ -117,6 +117,8 @@ private data class BuiltinModuleState(
     val assets: String = "ok",
     /** 运行目录里的落地情况（"ok" / "missing:…"）。 */
     val runtimeAssets: String = "ok",
+    /** keystore 侧 sepolicy 打上了没有（ksud 记录："ok" / "failed:…" / "unknown"）。 */
+    val policy: String = "unknown",
 )
 
 private data class BuiltinState(
@@ -177,6 +179,7 @@ fun BuiltinModulesCard(backdrop: LayerBackdrop?) {
                 processAlive = alive,
                 assets = obj.optString("assets", "ok").ifEmpty { "ok" },
                 runtimeAssets = obj.optString("runtimeassets", "ok").ifEmpty { "ok" },
+                policy = obj.optString("policy", "unknown").ifEmpty { "unknown" },
             )
         }
 
@@ -338,6 +341,10 @@ fun BuiltinModulesCard(backdrop: LayerBackdrop?) {
                 }
                 if (state.runtimeBad) {
                     add("runtime: " + state.tee.runtimeAssets)
+                }
+                // sepolicy 打不上 = 注入必失败（keystore2 打不开要注入的 .so）。
+                if (state.tee.enabled && state.tee.policy != "ok") {
+                    add("policy: " + state.tee.policy)
                 }
                 if (state.startStep.isNotEmpty()) {
                     add("step=${state.startStep} rc=${state.startRc} ${state.startDetail}".trim())
