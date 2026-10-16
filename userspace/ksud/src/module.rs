@@ -165,10 +165,8 @@ pub fn builtin_flags() -> BTreeMap<&'static str, bool> {
             value.trim().to_ascii_lowercase().as_str(),
             "0" | "false" | "off" | "no" | "disable" | "disabled"
         );
-        if off {
-            if let Some(slot) = flags.get_mut(key.as_str()) {
-                *slot = false;
-            }
+        if off && let Some(slot) = flags.get_mut(key.as_str()) {
+            *slot = false;
         }
     }
     flags
