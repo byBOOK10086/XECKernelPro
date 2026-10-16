@@ -343,12 +343,11 @@ fn builtin_runtime_missing(module_id: &str) -> Vec<String> {
     for rel in *required {
         let hit = match rel.split_once("*/") {
             Some((head, tail)) => std::fs::read_dir(base.join(head.trim_end_matches('/')))
-                .map(|entries| {
+                .is_ok_and(|entries| {
                     entries
                         .flatten()
                         .any(|entry| entry.path().join(tail).exists())
-                })
-                .unwrap_or(false),
+                }),
             None => base.join(rel).exists(),
         };
         if !hit {
@@ -384,20 +383,6 @@ pub fn apply_builtin_sepolicy(module_id: &str) -> Result<()> {
 }
 
 /// 把当前**开着**的内置模块的 sepolicy 全部重打一遍（幂等）。
-pub fn apply_all_builtin_sepolicy() -> usize {
-    let mut applied = 0;
-    for (module_id, _, key) in BUILTIN_MODULES {
-        if !builtin_enabled(key) {
-            continue;
-        }
-        match apply_builtin_sepolicy(module_id) {
-            Ok(()) => applied += 1,
-            Err(e) => warn!("{e}"),
-        }
-    }
-    applied
-}
-
 /// 把内置模块的明文资产加密进 /data 上的存储（按 ksud 构建刷新内容戳）。
 ///
 /// 关掉的模块也照样刷新：这样用户下次打开开关时不必先等一次开机。
@@ -652,9 +637,11 @@ pub fn builtin_apply(target: &str, on: bool) -> Result<()> {
 ///   1. 开关置开（修复的语义就是"我要它跑起来"）；
 ///   2. 重新解密出干净的运行目录（清掉可能残缺/过期的文件）；
 ///   3. **重打 sepolicy**——运行期开引擎最容易漏的就是这一步；
-///   4. 收掉正在反复重启的旧引擎；
-///   5. 以 `--repair` 模式重启：脚本会核对 keystore2 里到底有没有注入成功，
-///      必要时重启一次 keystore2 让注入落在一个干净的进程上。
+///   4. 以 `--repair` 模式重启：脚本自己会先收掉反复重启的旧引擎，再核对
+///      keystore2 里到底有没有注入成功，必要时换一个干净的 keystore2 进程。
+///
+/// 这里**不**调 `stop_builtin_runtime`：那会走 `--stop`，顺带重启一次 keystore2 并把
+/// 自检结论写成"已关闭"（下一次自检前看板会显示错的态）。收进程交给 `--repair` 的开头。
 pub fn builtin_repair(target: &str) -> Result<()> {
     let key = builtin_key(target)
         .with_context(|| format!("未知的内置模块：{target}（可用：tee / ta）"))?;
@@ -669,7 +656,6 @@ pub fn builtin_repair(target: &str) -> Result<()> {
     remove_builtin_runtime(module_id);
     materialize_builtin_module(module_id, token)?;
     apply_builtin_sepolicy(module_id)?;
-    stop_builtin_runtime(module_id);
     start_builtin_runtime(module_id, Some("--repair"))?;
 
     println!("{}", serde_json::to_string_pretty(&builtin_status())?);
