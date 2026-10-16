@@ -165,9 +165,10 @@ pub fn is_safe_mode() -> bool {
 
 pub fn get_zip_uncompressed_size(zip_path: &str) -> Result<u64> {
     let mut zip = zip::ZipArchive::new(std::fs::File::open(zip_path)?)?;
-    let total: u64 = (0..zip.len())
-        .map(|i| zip.by_index(i).unwrap().size())
-        .sum();
+    let mut total: u64 = 0;
+    for i in 0..zip.len() {
+        total += zip.by_index(i)?.size();
+    }
     Ok(total)
 }
 
@@ -460,6 +461,10 @@ pub fn uninstall(package_name: &str) -> Result<()> {
         module::uninstall_all_modules()?;
         module::prune_modules()?;
     }
+    // The fork deliberately restores the stock image *before* wiping
+    // `WORKING_DIR`: the stock backup (`ksu_backup_*`) lives there. Upstream's
+    // only change in this function is dropping the new vold preinit dir too, so
+    // that one removal is ported into the fork's (later) removal block below.
     println!("- Restore boot image..");
     boot_patch::restore(BootRestoreArgs {
         boot: None,
@@ -479,6 +484,7 @@ pub fn uninstall(package_name: &str) -> Result<()> {
     std::fs::remove_dir_all(defs::WORKING_DIR).ok();
     std::fs::remove_file(defs::DAEMON_PATH).ok();
     std::fs::remove_dir_all(defs::MODULE_DIR).ok();
+    std::fs::remove_dir_all(defs::PREINIT_DIR_VOLD).ok();
     std::fs::remove_dir_all(defs::PREINIT_DIR_WATCHDOG).ok();
     std::fs::remove_dir_all(defs::PREINIT_DIR_DEFAULT).ok();
     println!("- Uninstall KernelSU manager..");

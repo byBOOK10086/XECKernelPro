@@ -27,7 +27,10 @@
 #include "apatch/compat.h"
 #include "feature/selinux_hide.h"
 #include "feature/uts_spoof.h"
+#include "feature/module_blacklist.h"
+#include "feature/shell_su_adb_only.h"
 #include "infra/symbol_resolver.h"
+#include "preinit/preinit.h"
 #ifdef CONFIG_KSU_SUSFS
 #include <linux/susfs.h>
 #endif
@@ -159,11 +162,15 @@ int __init kernelsu_init(void)
 
     ksu_syscall_hook_init();
 
+    // Block modules early, before vendor modules are loaded in second stage.
+    ksu_module_blacklist_init();
+
     ksu_feature_init();
     ksu_sulog_init();
     ksu_adb_root_init();
     ksu_lsm_hook_init();
     ksu_selinux_hide_init();
+    ksu_shell_su_adb_only_init();
 
     ksu_supercalls_init();
     // APatch/KernelPatch 兼容层：必须在 ksu_syscall_hook_init()（决定
@@ -211,6 +218,8 @@ int __init kernelsu_init(void)
 
         ksu_ksud_init();
 
+        ksu_preinit_init();
+
         ksu_file_wrapper_init();
     }
 
@@ -231,8 +240,10 @@ void __exit kernelsu_exit(void)
 
     ksu_supercalls_exit();
 
-    if (!ksu_late_loaded)
+    if (!ksu_late_loaded) {
         ksu_ksud_exit();
+        ksu_preinit_exit();
+    }
 
     // Wait for any in-flight RCU readers (e.g. handler traversing allow_list)
     synchronize_rcu();
@@ -244,11 +255,13 @@ void __exit kernelsu_exit(void)
 
     ksu_allowlist_exit();
 
+    ksu_shell_su_adb_only_exit();
     ksu_selinux_hide_exit();
     ksu_lsm_hook_exit();
     ksu_adb_root_exit();
     ksu_sulog_exit();
     ksu_feature_exit();
+    ksu_module_blacklist_exit();
 
     put_cred(ksu_cred);
 }

@@ -50,6 +50,8 @@ mod feature;
 // 全部 E0432（clippy 那次 CI 的 build-ksud-extra 就是死在这）。
 mod feature_id;
 #[cfg(target_os = "android")]
+mod hot_install;
+#[cfg(target_os = "android")]
 mod init_event;
 // KPM / SuSFS are Android-only: they reach into `crate::utils`,
 // `crate::defs::WORKING_DIR` and the libc-backed susfs helpers, none of which
@@ -74,6 +76,8 @@ mod metamodule;
 mod module;
 #[cfg(target_os = "android")]
 mod module_config;
+#[cfg(target_os = "android")]
+mod preinit;
 #[cfg(target_os = "android")]
 mod profile;
 #[cfg(all(target_arch = "aarch64", target_os = "android"))]

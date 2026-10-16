@@ -81,6 +81,8 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
 
     utils::install(None, None).context("Failed to install ksud")?;
 
+    crate::hot_install::clean_trash();
+
     // Late-load bypasses on_post_data_fs, so apply the same direct-flash
     // transaction guard before any module or built-in startup work.
     if crate::boot_txn::on_post_fs_data()? {

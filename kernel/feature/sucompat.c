@@ -95,15 +95,7 @@ static const struct ksu_feature_handler su_compat_handler = {
 
 #ifndef CONFIG_KSU_SUSFS
 // 下面这组 user-buffer 助手与 pt_regs 版 handler 只在 LKM 模式编译。
-static void __user *userspace_stack_buffer(const void *d, size_t len)
-{
-    // To avoid having to mmap a page in userspace, just write below the stack
-    // pointer.
-    char __user *p = (void __user *)current_user_stack_pointer() - len;
-
-    return copy_to_user(p, d, len) ? NULL : p;
-}
-
+// userspace_stack_buffer 现在由 util.h 统一提供（上游把 preinit 也改成用它了）。
 static char __user *ksud_user_path(void)
 {
     static const char ksud_path[] = KSUD_PATH;
