@@ -2,6 +2,7 @@ package me.weishu.kernelsu.ui.screen.detect
 
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -46,6 +47,7 @@ import top.yukonga.miuix.kmp.basic.SwitchDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import java.io.File
 
 /**
  * 「内置模块」开关卡片：内置 TEE 引擎与内置 TA 增强，**两个互相独立**的开关。
@@ -316,7 +318,8 @@ fun BuiltinModulesCard(backdrop: LayerBackdrop?) {
                 runCatching {
                     val zip = File(context.cacheDir, "xec-$tag-module.zip")
                     RemoteDownloader.downloadTo(url, zip) { _, _ -> }
-                    val result = flashModule(Uri.fromFile(zip)) { _, _ -> }
+                    // flashModule 收两个回调（stdout/stderr），这里只要结果码。
+                    val result = flashModule(Uri.fromFile(zip), {}, {})
                     zip.delete()
                     result.code == 0
                 }.getOrDefault(false)
