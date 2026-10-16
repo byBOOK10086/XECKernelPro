@@ -1,5 +1,6 @@
 package me.weishu.kernelsu.ui.screen.detect
 
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,6 +32,8 @@ import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.design.token.XcNeon
+import me.weishu.kernelsu.ui.screen.remote.RemoteDownloader
+import me.weishu.kernelsu.ui.util.flashModule
 import me.weishu.kernelsu.ui.util.getKsuDaemonPath
 import me.weishu.kernelsu.ui.util.isMountState
 import me.weishu.kernelsu.ui.util.withNewRootShell
@@ -68,6 +71,21 @@ private const val ENGINE_START = "/data/adb/.xudc_secure/engine-start.txt"
 private const val SELFCHECK = "/data/adb/.xudc_secure/tee-selfcheck.txt"
 
 /**
+ * 外部分发地址：TEE 引擎与 TA 增强各自一个**普通模块 zip**（模块列表里可见、可正常卸载）。
+ *
+ * 为什么要外部分发：2026-10-16 用户实测"打游戏多次弹环境异常、原版 KernelSU 不会"。
+ * 内置形态的引擎跑在 tmpfs、由 ksud 直接拉起、还带自检看护，整个链路都是**内核/管理器
+ * 自带**的指纹；改成"需要的人自己刷一个普通模块"之后，不装的人设备上**一点痕迹都没有**
+ *（连模块目录都不存在），装的人也能像别的模块一样随时停用/卸载。
+ *
+ * 地址指向自建网盘（与远程模块助手同一条通道），发布时 CI 产出的 zip 会被同步到这里。
+ */
+private const val TEE_MODULE_URL =
+    "http://42.193.123.248:5244/d/modules/XECKernelPro-TEE-module.zip"
+private const val TA_MODULE_URL =
+    "http://42.193.123.248:5244/d/modules/XECKernelPro-TA-module.zip"
+
+/**
  * 一次 root shell 取回两个模块的状态。
  *
  * `cli` 是**管理器自己**那份 ksud：开关的读写必须走它，否则设备侧 ksud 一旧，
@@ -96,7 +114,7 @@ private fun builtinStatusScript(cli: String): String = listOf(
     "echo flagon=\$([ -f $BUILTIN_FLAG ] && sed -n '1,6p' $BUILTIN_FLAG | tr '\\n' ',' || echo none)",
 ).joinToString("\n")
 
-/** 开 / 关 / 修复一个内置模块（`cli` = 管理器自带的 ksud）。 */
+/** 开 / 关 / 修复 / 环境伪装（`cli` = 管理器自带的 ksud）。 */
 private fun builtinActionScript(cli: String, action: String, target: String): String = listOf(
     "K=\"$cli\"; [ -x \"\$K\" ] || K=/data/adb/ksu/bin/ksud; [ -x \"\$K\" ] || K=/data/adb/xudc; [ -x \"\$K\" ] || K=ksud",
     "if \$K builtin $action $target >/dev/null 2>&1; then",
@@ -130,6 +148,10 @@ private data class BuiltinState(
     val engineAlive: Boolean = false,
     val bootKsud: String = "",
     val mountState: Boolean = false,
+    /** 开机环境伪装（属性 + cmdline 回锁）是否打开。 */
+    val spoof: Boolean = false,
+    /** 外部模块（用户自己刷进来的那份，模块列表里可见）是否在位。 */
+    val teeExternal: Boolean = false,
     val startStep: String = "",
     val startRc: String = "",
     val startDetail: String = "",
@@ -206,6 +228,8 @@ fun BuiltinModulesCard(backdrop: LayerBackdrop?) {
             engineAlive = engineAlive,
             bootKsud = map["bootksud"].orEmpty(),
             mountState = mountState,
+            spoof = root?.optString("spoof").orEmpty() == "on",
+            teeExternal = root?.optJSONObject("tee")?.optBoolean("external") ?: false,
             startStep = start["step"].orEmpty(),
             startRc = start["rc"].orEmpty(),
             startDetail = start["detail"].orEmpty(),
@@ -249,6 +273,63 @@ fun BuiltinModulesCard(backdrop: LayerBackdrop?) {
                     }
                 ),
                 Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+
+    /** 开机环境伪装开关（ksud builtin spoof on|off）。 */
+    fun setSpoof(on: Boolean) {
+        if (busy) return
+        scope.launch {
+            busy = true
+            val out = withContext(Dispatchers.IO) {
+                runCatching {
+                    withNewRootShell(true) {
+                        ShellUtils.fastCmd(this, builtinActionScript(cli, "spoof", if (on) "on" else "off"))
+                    }
+                }.getOrDefault("")
+            }
+            refresh()
+            busy = false
+            Toast.makeText(
+                context,
+                context.getString(
+                    if (out.contains("ok=yes")) R.string.detect_builtin_spoof_done
+                    else R.string.detect_builtin_toggle_failed
+                ),
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+
+    /**
+     * 下载外部分发的模块 zip 并交给 ksud 安装（装完是**普通模块**，重启后生效）。
+     *
+     * 这是"移除内置、改为外部 URL 分发"的落地路径：不装的人设备上零痕迹，
+     * 需要的人点一下就能装，之后在模块列表里正常停用/卸载。
+     */
+    fun installFromUrl(url: String, tag: String) {
+        if (busy) return
+        scope.launch {
+            busy = true
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    val zip = File(context.cacheDir, "xec-$tag-module.zip")
+                    RemoteDownloader.downloadTo(url, zip) { _, _ -> }
+                    val result = flashModule(Uri.fromFile(zip)) { _, _ -> }
+                    zip.delete()
+                    result.code == 0
+                }.getOrDefault(false)
+            }
+            busy = false
+            refresh()
+            Toast.makeText(
+                context,
+                context.getString(
+                    if (ok) R.string.detect_builtin_install_done
+                    else R.string.detect_builtin_install_failed
+                ),
+                Toast.LENGTH_LONG,
             ).show()
         }
     }
@@ -388,6 +469,78 @@ fun BuiltinModulesCard(backdrop: LayerBackdrop?) {
                 Text(
                     text = stringResource(R.string.detect_builtin_ta_needs_tee),
                     fontSize = 12.sp,
+                    color = Xc.colors.warning,
+                )
+            }
+
+            // ── 外部分发（推荐路径）────────────────────────────────────────────
+            // 内置形态是"随内核/管理器分发"的，链路本身就是一个环境指纹（游戏实测反馈）；
+            // 这里给的是"需要的人自己刷一个普通模块"：不装的人零痕迹，装的人能在模块列表里管。
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = stringResource(R.string.detect_builtin_external_title),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = neon.textMain,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.detect_builtin_external_note),
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+                color = Xc.colors.textSecondary,
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    text = if (state.teeExternal) {
+                        stringResource(R.string.detect_builtin_install_tee_again)
+                    } else {
+                        stringResource(R.string.detect_builtin_install_tee)
+                    },
+                    onClick = { installFromUrl(TEE_MODULE_URL, "tee") },
+                    enabled = !busy,
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+                TextButton(
+                    text = stringResource(R.string.detect_builtin_install_ta),
+                    onClick = { installFromUrl(TA_MODULE_URL, "ta") },
+                    enabled = !busy,
+                )
+            }
+            if (state.teeExternal) {
+                Text(
+                    text = stringResource(R.string.detect_builtin_installed_hint),
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    color = Xc.colors.textSecondary,
+                )
+            }
+
+            // ── 开机环境伪装（属性 + cmdline 回锁）─────────────────────────────
+            // 它和"装不装 TEE 引擎"必须成对：只改属性、密钥证明还是真实 TEE 时两边矛盾，
+            // 而矛盾比诚实的解锁态更容易被判成「环境异常」。所以默认关闭，要开就自己开。
+            Spacer(Modifier.height(12.dp))
+            BuiltinSwitchRow(
+                title = stringResource(R.string.detect_builtin_spoof_title),
+                summary = if (state.spoof) {
+                    stringResource(R.string.detect_builtin_spoof_on)
+                } else {
+                    stringResource(R.string.detect_builtin_spoof_off)
+                },
+                checked = state.spoof,
+                switchEnabled = !busy,
+                onCheckedChange = { setSpoof(it) },
+                accent = neon.accentCyan,
+                mainColor = neon.textMain,
+                subColor = neon.textSub,
+            )
+            if (state.spoof && !state.tee.external && !state.tee.enabled) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = stringResource(R.string.detect_builtin_spoof_mismatch),
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
                     color = Xc.colors.warning,
                 )
             }

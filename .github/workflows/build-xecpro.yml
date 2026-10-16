@@ -474,6 +474,16 @@ jobs:
           name: ksud-x86_64-linux-android
           path: artifacts/ksud-x86_64
 
+      # 外部分发的两个模块 zip（TEE 引擎 / TA 增强）：内置形态默认不再运行，
+      # 需要的人从管理器检测页按 URL 下载并刷入；这里把它们挂到 Release 上做**同一份
+      # 产物的官方出处**（管理器默认走自建网盘的 /modules/ 镜像，国内更快）。
+      - name: Download externally distributed module zips
+        uses: actions/download-artifact@v8
+        with:
+          name: external-modules
+          path: artifacts/external-modules
+        continue-on-error: true
+
       - name: Download ksuinit (arm64)
         uses: actions/download-artifact@v8
         with:
@@ -584,3 +594,4 @@ jobs:
             artifacts/ksud-aarch64/*
             artifacts/ksuinit-aarch64/*
             artifacts/ko/*
+            artifacts/external-modules/*.zip

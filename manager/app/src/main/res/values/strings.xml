@@ -832,6 +832,19 @@ See the log below for details.</string>
     <string name="detect_tee_owner_builtin_noinject">built-in engine (keystore2 not injected)</string>
     <string name="detect_tee_repair">Repair engine</string>
     <string name="detect_tee_repair_failed">Repair did not succeed (see /data/adb/.xudc_secure/engine-start.txt and engine.log)</string>
+    <string name="detect_builtin_spoof_mismatch">Note: the property spoofing is on while no TEE engine covers attestation — the two contradict each other (properties say locked, attestation says deviceLocked=false), which games and banking apps flag as an environment anomaly more readily. Either install the TEE engine or switch this off.</string>
+    <string name="detect_builtin_external_title">Install on demand (recommended)</string>
+    <string name="detect_builtin_external_note">The built-in form ships with the kernel/manager, and that whole chain is itself an environment fingerprint. Below are the externally distributed plain modules: with them uninstalled the device carries no trace, and once installed they can be disabled or removed from the module list like any other module. A reboot applies them.</string>
+    <string name="detect_builtin_install_tee">Download and flash the TEE engine</string>
+    <string name="detect_builtin_install_tee_again">Download and flash the TEE engine again</string>
+    <string name="detect_builtin_install_ta">Download and flash the TA companion</string>
+    <string name="detect_builtin_installed_hint">An external TEE module is present (visible in the module list). Disable or remove it from the Modules page.</string>
+    <string name="detect_builtin_install_done">Downloaded and installed; a reboot applies it</string>
+    <string name="detect_builtin_install_failed">Download or install failed (check the network and retry)</string>
+    <string name="detect_builtin_spoof_title">Boot-state spoofing (locked-view props)</string>
+    <string name="detect_builtin_spoof_on">On · boot rewrites ro.boot.* and the cmdline to the locked view</string>
+    <string name="detect_builtin_spoof_off">Off · properties and raw boot parameters stay real (same as stock KernelSU)</string>
+    <string name="detect_builtin_spoof_done">Switched; a reboot applies it</string>
 
     <!-- 主题系统（商城 / 编辑器 / 发布）：键必须两边成对，见 check_strings_parity.py -->
     <string name="settings_themes">Themes</string>

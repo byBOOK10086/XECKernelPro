@@ -102,6 +102,29 @@ jobs:
         ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
       run: bash .github/scripts/build-builtin-modules.sh
 
+    # 外部分发的模块 zip（2026-10-16）：TEE 引擎与 TA 增强不再随内核/管理器默认运行，
+    # 改成"需要的人自己刷一个普通模块"。zip 就是模块目录本身（module.prop + 脚本 + 引擎
+    # 资产），用户在管理器检测页点一下就能下载并刷入，装完在模块列表里可见、可卸载。
+    # 只有 aarch64 那一份带引擎资产（x86_64 的 ksud 构建没有这些二进制），所以按 ABI 判断。
+    - name: Package externally distributed module zips
+      if: inputs.target == 'aarch64-linux-android'
+      run: |
+        set -e
+        mkdir -p dist
+        cd userspace/ksud/builtin
+        (cd tricky_store && zip -qr ../../../../dist/XECKernelPro-TEE-module.zip .)
+        (cd TA_enhanced && zip -qr ../../../../dist/XECKernelPro-TA-module.zip .)
+        cd -
+        ls -l dist/
+        unzip -l dist/XECKernelPro-TEE-module.zip | head -n 20
+
+    - name: Upload externally distributed module zips
+      if: inputs.target == 'aarch64-linux-android'
+      uses: actions/upload-artifact@v7
+      with:
+        name: external-modules
+        path: dist/*.zip
+
     - name: Build ksud
       env:
         ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
