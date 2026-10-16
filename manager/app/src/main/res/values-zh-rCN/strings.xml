@@ -95,6 +95,11 @@
     <string name="terminal">终端</string>
     <string name="terminal_unavailable">无法连接 %1$s</string>
     <string name="terminal_hint">请确认模块已安装并已启用，然后重试。</string>
+    <!-- 模块 WebUI 的终端：等 Web 服务起来的那几句。此前只写在默认语言里，
+         中文设备上整段是英文。 -->
+    <string name="terminal_starting">正在启动模块 Web 服务…</string>
+    <string name="terminal_start_failed">模块 Web 服务没有启动</string>
+    <string name="terminal_start_hint">模块二进制找到了也拉起来了，但端口上没有任何进程在听。重启一次再试。</string>
     <string name="reboot_soft">软重启</string>
     <string name="reboot_userspace">用户空间重启</string>
     <string name="reboot_recovery">重启到 Recovery</string>
@@ -185,6 +190,9 @@ XEC 项目组
     <string name="profile_default">默认</string>
     <string name="profile_template">模板</string>
     <string name="profile_custom">自定义</string>
+    <!-- 应用配置页的标题。原来在默认语言里标了 translatable="false"，中文界面就一直是
+         "App Profile"；这里给出中文，其它语言仍回落英文。 -->
+    <string name="profile">应用配置</string>
     <string name="profile_name">名称</string>
     <string name="profile_namespace">挂载命名空间</string>
     <string name="profile_namespace_inherited">继承</string>
@@ -384,6 +392,7 @@ XEC 项目组
     <string name="download">下载</string>
     <string name="download_cancel">取消</string>
     <string name="download_install">安装</string>
+    <string name="settings_adb_root">ADB Root 权限</string>
     <string name="settings_adb_root_summary">以 Root 权限运行 adbd 守护进程</string>
     <string name="settings_selinux_hide">隐藏 SELinux 修改</string>
     <string name="settings_selinux_hide_summary">阻止应用检测 SELinux 修改</string>
@@ -408,6 +417,11 @@ XEC 项目组
     <string name="sulog_unsupported_title">不支持 SU 日志</string>
     <string name="sulog_enable_action">启用</string>
     <string name="sulog_filter_title">按类型筛选</string>
+    <!-- SU 日志的四类事件名：此前只有英文，中文设备上筛选条整排是英文。 -->
+    <string name="sulog_filter_root_execve">Root 执行</string>
+    <string name="sulog_filter_sucompat">经典 su</string>
+    <string name="sulog_filter_ioctl_grant_root">授予 root</string>
+    <string name="sulog_filter_daemon_restart">守护进程重启</string>
     <string name="sulog_clean_title">清空日志</string>
     <string name="nav_rail_expand">展开导航栏</string>
     <string name="nav_rail_collapse">收起导航栏</string>
@@ -773,6 +787,32 @@ XEC 项目组
     <string name="detect_tee_takeover_failed">没读到接管结果（看 /data/adb/.xudc_secure/engine.log）</string>
     <string name="detect_tee_relock">立即回锁属性</string>
     <string name="detect_tee_relock_failed">回锁属性写入失败</string>
+
+    <!-- 内置模块开关（检测页第二张卡）：内置 TEE / 内置 TA 两个互相独立的开关。
+         两者都由 ksud 的 `builtin status|enable|disable` 落地，开关文件是
+         /data/adb/.xudc_secure/builtin.conf，默认关闭。 -->
+    <string name="detect_builtin_title">内置模块（用户可选）</string>
+    <string name="detect_builtin_note">内置 TEE 引擎与内置 TA 增强都随本应用分发，本体在内存盘里、模块页看不到，所以开关放在这里。默认关闭，两个开关互相独立；关掉之后设备上不留任何内置模块的痕迹，你自己刷的模块也不受影响。</string>
+    <string name="detect_builtin_no_ksud">读不到内置模块的状态：这台设备上要么没有可用的 xudc/ksud（挂载态 Magisk 路线本来就没有内置模块），要么 ksud 比管理器旧 —— 管理器与内核更新到同一版本即可。</string>
+    <string name="detect_builtin_tee_title">内置 TEE 引擎</string>
+    <string name="detect_builtin_tee_on">已开启 · 引擎在跑，证明请求会被拦截</string>
+    <string name="detect_builtin_tee_on_down">已开启，但引擎没在跑 —— 点上面「自检并修复」，或重启一次</string>
+    <string name="detect_builtin_tee_off">已关闭 · 不做任何拦截，检测方拿到的是真实 TEE 证明</string>
+    <string name="detect_builtin_tee_external">已让位：检测到你装的 TEE 模块在位，两套引擎同时注入会互相打架</string>
+    <string name="detect_builtin_ta_title">内置 TA 增强</string>
+    <string name="detect_builtin_ta_on">已开启 · keybox 与拦截名单自动维护</string>
+    <string name="detect_builtin_ta_on_down">已开启，但守护进程没在跑 —— 看 /data/adb/.xudc_secure/ta-enhanced/logs</string>
+    <string name="detect_builtin_ta_off">已关闭 · 不自动维护 keybox 与拦截名单</string>
+    <string name="detect_builtin_ta_external">已让位：检测到你装的 TA_enhanced 模块在位</string>
+    <string name="detect_builtin_ta_needs_tee">注意：现在没有可用的 TEE 引擎（内置 TEE 关着，也没装外部模块），TA 的密钥/名单维护此刻没有意义。</string>
+    <string name="detect_builtin_toggle_on">已开启，正在生效</string>
+    <string name="detect_builtin_toggle_off">已关闭，正在生效</string>
+    <string name="detect_builtin_toggle_failed">开关没有生效（看 /data/adb/.xudc_secure/engine.log）</string>
+    <string name="detect_builtin_restart_note">关掉内置 TEE 会顺手重启一次 keystore2，把已经注入进去的引擎代码丢掉；这一步之后如果检测方读到的还是模拟证明，重启一次设备即可完全恢复。</string>
+    <string name="detect_builtin_off_short">已关闭</string>
+    <string name="detect_tee_sc_disabled">内置 TEE 已由你关闭 —— 此刻不做拦截（在下面「内置模块」里可以打开）</string>
+    <string name="detect_tee_owner_builtin_disabled">内置 TEE 已被你关闭</string>
+    <string name="detect_tee_disabled_note">内置 TEE 已关闭：拦截按你的选择停用，所有应用拿到的都是真实 TEE 证明。要恢复拦截，在下面「内置模块」里打开「内置 TEE 引擎」。</string>
 
     <!-- 主题系统（商城 / 编辑器 / 发布）：键必须两边成对，见 check_strings_parity.py -->
     <string name="settings_themes">主题</string>

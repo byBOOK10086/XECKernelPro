@@ -245,6 +245,13 @@ private fun DetectPagerMiuix(
                 TeeStatusCard(backdrop = backdrop)
             }
 
+            // 紧跟着就是那两个开关（内置 TEE / 内置 TA）：看板回答"现在拦没拦"，
+            // 这里回答"是谁在拦、要不要它拦"。内置模块跑在 tmpfs 里，模块页看不到，
+            // 开关不放这一页用户就没有别的地方能找到它。
+            item {
+                BuiltinModulesCard(backdrop = backdrop)
+            }
+
             item {
                 Card(
                     modifier = Modifier.xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),

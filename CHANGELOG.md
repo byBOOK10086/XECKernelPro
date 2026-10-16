@@ -4,6 +4,83 @@
 
 ---
 
+## 未发版 · 内置 TA / TEE 改为用户可选，并修掉「刷入的模块重启后从列表里消失」
+
+> 类型：行为变更（内置 TA/TEE **默认关闭**，开关在「检测」页）+ 事故修复
+
+### 事故：自己刷的 TA / TrickyStore 模块，重启后从管理器的模块列表里消失
+
+用户实测报告：刷入 TA 与 TEE 模块、重启之后，那两个模块在管理器的模块列表里没有了。
+根因是内置模块脚本里三条**无差别**的删除/标记路径，受害者都是用户自己装的那一份：
+
+- `tricky_store/service.sh` 的兼容目录清理是无条件 `rm -rf /data/adb/modules/tricky_store`。
+  那个兼容目录（只放一个 `libcertgen.so`、没有 `module.prop`）是本项目以前造的，但
+  **用户自己刷的上游 TrickyStore 用的正是同一个目录名** —— 一次自动接管（外部模块占位
+  但引擎没起来时的 `--takeover`）之后，用户的模块目录就被删掉了。
+  现在只删**能证明是我们那个壳**的目录（没有 `module.prop`，且除 `libcertgen.so` 外没有
+  别的东西）；带 `module.prop` 的一律保持原样并写日志。
+- `TA_enhanced/post-fs-data.sh` 在找不到 TrickyStore 时会 `rm -rf /data/adb/modules/
+  TA_enhanced` 再建一个带 `remove` 的目录，或者 `touch "$MODPATH/remove"`（上游的
+  "自毁"逻辑）。模块被标上 `remove` 之后下一次开机就被 ksud 清掉，列表里也就没了。
+  现在只记日志，不删、不标记。
+- `TA_enhanced/service.sh` 的「Magisk Module Hiding」只看 `action.sh` 在不在，而
+  KernelSU / APatch 的模块同样有 `action.sh`：在内核态设备上它会把自己拷成
+  `/data/adb/modules/.TA_enhanced`，然后删掉可见目录 `/data/adb/modules/TA_enhanced`。
+  现在隐藏只在 `MANAGER=MAGISK` **且**脚本确实从 `/data/adb/modules/` 下执行时才做。
+
+同时修掉一个会让上面的删除被触发的误判：让位/接管的存活判据原来只认本项目引擎的新
+进程名 `keymint_svc`，而**用户装的上游 TEESimulator / TrickyStore 的引擎进程叫
+`TEESimulator`** —— 于是"外部引擎活得好好的"被判成"外部模块占位但零拦截"，内置那份
+自动 `--takeover` 起第二个引擎（两套 grant ledger、两套证书缓存互相打架）。现在存活
+判据同时认两个名字，外部模块识别也扩到"目录里带 `classes.dex` + `libTEESimulator.so`
+的任何已启用模块"与 `module.prop` 里的 id，改名/换目录名都能认出来。
+
+### 内置 TA / TEE 改为用户可选（两个互相独立的开关）
+
+- 位置在**检测页**第二张卡「内置模块（用户可选）」，两个开关各自独立：开 TEE 不会顺带
+  开 TA，关 TA 也不动 TEE。默认**都是关闭**：内置能力不再默认接管设备。
+- 开关落在 `/data/adb/.xudc_secure/builtin.conf`（一行一个 `key=1|0`），三处共用同一份：
+  ksud 开机时决定要不要解密/执行、模块脚本运行期复查、管理器渲染开关。
+- 新增 `ksud builtin status|enable|disable <tee|ta>`：`status` 输出 JSON（开关、运行目录、
+  外部模块），`enable/disable` 写完开关**立刻**生效——enable 现场解密 + 起引擎，
+  disable 走模块自己的 `--stop`（收进程、重启一次 keystore2 丢掉已注入的引擎代码、
+  自检结论写成 `verdict=disabled`），然后把运行目录删掉。
+- 关掉的内置模块在设备上不留痕迹：不解密进 `/dev/.xudc_hidden`、不执行任何阶段脚本、
+  不贡献 sepolicy/system.prop/init rc，看护循环（自检、keybox 守护、回锁守护、15s 对账）
+  在下一次 tick 自行退出。挂载态（Magisk 路线）没有内置模块，卡片会说明"这一项不适用"。
+
+### TEE 看板：分得清「关掉了」和「没跑」
+
+- 设备侧自检新增 `verdict=disabled`；看板的引擎、根证书、拦截名单、引擎文件、补丁失败
+  各行在内置 TEE 关闭时不再标红（那读到的是上一轮留下的状态），并给出「内置 TEE 已被
+  你关闭」的归属行与一句说明，而不是继续报"引擎未运行"的故障文案。
+- 「接管引擎」按钮的判据改成"没有任何引擎在跑、且用户没关掉内置 TEE"；按钮会先把开关
+  打开再 `--takeover` —— 开关文件是唯一权威。
+
+### 中文化
+
+- 把 9 个**只写在英文里**的字符串补上中文并清空 `check_strings_parity.py` 的历史豁免
+  白名单（此后任何新 key 只写英文都会直接失败）：`App Profile`（应用配置）、
+  `ADB Root`（ADB Root 权限）、SU 日志的四类事件名（Root 执行 / 经典 su / 授予 root /
+  守护进程重启）、模块 WebUI 终端的三句（正在启动模块 Web 服务…等）。
+- 检测页新增的开关卡片全部走中文资源，`TA_enhanced` / `tricky_store` 这类内部 id 不再
+  出现在界面上。
+
+### 守卫
+
+- 新增 `_scratch/check_builtin_modules.py`：钉死"内置模块必须按开关运行、且任何脚本都
+  不许无条件删 `/data/adb/modules/<id>`"（含 ksud 侧闸门、CLI 子命令、两个模块的
+  `--stop`、看护循环闸门、管理器卡片与中英字符串）。
+- `check_tee_contract.py` 放行两类**探测**目标（上游 `TEESimulator`、`keystore2`），
+  本模块自己的身份仍然只允许 `keymint_svc` 一个名字。
+
+### 待验证
+
+- 以上都是静态契约与本地守卫的结论：真机仍需确认「关闭后 keystore2 重启能恢复真实
+  证明」「开启后引擎能在运行期接管」「两个开关切换后重启仍然生效」。
+
+---
+
 ## v31121 · 2026-10-15 · 主题系统与主题商城 + TEE 开机自检/去指纹
 
 > 类型：新增功能（对外可见：设置页多一个「主题」入口，整个界面的配色/圆角/玻璃/背景都能换）

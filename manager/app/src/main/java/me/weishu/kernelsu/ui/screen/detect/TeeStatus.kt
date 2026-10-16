@@ -87,13 +87,22 @@ private val STATUS_SCRIPT = listOf(
     "echo ext=\$([ -f /data/adb/modules/tricky_store/module.prop ] && [ ! -f /data/adb/modules/tricky_store/disable ] && [ ! -f /data/adb/modules/tricky_store/remove ] && echo yes || echo no)",
     "echo extver=\$(sed -n 's/^versionCode=//p' /data/adb/modules/tricky_store/module.prop 2>/dev/null | head -n 1)",
     "echo builtin=\$([ -f /dev/.xudc_hidden/tricky_store/service.sh ] && echo yes || echo no)",
+    // 用户开关（检测页「内置模块」那两个开关写的文件）。关掉内置 TEE 之后
+    // "引擎没在跑"不再是故障而是用户的选择，这一行让看板能把两者分开说。
+    "echo teeon=\$(grep -qiE '^[[:space:]]*tee[[:space:]]*=[[:space:]]*(1|true|on|yes|enable|enabled)[[:space:]]*\$' /data/adb/.xudc_secure/builtin.conf 2>/dev/null && echo yes || echo no)",
 ).joinToString("\n")
 
 /**
  * 强制内置引擎接管（tricky_store/service.sh 的 `--takeover` 分支）。
  * 用在"外部模块占位、但它的引擎没起来"这种最坏形态：模块列表一切正常，实际零拦截。
+ *
+ * 先 `builtin enable tee` 再接管：开关文件是唯一的权威（关掉的内置模块连 --takeover
+ * 都不接受），而用户点这个按钮的语义就是"我要内置引擎来拦"，所以先把开关打开，
+ * 再让它的 service.sh 立刻跑一轮。
  */
 private val TAKEOVER_SCRIPT = listOf(
+    "K=/data/adb/ksu/bin/ksud; [ -x \$K ] || K=/data/adb/xudc; [ -x \$K ] || K=ksud",
+    "\$K builtin enable tee >/dev/null 2>&1",
     "MP=/dev/.xudc_hidden/tricky_store",
     "if [ -f \$MP/service.sh ]; then",
     "  sh \$MP/service.sh --takeover >/dev/null 2>&1",
@@ -157,6 +166,8 @@ private data class TeeStatus(
     val externalModule: Boolean = false,
     val externalVersion: String = "",
     val builtinPresent: Boolean = false,
+    /** 用户开关：检测页「内置模块」里的内置 TEE 是不是开着（/data/adb/.xudc_secure/builtin.conf）。 */
+    val builtinEnabled: Boolean = false,
     /**
      * 设备侧自检（`tee-selfcheck.txt`）的全部字段。
      *
@@ -184,6 +195,14 @@ private data class TeeStatus(
      * 只能干瞪眼。所以按钮的判据改成"引擎没跑且内置资产在位"。
      */
     val builtinDown: Boolean get() = builtinPresent && !engineAlive
+
+    /**
+     * 内置 TEE 被用户自己关掉了（检测页「内置模块」的开关，默认就是关）。
+     *
+     * 这一种"引擎没在跑"不是故障：用户选了不拦截。看板必须把它与
+     * [builtinDown]（该跑却没跑）分开说，否则用户会看到一个永远修不好的红行。
+     */
+    val builtinDisabled: Boolean get() = !builtinEnabled && !externalModule
     /** 引擎日志里那句 "Served RootOfTrust: deviceLocked=true verifiedBootState=0 …"。 */
     val servedLocked: Boolean get() = servedRootOfTrust.contains("deviceLocked=true")
     val servedVerified: Boolean get() = servedRootOfTrust.contains("verifiedBootState=0")
@@ -242,6 +261,7 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
             externalModule = map["ext"] == "yes",
             externalVersion = map["extver"].orEmpty(),
             builtinPresent = map["builtin"] == "yes",
+            builtinEnabled = map["teeon"] == "yes",
             // sc=at=…|engine=…|verdict=… ：设备侧写的是 KEY=VALUE 换行文件，这里用 | 拼成一行。
             selfcheck = map["sc"].orEmpty()
                 .split('|')
@@ -340,6 +360,9 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                         } else {
                             stringResource(R.string.detect_tee_sc_ok, current.scServed)
                         }
+                        // 用户关掉了内置 TEE：设备侧自检会写这个结论（service.sh --stop），
+                        // 它是"按你的选择停用"，不是故障，所以不标红。
+                        "disabled" -> stringResource(R.string.detect_tee_sc_disabled)
                         "engine_down" -> stringResource(R.string.detect_tee_sc_engine_down)
                         "keybox_expired" -> stringResource(R.string.detect_tee_sc_keybox_expired)
                         "keybox_other", "keybox_missing", "keybox_unknown" ->
@@ -348,7 +371,7 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                         "locked_props_missing" -> stringResource(R.string.detect_tee_sc_props)
                         else -> current.scVerdict
                     },
-                    bad = current.scVerdict != "ok",
+                    bad = current.scVerdict != "ok" && current.scVerdict != "disabled",
                 )
                 if (current.scRepair.isNotEmpty() && current.scRepair != "none") {
                     StatusRow(
@@ -360,26 +383,36 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
             } else {
                 StatusRow(
                     label = stringResource(R.string.detect_tee_selfcheck),
-                    value = stringResource(R.string.detect_tee_sc_absent),
-                    bad = true,
+                    // 内置 TEE 被用户关掉时，"没有自检记录"不是待办事项，而是它的自然状态。
+                    value = if (current.builtinDisabled) {
+                        stringResource(R.string.detect_tee_sc_disabled)
+                    } else {
+                        stringResource(R.string.detect_tee_sc_absent)
+                    },
+                    bad = !current.builtinDisabled,
                 )
             }
 
             // 引擎进程：不在 = keystore 完全没被接管，任何 keybox / 属性伪装都无意义。
+            // 用户主动关掉内置 TEE 时这一行不标红：那是他选的，不是故障。
             StatusRow(
                 label = stringResource(R.string.detect_tee_engine),
                 value = if (current.engineAlive) {
                     stringResource(R.string.detect_tee_running) + " · pid " + current.engine
+                } else if (current.builtinDisabled) {
+                    stringResource(R.string.detect_builtin_off_short)
                 } else {
                     stringResource(R.string.detect_tee_not_running)
                 },
-                bad = !current.engineAlive,
+                bad = !current.engineAlive && !current.builtinDisabled,
             )
             // 拦截归属：引擎没起来时，这一行回答"为什么"。外部模块占位（内置按设计
             // 让位）而它的引擎没跑，就是"模块列表看着正常、实际零拦截"的最坏形态。
             StatusRow(
                 label = stringResource(R.string.detect_tee_owner),
                 value = when {
+                    // 用户自己把内置 TEE 关了：这是选择，不是异常，先说清楚再说别的。
+                    current.builtinDisabled -> stringResource(R.string.detect_tee_owner_builtin_disabled)
                     current.externalDeadlock -> stringResource(
                         R.string.detect_tee_owner_deadlock,
                         current.externalVersion.ifEmpty { "?" },
@@ -393,7 +426,7 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                     current.builtinPresent -> stringResource(R.string.detect_tee_owner_builtin_down)
                     else -> stringResource(R.string.detect_tee_owner_none)
                 },
-                bad = current.builtinDown || !current.engineAlive,
+                bad = !current.engineAlive && !current.builtinDisabled,
             )
             // 当前 keybox：DeviceID 带 yurikey 代次，权限应为 644（读取方在 keystore2 进程）。
             StatusRow(
@@ -410,24 +443,33 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
             // 判据由设备侧的 shell 层算好写进 .keybox_root，这里只展示。
             StatusRow(
                 label = stringResource(R.string.detect_tee_root),
-                value = when (current.rootState) {
-                    "google" -> stringResource(R.string.detect_tee_root_google, current.rootRatio)
-                    "expired" -> stringResource(R.string.detect_tee_root_expired, current.rootRatio)
-                    "other" -> stringResource(R.string.detect_tee_root_other, current.rootRatio)
-                    "missing" -> stringResource(R.string.detect_tee_root_missing)
+                value = when {
+                    // 内置 TEE 关着、也没有外部模块：这一行读到的是上一次留下的状态，
+                    // 说"无 keybox / 非 Google 根"只会让人误以为坏了。
+                    current.builtinDisabled && current.rootState != "google" ->
+                        stringResource(R.string.detect_builtin_off_short)
+                    current.rootState == "google" ->
+                        stringResource(R.string.detect_tee_root_google, current.rootRatio)
+                    current.rootState == "expired" ->
+                        stringResource(R.string.detect_tee_root_expired, current.rootRatio)
+                    current.rootState == "other" ->
+                        stringResource(R.string.detect_tee_root_other, current.rootRatio)
+                    current.rootState == "missing" -> stringResource(R.string.detect_tee_root_missing)
                     else -> stringResource(R.string.detect_tee_root_unknown)
                 },
-                bad = current.rootState != "google",
+                bad = current.rootState != "google" && !current.builtinDisabled,
             )
             // 白名单覆盖：这是"检测方到底会不会被拦截"的直接答案。
             StatusRow(
                 label = stringResource(R.string.detect_tee_coverage),
-                value = if (current.checkerCovered) {
+                value = if (current.builtinDisabled) {
+                    stringResource(R.string.detect_builtin_off_short)
+                } else if (current.checkerCovered) {
                     stringResource(R.string.detect_tee_covered_fmt, current.targetCount)
                 } else {
                     stringResource(R.string.detect_tee_not_covered_fmt, current.targetCount)
                 },
-                bad = !current.checkerCovered,
+                bad = !current.checkerCovered && !current.builtinDisabled,
             )
             StatusRow(
                 label = stringResource(R.string.detect_tee_bootstate),
@@ -440,12 +482,13 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
             // tmpfs（/dev/.xudc_hidden）里，模块页看不到任何异常。
             StatusRow(
                 label = stringResource(R.string.detect_tee_engine_files),
-                value = if (current.engineFilesOk) {
-                    stringResource(R.string.detect_tee_files_ok)
-                } else {
-                    stringResource(R.string.detect_tee_files_missing)
+                value = when {
+                    current.engineFilesOk -> stringResource(R.string.detect_tee_files_ok)
+                    // 关掉内置 TEE 之后运行目录会被清掉，"文件缺失"是预期结果。
+                    current.builtinDisabled -> stringResource(R.string.detect_builtin_off_short)
+                    else -> stringResource(R.string.detect_tee_files_missing)
                 },
-                bad = !current.engineFilesOk,
+                bad = !current.engineFilesOk && !current.builtinDisabled,
             )
             // 引擎自己写下的"我给出的锁态"——证书里 RootOfTrust 的真实取值。
             // 检测方报"密钥正常但引导加载程序已解锁"时，这一行是分辨两种原因的关键：
@@ -466,7 +509,8 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                 } else {
                     current.patchErrors.toString() + " · " + current.lastEngineError.take(120)
                 },
-                bad = current.patchErrors > 0,
+                // 关掉之后 logcat 里留着上一轮的错误行，别把它当现状报红。
+                bad = current.patchErrors > 0 && !current.builtinDisabled,
             )
             if (!current.vvbCovered) {
                 Text(
@@ -490,6 +534,9 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
             Spacer(Modifier.height(8.dp))
             Text(
                 text = when {
+                    // 用户关掉了内置 TEE：不要用"引擎未运行"那种故障文案吓人，
+                    // 直接说明这是选择、以及在哪里能改回来。
+                    current.builtinDisabled -> stringResource(R.string.detect_tee_disabled_note)
                     !current.engineAlive -> stringResource(R.string.detect_tee_engine_down_note)
                     current.patchErrors > 0 -> stringResource(R.string.detect_tee_patch_failed_note)
                     else -> stringResource(R.string.detect_tee_note)
@@ -521,7 +568,9 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                         colors = ButtonDefaults.textButtonColorsPrimary(),
                     )
                 }
-                if (current.builtinDown) {
+                // 接管引擎：没有任何引擎在跑、而用户也没把内置 TEE 关掉时才给 ——
+                // 关掉之后"接管"就不是用户想要的语义了（按钮里会先把开关打开）。
+                if (!current.engineAlive && !current.builtinDisabled) {
                     TextButton(
                         text = stringResource(R.string.detect_tee_takeover),
                         onClick = { runRepair(TAKEOVER_SCRIPT, R.string.detect_tee_takeover_failed) },
