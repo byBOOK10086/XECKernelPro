@@ -261,11 +261,158 @@ fn remove_builtin_runtime(module_id: &str) {
     }
 }
 
+/// 每个内置模块**必须有**的资产（相对模块目录的路径）。
+///
+/// 为什么要有这张表：引擎的二进制（`classes.dex` / `libTEESimulator.so` / `inject` /
+/// `supervisor` / `libcertgen.so`）**不在 git 里**，它们由 CI 的
+/// `.github/scripts/build-builtin-modules.sh` 在 `cargo build` 之前生成。任何一次
+/// "没跑那个脚本就编译 ksud"（本地 `cargo build`、CI 步骤被跳过、构建缓存串味）都会
+/// 得到一个**资产残缺但能跑**的 ksud：开机解密出半个模块，`service.sh` 在
+/// `stage_file … || exit 1` 上直接退出，设备上就是"内置引擎永远起不来"而**没有任何
+/// 界面提示**。这张表把它变成一条明确的错误（`ksud builtin status` 里也能看到），
+/// 而不是靠人去猜。
+///
+/// `bin/*/` 是通配：TA 的两个二进制按 ABI 放在 `bin/<abi>/` 下。
+const BUILTIN_REQUIRED_ASSETS: &[(&str, &[&str])] = &[
+    (
+        "tricky_store",
+        &[
+            "service.sh",
+            "daemon",
+            "classes.dex",
+            "libTEESimulator.so",
+            "libcertgen.so",
+            "inject",
+            "supervisor",
+            "keybox.xml",
+            "target.txt",
+            "sepolicy.rule",
+        ],
+    ),
+    (
+        "TA_enhanced",
+        &[
+            "service.sh",
+            "post-fs-data.sh",
+            "common/common.sh",
+            "bin/*/ta-enhanced",
+            "bin/*/resetprop-rs",
+        ],
+    ),
+];
+
+/// 嵌入资产里缺哪些必需文件（空 = 完整）。
+pub fn builtin_assets_missing(module_id: &str) -> Vec<String> {
+    let Some((_, required)) = BUILTIN_REQUIRED_ASSETS
+        .iter()
+        .find(|(id, _)| *id == module_id)
+    else {
+        return Vec::new();
+    };
+
+    let embedded = assets::list_builtin_assets();
+    let prefix = format!("{module_id}/");
+    let mut missing = Vec::new();
+    for rel in *required {
+        let hit = match rel.split_once("*/") {
+            // `bin/*/ta-enhanced`：ABI 前缀通配。
+            Some((head, tail)) => embedded.iter().any(|file| {
+                file.strip_prefix(&prefix)
+                    .and_then(|path| path.strip_prefix(head))
+                    .is_some_and(|rest| rest.split_once('/').is_some_and(|(_, name)| name == tail))
+            }),
+            None => embedded.contains(&format!("{prefix}{rel}")),
+        };
+        if !hit {
+            missing.push((*rel).to_string());
+        }
+    }
+    missing
+}
+
+/// 运行目录里缺哪些必需文件（空 = 完整）。用于"资产到底落地没有"的运行时判断。
+fn builtin_runtime_missing(module_id: &str) -> Vec<String> {
+    let Some((_, required)) = BUILTIN_REQUIRED_ASSETS
+        .iter()
+        .find(|(id, _)| *id == module_id)
+    else {
+        return Vec::new();
+    };
+    let base = builtin_runtime_dir(module_id);
+    let mut missing = Vec::new();
+    for rel in *required {
+        let hit = match rel.split_once("*/") {
+            Some((head, tail)) => std::fs::read_dir(base.join(head.trim_end_matches('/')))
+                .map(|entries| {
+                    entries
+                        .flatten()
+                        .any(|entry| entry.path().join(tail).exists())
+                })
+                .unwrap_or(false),
+            None => base.join(rel).exists(),
+        };
+        if !hit {
+            missing.push((*rel).to_string());
+        }
+    }
+    missing
+}
+
+/// 把内置模块的 `sepolicy.rule` 真正打进内核策略。
+///
+/// **这是"运行期开引擎"能不能注入的关键一步**。引擎的注入链是：
+/// 守护进程 → `inject` ptrace 进 keystore2 → 在 keystore2 里 `android_dlopen_ext`
+/// 加载并 mmap `/data/adb/tricky_store/libTEESimulator.so`。**keystore2 属于
+/// `u:r:keystore2:s0`**，它能不能读/mmap 那个 .so 完全取决于模块自带的那几条
+/// `allow keystore {adb_data_file shell_data_file tmpfs} file *`。
+///
+/// 这些规则原先只在**开机 post-fs-data** 时加载一次（`load_builtin_sepolicy_rule`），
+/// 而新版本把内置模块改成了"用户可选、默认关闭"：用户在检测页打开开关时，
+/// `ksud builtin enable` 会解密并启动 service.sh，却**没有人再补这几条规则** ——
+/// 于是 keystore2 打不开那个 .so，注入失败，守护进程 5 次重试后 exit(1)，supervisor
+/// 再拉起、再失败……设备上表现成"引擎永远起不来 / 依然零拦截"，而日志里只有
+/// `Failed to find backdoor after 5 retries`。这里补上这一步。
+pub fn apply_builtin_sepolicy(module_id: &str) -> Result<()> {
+    let rule = builtin_runtime_dir(module_id).join("sepolicy.rule");
+    if !rule.exists() {
+        return Ok(());
+    }
+    sepolicy::apply_file(&rule)
+        .with_context(|| format!("apply sepolicy {} failed", rule.display()))?;
+    info!("built-in module {module_id}: sepolicy.rule applied");
+    Ok(())
+}
+
+/// 把当前**开着**的内置模块的 sepolicy 全部重打一遍（幂等）。
+pub fn apply_all_builtin_sepolicy() -> usize {
+    let mut applied = 0;
+    for (module_id, _, key) in BUILTIN_MODULES {
+        if !builtin_enabled(key) {
+            continue;
+        }
+        match apply_builtin_sepolicy(module_id) {
+            Ok(()) => applied += 1,
+            Err(e) => warn!("{e}"),
+        }
+    }
+    applied
+}
+
 /// 把内置模块的明文资产加密进 /data 上的存储（按 ksud 构建刷新内容戳）。
 ///
 /// 关掉的模块也照样刷新：这样用户下次打开开关时不必先等一次开机。
 fn store_builtin_blob(module_id: &str, token: &str) -> Result<()> {
     let dest = Path::new(defs::BUILTIN_STORE_DIR).join(token);
+
+    // 资产完整性先判：缺一个引擎文件就不该写出一个"看起来正常"的存储 blob，
+    // 那样只会让 service.sh 在设备上跑到一半 exit 1（历史上正是这么静默失败的）。
+    let missing_assets = builtin_assets_missing(module_id);
+    ensure!(
+        missing_assets.is_empty(),
+        "内置模块 {module_id} 的资产不完整（这一版 ksud 构建时没跑 .github/scripts/build-builtin-modules.sh？）：缺 {}",
+        missing_assets.join(", ")
+    );
+
     if dest.exists() && builtin_store_is_current(token) {
         return Ok(());
     }
@@ -332,7 +479,10 @@ fn materialize_builtin_module(module_id: &str, token: &str) -> Result<()> {
 ///
 /// 只跑 service 阶段：post-fs-data 的前提（挂载、magic mount、属性、模块目录）在开机时
 /// 就完成了，运行期重跑它没有意义，只会在已经就绪的系统上再写一遍。
-fn start_builtin_runtime(module_id: &str) -> Result<()> {
+///
+/// `mode` 会作为第二个参数传给脚本：`None` = 普通启动，`Some("--repair")` = 修复启动
+///（脚本据此决定要不要重启 keystore2、要不要重新核对注入）。
+fn start_builtin_runtime(module_id: &str, mode: Option<&str>) -> Result<()> {
     let script = builtin_runtime_dir(module_id).join("service.sh");
     ensure!(
         script.exists(),
@@ -350,7 +500,11 @@ fn start_builtin_runtime(module_id: &str) -> Result<()> {
     command
         .current_dir(script.parent().unwrap_or_else(|| Path::new("/")))
         .arg("sh")
-        .arg(&script)
+        .arg(&script);
+    if let Some(mode) = mode {
+        command.arg(mode);
+    }
+    command
         .envs(get_common_script_envs(Some(module_id)))
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -358,7 +512,7 @@ fn start_builtin_runtime(module_id: &str) -> Result<()> {
         .spawn()
         .with_context(|| format!("启动内置模块 {module_id} 失败"))?;
 
-    info!("built-in module {module_id}: service stage started on demand");
+    info!("built-in module {module_id}: service stage started on demand (mode={mode:?})");
     Ok(())
 }
 
@@ -425,13 +579,19 @@ fn builtin_status_of(
     key: &str,
     flags: &BTreeMap<&'static str, bool>,
 ) -> serde_json::Value {
+    let missing = builtin_assets_missing(module_id);
+    let runtime_missing = builtin_runtime_missing(module_id);
     serde_json::json!({
         "key": key,
         "id": module_id,
-        "enabled": *flags.get(key).unwrap_or(&false),
+        "enabled": flags.get(key).copied().unwrap_or(false),
         "runtime": builtin_runtime_dir(module_id).join("service.sh").exists(),
         "store": Path::new(defs::BUILTIN_STORE_DIR).join(token).exists(),
         "external": external_module_present(module_id),
+        // 引擎二进制是不是真的被打进这一版 ksud（缺了就是"永远起不来"，且以前没人说）。
+        "assets": if missing.is_empty() { "ok".to_string() } else { format!("missing:{}", missing.join(",")) },
+        // 运行目录里的落地情况（解密之后、service.sh 跑之前）。
+        "runtimeassets": if runtime_missing.is_empty() { "ok".to_string() } else { format!("missing:{}", runtime_missing.join(",")) },
     })
 }
 
@@ -468,12 +628,49 @@ pub fn builtin_apply(target: &str, on: bool) -> Result<()> {
 
     if on {
         store_builtin_blob(module_id, token)?;
+        // 从干净目录开始：materialize 不覆盖已存在的文件，旧的/半个文件会一直留着
+        //（tmpfs 只在"关掉"时才清），运行时打开就永远跑着上一次那份。
+        remove_builtin_runtime(module_id);
         materialize_builtin_module(module_id, token)?;
-        start_builtin_runtime(module_id)?;
+        // 关键：把 keystore 侧的策略补上，否则 keystore2 打不开注入用的 .so。
+        if let Err(e) = apply_builtin_sepolicy(module_id) {
+            warn!("built-in module {module_id}: {e}");
+        }
+        start_builtin_runtime(module_id, None)?;
     } else {
         stop_builtin_runtime(module_id);
         remove_builtin_runtime(module_id);
     }
+
+    println!("{}", serde_json::to_string_pretty(&builtin_status())?);
+    Ok(())
+}
+
+/// `ksud builtin repair <tee|ta>`：把"注入失败/引擎反复重启"这条链一次性修到位。
+///
+/// 与 `enable` 的区别是**每一步都重做**，而不是"已经对了就跳过"：
+///   1. 开关置开（修复的语义就是"我要它跑起来"）；
+///   2. 重新解密出干净的运行目录（清掉可能残缺/过期的文件）；
+///   3. **重打 sepolicy**——运行期开引擎最容易漏的就是这一步；
+///   4. 收掉正在反复重启的旧引擎；
+///   5. 以 `--repair` 模式重启：脚本会核对 keystore2 里到底有没有注入成功，
+///      必要时重启一次 keystore2 让注入落在一个干净的进程上。
+pub fn builtin_repair(target: &str) -> Result<()> {
+    let key = builtin_key(target)
+        .with_context(|| format!("未知的内置模块：{target}（可用：tee / ta）"))?;
+    let (module_id, token) = builtin_entry(key).context("内置模块表里没有这个键")?;
+
+    if let Err(e) = assets::ensure_binaries(true) {
+        warn!("extract bin assets failed: {e}");
+    }
+
+    set_builtin_flag(key, true)?;
+    store_builtin_blob(module_id, token)?;
+    remove_builtin_runtime(module_id);
+    materialize_builtin_module(module_id, token)?;
+    apply_builtin_sepolicy(module_id)?;
+    stop_builtin_runtime(module_id);
+    start_builtin_runtime(module_id, Some("--repair"))?;
 
     println!("{}", serde_json::to_string_pretty(&builtin_status())?);
     Ok(())

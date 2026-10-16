@@ -10,6 +10,27 @@ TSPA="/data/adb/modules/tsupport-advance"
 detect_manager
 
 # ---------------------------------------------------------------------------
+# 启动诊断（/data/adb/.xudc_secure/ta-start.txt）
+# ---------------------------------------------------------------------------
+# 与 tricky_store 同一个理由：TA 的失败过去也全是静默的（`"$BIN" daemon &` 起不来就
+# 什么都不写）。管理器把这份 KEY=VALUE 直接显示出来。
+TA_START_STATUS="/data/adb/.xudc_secure/ta-start.txt"
+_ta_status() {
+    {
+        printf 'at=%s\n' "$(date +%s 2>/dev/null || echo 0)"
+        printf 'mode=%s\n' "$_TA_MODE"
+        printf 'step=%s\n' "$1"
+        printf 'rc=%s\n' "$2"
+        printf 'detail=%s\n' "$3"
+    } > "$TA_START_STATUS" 2>/dev/null
+}
+case "$1" in
+    --stop) _TA_MODE=stop ;;
+    --repair) _TA_MODE=repair ;;
+    *) _TA_MODE=boot ;;
+esac
+
+# ---------------------------------------------------------------------------
 # `--stop`：运行期关掉内置 TA 时由 ksud 调用（`ksud builtin disable ta`）
 # ---------------------------------------------------------------------------
 # **必须排在开关闸门之前**：`ksud builtin disable ta` 是先写 `ta=0`、再调本脚本的
@@ -23,6 +44,7 @@ detect_manager
 #     命令行里带着 $MODPATH，按路径匹配，跳过自己（$$）。
 if [ "$1" = "--stop" ]; then
     mkdir -p "$LOG_BASE_DIR" 2>/dev/null
+    _ta_status stop-in-progress 0 "user turned the built-in TA off"
     _log "INFO" "stop: 用户关闭内置 TA，开始收进程"
     _TA_BIN="/data/adb/.xudc_secure/ta-enhanced/bin/ta-enhanced"
     _killed=0
@@ -57,13 +79,23 @@ fi
 # 要不要解密本模块，这里是运行期与手工调用路径上的第二道闸门。
 if ! builtin_flag_on ta; then
     mkdir -p "$LOG_BASE_DIR" 2>/dev/null
+    _ta_status gate 0 "disabled by user"
     _log "INFO" "内置 TA 已被用户关闭（$BUILTIN_FLAG 里 ta=0），本次不启动"
     exit 0
 fi
 if builtin_external_ta_active; then
     mkdir -p "$LOG_BASE_DIR" 2>/dev/null
+    _ta_status stand-down 0 "external TA_enhanced module present"
     _log "INFO" "外部 TA_enhanced 模块在位 —— 内置那份让位（两个 daemon 同时改 keybox/target/属性会互相覆盖）"
     exit 0
+fi
+_ta_status begin 0 "start requested"
+
+# `--repair`：先把旧的 daemon 收掉再干净启动（ksud builtin repair ta 走这条）。
+if [ "$1" = "--repair" ]; then
+    _ta_status repair-stop 0 "stopping the old daemon"
+    for _pid in $(pidof ta-enhanced 2>/dev/null); do kill -9 "$_pid" 2>/dev/null; done
+    _log "INFO" "repair: 收掉旧 daemon，准备干净重启"
 fi
 
 # 日志目录必须在这里就建出来：_log 只在目录存在时才写文件，而 daemon 自己的默认
@@ -325,6 +357,20 @@ fi
 _log "INFO" "Starting ta-enhanced daemon"
 "$BIN" daemon --manager "$MANAGER" &
 _log "INFO" "Daemon launched"
+
+# 启动结果核对（写进 ta-start.txt，管理器显示）：`daemon &` 起没起来过去完全静默。
+(
+    sleep 20
+    if [ -n "$(pidof ta-enhanced 2>/dev/null)" ]; then
+        _ta_status done 0 "daemon pid $(pidof ta-enhanced 2>/dev/null | awk '{print $1}')"
+    elif [ ! -f "$BIN" ]; then
+        _ta_status done 1 "daemon binary missing: $BIN"
+        _log "ERROR" "daemon 二进制不存在：$BIN（模块资产不完整？）"
+    else
+        _ta_status done 1 "daemon not running after 20s (bin=$BIN)"
+        _log "ERROR" "daemon 20s 后仍未运行（bin=$BIN）—— 看 $LOG_BASE_DIR/main.log"
+    fi
+) >/dev/null 2>&1 &
 
 # ---------------------------------------------------------------------------
 # Keybox 守护（中国大陆可用）：权限 / 可信核验 / 多镜像刷新 / 防退化

@@ -428,6 +428,12 @@ enum BuiltinCmd {
         /// tee or ta
         target: String,
     },
+
+    /// Rebuild and restart a built-in module (re-applies sepolicy, fresh assets)
+    Repair {
+        /// tee or ta
+        target: String,
+    },
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -889,6 +895,7 @@ pub fn run() -> Result<()> {
             BuiltinCmd::Status => module::builtin_print_status(),
             BuiltinCmd::Enable { target } => module::builtin_apply(&target, true),
             BuiltinCmd::Disable { target } => module::builtin_apply(&target, false),
+            BuiltinCmd::Repair { target } => module::builtin_repair(&target),
         },
 
         Commands::Module { command } => {

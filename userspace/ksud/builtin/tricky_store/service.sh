@@ -55,6 +55,54 @@ engine_alive() {
     return 1
 }
 
+# ---------------------------------------------------------------------------
+# 启动诊断（/data/adb/.xudc_secure/engine-start.txt）
+# ---------------------------------------------------------------------------
+# 存在的理由：引擎起不来一直是**静默**的。脚本里每一步都有 `|| exit 1`，一退出就什么都不写了，
+# 管理器只能看到"引擎没在跑"，用户在设备上无法判断是资产缺失、标签不对、注入被 SELinux
+# 挡了，还是 keystore2 打不开那个 .so。这里把"走到哪一步、结果如何"逐行落到一个
+# KEY=VALUE 文件里，管理器直接显示 —— 这是"能不能自己修"的前提。
+START_STATUS="$DATA/engine-start.txt"
+_start_status() {
+    # $1=step $2=rc $3=detail
+    {
+        printf 'at=%s\n' "$(date +%s 2>/dev/null || echo 0)"
+        printf 'mode=%s\n' "$_START_MODE"
+        printf 'step=%s\n' "$1"
+        printf 'rc=%s\n' "$2"
+        printf 'detail=%s\n' "$3"
+    } > "$START_STATUS" 2>/dev/null
+}
+
+# 注入是否**真的**成功：keystore2 的 maps 里出现我们那个 .so。
+# 这是整条链唯一的硬证据（引擎进程活着 ≠ 注入成功：守护进程 5 次重试后 exit(1)，
+# supervisor 再拉起，设备上就是"一直起不来"的假象）。
+_keystore2_injected() {
+    _ks=$(pidof keystore2 2>/dev/null | awk '{print $1}')
+    [ -n "$_ks" ] || return 1
+    grep -q 'libTEESimulator' "/proc/$_ks/maps" 2>/dev/null
+}
+
+# 守护进程自己给出的失败原因（logcat tag = keymint_svc，见 App.kt/SystemLogger）。
+_inject_error_line() {
+    /system/bin/logcat -d -s keymint_svc:* 2>/dev/null \
+        | grep -E 'Failed to find backdoor|Injection process failed|Could not find libbinder|CommitHook failed|execv failed|Neither classes.dex' \
+        | tail -n 1
+}
+
+# 守护进程启动次数：>2 就是"反复重启"（注入失败 → exit(1) → supervisor 再拉起）。
+_daemon_starts() {
+    /system/bin/logcat -d -s keymint_svc:* 2>/dev/null | grep -c 'Welcome to TEESimulator'
+}
+
+# 本次是哪种启动（写进 engine-start.txt，管理器据此区分"开机启动/手动修复"）。
+case "$1" in
+    --stop) _START_MODE=stop ;;
+    --takeover) _START_MODE=takeover ;;
+    --repair) _START_MODE=repair ;;
+    *) _START_MODE=boot ;;
+esac
+
 log_line() {
     printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$LOG_FILE" 2>/dev/null
 }
@@ -70,6 +118,8 @@ log_line() {
 # 无条件 `rm -rf /data/adb/modules/tricky_store`，于是**用户自己刷入的 TrickyStore
 # 模块会在一次 --takeover 之后从管理器的模块列表里消失**——这正是本次要修的 bug。
 if [ "$1" = "--stop" ]; then
+    _START_MODE=stop
+    _start_status stop-in-progress 0 "user turned the engine off"
     log_line "INFO stop: user turned the built-in TEE engine off"
 
     _stopped=0
@@ -189,29 +239,30 @@ external_engine_active() {
 }
 
 # 用户开关：关掉时本模块不启动任何东西（ksud 在开机时已按开关决定要不要解密本模块，
-# 这里是运行期/手工调用路径上的第二道闸门）。--takeover 同样要求开关为开：
-# 关掉内置 TEE 之后，"接管"就不再是用户想要的语义了。
+# 这里是运行期/手工调用路径上的第二道闸门）。--takeover / --repair 同样要求开关为开：
+# 关掉内置 TEE 之后，"接管/修复"就不再是用户想要的语义了。
 if ! builtin_flag_on tee; then
+    _start_status gate 0 "disabled by user"
     log_line "INFO builtin TEERS: 内置 TEE 已被用户关闭（$BUILTIN_FLAG 里 tee=0），本次不启动"
     exit 0
 fi
+_start_status begin 0 "start requested"
 
-mkdir -p "$RUNTIME" || exit 1
+mkdir -p "$RUNTIME" || {
+    _start_status mkdir-runtime 1 "cannot create $RUNTIME"
+    log_line "ERROR cannot create $RUNTIME"
+    exit 1
+}
 chmod 755 "$RUNTIME" 2>/dev/null
-touch "$LOG_FILE" 2>/dev/null || exit 1
+touch "$LOG_FILE" 2>/dev/null || {
+    _start_status touch-log 1 "cannot write $LOG_FILE"
+    exit 1
+}
 label_data_path "$RUNTIME"
 
-# Any active external module owns the same injection surface. Do not start a
-# second engine or overwrite its files.
-#
-# 注意：这里**必须**用 external_engine_active()。旧实现把六个 test 直接串成
-# `A && B && C || D && E && F`，shell 里 `&&`/`||` 左结合，等价于
-# `((A&&B&&C) || D) && E && F`——当 /data/adb/modules/tricky_store 存在并**已被
-# 用户停用**（disable 文件在）时整体为假，本模块不但不 stand down，还会和那个外部
-# 模块同时向 keystore2 注入两个引擎：两套 grant ledger、两套证书缓存互相打架，
-# 检测方看到的就是"密钥行为异常"。
+# 外部引擎占位判据（见上）。
 if external_engine_active; then
-    if [ "$1" = "--takeover" ]; then
+    if [ "$1" = "--takeover" ] || [ "$1" = "--repair" ]; then
         log_line "WARN builtin TEERS: taking over — an external module owns the injection surface, but no engine process (keymint_svc / TEESimulator) is alive"
     else
         # 「占位」不等于「真的在拦」。旧实现只看到外部模块目录存在就让位并 exit，
@@ -222,6 +273,7 @@ if external_engine_active; then
         # 所以让位之后补一次存活核对：宽限期结束还看不到引擎进程就用 --takeover
         # 重新进来，由本模块的引擎接管。外部引擎活着时这一步不会发生，
         # 不会出现双引擎互杀（那正是当初要 stand down 的原因）。
+        _start_status stand-down 0 "external module present, liveness re-check in ${TAKEOVER_DELAY}s"
         log_line "INFO builtin TEERS stand down: external module directory is present (liveness check in ${TAKEOVER_DELAY}s)"
         (
             sleep "$TAKEOVER_DELAY"
@@ -241,6 +293,50 @@ fi
 
 VER=$(sed -n 's/^versionCode=//p' "$MODPATH/module.prop" 2>/dev/null)
 [ -n "$VER" ] || VER=0
+
+# ---------------------------------------------------------------------------
+# `--repair`：先把旧引擎收掉，再决定要不要换一个干净的 keystore2
+# ---------------------------------------------------------------------------
+# 症状对应：守护进程注入失败 → `exitProcess(1)` → supervisor 500ms 后拉起 → 再失败……
+# 设备上就是"引擎一直起不来"（pidof 大部分时候是空的），而日志里只有一行
+# `Failed to find backdoor after 5 retries`。
+#
+# 注入是 ptrace 到**当前那个** keystore2 上做的。若上一次注入留下了半死状态
+#（.so 已经 map 进去但 hook 没装成），换一个干净的 keystore2 进程是最可靠的复位；
+# 若 maps 里本来就没有 .so，就只重启守护进程。
+if [ "$1" = "--repair" ]; then
+    _start_status repair-stop 0 "stopping the old engine"
+    log_line "INFO repair: 收掉旧引擎，准备干净重启"
+    for _pid in $(pidof keymint_svc 2>/dev/null); do
+        kill -9 "$_pid" 2>/dev/null
+    done
+    for _p in /proc/[0-9]*; do
+        case "$(readlink "$_p/exe" 2>/dev/null)" in
+            "$RUNTIME/supervisor"|"$RUNTIME/daemon") kill -9 "${_p#/proc/}" 2>/dev/null ;;
+        esac
+    done
+    if _keystore2_injected; then
+        log_line "INFO repair: keystore2 里仍有 libTEESimulator —— 只重启守护进程（它会重新注册 backdoor）"
+    else
+        _ks_pid=$(pidof keystore2 2>/dev/null | awk '{print $1}')
+        if [ -n "$_ks_pid" ]; then
+            _start_status repair-keystore 0 "restarting keystore2 for a clean injection"
+            log_line "INFO repair: 未检测到注入（keystore2 maps 里没有 libTEESimulator）—— 重启 keystore2 换一个干净进程"
+            kill -9 "$_ks_pid" 2>/dev/null
+            _i=0
+            _new_pid=""
+            while [ "$_i" -lt 10 ]; do
+                sleep 1
+                _i=$((_i + 1))
+                _new_pid=$(pidof keystore2 2>/dev/null | awk '{print $1}')
+                [ -n "$_new_pid" ] && [ "$_new_pid" != "$_ks_pid" ] && break
+            done
+            log_line "INFO repair: keystore2 $_ks_pid -> ${_new_pid:-none}"
+        else
+            log_line "WARN repair: keystore2 不在运行，无法复位"
+        fi
+    fi
+fi
 
 # ---------------------------------------------------------------------------
 # 刷新判据 = 资产**内容戳**，不是上游的 versionCode
@@ -738,7 +834,7 @@ _selfcheck_set_prop() {
 
 tee_selfcheck() {
     local _pid _files _kb_state _target _checker _vvb _lc _served _perr
-    local _vbs _locked _dev _verity _verdict _repair=""
+    local _vbs _locked _dev _verity _verdict _repair="" _inj _starts _inject_err
 
     # 用户关掉内置 TEE 之后自检必须停手——包括**不要**把引擎再拉起来，
     # 否则"关闭"会在下一轮自检里被自己撤销。
@@ -750,6 +846,13 @@ tee_selfcheck() {
        [ -f "$RUNTIME/libTEESimulator.so" ] && [ -x "$RUNTIME/inject" ]; then
         _files=ok
     fi
+    # 注入是否成功 + 守护进程是不是在反复重启：这两个才是"引擎到底有没有在拦"的
+    # 硬证据。以前只看 pidof：守护进程 5 次重试后 exit(1)、supervisor 再拉起，
+    # 采样点撞上就报"在跑"，撞不上就报"引擎没跑"，两种都不说明真正的原因。
+    _inj=no
+    _keystore2_injected && _inj=yes
+    _starts=$(_daemon_starts)
+    _inject_err=$(_inject_error_line)
     _kb_state=$(_kb_root_state "$_KB_LIVE")
     _target=$(grep -cvE '^[[:space:]]*(#|$)' "$RUNTIME/target.txt" 2>/dev/null)
     case "$_target" in ''|*[!0-9]*) _target=0 ;; esac
@@ -767,16 +870,51 @@ tee_selfcheck() {
     _dev=$(getprop ro.boot.vbmeta.device_state 2>/dev/null)
     _verity=$(getprop ro.boot.veritymode 2>/dev/null)
 
-    # 1) 引擎没跑（资产在位却起不来 = 注入失败/被杀），自己拉起来。
-    if [ -z "$_pid" ] && [ "$_files" = "ok" ]; then
+    # 1) 引擎没跑，或者**跑着但没注入**（keystore2 的 maps 里没有我们的 .so），
+    #    又或者守护进程在反复重启 —— 三种都等于"零拦截"，统一按"重启注入链"处理。
+    #    注入失败最常见的原因不是进程死了，而是 keystore2 打不开要注入的 .so
+    #   （keystore 侧 SELinux 允许没打上）。允许必须在 ksud 侧打，所以脚本能做的
+    #    是：换一个干净的 keystore2 进程再注入一次（管理器那边还有一键「修复引擎」
+    #    会把 sepolicy 重打一遍）。
+    _need_engine_repair=no
+    [ -z "$_pid" ] && _need_engine_repair=yes
+    [ "$_inj" = "no" ] && [ "$_files" = "ok" ] && _need_engine_repair=yes
+    [ "${_starts:-0}" -gt 3 ] && _need_engine_repair=yes
+    if [ "$_need_engine_repair" = "yes" ] && [ "$_files" = "ok" ]; then
         if _bump_repair engine 3; then
-            log_line "WARN selfcheck: 引擎未运行 —— 自动重启 supervisor"
+            log_line "WARN selfcheck: 引擎未生效（pid=${_pid:-none} injected=$_inj daemon_starts=$_starts err=${_inject_err:-none}）—— 自动重启注入链"
+            for _k in $(pidof keymint_svc 2>/dev/null); do kill -9 "$_k" 2>/dev/null; done
+            for _p in /proc/[0-9]*; do
+                case "$(readlink "$_p/exe" 2>/dev/null)" in
+                    "$RUNTIME/supervisor"|"$RUNTIME/daemon") kill -9 "${_p#/proc/}" 2>/dev/null ;;
+                esac
+            done
+            if [ "$_inj" = "no" ]; then
+                _ks_pid=$(pidof keystore2 2>/dev/null | awk '{print $1}')
+                if [ -n "$_ks_pid" ]; then
+                    log_line "INFO selfcheck: 重启 keystore2（$_ks_pid）以便重新注入"
+                    kill -9 "$_ks_pid" 2>/dev/null
+                    _w=0
+                    while [ "$_w" -lt 10 ]; do
+                        sleep 1
+                        _w=$((_w + 1))
+                        _new=$(pidof keystore2 2>/dev/null | awk '{print $1}')
+                        [ -n "$_new" ] && [ "$_new" != "$_ks_pid" ] && break
+                    done
+                fi
+            fi
             ( cd "$RUNTIME" && ./supervisor ./daemon "$RUNTIME" >> "$LOG_FILE" 2>&1 & )
             _repair="${_repair}engine,"
-            sleep 10
+            sleep 12
             _pid=$(pidof keymint_svc 2>/dev/null)
-            [ -n "$_pid" ] && log_line "INFO selfcheck: 引擎已恢复（pid=$_pid）" || \
-                log_line "ERROR selfcheck: 重启后仍未看到 TEESimulator（注入失败）"
+            _inj=no
+            _keystore2_injected && _inj=yes
+            _starts=$(_daemon_starts)
+            if [ -n "$_pid" ] && [ "$_inj" = "yes" ]; then
+                log_line "INFO selfcheck: 引擎已恢复并注入成功（pid=$_pid）"
+            else
+                log_line "ERROR selfcheck: 重启后仍未注入成功（pid=${_pid:-none} injected=$_inj daemon_starts=$_starts err=$(_inject_error_line)）—— 若反复如此，请在管理器检测页点「修复引擎」（会重打 keystore 侧 sepolicy）"
+            fi
         fi
     fi
 
@@ -825,8 +963,12 @@ tee_selfcheck() {
     fi
 
     # 结论文案给管理器用；这里只算"最坏的那一环"，顺序就是用户该关心的顺序。
+    # injected=no 排在 engine_down 之后、keybox 之前：引擎在跑却没注入 = 依然零拦截，
+    # 比箱子不对更严重（箱子不对至少还有一层伪造链）。
     if [ -z "$_pid" ]; then
         _verdict=engine_down
+    elif [ "$_inj" != "yes" ]; then
+        _verdict=not_injected
     elif [ "$_kb_state" != "google" ]; then
         _verdict="keybox_${_kb_state}"
     elif [ "$_checker" != "yes" ] || [ "$_vvb" != "yes" ]; then
@@ -841,6 +983,9 @@ tee_selfcheck() {
         printf 'at=%s\n' "$(date +%s 2>/dev/null || echo 0)"
         printf 'engine=%s\n' "${_pid:-none}"
         printf 'enginefiles=%s\n' "$_files"
+        printf 'injected=%s\n' "$_inj"
+        printf 'daemonstarts=%s\n' "${_starts:-0}"
+        printf 'injecterr=%s\n' "${_inject_err:-none}"
         printf 'kbroot=%s\n' "$_kb_state"
         printf 'target=%s\n' "$_target"
         printf 'checker=%s\n' "$_checker"
@@ -860,13 +1005,41 @@ tee_selfcheck() {
     # 只在结论变化时写日志：15s/2min 一轮的循环里每次都写会把日志冲爆。
     if [ "$_verdict" != "$(cat "$DATA/.tee-selfcheck-last" 2>/dev/null)" ]; then
         printf '%s\n' "$_verdict" > "$DATA/.tee-selfcheck-last" 2>/dev/null
-        log_line "INFO selfcheck: verdict=$_verdict engine=${_pid:-none} kbroot=$_kb_state target=$_target checker=$_checker vvb=$_vvb served=$_served patcherr=$_perr vbs=$_vbs locked=$_locked repair=${_repair:-none}"
+        log_line "INFO selfcheck: verdict=$_verdict engine=${_pid:-none} injected=$_inj daemon_starts=${_starts:-0} injecterr=${_inject_err:-none} kbroot=$_kb_state target=$_target checker=$_checker vvb=$_vvb served=$_served patcherr=$_perr vbs=$_vbs locked=$_locked repair=${_repair:-none}"
     fi
 }
 
 ( sleep 45; capture_engine_state ) >/dev/null 2>&1 &
 # 75s（引擎状态回读之后）先跑一轮自检：开机那一下的失败要在用户打开验机工具**之前**修掉。
 ( sleep 75; tee_selfcheck ) >/dev/null 2>&1 &
+
+# ---------------------------------------------------------------------------
+# 启动结果核对（20s）：写进 engine-start.txt，管理器直接显示
+# ---------------------------------------------------------------------------
+# 以前这一层完全缺失：`./supervisor ./daemon` 是后台起的，起没起来只有 45s 后的
+# capture_engine_state 写一行日志，而管理器读不到那一行。用户看到的就是
+# "开关打开了，引擎还是没在跑"，没有任何线索。
+verify_engine_start() {
+    _pid=$(pidof keymint_svc 2>/dev/null)
+    _inj=no
+    _keystore2_injected && _inj=yes
+    _starts=$(_daemon_starts)
+    _err=$(_inject_error_line)
+    log_line "INFO verify: engine=${_pid:-none} injected=$_inj daemon_starts=${_starts:-0} err=${_err:-none}"
+    if [ -n "$_pid" ] && [ "$_inj" = "yes" ]; then
+        _start_status done 0 "engine pid $_pid, injected, daemon_starts=${_starts:-0}"
+        return 0
+    fi
+    if [ -n "$_err" ]; then
+        _start_status done 1 "$_err (engine=${_pid:-none} injected=$_inj daemon_starts=${_starts:-0})"
+    else
+        _start_status done 1 "engine=${_pid:-none} injected=$_inj daemon_starts=${_starts:-0}"
+    fi
+    return 1
+}
+( sleep 20; verify_engine_start ) >/dev/null 2>&1 &
+# --repair 模式：15s 后再核一次并写诊断（修复是否真的生效，用户点完就能看到）。
+[ "$1" = "--repair" ] && ( sleep 30; verify_engine_start ) >/dev/null 2>&1 &
 
 # 引擎看护：45s 那次回读只回答"开机时起没起来"。注入链一旦在运行期断掉（进程被杀、
 # 崩溃、被别的模块顶掉），keystore 就重新变回"没被接管"，检测方又拿到真实 TEE 证明；
