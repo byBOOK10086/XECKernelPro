@@ -77,13 +77,25 @@ const fn resetprop() -> ResetProp {
     }
 }
 
-/// On unless the flag file says otherwise, so a fresh install looks locked from
-/// the first boot; the file is also the switch the manager UI writes.
+/// 开机环境伪装（属性 + cmdline 回锁）的开关。
+///
+/// **默认关闭**（2026-10-16 用户实测反馈后改的）：游戏/银行在设备上看到的"环境"
+/// 由两半组成 —— 属性视图（这里改的）和密钥证明（TEE 引擎伪造的）。只改属性、
+/// 密钥证明还是真实 TEE 时，两边**互相矛盾**（属性说已回锁、证明说 deviceLocked=false），
+/// 而"矛盾"比"诚实的解锁态"更容易被判定成「环境异常」：原版 KernelSU 什么都不改，
+/// 反而没有这种自相矛盾。
+///
+/// 所以这条开关与"装不装 TEE 模块"绑在一起用：
+///   * 装了 TEE 引擎（外部模块）→ 可以打开，两半一致，整套伪装自洽；
+///   * 没装 → 保持关闭，环境与原生系统完全一致（游戏的判定基准也一致）。
+///
+/// 开关文件仍是 [`defs::BOOTSTATE_FLAG_PATH`]，管理器检测页的开关写的也是它；
+/// 文件不存在 = 关闭（把选择权交给用户）。
 fn enabled() -> bool {
-    fs::read_to_string(defs::BOOTSTATE_FLAG_PATH).map_or(true, |value| {
-        !matches!(
+    fs::read_to_string(defs::BOOTSTATE_FLAG_PATH).is_ok_and(|value| {
+        matches!(
             value.trim().to_ascii_lowercase().as_str(),
-            "0" | "off" | "false" | "no" | "disable" | "disabled"
+            "1" | "on" | "true" | "yes" | "enable" | "enabled"
         )
     })
 }

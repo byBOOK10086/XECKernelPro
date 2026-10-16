@@ -139,17 +139,17 @@ fn unpack_builtin_module(blob: &[u8]) -> Result<Vec<(String, u32, Vec<u8>)>> {
 
 /// 读出两个开关。
 ///
-/// **缺文件 / 缺键 = 开启**（出厂行为：内置模块要拦密钥证明）。只有用户明确写下
-/// `key=0` 才算关闭。这条方向是刻意的：
-///   * v31128 曾经把"缺文件 = 关闭"当默认，结果**全新安装、或者只更新了内核没装新管理器的
-///     设备上什么都没在拦**（用户 2026-10-16 报的"TEE 还是有问题"里就有这一条）；
-///   * 用户要的是"**我可以选**"，不是"默认什么都不做"；
-///   * "两个模块不打架"由让位逻辑（外部模块在位就 stand down）与"绝不删用户模块目录"
-///     保证，不需要靠默认关闭来实现。
+/// **由内置分发改成"按需外部安装"之后（2026-10-16），缺文件 / 缺键 = 关闭**：
+/// 内置那份默认不再解密、不再执行任何脚本，设备上不留任何引擎痕迹
+///（用户实测游戏反复弹「环境异常」、原版 KernelSU 没有 ⇒ 内置 TEE 的指纹是首要嫌疑）。
+/// 需要拦截密钥证明的用户改在检测页点「下载并刷入」，把它装成**普通模块**
+///（`/data/adb/modules/<id>`，模块列表里可见、可正常卸载）——那种形态不受这个开关约束。
+///
+/// 只有明确的 `1/true/on/yes/enable` 才算打开。
 pub fn builtin_flags() -> BTreeMap<&'static str, bool> {
     let mut flags: BTreeMap<&'static str, bool> = BUILTIN_MODULES
         .iter()
-        .map(|(_, _, key)| (*key, true))
+        .map(|(_, _, key)| (*key, false))
         .collect();
 
     let raw = std::fs::read_to_string(defs::BUILTIN_FLAG_PATH).unwrap_or_default();
@@ -159,14 +159,12 @@ pub fn builtin_flags() -> BTreeMap<&'static str, bool> {
             continue;
         };
         let key = key.trim().to_ascii_lowercase();
-        // 只认"明确关闭"的写法；认不出来的值保持开启（"少拦一次"的代价比
-        // "用户以为开着、其实什么都没拦"小得多）。
-        let off = matches!(
+        let on = matches!(
             value.trim().to_ascii_lowercase().as_str(),
-            "0" | "false" | "off" | "no" | "disable" | "disabled"
+            "1" | "true" | "on" | "yes" | "enable" | "enabled"
         );
-        if off && let Some(slot) = flags.get_mut(key.as_str()) {
-            *slot = false;
+        if on && let Some(slot) = flags.get_mut(key.as_str()) {
+            *slot = true;
         }
     }
     flags
@@ -647,7 +645,7 @@ fn builtin_status_of(
     })
 }
 
-/// 两个内置模块的状态（管理器检测页读它渲染开关）。
+/// 两个内置模块的状态 + 开机环境伪装开关（管理器检测页读它渲染三个开关）。
 pub fn builtin_status() -> serde_json::Value {
     let flags = builtin_flags();
     let mut map = serde_json::Map::new();
@@ -657,7 +655,54 @@ pub fn builtin_status() -> serde_json::Value {
             builtin_status_of(module_id, token, key, &flags),
         );
     }
+    // 顶层多一个字符串键：开机环境伪装（属性 + cmdline 回锁）是否打开。
+    map.insert(
+        "spoof".to_string(),
+        serde_json::Value::String(if builtin_spoof_enabled() { "on" } else { "off" }.to_string()),
+    );
     serde_json::Value::Object(map)
+}
+
+/// 开机环境伪装（属性 + cmdline 回锁）是**用户开关**，默认关闭。
+///
+/// 它必须和"装不装 TEE 引擎"成对使用：属性说已回锁、密钥证明却还是真实 TEE 时两边
+/// 矛盾，而矛盾比诚实的解锁态更容易被判成「环境异常」（原版 KernelSU 什么都不改，
+/// 反而没有这种自相矛盾）。管理器检测页的第三个开关写的就是这个文件。
+pub fn builtin_spoof_enabled() -> bool {
+    std::fs::read_to_string(defs::BOOTSTATE_FLAG_PATH).is_ok_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "on" | "true" | "yes" | "enable" | "enabled"
+        )
+    })
+}
+
+/// 打开 / 关闭开机环境伪装，返回结果状态（`on` / `off`）。
+pub fn builtin_set_spoof(value: &str) -> Result<&'static str> {
+    let on = match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "on" | "true" | "yes" | "enable" | "enabled" => true,
+        "0" | "off" | "false" | "no" | "disable" | "disabled" => false,
+        other => bail!("未知的取值：{other}（可用 on / off）"),
+    };
+
+    let path = Path::new(defs::BOOTSTATE_FLAG_PATH);
+    if on {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)
+                .with_context(|| format!("Failed to create {}", dir.display()))?;
+        }
+        std::fs::write(path, "1\n")
+            .with_context(|| format!("Failed to write {}", path.display()))?;
+        if let Err(e) = restore_syscon(path) {
+            warn!("label {} failed: {e}", path.display());
+        }
+    } else if path.exists() {
+        // 关闭 = 删掉开关文件（"文件不存在 = 关闭"），比写 0 更不容易被值解析搞混。
+        std::fs::remove_file(path)
+            .with_context(|| format!("Failed to remove {}", path.display()))?;
+    }
+    info!("bootstate spoof -> {}", if on { "on" } else { "off" });
+    Ok(if on { "on" } else { "off" })
 }
 
 pub fn builtin_print_status() -> Result<()> {

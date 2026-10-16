@@ -434,6 +434,12 @@ enum BuiltinCmd {
         /// tee or ta
         target: String,
     },
+
+    /// Turn the boot-state spoofing (locked-view props + cmdline) on or off
+    Spoof {
+        /// on or off
+        value: String,
+    },
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -896,6 +902,11 @@ pub fn run() -> Result<()> {
             BuiltinCmd::Enable { target } => module::builtin_apply(&target, true),
             BuiltinCmd::Disable { target } => module::builtin_apply(&target, false),
             BuiltinCmd::Repair { target } => module::builtin_repair(&target),
+            BuiltinCmd::Spoof { value } => {
+                let state = module::builtin_set_spoof(&value)?;
+                println!("spoof={state}");
+                Ok(())
+            }
         },
 
         Commands::Module { command } => {
