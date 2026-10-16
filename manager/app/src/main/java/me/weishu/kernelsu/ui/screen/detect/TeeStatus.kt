@@ -82,9 +82,17 @@ private val STATUS_SCRIPT = listOf(
     "echo locked=\$(getprop ro.boot.flash.locked)",
     "echo devstate=\$(getprop ro.boot.vbmeta.device_state)",
     "echo zeromount=\$([ -d /data/adb/modules/meta-zeromount ] && [ ! -f /data/adb/modules/meta-zeromount/disable ] && echo yes || echo no)",
-    // 拦截归属：外部 tricky_store 模块在不在位、内置模块有没有落地。这两个事实决定了
+    // 拦截归属：外部 TEE 模块在不在位、内置模块有没有落地。这两个事实决定了
     // "引擎没起来"到底是"没装"还是"外部占位但它的引擎是坏的"（后者在模块列表里看不出来）。
-    "echo ext=\$([ -f /data/adb/modules/tricky_store/module.prop ] && [ ! -f /data/adb/modules/tricky_store/disable ] && [ ! -f /data/adb/modules/tricky_store/remove ] && echo yes || echo no)",
+    //
+    // 判据与设备侧 tricky_store/service.sh 的 external_engine_active / engine_alive 对齐：
+    // 目录名是一种，**进程名也是一种** —— 用户装的可能是上游 TEESimulator / TrickyStore，
+    // 它的引擎进程叫 TEESimulator，模块目录名也不一定叫 tricky_store。只看目录名会把
+    // "外部引擎正在拦"报成"内置被用户关掉了"。
+    "EXT=no",
+    "[ -f /data/adb/modules/tricky_store/module.prop ] && [ ! -f /data/adb/modules/tricky_store/disable ] && [ ! -f /data/adb/modules/tricky_store/remove ] && EXT=yes",
+    "[ -n \"\$(pidof TEESimulator 2>/dev/null)\" ] && EXT=yes",
+    "echo ext=\$EXT",
     "echo extver=\$(sed -n 's/^versionCode=//p' /data/adb/modules/tricky_store/module.prop 2>/dev/null | head -n 1)",
     "echo builtin=\$([ -f /dev/.xudc_hidden/tricky_store/service.sh ] && echo yes || echo no)",
     // 用户开关（检测页「内置模块」那两个开关写的文件）。关掉内置 TEE 之后
@@ -201,8 +209,11 @@ private data class TeeStatus(
      *
      * 这一种"引擎没在跑"不是故障：用户选了不拦截。看板必须把它与
      * [builtinDown]（该跑却没跑）分开说，否则用户会看到一个永远修不好的红行。
+     *
+     * 还要排除第三种情况：**别的引擎正在跑**（用户装的 TEESimulator 之类，进程名不是
+     * keymint_svc）。那时"内置关着"只是背景，拦截是有人在做的，不能报成"按你的选择停用"。
      */
-    val builtinDisabled: Boolean get() = !builtinEnabled && !externalModule
+    val builtinDisabled: Boolean get() = !builtinEnabled && !externalModule && !engineAlive
     /** 引擎日志里那句 "Served RootOfTrust: deviceLocked=true verifiedBootState=0 …"。 */
     val servedLocked: Boolean get() = servedRootOfTrust.contains("deviceLocked=true")
     val servedVerified: Boolean get() = servedRootOfTrust.contains("verifiedBootState=0")
