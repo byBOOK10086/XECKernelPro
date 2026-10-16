@@ -173,7 +173,7 @@ pub fn builtin_key(input: &str) -> Option<&'static str> {
 
 /// 这个内置模块现在开着吗？（模块 id 与开关键都接受）
 pub fn builtin_enabled(module_id: &str) -> bool {
-    builtin_key(module_id).is_some_and(|key| *builtin_flags().get(key).unwrap_or(&false))
+    builtin_key(module_id).is_some_and(|key| builtin_flags().get(key).copied().unwrap_or(false))
 }
 
 fn builtin_entry(key: &str) -> Option<(&'static str, &'static str)> {
@@ -348,7 +348,7 @@ fn start_builtin_runtime(module_id: &str) -> Result<()> {
         });
     }
     command
-        .current_dir(script.parent().unwrap_or(Path::new("/")))
+        .current_dir(script.parent().unwrap_or_else(|| Path::new("/")))
         .arg("sh")
         .arg(&script)
         .envs(get_common_script_envs(Some(module_id)))
@@ -393,7 +393,7 @@ fn stop_builtin_runtime(module_id: &str) {
         });
     }
     command
-        .current_dir(script.parent().unwrap_or(Path::new("/")))
+        .current_dir(script.parent().unwrap_or_else(|| Path::new("/")))
         .arg("sh")
         .arg(&script)
         .arg("--stop")
@@ -960,11 +960,17 @@ fn builtin_store_is_current(token: &str) -> bool {
 ///
 /// 用户关掉的模块只刷新存储、**不解密进 tmpfs**，并把上一次留下的运行目录删掉：
 /// 关掉的内置模块在设备上不该有任何痕迹，也不该被任何一步枚举到。
+///
+/// 返回值保持可失败：开着的模块没能落盘/解密就是这一步真的失败了（调用方会记日志），
+/// 但**两个模块各自独立**——一个失败不影响另一个继续尝试，所以循环里不提前返回。
 pub fn ensure_builtin_modules() -> Result<()> {
+    let mut first_error: Option<anyhow::Error> = None;
+
     for (module_id, token, key) in BUILTIN_MODULES {
         // 存储始终跟上当前 ksud 构建：下次打开开关时不必先等一次开机。
         if let Err(e) = store_builtin_blob(module_id, token) {
             warn!("store built-in module {module_id} failed: {e}");
+            first_error.get_or_insert(e);
         }
 
         if !builtin_enabled(key) {
@@ -974,10 +980,14 @@ pub fn ensure_builtin_modules() -> Result<()> {
 
         if let Err(e) = materialize_builtin_module(module_id, token) {
             warn!("materialize built-in module {module_id} failed: {e}");
+            first_error.get_or_insert(e);
         }
     }
 
-    Ok(())
+    match first_error {
+        Some(e) => Err(e.context("built-in modules could not be provisioned")),
+        None => Ok(()),
+    }
 }
 
 pub fn prune_modules() -> Result<()> {
