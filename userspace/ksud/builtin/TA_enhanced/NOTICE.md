@@ -46,6 +46,27 @@ vbhash 提取功能由源码构建的 ta-enhanced 守护进程（`rust/src/vbhas
   `/data/adb/.xudc_secure`、二进制 staging 到 `/data` 后运行）。
 - **2026-10-07**：`service.sh` 增加 keybox 自动拉取配置下发（yurikey、3 分钟周期）、
   开机后维护任务的超时上限；`common/common.sh` 增加 `resetprop` 解析阶梯。
+- **2026-10-15（用户可选 + 不再删用户的模块）**：
+  1) 内置 TA 从"开机必然运行"改成**用户可选**：开关落在
+     `/data/adb/.xudc_secure/builtin.conf`（`ta=1`），由管理器「检测」页或
+     `ksud builtin enable|disable ta` 维护，**默认关闭**；关闭时 ksud 既不解密本模块
+     进 tmpfs，也不执行任何阶段脚本，运行目录同时被清掉。`post-fs-data.sh` /
+     `service.sh` 各自再复查一次开关，`common/keybox.sh` 的 keybox 看护与
+     `common/bootstate.sh` 的回锁看护在下一次 tick 看到 `ta=0` 后自行退出。
+  2) 新增 `service.sh --stop`：`ksud builtin disable ta` 会调用它——按可执行文件路径
+     收掉 staging 到 `/data` 的 `ta-enhanced` daemon 与其子进程，并按 `$MODPATH`
+     收掉本模块的后台看护子 shell。**绝不再碰 `/data/adb/modules` 下的任何目录**。
+  3) **修掉"用户刷入的 TA_enhanced 重启后消失"**的两条自毁路径：
+     - `post-fs-data.sh` 过去在找不到 TrickyStore 时 `rm -rf /data/adb/modules/TA_enhanced`
+       再建一个带 `remove` 的目录（Magisk 隐藏模块形态），或者 `touch "$MODPATH/remove"`
+       —— 两条路都会让模块从管理器的列表里消失。现在只记日志：没有可用 TEE 引擎时
+       继续做回锁属性部分，keybox/名单维护跳过。
+     - `service.sh` 的"Magisk Module Hiding"过去只看 `action.sh` 在不在，而 KernelSU /
+       APatch 的模块同样有 `action.sh`，于是内核态设备上它会把自己拷成
+       `/data/adb/modules/.TA_enhanced` 再删掉可见目录。现在隐藏只在
+       `MANAGER=MAGISK` **且**脚本确实从 `/data/adb/modules/` 下执行时才做。
+  4) 用户自己刷了 TA_enhanced 时内置那份主动让位（`builtin_external_ta_active`）：
+     两个 daemon 同时改 keybox/target/回锁属性只会互相覆盖。
 - **2026-10-08**：`common/common.sh` 的 `resetprop` 兜底重写为四级阶梯（绝对路径
   `/data/adb/ksu/bin/resetprop` → PATH → `resetprop-rs` → 只读包装），并把 `-w/--wait`
   改为自实现的 getprop 轮询（此前缺 `-w` 的档位会把 `resetprop -w sys.boot_completed 0`

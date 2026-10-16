@@ -18,6 +18,19 @@ _pfd_log() {
 
 _pfd_log "post-fs-data started"
 
+# 用户开关 + 归属判定先做：关掉的内置 TA 什么都不该做（ksud 在开机时已经按开关决定
+# 要不要把本模块解密进 tmpfs，这里是运行期/手工调用路径上的第二道闸门）。
+MODDIR="$MODPATH"
+. "$MODPATH/common/common.sh"
+if ! builtin_flag_on ta; then
+    _pfd_log "内置 TA 已被用户关闭（$BUILTIN_FLAG 里 ta=0），本次不启动"
+    exit 0
+fi
+if builtin_external_ta_active; then
+    _pfd_log "外部 TA_enhanced 模块在位（/data/adb/modules/TA_enhanced）——内置那份让位，避免两个 daemon 同时改 keybox/属性"
+    exit 0
+fi
+
 # Wait for the built-in TrickyStore engine dir. Built-in modules are
 # materialized under /dev/.xudc_hidden BEFORE this stage runs, so this
 # normally returns immediately; short cap just in case.
@@ -29,16 +42,18 @@ while [ ! -d "$TS" ]; do
 done
 _pfd_log "TrickyStore engine dir ready (waited ${_wait_count} iterations)"
 
-# Self-removal if TrickyStore missing
-if [ ! -d "$TS" ] || [ -f "$TS/remove" ]; then
-    _pfd_log "TrickyStore missing or removing - marking self for removal"
-    if [ -f "$MODPATH/action.sh" ]; then
-        # Magisk hidden module: recreate stub at real ID
-        rm -rf "/data/adb/modules/TA_enhanced" 2>/dev/null
-        mkdir -p "/data/adb/modules/TA_enhanced"
-        touch "/data/adb/modules/TA_enhanced/remove"
+# 引擎缺失：只记日志，**绝不**删/标记任何模块目录。
+#
+# 旧上游逻辑在这里做的是"自毁"：`rm -rf /data/adb/modules/TA_enhanced` 然后再建一个
+# 带 remove 的目录（Magisk 隐藏模块形态），或者 `touch "$MODPATH/remove"`。两条路都
+# 会让 TA_enhanced 从管理器的模块列表里消失——用户 2026-10-15 报的正是这个现象。
+# 内置那份跑在 tmpfs 里，写 remove 没有任何意义；用户自己刷的那份要退出，也应该由
+# 用户自己决定（管理器里停用/卸载），不该由脚本替他删。
+if [ ! -d "$TS" ]; then
+    if builtin_tee_present; then
+        _pfd_log "TrickyStore 运行目录不在（$TS），但检测到其它 TEE 引擎在位——继续，keybox/target 维护走它"
     else
-        touch "$MODPATH/remove"
+        _pfd_log "没有可用的 TEE 引擎（内置 TEE 未开启、也没装外部模块）——本次只做回锁属性部分，keybox/target 维护跳过"
     fi
 fi
 

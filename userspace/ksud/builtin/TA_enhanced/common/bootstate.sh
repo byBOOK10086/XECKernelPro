@@ -326,6 +326,12 @@ bootstate_watchdog_loop() {
     local _warned_oem=0 _tick=0
     while :; do
         sleep 30
+        # 运行期被用户关掉 → 看护循环退出（进程由 `service.sh --stop` 收掉）。
+        # 注意：内核侧（ksud 的 bootstate 一致性过一遍）与这里无关，本开关只管模块。
+        builtin_flag_on ta || {
+            _log "INFO" "回锁看护：内置 TA 已被用户关闭，循环退出"
+            return 0
+        }
         _tick=$((_tick + 1))
 
         # ZeroMount 补偿：挂载窗口内那几轮被推迟过，这里一次性补写并复核。

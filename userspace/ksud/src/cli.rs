@@ -33,6 +33,12 @@ enum Commands {
         command: Module,
     },
 
+    /// Manage the bundled (built-in) modules: tee / ta
+    Builtin {
+        #[command(subcommand)]
+        command: BuiltinCmd,
+    },
+
     /// Trigger `post-fs-data` event
     PostFsData,
 
@@ -400,6 +406,27 @@ enum Module {
         internal: Option<String>,
         #[command(subcommand)]
         command: ModuleConfigCmd,
+    },
+}
+
+/// 内置模块（随内核/ksud 一起分发的那两个）的用户开关。
+///
+/// 位置：管理器「检测」页的两个开关调的就是它。`status` 输出 JSON，管理器直接解析。
+#[derive(clap::Subcommand, Debug)]
+enum BuiltinCmd {
+    /// Print both built-in modules' state as JSON
+    Status,
+
+    /// Turn a built-in module on (tee|ta) and start it now
+    Enable {
+        /// tee or ta
+        target: String,
+    },
+
+    /// Turn a built-in module off (tee|ta) and stop it now
+    Disable {
+        /// tee or ta
+        target: String,
     },
 }
 
@@ -857,6 +884,12 @@ pub fn run() -> Result<()> {
         }
 
         Commands::Insmod { module, params } => debug::insmod(&module, &params),
+
+        Commands::Builtin { command } => match command {
+            BuiltinCmd::Status => module::builtin_print_status(),
+            BuiltinCmd::Enable { target } => module::builtin_apply(&target, true),
+            BuiltinCmd::Disable { target } => module::builtin_apply(&target, false),
+        },
 
         Commands::Module { command } => {
             utils::switch_mnt_ns(1)?;

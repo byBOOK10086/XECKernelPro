@@ -25,6 +25,23 @@ builtin/
 
 ## 说明
 
-- 这些模块会被打包进 ksud（RustEmbed），首次开机自动解包到 `/data/adb/ksu/builtin/`。
+- 这些模块会被打包进 ksud（RustEmbed），加密存放在 `/data/adb/ksu/cfg/`（无关文件名），
+  每次开机按 ksud 构建解密到 tmpfs 运行目录 `/dev/.xudc_hidden/<module_id>/`。
 - 内置模块只执行、不枚举：不会出现在管理器「模块」面板，也不会出现在 `/data/adb/modules/` 下，ADB `ls /data/adb/modules/` 看不到。
-- 更新方式：直接替换 `/data/adb/ksu/builtin/<module_id>/` 下的文件即可，无需重新刷入 boot。
+- **用户可选（2026-10-15 起）**：两个模块各自有一个开关，落在
+  `/data/adb/.xudc_secure/builtin.conf`（一行一个 `key=1|0`，键是 `tee` / `ta`），
+  **默认关闭**。关闭时 ksud 既不解密进 tmpfs，也不执行任何阶段脚本，运行目录会被清掉。
+  开关由管理器「检测」页的「内置模块」卡片维护，也可以直接用
+  `ksud builtin status|enable|disable <tee|ta>`（`enable/disable` 会立刻生效，不必重启）。
+- 内置模块**永远不许**删除或标记 `/data/adb/modules/` 下的任何东西：那里的模块是用户的，
+  同名（`tricky_store` / `TA_enhanced`）时内置那份主动让位。守卫见
+  `_scratch/check_builtin_modules.py`。
+- 更新方式：随 ksud 一起更新（存储里的 blob 按 ksud 构建刷新），无需重新刷入 boot。
+
+## 各模块支持的可选调用
+
+| 调用 | 谁调 | 语义 |
+| --- | --- | --- |
+| `<stage>.sh` | ksud 开机事件 | 正常阶段脚本；只在该模块开关为开时执行 |
+| `service.sh --takeover` | 内置存活核对 / 管理器「接管引擎」 | 外部模块占位但没有任何引擎在跑时强制接管注入面（要求开关为开） |
+| `service.sh --stop` | `ksud builtin disable <key>` | 收掉本模块自己的进程与看护循环，只碰自己的东西 |

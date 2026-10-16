@@ -29,9 +29,95 @@ fi
 # 看不到就用 --takeover 接管。可用环境变量覆盖，便于本地/真机调参。
 TAKEOVER_DELAY=${TAKEOVER_DELAY:-90}
 
+# ---------------------------------------------------------------------------
+# 用户开关（管理器「检测」页 / `ksud builtin enable|disable tee`）
+# ---------------------------------------------------------------------------
+# 2026-10-15 用户裁决：内置 TEE 从"开机必然运行"改成**用户可选**。ksud 在开机时已经
+# 按开关决定要不要把本模块解密进 tmpfs（关掉时这个脚本根本不会被执行），这里再复查
+# 一次是为了**运行期**被关掉的情况：看护循环必须随之停下，否则用户关了它、下一轮
+# 它又把自己拉起来。
+BUILTIN_FLAG=/data/adb/.xudc_secure/builtin.conf
+builtin_flag_on() {
+    [ -f "$BUILTIN_FLAG" ] || return 1
+    grep -qiE "^[[:space:]]*$1[[:space:]]*=[[:space:]]*(1|true|on|yes|enable|enabled)[[:space:]]*$" \
+        "$BUILTIN_FLAG" 2>/dev/null
+}
+
+# 引擎进程判据：**两个名字都要认**。
+# 本项目的引擎把进程名改成 keymint_svc（去指纹），而上游 TEESimulator / TrickyStore
+# 的引擎进程名是 TEESimulator。只认前者会把"用户装了上游模块、它的引擎活得好好的"
+# 判成"外部模块占位却零拦截"，于是本模块自动 --takeover 起第二个引擎——两套引擎
+# 同时向 keystore2 注入（两套 grant ledger、两套证书缓存）正是当初要避免的事。
+engine_alive() {
+    [ -n "$(pidof keymint_svc 2>/dev/null)" ] && return 0
+    [ -n "$(pidof TEESimulator 2>/dev/null)" ] && return 0
+    [ -n "$(pidof teesimulator 2>/dev/null)" ] && return 0
+    return 1
+}
+
 log_line() {
     printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$LOG_FILE" 2>/dev/null
 }
+
+# ---------------------------------------------------------------------------
+# `--stop`：运行期关掉内置 TEE 时由 ksud 调用（`ksud builtin disable tee`）
+# ---------------------------------------------------------------------------
+# 只做两件事，且**只碰本模块自己起的东西**：
+#   1) 杀掉本模块的引擎与守护进程（supervisor / daemon / keymint_svc）；
+#   2) 让 keystore2 重开一份，把已经注入进去的引擎代码丢掉（否则"关了"却仍在拦）。
+#
+# 绝不动 /data/adb/modules 下的任何目录。旧实现在这里（以及兼容目录清理那一段）
+# 无条件 `rm -rf /data/adb/modules/tricky_store`，于是**用户自己刷入的 TrickyStore
+# 模块会在一次 --takeover 之后从管理器的模块列表里消失**——这正是本次要修的 bug。
+if [ "$1" = "--stop" ]; then
+    log_line "INFO stop: user turned the built-in TEE engine off"
+
+    _stopped=0
+    for _pid in $(pidof keymint_svc 2>/dev/null); do
+        kill -9 "$_pid" 2>/dev/null && _stopped=$((_stopped + 1))
+    done
+    # supervisor / daemon 只按**可执行文件路径**认：同名进程可能属于用户装的
+    # 上游模块，凭进程名杀会误伤别人的引擎。
+    for _p in /proc/[0-9]*; do
+        case "$(readlink "$_p/exe" 2>/dev/null)" in
+            "$RUNTIME/supervisor"|"$RUNTIME/daemon")
+                kill -9 "${_p#/proc/}" 2>/dev/null && _stopped=$((_stopped + 1))
+                ;;
+        esac
+    done
+    log_line "INFO stop: killed $_stopped engine process(es)"
+
+    _ks_pid=$(pidof keystore2 2>/dev/null | awk '{print $1}')
+    if [ -n "$_ks_pid" ]; then
+        kill -9 "$_ks_pid" 2>/dev/null
+        _i=0
+        while [ "$_i" -lt 10 ]; do
+            sleep 1
+            _i=$((_i + 1))
+            _new_pid=$(pidof keystore2 2>/dev/null | awk '{print $1}')
+            [ -n "$_new_pid" ] && [ "$_new_pid" != "$_ks_pid" ] && break
+        done
+        if [ -n "$_new_pid" ] && [ "$_new_pid" != "$_ks_pid" ]; then
+            log_line "INFO stop: keystore2 restarted (pid $_ks_pid -> $_new_pid), injected engine code dropped"
+        else
+            log_line "WARN stop: keystore2 did not come back within 10s — reboot to fully restore the real TEE path"
+        fi
+    else
+        log_line "INFO stop: keystore2 not running, nothing to restart"
+    fi
+
+    # 自检文件写一个明确的"已关闭"结论：管理器检测页据此显示"内置引擎已关闭"，
+    # 而不是把上一次的 ok/engine_down 当成现状继续报。
+    _sc="$DATA/tee-selfcheck.txt"
+    {
+        printf 'at=%s\n' "$(date +%s 2>/dev/null || echo 0)"
+        printf 'engine=disabled\n'
+        printf 'verdict=disabled\n'
+        printf 'repair=none\n'
+        printf 'served=0\n'
+    } > "$_sc" 2>/dev/null || log_line "WARN stop: cannot write $_sc"
+    exit 0
+fi
 
 stage_file() {
     local source="$1" target="$2" mode="$3" tmp="${target}.tmp.$$"
@@ -67,16 +153,48 @@ label_data_path() {
     return 0
 }
 
+# 外部引擎占位判据。
+#
+# 除了上游 tricky_store 的两个目录名，还认两种常见形态：
+#   * 目录里带 classes.dex + libTEESimulator.so 的**任何**已启用模块
+#     （TEESimulator-RS / TrickyStore 的发行包都是这两个文件名）；
+#   * 用户把模块目录改名/加前缀的情况——按 module.prop 里的 id 判定。
+# 认错方向的代价不对称：漏认 = 两套引擎同时注入（密钥行为异常），
+# 误认 = 内置那份让位（用户自己装的模块照常工作）。所以这里宁可多认。
 external_engine_active() {
-    local dir
+    local dir prop id
     for dir in /data/adb/modules/tricky_store /data/adb/modules/.tricky_store; do
         [ -f "$dir/module.prop" ] || continue
         [ -f "$dir/disable" ] && continue
         [ -f "$dir/remove" ] && continue
         return 0
     done
+
+    for dir in /data/adb/modules/*/; do
+        dir=${dir%/}
+        [ -f "$dir/module.prop" ] || continue
+        [ -f "$dir/disable" ] && continue
+        [ -f "$dir/remove" ] && continue
+        case "${dir##*/}" in .*|tricky_store) continue ;; esac
+        prop="$dir/module.prop"
+        id=$(sed -n 's/^id=//p' "$prop" 2>/dev/null | head -n 1 | tr -d '\r')
+        case "$id" in
+            tricky_store|tricky-store|TrickyStore|TEESimulator|teesimulator|TEESimulator-RS) return 0 ;;
+        esac
+        if [ -f "$dir/classes.dex" ] && [ -f "$dir/libTEESimulator.so" ]; then
+            return 0
+        fi
+    done
     return 1
 }
+
+# 用户开关：关掉时本模块不启动任何东西（ksud 在开机时已按开关决定要不要解密本模块，
+# 这里是运行期/手工调用路径上的第二道闸门）。--takeover 同样要求开关为开：
+# 关掉内置 TEE 之后，"接管"就不再是用户想要的语义了。
+if ! builtin_flag_on tee; then
+    log_line "INFO builtin TEERS: 内置 TEE 已被用户关闭（$BUILTIN_FLAG 里 tee=0），本次不启动"
+    exit 0
+fi
 
 mkdir -p "$RUNTIME" || exit 1
 chmod 755 "$RUNTIME" 2>/dev/null
@@ -94,23 +212,27 @@ label_data_path "$RUNTIME"
 # 检测方看到的就是"密钥行为异常"。
 if external_engine_active; then
     if [ "$1" = "--takeover" ]; then
-        log_line "WARN builtin TEERS: taking over — an external tricky_store module is present but no TEESimulator process is alive"
+        log_line "WARN builtin TEERS: taking over — an external module owns the injection surface, but no engine process (keymint_svc / TEESimulator) is alive"
     else
         # 「占位」不等于「真的在拦」。旧实现只看到外部模块目录存在就让位并 exit，
         # 于是外部引擎一旦起不来（旧版引擎、Android 16 上注入失败、被系统杀掉而它自己
         # 没有看护、模块还在但运行时文件被清掉……），整台设备就变成
         # **完全没有拦截**：检测方永远拿到真实 TEE 证明 —— 表现就是用户报的
         # "bootloader 解锁 + 信任根异常"，而模块列表里一切正常、没有任何报错。
-        # 所以让位之后补一次存活核对：宽限期结束还看不到 TEESimulator 进程就用
-        # --takeover 重新进来，由本模块的引擎接管。外部引擎活着时这一步不会发生，
+        # 所以让位之后补一次存活核对：宽限期结束还看不到引擎进程就用 --takeover
+        # 重新进来，由本模块的引擎接管。外部引擎活着时这一步不会发生，
         # 不会出现双引擎互杀（那正是当初要 stand down 的原因）。
         log_line "INFO builtin TEERS stand down: external module directory is present (liveness check in ${TAKEOVER_DELAY}s)"
         (
             sleep "$TAKEOVER_DELAY"
-            if [ -n "$(pidof keymint_svc 2>/dev/null)" ]; then
+            # 存活判据同时认两套进程名：用户装的可能是上游 TEESimulator，
+            # 它的引擎进程不会叫 keymint_svc。
+            if engine_alive; then
                 echo "$(date '+%F %T') INFO builtin TEERS: external engine is alive, staying down" >> "$LOG_FILE" 2>/dev/null
                 exit 0
             fi
+            # 用户在这期间把内置 TEE 关掉的话，接管也要作废。
+            builtin_flag_on tee || exit 0
             sh "$0" --takeover >> "$LOG_FILE" 2>&1
         ) >/dev/null 2>&1 &
         exit 0
@@ -203,9 +325,30 @@ fi
 # 为什么必须去掉：`/data/adb/modules/tricky_store/` 这个名字是**能读 /data/adb 的
 # root 级扫描器**最容易命中的指纹（模块列表里就是一个名叫 tricky_store 的目录），
 # 而它对我们没有任何功能作用。
+# 历史遗留的兼容目录清理——**只删我们自己造的那一个**。
+#
+# 旧实现（v31120 及以前）在这个路径下建过一个只放 `libcertgen.so` 的兼容目录，
+# 用来满足 DEX 里写死的 `/data/adb/modules/tricky_store/libcertgen.so`。本批已经把
+# 那行改成从运行时目录取，兼容目录不再需要，于是它在设备上就只剩"指纹"这一个作用。
+#
+# 但 `rm -rf /data/adb/modules/tricky_store` 是**无差别**的：用户自己刷入的上游
+# TrickyStore 模块用的正是这个目录名，一条 `--takeover` 之后它就从管理器的模块
+# 列表里消失了（用户 2026-10-15 报的就是这个）。所以判据必须证明"这是我们那个
+# 只有 libcertgen.so 的壳"：**没有 module.prop**（因此也从来不是模块），
+# 且只剩 libcertgen.so。用户装的模块一定带 module.prop，永远不会命中。
 if [ -d /data/adb/modules/tricky_store ]; then
-    rm -rf /data/adb/modules/tricky_store 2>/dev/null && \
-        log_line "INFO compat: removed the legacy /data/adb/modules/tricky_store directory (upstream path no longer needed)"
+    _compat=/data/adb/modules/tricky_store
+    if [ -f "$_compat/module.prop" ]; then
+        log_line "INFO compat: $_compat 是一个外部模块目录（有 module.prop），保持原样不动"
+    else
+        _compat_extra=$(find "$_compat" -mindepth 1 -maxdepth 1 ! -name libcertgen.so 2>/dev/null | head -n 1)
+        if [ -f "$_compat/libcertgen.so" ] && [ -z "$_compat_extra" ]; then
+            rm -rf "$_compat" 2>/dev/null && \
+                log_line "INFO compat: removed our legacy $_compat stub (libcertgen.so only, no module.prop)"
+        else
+            log_line "INFO compat: $_compat 没有 module.prop 但不是我们那个只有 libcertgen.so 的壳，保持原样不动"
+        fi
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -597,6 +740,10 @@ tee_selfcheck() {
     local _pid _files _kb_state _target _checker _vvb _lc _served _perr
     local _vbs _locked _dev _verity _verdict _repair=""
 
+    # 用户关掉内置 TEE 之后自检必须停手——包括**不要**把引擎再拉起来，
+    # 否则"关闭"会在下一轮自检里被自己撤销。
+    builtin_flag_on tee || return 0
+
     _pid=$(pidof keymint_svc 2>/dev/null)
     _files=missing
     if [ -f "$RUNTIME/daemon" ] && [ -f "$RUNTIME/classes.dex" ] && \
@@ -731,6 +878,17 @@ engine_watchdog() {
     local _pid _now _attempts=0 _last_try=0
     while :; do
         sleep 300
+        # 运行期被用户关掉 → 看护退出（进程由 `service.sh --stop` 收掉）。
+        if ! builtin_flag_on tee; then
+            log_line "INFO engine watchdog: 内置 TEE 已被用户关闭，看护循环退出"
+            return 0
+        fi
+        # 外部模块在这期间接管了（用户又刷了上游模块，它的引擎活着）→ 让位，
+        # 不再去抢注入面；本模块的进程已经没了就是"外部在管"。
+        if external_engine_active && [ -z "$(pidof keymint_svc 2>/dev/null)" ] && engine_alive; then
+            log_line "INFO engine watchdog: 外部模块的引擎已接管，本模块看护退出"
+            return 0
+        fi
         _pid=$(pidof keymint_svc 2>/dev/null)
         if [ -n "$_pid" ]; then
             _attempts=0
@@ -767,6 +925,11 @@ engine_watchdog() {
 ( _tick=0
   while :; do
     sleep 15
+    # 运行期被用户关掉 → 整条对账/自愈循环退出（引擎与守护进程由 --stop 收掉）。
+    if ! builtin_flag_on tee; then
+      echo "$(date '+%F %T') INFO reconcile loop: 内置 TEE 已被用户关闭，循环退出" >> "$LOG_FILE" 2>/dev/null
+      exit 0
+    fi
     sync_conf target.txt
     sync_conf security_patch.txt
     _tick=$((_tick + 1))

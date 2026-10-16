@@ -9,6 +9,60 @@ TSPA="/data/adb/modules/tsupport-advance"
 . "$MODPATH/common/common.sh"
 detect_manager
 
+# ---------------------------------------------------------------------------
+# 用户开关 / 归属判定
+# ---------------------------------------------------------------------------
+# 2026-10-15 用户裁决：内置 TA 与内置 TEE 都是**用户可选**，两个开关互相独立
+#（管理器「检测」页 / `ksud builtin enable|disable ta`）。ksud 在开机时已按开关决定
+# 要不要解密本模块，这里是运行期与手工调用路径上的第二道闸门。
+if ! builtin_flag_on ta; then
+    mkdir -p "$LOG_BASE_DIR" 2>/dev/null
+    _log "INFO" "内置 TA 已被用户关闭（$BUILTIN_FLAG 里 ta=0），本次不启动"
+    exit 0
+fi
+if builtin_external_ta_active; then
+    mkdir -p "$LOG_BASE_DIR" 2>/dev/null
+    _log "INFO" "外部 TA_enhanced 模块在位 —— 内置那份让位（两个 daemon 同时改 keybox/target/属性会互相覆盖）"
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# `--stop`：运行期关掉内置 TA 时由 ksud 调用（`ksud builtin disable ta`）
+# ---------------------------------------------------------------------------
+# 只收本模块自己起的进程，**绝不动 /data/adb/modules 下的任何目录**：
+#   * daemon（staging 到 /data 的那份 ta-enhanced）及其子进程：按可执行文件路径与
+#     命令行里的绝对路径双重匹配，避免误伤用户自己装的同名二进制；
+#   * 本模块的看护循环（service.sh / prop.sh / propclean.sh 的后台子 shell）：
+#     命令行里带着 $MODPATH，按路径匹配，跳过自己（$$）。
+# 循环本身也会在下一次 tick 看到 ta=0 后自己退出，这里是"立刻生效"的那一半。
+if [ "$1" = "--stop" ]; then
+    mkdir -p "$LOG_BASE_DIR" 2>/dev/null
+    _log "INFO" "stop: 用户关闭内置 TA，开始收进程"
+    _TA_BIN="/data/adb/.xudc_secure/ta-enhanced/bin/ta-enhanced"
+    _killed=0
+    for _p in /proc/[0-9]*; do
+        _pid=${_p#/proc/}
+        [ "$_pid" = "$$" ] && continue
+        _exe=$(readlink "$_p/exe" 2>/dev/null)
+        _cmd=$(tr '\0' ' ' < "$_p/cmdline" 2>/dev/null)
+        if [ "$_exe" = "$_TA_BIN" ]; then
+            kill -9 "$_pid" 2>/dev/null && _killed=$((_killed + 1))
+            continue
+        fi
+        case "$_cmd" in
+            *"$_TA_BIN"*)
+                kill -9 "$_pid" 2>/dev/null && _killed=$((_killed + 1))
+                continue
+                ;;
+            *"$MODPATH/service.sh"*|*"$MODPATH/prop.sh"*|*"$MODPATH/propclean.sh"*)
+                kill -9 "$_pid" 2>/dev/null && _killed=$((_killed + 1))
+                ;;
+        esac
+    done
+    _log "INFO" "stop: 收掉 $_killed 个进程（看护循环最迟一个 tick 后自行退出）"
+    exit 0
+fi
+
 # 日志目录必须在这里就建出来：_log 只在目录存在时才写文件，而 daemon 自己的默认
 # 日志目录（/data/adb/tricky_store/ta-enhanced/logs，见 vendor config/mod.rs 的
 # LoggingConfig::default）**不是**这个路径——不建的话本模块 shell 层的全部证据
@@ -70,13 +124,22 @@ elif [ ! -d "$TSPA" ] && [ -f "/storage/emulated/0/stop-tspa-auto-target" ]; the
     rm -f "/storage/emulated/0/stop-tspa-auto-target"
 fi
 
-# Magisk Module Hiding
 # Decide the final module path FIRST: the staging below runs from whatever
 # path survives this block, so the engine binary is always staged from the
 # copy that is actually in charge. (Dot-prefix hides from Magisk's module
 # list scan, stable since Magisk v24+; service.sh re-copies on every boot so
 # the hidden copy is always fresh.)
-if [ -f "$MODPATH/action.sh" ]; then
+# Magisk Module Hiding —— **只在真正的 Magisk 上做**。
+# 旧判据是 `[ -f "$MODPATH/action.sh" ]`，可 action.sh 在 KernelSU / APatch 上同样存在
+# （管理器的「操作」按钮读的就是它），于是"内核态 root + 用户自己刷的 TA"这种组合会
+# 走进隐藏分支：把模块整个拷到 /data/adb/modules/.TA_enhanced，再删掉可见目录
+# `/data/adb/modules/TA_enhanced` —— 模块就从管理器的列表里消失了（用户 2026-10-15
+# 报的正是这个现象）。隐藏是 Magisk 独有的特性（Magisk 扫模块时会跳过点开头的目录），
+# 在 KSU/APatch 上没有任何意义，只会造成这个后果。
+_ta_in_moddir=false
+case "$MODPATH" in /data/adb/modules/*) _ta_in_moddir=true ;; esac
+
+if [ "$MANAGER" = "MAGISK" ] && [ "$_ta_in_moddir" = "true" ] && [ -f "$MODPATH/action.sh" ]; then
     if [ "$MODPATH" != "$HIDE_DIR" ]; then
         _log "INFO" "Module hiding (Magisk)"
         rm -rf "$HIDE_DIR"
@@ -95,14 +158,14 @@ if [ -f "$MODPATH/action.sh" ]; then
     # Merge Magisk denylist into target.txt (flag-file-gated)
     [ -f "$TS_DIR/target_from_denylist" ] && add_denylist_to_target
 else
-    # KSU/APatch: clean up any stale hidden dir
+    # KSU/APatch（以及任何不在 /data/adb/modules 下的副本）：清掉可能残留的隐藏目录
     [ -d "$HIDE_DIR" ] && rm -rf "$HIDE_DIR"
 fi
 
 # Drop the visible Magisk module dir only when hiding actually succeeded.
 # If the copy failed above, MODPATH still points at the original and removing
 # it would destroy the only live copy of the module.
-if [ "$MODPATH" = "$HIDE_DIR" ]; then
+if [ "$MODPATH" = "$HIDE_DIR" ] && [ "$MANAGER" = "MAGISK" ]; then
     rm -rf "/data/adb/modules/TA_enhanced"
 fi
 

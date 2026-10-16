@@ -89,6 +89,51 @@ TS_DIR="/data/adb/.xudc_secure"
 # Unified log directory -- shell and Rust daemon both log here
 LOG_BASE_DIR="/data/adb/.xudc_secure/ta-enhanced/logs"
 
+# ---------------------------------------------------------------------------
+# 用户开关（管理器「检测」页 / `ksud builtin enable|disable ta`）
+# ---------------------------------------------------------------------------
+# 2026-10-15 用户裁决：内置 TA 与内置 TEE 一样，从"开机必然运行"改成**用户可选**，
+# 两个开关互相独立。ksud 在开机时已经按开关决定要不要把本模块解密进 tmpfs（关掉时
+# 这些脚本根本不会被执行），这里再复查一次是为了运行期被关掉的情况：常驻看护循环
+# 必须随之停下，否则用户关了它、下一轮它又把自己拉起来。
+BUILTIN_FLAG="/data/adb/.xudc_secure/builtin.conf"
+builtin_flag_on() {
+    [ -f "$BUILTIN_FLAG" ] || return 1
+    grep -qiE "^[[:space:]]*$1[[:space:]]*=[[:space:]]*(1|true|on|yes|enable|enabled)[[:space:]]*$" \
+        "$BUILTIN_FLAG" 2>/dev/null
+}
+
+# 用户自己刷入的 TA_enhanced 模块在不在位？
+#
+# 两个 daemon 会同时改 keybox / target.txt / 回锁属性，表现为互相覆盖、日志各写一半。
+# 判据：/data/adb/modules 下有同名模块目录，而且**当前脚本不是从那里执行的**
+#（外部那份自己当然要继续跑）。
+builtin_external_ta_active() {
+    local _d _self="${MODPATH:-${MODDIR:-}}"
+    for _d in /data/adb/modules/TA_enhanced /data/adb/modules/.TA_enhanced; do
+        [ -f "$_d/module.prop" ] || continue
+        [ -f "$_d/disable" ] && continue
+        [ -f "$_d/remove" ] && continue
+        [ -n "$_self" ] && [ "$_self" = "$_d" ] && return 1
+        return 0
+    done
+    return 1
+}
+
+# TEE 引擎在不在位（本项目的 tmpfs 运行目录，或用户自己装的上游模块）。
+# TA 的 keybox / target 维护是给引擎用的；一个引擎都没有时启动它只会空转，
+# 还会在 /data/adb/tricky_store 下写出没人读的文件。
+builtin_tee_present() {
+    [ -d "$TS" ] && return 0
+    local _d
+    for _d in /data/adb/modules/tricky_store /data/adb/modules/.tricky_store \
+              /data/adb/modules/TEESimulator; do
+        [ -f "$_d/module.prop" ] && [ ! -f "$_d/disable" ] && [ ! -f "$_d/remove" ] && return 0
+    done
+    [ -d /data/adb/tricky_store ] && [ -f /data/adb/tricky_store/keybox.xml ] && return 0
+    return 1
+}
+
 # Simple Logger
 # Writes to log file + logcat tag "TA_enhanced"
 _log() {

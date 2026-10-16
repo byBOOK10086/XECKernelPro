@@ -44,6 +44,24 @@ AOSP libbinder/libutils 头文件子集（Apache-2.0）、Linux 内核 UAPI 头�
      管理器触发文件）核对"引擎在不在跑 / keybox 链末是不是有效的 Google 根 / 验机工具
      是否在拦截名单 / 锁态属性有没有漂移"，能修的自己修（每类每次开机限额），结论写进
      `/data/adb/.xudc_secure/tee-selfcheck.txt` 供管理器「TEE 引擎与拦截」直接显示。
+- **2026-10-15（用户可选 + 不再删用户的模块）**：
+  1) 内置 TEE 从"开机必然运行"改成**用户可选**：开关落在 `/data/adb/.xudc_secure/builtin.conf`
+     （`tee=1`），由管理器「检测」页或 `ksud builtin enable|disable tee` 维护，**默认关闭**；
+     关闭时 ksud 既不解密本模块进 tmpfs，也不执行任何阶段脚本，运行目录同时被清掉。
+     `service.sh` 自己在开跑前复查一次开关（运行期被关掉的情况下退出）。
+  2) 新增 `service.sh --stop`：`ksud builtin disable tee` 会调用它——只收本模块自己的
+     进程（`keymint_svc` 与可执行文件指向 `$RUNTIME/supervisor|daemon` 的那些），
+     再把 keystore2 重开一份丢掉已注入的引擎代码，并把自检结论写成 `verdict=disabled`。
+     **绝不再碰 `/data/adb/modules` 下的任何目录**。
+  3) **修掉"用户自己刷的模块重启后消失"**：兼容目录清理过去是无条件
+     `rm -rf /data/adb/modules/tricky_store`，而用户自己刷的上游 TrickyStore 用的正是
+     这个目录名——一次 `--takeover` 之后它就从管理器的模块列表里没了。现在只删**能证明
+     是我们那个壳**的目录（没有 `module.prop`、且只剩 `libcertgen.so`），有 `module.prop`
+     的一律保持原样。
+  4) 让位/接管的存活判据同时认两套进程名（本项目的 `keymint_svc` 与上游的
+     `TEESimulator`），并按 `module.prop` 里的 id 与 `classes.dex + libTEESimulator.so`
+     识别改名后的外部模块——只认一个名字会把"用户装的上游引擎活得好好的"判成零拦截，
+     进而自动起第二个引擎（两套 grant ledger 互相打架）。
 - **2026-10-08**：`service.sh` 增加启动前密钥取证：记录实时 keybox 的 sha/年龄/权限，
   识别"当前用的仍是模块自带出厂 keybox"，并在权限不是 644 时修正（读它的
   `KeyBoxManager` 运行在 keystore2 进程里，0600 打不开）。

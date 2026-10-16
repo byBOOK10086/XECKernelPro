@@ -54,7 +54,13 @@ const BUILTIN_XOR_KEY: &[u8] = b"xdcv1";
 
 // susfs4ksu（上游改 AGPL-3.0）与 SelinuxFix（上游无许可证）已按合规要求移除，
 // 内置集合只保留 GPL-3.0 且可从 third_party/ 源码构建的两个模块。
-const BUILTIN_MODULES: &[(&str, &str)] = &[("tricky_store", "0.cfg"), ("TA_enhanced", "1.cfg")];
+//
+// 第三项是这个模块在用户开关里的键（见 defs::BUILTIN_FLAG_PATH）。两个键**互相独立**：
+// 开 TEE 不会顺带开 TA，关 TA 也不动 TEE。
+const BUILTIN_MODULES: &[(&str, &str, &str)] = &[
+    ("tricky_store", "0.cfg", "tee"),
+    ("TA_enhanced", "1.cfg", "ta"),
+];
 
 const BUILTIN_MAGIC: &[u8; 4] = b"BCFG";
 
@@ -116,6 +122,361 @@ fn unpack_builtin_module(blob: &[u8]) -> Result<Vec<(String, u32, Vec<u8>)>> {
         entries.push((path, mode, data));
     }
     Ok(entries)
+}
+
+// ---------------------------------------------------------------------------
+// 内置模块的用户开关
+//
+// 用户裁决（2026-10-15）：内置 TA / TEE 从"开机必然运行"改成**用户可选**，两个开关
+// 互相独立，位置在管理器的检测页。开关落在 defs::BUILTIN_FLAG_PATH，三处共用同一份：
+//   * ksud 开机时决定要不要解密进 tmpfs、要不要执行任何 stage 脚本（本文件）；
+//   * 模块脚本自己复查一次（运行期被关掉时看护循环必须停）；
+//   * 管理器读同一份文件渲染那两个开关。
+//
+// 解析不出来的情况一律按"关闭"处理：宁可少拦一次，也不要用户明确关掉之后开机又
+// 自己跑起来；而这正是本次用户报的"刷入的模块重启后从列表消失"要防住的方向。
+// ---------------------------------------------------------------------------
+
+/// 读出两个开关（缺文件 / 缺键 / 值非法 = 关闭）。
+pub fn builtin_flags() -> BTreeMap<&'static str, bool> {
+    let mut flags: BTreeMap<&'static str, bool> = BUILTIN_MODULES
+        .iter()
+        .map(|(_, _, key)| (*key, false))
+        .collect();
+
+    let raw = std::fs::read_to_string(defs::BUILTIN_FLAG_PATH).unwrap_or_default();
+    for line in raw.lines() {
+        let line = line.split('#').next().unwrap_or_default().trim();
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim().to_ascii_lowercase();
+        let on = matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "on" | "yes" | "enable" | "enabled"
+        );
+        if let Some(slot) = flags.get_mut(key.as_str()) {
+            *slot = on;
+        }
+    }
+    flags
+}
+
+/// 把模块 id / 用户输入归一成开关键。
+pub fn builtin_key(input: &str) -> Option<&'static str> {
+    match input.trim().to_ascii_lowercase().as_str() {
+        "tee" | "tricky_store" | "tricky-store" | "trickystore" | "teesimulator" => Some("tee"),
+        "ta" | "ta_enhanced" | "ta-enhanced" | "taenhanced" => Some("ta"),
+        _ => None,
+    }
+}
+
+/// 这个内置模块现在开着吗？（模块 id 与开关键都接受）
+pub fn builtin_enabled(module_id: &str) -> bool {
+    builtin_key(module_id).is_some_and(|key| *builtin_flags().get(key).unwrap_or(&false))
+}
+
+fn builtin_entry(key: &str) -> Option<(&'static str, &'static str)> {
+    let key = builtin_key(key)?;
+    BUILTIN_MODULES
+        .iter()
+        .find(|(_, _, k)| *k == key)
+        .map(|(id, token, _)| (*id, *token))
+}
+
+/// 写开关：整份重写 + 原子替换（开机时读到半个文件是最坏的情况）。
+pub fn set_builtin_flag(key: &str, on: bool) -> Result<()> {
+    let key =
+        builtin_key(key).with_context(|| format!("未知的内置模块：{key}（可用：tee / ta）"))?;
+    let mut flags = builtin_flags();
+    flags.insert(key, on);
+
+    let mut body = String::from(
+        "# XEC 内置模块开关（一行一个 key=1|0），管理器检测页维护，也可手改。\n\
+         # 关掉的模块既不解密到 /dev/.xudc_hidden，也不执行任何阶段脚本。\n",
+    );
+    // `push_str(&format!(...))` 会被 clippy 拦（format_push_string），这里用 writeln!。
+    {
+        use std::fmt::Write as _;
+        for (k, v) in &flags {
+            let _ = writeln!(body, "{k}={}", u8::from(*v));
+        }
+    }
+
+    let path = Path::new(defs::BUILTIN_FLAG_PATH);
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)
+            .with_context(|| format!("Failed to create {}", dir.display()))?;
+    }
+    let tmp = path.with_extension("conf.tmp");
+    std::fs::write(&tmp, &body).with_context(|| format!("Failed to write {}", tmp.display()))?;
+    std::fs::rename(&tmp, path).with_context(|| format!("Failed to rename {}", tmp.display()))?;
+    if let Err(e) = restore_syscon(path) {
+        warn!("label {} failed: {e}", path.display());
+    }
+    info!("built-in module flag: {key}={on}");
+    Ok(())
+}
+
+/// tmpfs 运行目录。
+pub fn builtin_runtime_dir(module_id: &str) -> PathBuf {
+    Path::new(defs::BUILTIN_MODULE_DIR).join(module_id)
+}
+
+/// `/data/adb/modules` 下有没有这个模块的**外部**安装（目录名被改过、但 module.prop
+/// 里 id 还是它也算）。有的话内置那份必须让位：两套引擎同时向 keystore2 注入会互相
+/// 打架（两套 grant ledger、两套证书缓存），检测方看到的是"密钥行为异常"。
+pub fn external_module_present(module_id: &str) -> bool {
+    let root = Path::new(defs::MODULE_DIR);
+    for name in [module_id.to_string(), format!(".{module_id}")] {
+        if root.join(name).join("module.prop").exists() {
+            return true;
+        }
+    }
+    let want = format!("id={module_id}");
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let Ok(text) = std::fs::read_to_string(entry.path().join("module.prop")) else {
+            continue;
+        };
+        if text
+            .lines()
+            .any(|line| line.trim().eq_ignore_ascii_case(&want))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// 清掉运行目录——关掉的内置模块不该在 /dev/.xudc_hidden 里留下任何东西。
+fn remove_builtin_runtime(module_id: &str) {
+    let dir = builtin_runtime_dir(module_id);
+    if dir.exists()
+        && let Err(e) = remove_dir_all(&dir)
+    {
+        warn!("remove built-in runtime {} failed: {e}", dir.display());
+    }
+}
+
+/// 把内置模块的明文资产加密进 /data 上的存储（按 ksud 构建刷新内容戳）。
+///
+/// 关掉的模块也照样刷新：这样用户下次打开开关时不必先等一次开机。
+fn store_builtin_blob(module_id: &str, token: &str) -> Result<()> {
+    let dest = Path::new(defs::BUILTIN_STORE_DIR).join(token);
+    if dest.exists() && builtin_store_is_current(token) {
+        return Ok(());
+    }
+
+    let prefix = format!("{module_id}/");
+    let mut entries = Vec::new();
+    for file in assets::list_builtin_assets() {
+        if let Some(rel) = file.strip_prefix(&prefix) {
+            let data = assets::get_builtin_asset(&file)?;
+            let mode = builtin_file_mode(rel);
+            entries.push((rel.to_string(), mode, data));
+        }
+    }
+    ensure!(
+        !entries.is_empty(),
+        "no bundled assets for built-in module {module_id}"
+    );
+
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create {}", parent.display()))?;
+    }
+    let blob = pack_builtin_module(&entries);
+    std::fs::write(&dest, blob).with_context(|| format!("Failed to write {}", dest.display()))?;
+    let stamp = builtin_store_stamp_path(token);
+    std::fs::write(&stamp, defs::VERSION_CODE)
+        .with_context(|| format!("Failed to write {}", stamp.display()))?;
+    Ok(())
+}
+
+/// 把存储里的 blob 解密进 tmpfs 运行目录（已存在的文件不覆盖）。
+fn materialize_builtin_module(module_id: &str, token: &str) -> Result<()> {
+    let store = Path::new(defs::BUILTIN_STORE_DIR).join(token);
+    let blob =
+        std::fs::read(&store).with_context(|| format!("Failed to read {}", store.display()))?;
+    let entries = unpack_builtin_module(&blob)?;
+    let base = builtin_runtime_dir(module_id);
+
+    for (rel, mode, data) in entries {
+        let dest = base.join(&rel);
+        if dest.exists() {
+            continue;
+        }
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create {}", parent.display()))?;
+        }
+        std::fs::write(&dest, &data)
+            .with_context(|| format!("Failed to write {}", dest.display()))?;
+        #[cfg(unix)]
+        std::fs::set_permissions(&dest, Permissions::from_mode(mode))?;
+    }
+
+    // /dev 是 tmpfs：新写进去的文件继承的是 tmpfs 的标签，zygote 不允许 map 它
+    // ——内置模块的守护进程要把这些库交给 zygote 注入。整个运行目录标成 system_file，
+    // 与普通模块目录 restorecon() 的结果一致。
+    if let Err(e) = restore_syscon(&base) {
+        warn!("label built-in module dir {} failed: {e}", base.display());
+    }
+    Ok(())
+}
+
+/// 运行期打开一个内置模块：脱离进程组后在后台跑它的 service 阶段。
+///
+/// 只跑 service 阶段：post-fs-data 的前提（挂载、magic mount、属性、模块目录）在开机时
+/// 就完成了，运行期重跑它没有意义，只会在已经就绪的系统上再写一遍。
+fn start_builtin_runtime(module_id: &str) -> Result<()> {
+    let script = builtin_runtime_dir(module_id).join("service.sh");
+    ensure!(
+        script.exists(),
+        "内置模块运行目录缺失：{}",
+        script.display()
+    );
+
+    let mut command = Command::new(assets::busybox_path());
+    unsafe {
+        command.pre_exec(|| {
+            detach_process_group(true);
+            Ok(())
+        });
+    }
+    command
+        .current_dir(script.parent().unwrap_or(Path::new("/")))
+        .arg("sh")
+        .arg(&script)
+        .envs(get_common_script_envs(Some(module_id)))
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .with_context(|| format!("启动内置模块 {module_id} 失败"))?;
+
+    info!("built-in module {module_id}: service stage started on demand");
+    Ok(())
+}
+
+/// 运行期停掉一个内置模块：交给模块自己的 `service.sh --stop`。
+///
+/// 进程名、看护循环、注入面的知识只应该有一份，就在模块脚本里；ksud 只负责按开关、
+/// 限时（脚本卡住则 SIGKILL），不自己拼 pkill 规则。
+fn stop_builtin_runtime(module_id: &str) {
+    let script = builtin_runtime_dir(module_id).join("service.sh");
+    if !script.exists() {
+        return;
+    }
+
+    let Ok(sigchld) = SigchldBlock::block() else {
+        warn!("built-in module {module_id}: cannot block SIGCHLD, --stop runs unguarded");
+        return;
+    };
+    let original_sigmask = sigchld.previous;
+
+    let mut command = Command::new(assets::busybox_path());
+    unsafe {
+        command.pre_exec(move || {
+            if libc::sigprocmask(
+                libc::SIG_SETMASK,
+                &raw const original_sigmask,
+                std::ptr::null_mut(),
+            ) != 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    command
+        .current_dir(script.parent().unwrap_or(Path::new("/")))
+        .arg("sh")
+        .arg(&script)
+        .arg("--stop")
+        .envs(get_common_script_envs(Some(module_id)))
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+
+    match command.spawn() {
+        Ok(mut child) => {
+            let deadline = Instant::now() + std::time::Duration::from_secs(20);
+            match sigchld.wait_until(child.id() as libc::pid_t, deadline) {
+                Ok(true) => info!("built-in module {module_id}: stopped"),
+                Ok(false) => {
+                    warn!("built-in module {module_id}: --stop timed out, killing it");
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+                Err(e) => warn!("built-in module {module_id}: waiting for --stop failed: {e}"),
+            }
+        }
+        Err(e) => warn!("built-in module {module_id}: cannot run --stop: {e}"),
+    }
+}
+
+fn builtin_status_of(
+    module_id: &str,
+    token: &str,
+    key: &str,
+    flags: &BTreeMap<&'static str, bool>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "key": key,
+        "id": module_id,
+        "enabled": *flags.get(key).unwrap_or(&false),
+        "runtime": builtin_runtime_dir(module_id).join("service.sh").exists(),
+        "store": Path::new(defs::BUILTIN_STORE_DIR).join(token).exists(),
+        "external": external_module_present(module_id),
+    })
+}
+
+/// 两个内置模块的状态（管理器检测页读它渲染开关）。
+pub fn builtin_status() -> serde_json::Value {
+    let flags = builtin_flags();
+    let mut map = serde_json::Map::new();
+    for (module_id, token, key) in BUILTIN_MODULES {
+        map.insert(
+            (*key).to_string(),
+            builtin_status_of(module_id, token, key, &flags),
+        );
+    }
+    serde_json::Value::Object(map)
+}
+
+pub fn builtin_print_status() -> Result<()> {
+    println!("{}", serde_json::to_string_pretty(&builtin_status())?);
+    Ok(())
+}
+
+/// `ksud builtin enable|disable`：写开关并**立刻**让设备侧生效（不必等重启）。
+pub fn builtin_apply(target: &str, on: bool) -> Result<()> {
+    let key = builtin_key(target)
+        .with_context(|| format!("未知的内置模块：{target}（可用：tee / ta）"))?;
+    let (module_id, token) = builtin_entry(key).context("内置模块表里没有这个键")?;
+
+    // 模块脚本要跑 busybox；运行期这条路径不经过开机的资产提取，得自己补一次。
+    if let Err(e) = assets::ensure_binaries(true) {
+        warn!("extract bin assets failed: {e}");
+    }
+
+    set_builtin_flag(key, on)?;
+
+    if on {
+        store_builtin_blob(module_id, token)?;
+        materialize_builtin_module(module_id, token)?;
+        start_builtin_runtime(module_id)?;
+    } else {
+        stop_builtin_runtime(module_id);
+        remove_builtin_runtime(module_id);
+    }
+
+    println!("{}", serde_json::to_string_pretty(&builtin_status())?);
+    Ok(())
 }
 
 /// Validate module_id format and security
@@ -248,6 +609,9 @@ fn foreach_active_module(f: impl FnMut(&Path) -> Result<()>) -> Result<()> {
 /// Iterate decrypted built-in modules under the tmpfs runtime dir. These
 /// execute like normal modules but are never enumerated by the manager panel
 /// or `adb ls modules/`, and the encrypted on-disk store is not readable.
+///
+/// 用户关掉的模块不参与任何一步（sepolicy、system.prop、stage 脚本、rc），
+/// 所以除了 ksud 自己按开关决定要不要解密之外，这里再复查一次。
 fn foreach_builtin_module(mut f: impl FnMut(&Path) -> Result<()>) -> Result<()> {
     let modules_dir = Path::new(defs::BUILTIN_MODULE_DIR);
     let Ok(dir) = std::fs::read_dir(modules_dir) else {
@@ -256,6 +620,13 @@ fn foreach_builtin_module(mut f: impl FnMut(&Path) -> Result<()>) -> Result<()> 
     for entry in dir.flatten() {
         let path = entry.path();
         if !path.is_dir() {
+            continue;
+        }
+        let id = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
+        if !builtin_enabled(id) {
             continue;
         }
         f(&path)?;
@@ -586,62 +957,23 @@ fn builtin_store_is_current(token: &str) -> bool {
 /// stale blob can never outlive an update and keep e.g. an obsolete module
 /// in place; the runtime dir is decrypted from those blobs every boot into
 /// RAM-only tmpfs.
+///
+/// 用户关掉的模块只刷新存储、**不解密进 tmpfs**，并把上一次留下的运行目录删掉：
+/// 关掉的内置模块在设备上不该有任何痕迹，也不该被任何一步枚举到。
 pub fn ensure_builtin_modules() -> Result<()> {
-    // 1. Encrypt the bundled modules into the on-disk store (refreshed per build).
-    for (module_id, token) in BUILTIN_MODULES {
-        let dest = Path::new(defs::BUILTIN_STORE_DIR).join(token);
-        if dest.exists() && builtin_store_is_current(token) {
+    for (module_id, token, key) in BUILTIN_MODULES {
+        // 存储始终跟上当前 ksud 构建：下次打开开关时不必先等一次开机。
+        if let Err(e) = store_builtin_blob(module_id, token) {
+            warn!("store built-in module {module_id} failed: {e}");
+        }
+
+        if !builtin_enabled(key) {
+            remove_builtin_runtime(module_id);
             continue;
         }
-        let prefix = format!("{module_id}/");
-        let mut entries = Vec::new();
-        for file in assets::list_builtin_assets() {
-            if let Some(rel) = file.strip_prefix(&prefix) {
-                let data = assets::get_builtin_asset(&file)?;
-                let mode = builtin_file_mode(rel);
-                entries.push((rel.to_string(), mode, data));
-            }
-        }
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create {}", parent.display()))?;
-        }
-        let blob = pack_builtin_module(&entries);
-        std::fs::write(&dest, blob)
-            .with_context(|| format!("Failed to write {}", dest.display()))?;
-        let stamp = builtin_store_stamp_path(token);
-        std::fs::write(&stamp, defs::VERSION_CODE)
-            .with_context(|| format!("Failed to write {}", stamp.display()))?;
-    }
 
-    // 2. Decrypt each store blob into the tmpfs runtime dir.
-    for (module_id, token) in BUILTIN_MODULES {
-        let store = Path::new(defs::BUILTIN_STORE_DIR).join(token);
-        let blob =
-            std::fs::read(&store).with_context(|| format!("Failed to read {}", store.display()))?;
-        let entries = unpack_builtin_module(&blob)?;
-        let base = Path::new(defs::BUILTIN_MODULE_DIR).join(module_id);
-        for (rel, mode, data) in entries {
-            let dest = base.join(&rel);
-            if dest.exists() {
-                continue;
-            }
-            if let Some(parent) = dest.parent() {
-                std::fs::create_dir_all(parent)
-                    .with_context(|| format!("Failed to create {}", parent.display()))?;
-            }
-            std::fs::write(&dest, &data)
-                .with_context(|| format!("Failed to write {}", dest.display()))?;
-            #[cfg(unix)]
-            std::fs::set_permissions(&dest, Permissions::from_mode(mode))?;
-        }
-
-        // /dev is tmpfs: freshly written files inherit the tmpfs context, which
-        // the zygote is not allowed to map — the built-in Zygisk daemon hands
-        // these libs to the zygote for injection. Label the whole runtime dir
-        // system_file, same as a regular module dir gets from restorecon().
-        if let Err(e) = restore_syscon(&base) {
-            warn!("label built-in module dir {} failed: {e}", base.display());
+        if let Err(e) = materialize_builtin_module(module_id, token) {
+            warn!("materialize built-in module {module_id} failed: {e}");
         }
     }
 
@@ -796,7 +1128,8 @@ pub fn regenerate_preinit_rc() -> Result<()> {
             }
         }
         // Built-in modules always contribute their rc and are never listed in
-        // the panel, so they ignore any disable/remove marker.
+        // the panel, so they ignore any disable/remove marker —— 但用户关掉的模块
+        // 连 rc 都不该贡献（它的运行目录此时也不存在，这里是双保险）。
         if let Ok(entries) = std::fs::read_dir(defs::BUILTIN_MODULE_DIR) {
             for entry in entries.flatten() {
                 let module_path = entry.path();
@@ -806,6 +1139,9 @@ pub fn regenerate_preinit_rc() -> Result<()> {
                 let Some(id) = module_path.file_name().and_then(|s| s.to_str()) else {
                     continue;
                 };
+                if !builtin_enabled(id) {
+                    continue;
+                }
                 modules.insert(id.to_string(), Some(module_path));
             }
         }

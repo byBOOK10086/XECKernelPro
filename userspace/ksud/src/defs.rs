@@ -48,6 +48,12 @@ mod android {
     pub const BUILTIN_STORE_DIR: &str = concatcp!(WORKING_DIR, "cfg/");
     pub const BUILTIN_MODULE_DIR: &str = "/dev/.xudc_hidden/";
 
+    // 内置模块的用户开关。用户裁决（2026-10-15）：内置 TA/TEE 不再强制运行，
+    // 而是两个**互相独立**的开关，写在这里（`tee=1` / `ta=1`）；文件缺失、键缺失、
+    // 值不是 1 都算关闭，关闭时既不解密到 tmpfs 也不执行任何 stage 脚本。
+    // 与其它运行时状态同放 .xudc_secure：模块脚本、管理器、ksud 都读同一份。
+    pub const BUILTIN_FLAG_PATH: &str = "/data/adb/.xudc_secure/builtin.conf";
+
     // Prefer /metadata/watchdog/ when present, else /metadata
     pub const PREINIT_DIR_WATCHDOG: &str = "/metadata/watchdog/ksu/";
     pub const PREINIT_DIR_DEFAULT: &str = "/metadata/ksu/";

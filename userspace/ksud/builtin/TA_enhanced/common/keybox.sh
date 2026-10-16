@@ -847,6 +847,11 @@ kb_guardian_loop() {
     _last_sha=$(kb_sha "$KB_LIVE")
     while :; do
         sleep "$KB_TICK"
+        # 运行期被用户关掉 → 看护循环退出（进程由 `service.sh --stop` 收掉）。
+        builtin_flag_on ta || {
+            _log "INFO" "keybox 看护：内置 TA 已被用户关闭，循环退出"
+            return 0
+        }
         _tick=$((_tick + 1))
         kb_fix_perms
         _cur_sha=$(kb_sha "$KB_LIVE")
