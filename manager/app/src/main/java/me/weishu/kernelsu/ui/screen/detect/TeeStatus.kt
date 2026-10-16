@@ -30,6 +30,7 @@ import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.token.Xc
+import me.weishu.kernelsu.ui.util.getKsuDaemonPath
 import me.weishu.kernelsu.ui.util.withNewRootShell
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -98,6 +99,14 @@ private val STATUS_SCRIPT = listOf(
     // 用户开关（检测页「内置模块」那两个开关写的文件）。关掉内置 TEE 之后
     // "引擎没在跑"不再是故障而是用户的选择，这一行让看板能把两者分开说。
     "echo teeon=\$(grep -qiE '^[[:space:]]*tee[[:space:]]*=[[:space:]]*(1|true|on|yes|enable|enabled)[[:space:]]*\$' /data/adb/.xudc_secure/builtin.conf 2>/dev/null && echo yes || echo no)",
+    // 注入是否**真的**成功：keystore2 的 maps 里有没有我们的 .so。这是整条链唯一的
+    // 硬证据 —— 引擎进程活着不等于在拦（守护进程注入失败后会 5 次重试然后 exit，
+    // supervisor 再拉起，采样点撞上就误报"运行中"）。
+    "KSP=\$(pidof keystore2 2>/dev/null | awk '{print \$1}')",
+    "if [ -n \"\$KSP\" ] && grep -q libTEESimulator /proc/\$KSP/maps 2>/dev/null; then echo injected=yes; else echo injected=no; fi",
+    // 启动诊断：service.sh 把"走到哪一步、结果如何"写进 engine-start.txt（开机/手动/修复
+    // 三种模式都写）。引擎起不来时这一行就是答案。
+    "echo start=\$(sed -n '1,20p' /data/adb/.xudc_secure/engine-start.txt 2>/dev/null | tr '\\n' '|')",
 ).joinToString("\n")
 
 /**
@@ -106,10 +115,11 @@ private val STATUS_SCRIPT = listOf(
  *
  * 先 `builtin enable tee` 再接管：开关文件是唯一的权威（关掉的内置模块连 --takeover
  * 都不接受），而用户点这个按钮的语义就是"我要内置引擎来拦"，所以先把开关打开，
- * 再让它的 service.sh 立刻跑一轮。
+ * 再让它的 service.sh 立刻跑一轮。`cli` 用**管理器自带**那份 ksud：设备侧那份可能
+ * 还是旧内核带着装的，不认 `builtin` 子命令。
  */
-private val TAKEOVER_SCRIPT = listOf(
-    "K=/data/adb/ksu/bin/ksud; [ -x \$K ] || K=/data/adb/xudc; [ -x \$K ] || K=ksud",
+private fun takeoverScript(cli: String): String = listOf(
+    "K=\"$cli\"; [ -x \"\$K\" ] || K=/data/adb/ksu/bin/ksud; [ -x \"\$K\" ] || K=/data/adb/xudc; [ -x \"\$K\" ] || K=ksud",
     "\$K builtin enable tee >/dev/null 2>&1",
     "MP=/dev/.xudc_hidden/tricky_store",
     "if [ -f \$MP/service.sh ]; then",
@@ -120,6 +130,16 @@ private val TAKEOVER_SCRIPT = listOf(
     "else",
     "  echo takeover=missing",
     "fi",
+).joinToString("\n")
+
+/**
+ * 「修复引擎」：`ksud builtin repair tee` —— 重打 keystore 侧 sepolicy（这是运行期
+ * 开引擎最容易漏的一步：keystore2 打不开要注入的 .so，注入必失败）、重新解密一份
+ * 干净的运行目录、再用 `--repair` 干净重启注入链（必要时换一个 keystore2 进程）。
+ */
+private fun repairScript(cli: String): String = listOf(
+    "K=\"$cli\"; [ -x \"\$K\" ] || K=/data/adb/ksu/bin/ksud; [ -x \"\$K\" ] || K=/data/adb/xudc; [ -x \"\$K\" ] || K=ksud",
+    "if \$K builtin repair tee >/dev/null 2>&1; then echo repair=ok; else echo repair=failed; fi",
 ).joinToString("\n")
 
 /**
@@ -176,6 +196,12 @@ private data class TeeStatus(
     val builtinPresent: Boolean = false,
     /** 用户开关：检测页「内置模块」里的内置 TEE 是不是开着（/data/adb/.xudc_secure/builtin.conf）。 */
     val builtinEnabled: Boolean = false,
+    /** 注入是否成功：keystore2 的 maps 里有我们的 libTEESimulator.so（唯一硬证据）。 */
+    val injected: Boolean = false,
+    /** service.sh 写的启动诊断（engine-start.txt）的 step/rc/detail。 */
+    val startStep: String = "",
+    val startRc: String = "",
+    val startDetail: String = "",
     /**
      * 设备侧自检（`tee-selfcheck.txt`）的全部字段。
      *
@@ -214,6 +240,16 @@ private data class TeeStatus(
      * keymint_svc）。那时"内置关着"只是背景，拦截是有人在做的，不能报成"按你的选择停用"。
      */
     val builtinDisabled: Boolean get() = !builtinEnabled && !externalModule && !engineAlive
+
+    /**
+     * 引擎在跑，但**注入没成功**（keystore2 的 maps 里没有我们的 .so）。
+     *
+     * 这是最容易被误判成"已经好了"的形态：进程活着、pidof 有值，但 keystore 完全没被
+     * 接管，检测方拿到的仍是真实 TEE 证明。守护进程注入失败后会重试 5 次然后 exit(1)，
+     * supervisor 再把它拉起来 —— 采样点撞上就报"运行中"，撞不上就报"引擎没跑"，
+     * 两种都不说明原因。
+     */
+    val notInjected: Boolean get() = engineAlive && !injected
     /** 引擎日志里那句 "Served RootOfTrust: deviceLocked=true verifiedBootState=0 …"。 */
     val servedLocked: Boolean get() = servedRootOfTrust.contains("deviceLocked=true")
     val servedVerified: Boolean get() = servedRootOfTrust.contains("verifiedBootState=0")
@@ -240,6 +276,9 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf<TeeStatus?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // 管理器自带那份 ksud（APK 里的 libxeccli.so）：设备侧那份是内核带着装的，
+    // 只更新管理器时它可能还是旧的，不认 `builtin` 子命令。
+    val cli = remember { getKsuDaemonPath() }
 
     suspend fun refresh() {
         val out = withContext(Dispatchers.IO) {
@@ -253,6 +292,15 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
             val i = line.indexOf('=')
             if (i <= 0) null else line.substring(0, i) to line.substring(i + 1).trim()
         }.toMap()
+        // 设备侧写的都是 KEY=VALUE 换行文件，这里统一用 `|` 拼成一行再解析。
+        fun backfill(raw: String): Map<String, String> = raw.split('|')
+            .mapNotNull { kv ->
+                val i = kv.indexOf('=')
+                if (i <= 0) null else kv.substring(0, i).trim() to kv.substring(i + 1).trim()
+            }
+            .toMap()
+        val startMap = backfill(map["start"].orEmpty())
+
         status = TeeStatus(
             engine = map["engine"].orEmpty(),
             engineFilesOk = map["enginefiles"] == "ok",
@@ -273,14 +321,11 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
             externalVersion = map["extver"].orEmpty(),
             builtinPresent = map["builtin"] == "yes",
             builtinEnabled = map["teeon"] == "yes",
-            // sc=at=…|engine=…|verdict=… ：设备侧写的是 KEY=VALUE 换行文件，这里用 | 拼成一行。
-            selfcheck = map["sc"].orEmpty()
-                .split('|')
-                .mapNotNull { kv ->
-                    val i = kv.indexOf('=')
-                    if (i <= 0) null else kv.substring(0, i).trim() to kv.substring(i + 1).trim()
-                }
-                .toMap(),
+            injected = map["injected"] == "yes",
+            startStep = startMap["step"].orEmpty(),
+            startRc = startMap["rc"].orEmpty(),
+            startDetail = startMap["detail"].orEmpty(),
+            selfcheck = backfill(map["sc"].orEmpty()),
         )
     }
 
@@ -375,6 +420,8 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                         // 它是"按你的选择停用"，不是故障，所以不标红。
                         "disabled" -> stringResource(R.string.detect_tee_sc_disabled)
                         "engine_down" -> stringResource(R.string.detect_tee_sc_engine_down)
+                        // 引擎在跑却没注入：keystore2 没被接管，检测方拿到的仍是真实 TEE。
+                        "not_injected" -> stringResource(R.string.detect_tee_sc_not_injected)
                         "keybox_expired" -> stringResource(R.string.detect_tee_sc_keybox_expired)
                         "keybox_other", "keybox_missing", "keybox_unknown" ->
                             stringResource(R.string.detect_tee_sc_keybox_bad, current.scVerdict)
@@ -417,6 +464,28 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                 },
                 bad = !current.engineAlive && !current.builtinDisabled,
             )
+            // 注入：**这才是"到底拦不拦得住"的第一现场**。进程活着但 maps 里没有我们的
+            // .so = 零拦截（守护进程注入失败后会重试 5 次再 exit，supervisor 又拉起，
+            // 只看 pidof 会时红时绿，指不到真正的原因）。
+            StatusRow(
+                label = stringResource(R.string.detect_tee_inject),
+                value = when {
+                    current.injected -> stringResource(R.string.detect_tee_injected)
+                    current.builtinDisabled ->
+                        stringResource(R.string.detect_builtin_off_short)
+                    current.engineAlive -> stringResource(R.string.detect_tee_not_injected)
+                    else -> stringResource(R.string.detect_tee_inject_unknown)
+                },
+                bad = !current.injected && !current.builtinDisabled,
+            )
+            // 启动诊断：service.sh 记的"走到哪一步、结果如何"（引擎起不来时的答案）。
+            if (current.startStep.isNotEmpty()) {
+                StatusRow(
+                    label = stringResource(R.string.detect_tee_start_diag),
+                    value = "step=${current.startStep} rc=${current.startRc} ${current.startDetail}".trim(),
+                    bad = current.startRc == "1" && !current.builtinDisabled,
+                )
+            }
             // 拦截归属：引擎没起来时，这一行回答"为什么"。外部模块占位（内置按设计
             // 让位）而它的引擎没跑，就是"模块列表看着正常、实际零拦截"的最坏形态。
             StatusRow(
@@ -432,6 +501,9 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                         R.string.detect_tee_owner_external,
                         current.externalVersion.ifEmpty { "?" },
                     )
+                    // 引擎活着但没注入：归属这一行必须说清"它在跑，但没接管 keystore"。
+                    current.engineAlive && !current.injected ->
+                        stringResource(R.string.detect_tee_owner_builtin_noinject)
                     current.engineAlive -> stringResource(R.string.detect_tee_owner_builtin)
                     // 内置资产在位但引擎没跑：没有外部模块背锅，就是它自己没起来。
                     current.builtinPresent -> stringResource(R.string.detect_tee_owner_builtin_down)
@@ -584,7 +656,21 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                 if (!current.engineAlive && !current.builtinDisabled) {
                     TextButton(
                         text = stringResource(R.string.detect_tee_takeover),
-                        onClick = { runRepair(TAKEOVER_SCRIPT, R.string.detect_tee_takeover_failed) },
+                        onClick = {
+                            runRepair(takeoverScript(cli), R.string.detect_tee_takeover_failed)
+                        },
+                        enabled = !busy,
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                    )
+                }
+                // 修复引擎：引擎在跑却没注入（或用户刚打开开关）时给 —— 重打 keystore 侧
+                // sepolicy + 重新解密 + 干净重启注入链，这是运行期开引擎最容易漏的一步。
+                if (current.notInjected || (current.builtinEnabled && !current.injected)) {
+                    TextButton(
+                        text = stringResource(R.string.detect_tee_repair),
+                        onClick = {
+                            runRepair(repairScript(cli), R.string.detect_tee_repair_failed)
+                        },
                         enabled = !busy,
                         colors = ButtonDefaults.textButtonColorsPrimary(),
                     )

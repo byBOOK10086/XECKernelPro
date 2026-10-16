@@ -4,6 +4,64 @@
 
 ---
 
+## 未发版 · TEE 注入链修复：运行期开引擎必须重打 keystore 侧 sepolicy + 全链可诊断
+
+> 类型：事故修复（用户实测："开关打不开内置模块，检测页还是老样子"）
+
+### 根因：换了"用户可选"之后，注入链缺了一环
+
+引擎的拦截靠**注入**，不是靠"进程在跑"：守护进程（`app_process` 跑的 Kotlin/JVM 进程）
+用 `exec ./inject $(pidof keystore2) libTEESimulator.so entry` ptrace 进 keystore2，让
+keystore2 `dlopen` + mmap `/data/adb/tricky_store/libTEESimulator.so`，由那个库在
+keystore2 里装 binder hook。`supervisor` 只是个 fork/重启壳子（5 行 C 代码），不碰 keystore2。
+
+这一链有两处前提以前没人管：
+
+1. **keystore2 必须能读/mmap 那个 .so** —— 靠模块 `sepolicy.rule` 里的
+   `allow keystore {adb_data_file shell_data_file tmpfs} file *`。这几条以前**只在开机
+   post-fs-data 加载一次**；v31128 把内置模块改成"用户可选、默认关闭"之后，用户在检测页
+   打开开关走的是 `ksud builtin enable tee`：它解密、启动 `service.sh`，**却没人再补这几条
+   规则**。keystore2 打不开 .so → 注入失败 → 守护进程重试 5 次后 `exitProcess(1)` →
+   supervisor 500ms 后拉起 → 再失败……设备上就是"内置模块怎么都起不来"，日志里只有一行
+   `Failed to find backdoor after 5 retries`。
+2. **没有任何界面能看出"注入没成功"** —— 以前只看 `pidof keymint_svc`：采样点撞上就报
+   "运行中"，撞不上就报"引擎没跑"，两种都不说明原因，而且"进程在跑但没注入"这种**零拦截**
+   状态会被显示成一切正常。
+
+### 修复
+
+- **`ksud builtin enable tee` 现在会重打该模块的 `sepolicy.rule`**（`apply_builtin_sepolicy`），
+  并在解密前先清空运行目录 —— 后者修掉"materialize 不覆盖已存在文件"导致的老文件残留。
+- 新增 **`ksud builtin repair <tee|ta>`**：重打 sepolicy + 重新解密一份干净的运行目录 +
+  收掉正在反复重启的旧引擎 + 以 `service.sh --repair` 干净重启（脚本会核对注入状态，
+  必要时**换一个干净的 keystore2 进程**再注入）。检测页与 TEE 看板各有一个「修复引擎」按钮。
+- 引擎资产完整性变成**硬错误**：`store_builtin_blob` 先检查 `classes.dex` /
+  `libTEESimulator.so` / `libcertgen.so` / `inject` / `supervisor` / `daemon` / `sepolicy.rule`
+  等是否真的被打进这一版 ksud（它们不在 git 里，由 CI 的 `build-builtin-modules.sh` 生成；
+  任何一次"没跑那个脚本就编译"都会得到一个"能跑但引擎永远起不来"的 ksud），
+  `ksud builtin status` 里也会带 `assets=` / `runtimeassets=`。
+- **注入状态成为一等事实**：设备侧自检与看板都会检查
+  `/proc/$(pidof keystore2)/maps` 里有没有 `libTEESimulator` —— 这是"到底拦不拦得住"的
+  唯一硬证据；自检新增 `not_injected` 结论，并在发现"引擎在跑但没注入 / 守护进程反复重启"
+  时**自动重启整条注入链**（每次开机限额，必要时换 keystore2）。
+- **启动诊断落到文件**：`service.sh` 把"走到哪一步、结果如何"写进
+  `/data/adb/.xudc_secure/engine-start.txt`（TA 侧是 `ta-start.txt`），开机 / 手动 / 修复
+  三种模式都写；看板与开关卡片直接显示。以前脚本里十几处 `|| exit 1` 一退出就什么都不写。
+
+### 管理器侧：开关不再依赖设备上那份 ksud
+
+- 检测页的开关改走**管理器自带**的 ksud（APK 里的 `libxeccli.so`）。设备侧那份是内核带着
+  装的，只更新管理器时它可能还是旧的（不认 `builtin` 子命令），于是"开关点了没反应"。
+- 同时探明**内核侧那份** ksud 是否支持开关：不支持就明确写出"本次开关只在当前这次开机内
+  有效，重启后会失效，请一并更新内核 / LKM"。
+- 挂载态（<5.10 Magisk 路线）本来就跑不了内置模块，卡片直接说明并让用户改用 Magisk 模块。
+- 四种失败不再塌成同一句话：命令失败 / 资产缺失 / 运行目录不完整 / 注入失败，
+  各自的文案与出路分开；开关动作改为**重读状态核对**（以前 `disable` 对已关掉的模块也返回
+  成功，会弹出一句"已关闭"却什么都没发生）。
+
+
+---
+
 ## v31128 · 2026-10-16 · 内置 TA / TEE 改为用户可选，并修掉「刷入的模块重启后从列表里消失」
 
 > 类型：行为变更（内置 TA/TEE **默认关闭**，开关在「检测」页）+ 事故修复

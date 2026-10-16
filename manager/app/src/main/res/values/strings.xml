@@ -812,6 +812,27 @@ See the log below for details.</string>
     <string name="detect_tee_owner_builtin_disabled">the built-in TEE was switched off by you</string>
     <string name="detect_tee_disabled_note">The built-in TEE is off: interception is disabled by your choice, so every app sees the real TEE attestation. To restore it, switch on \"Built-in TEE engine\" under \"Built-in modules\" below.</string>
 
+    <!-- Diagnostics for the built-in engine: the switches go through the manager's own ksud,
+         injection is proven by the keystore2 maps, and the start diagnosis comes from
+         /data/adb/.xudc_secure/engine-start.txt. -->
+    <string name="detect_builtin_cli_failed">The switch command failed — the ksud bundled in this manager did not run (see the diagnosis line below).</string>
+    <string name="detect_builtin_mount_state">This device is on the mount-state route (Magisk, kernel below 5.10): built-in modules do not exist there, so these switches do not apply. Use Magisk modules (TrickyStore / TEESimulator / TA) to intercept attestation instead.</string>
+    <string name="detect_builtin_not_injected">The engine is running but keystore2 is **not injected** — still zero interception; use \"Repair engine\" below</string>
+    <string name="detect_builtin_diag">Start diagnosis</string>
+    <string name="detect_builtin_repair">Repair engine</string>
+    <string name="detect_builtin_repair_done">Re-applied the injection policy and restarted the engine cleanly</string>
+    <string name="detect_builtin_boot_ksud_old">The kernel-side ksud (the one that actually runs the built-in modules at boot) does not support these switches yet: they only hold for the current boot and are lost after a reboot — update the kernel / LKM as well.</string>
+    <string name="detect_builtin_boot_ksud_missing">No kernel-side xudc/ksud found: nothing will decrypt the built-in modules at boot (switches still work for the current boot).</string>
+    <string name="detect_tee_inject">Keystore injection</string>
+    <string name="detect_tee_injected">Injected (our library runs inside keystore2)</string>
+    <string name="detect_tee_not_injected">The engine runs, but our library is not inside keystore2 — zero interception</string>
+    <string name="detect_tee_inject_unknown">Not injected (engine not running)</string>
+    <string name="detect_tee_start_diag">Start diagnosis</string>
+    <string name="detect_tee_sc_not_injected">The engine is running but injection failed (keystore2 is not intercepted) — the injection chain was restarted automatically; if it still fails, use \"Repair engine\"</string>
+    <string name="detect_tee_owner_builtin_noinject">built-in engine (keystore2 not injected)</string>
+    <string name="detect_tee_repair">Repair engine</string>
+    <string name="detect_tee_repair_failed">Repair did not succeed (see /data/adb/.xudc_secure/engine-start.txt and engine.log)</string>
+
     <!-- 主题系统（商城 / 编辑器 / 发布）：键必须两边成对，见 check_strings_parity.py -->
     <string name="settings_themes">Themes</string>
     <string name="settings_themes_summary">Theme store, editor and publishing</string>
