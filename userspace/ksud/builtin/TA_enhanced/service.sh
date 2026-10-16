@@ -10,31 +10,17 @@ TSPA="/data/adb/modules/tsupport-advance"
 detect_manager
 
 # ---------------------------------------------------------------------------
-# 用户开关 / 归属判定
-# ---------------------------------------------------------------------------
-# 2026-10-15 用户裁决：内置 TA 与内置 TEE 都是**用户可选**，两个开关互相独立
-#（管理器「检测」页 / `ksud builtin enable|disable ta`）。ksud 在开机时已按开关决定
-# 要不要解密本模块，这里是运行期与手工调用路径上的第二道闸门。
-if ! builtin_flag_on ta; then
-    mkdir -p "$LOG_BASE_DIR" 2>/dev/null
-    _log "INFO" "内置 TA 已被用户关闭（$BUILTIN_FLAG 里 ta=0），本次不启动"
-    exit 0
-fi
-if builtin_external_ta_active; then
-    mkdir -p "$LOG_BASE_DIR" 2>/dev/null
-    _log "INFO" "外部 TA_enhanced 模块在位 —— 内置那份让位（两个 daemon 同时改 keybox/target/属性会互相覆盖）"
-    exit 0
-fi
-
-# ---------------------------------------------------------------------------
 # `--stop`：运行期关掉内置 TA 时由 ksud 调用（`ksud builtin disable ta`）
 # ---------------------------------------------------------------------------
+# **必须排在开关闸门之前**：`ksud builtin disable ta` 是先写 `ta=0`、再调本脚本的
+# `--stop`，闸门在前的话这里会直接 exit 0，daemon 就没人收了（看护循环能靠自己的
+# 开关检查退出，daemon 不会）。
+#
 # 只收本模块自己起的进程，**绝不动 /data/adb/modules 下的任何目录**：
 #   * daemon（staging 到 /data 的那份 ta-enhanced）及其子进程：按可执行文件路径与
 #     命令行里的绝对路径双重匹配，避免误伤用户自己装的同名二进制；
 #   * 本模块的看护循环（service.sh / prop.sh / propclean.sh 的后台子 shell）：
 #     命令行里带着 $MODPATH，按路径匹配，跳过自己（$$）。
-# 循环本身也会在下一次 tick 看到 ta=0 后自己退出，这里是"立刻生效"的那一半。
 if [ "$1" = "--stop" ]; then
     mkdir -p "$LOG_BASE_DIR" 2>/dev/null
     _log "INFO" "stop: 用户关闭内置 TA，开始收进程"
@@ -60,6 +46,23 @@ if [ "$1" = "--stop" ]; then
         esac
     done
     _log "INFO" "stop: 收掉 $_killed 个进程（看护循环最迟一个 tick 后自行退出）"
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# 用户开关 / 归属判定
+# ---------------------------------------------------------------------------
+# 2026-10-15 用户裁决：内置 TA 与内置 TEE 都是**用户可选**，两个开关互相独立
+#（管理器「检测」页 / `ksud builtin enable|disable ta`）。ksud 在开机时已按开关决定
+# 要不要解密本模块，这里是运行期与手工调用路径上的第二道闸门。
+if ! builtin_flag_on ta; then
+    mkdir -p "$LOG_BASE_DIR" 2>/dev/null
+    _log "INFO" "内置 TA 已被用户关闭（$BUILTIN_FLAG 里 ta=0），本次不启动"
+    exit 0
+fi
+if builtin_external_ta_active; then
+    mkdir -p "$LOG_BASE_DIR" 2>/dev/null
+    _log "INFO" "外部 TA_enhanced 模块在位 —— 内置那份让位（两个 daemon 同时改 keybox/target/属性会互相覆盖）"
     exit 0
 fi
 
