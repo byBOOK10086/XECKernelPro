@@ -137,11 +137,19 @@ fn unpack_builtin_module(blob: &[u8]) -> Result<Vec<(String, u32, Vec<u8>)>> {
 // 自己跑起来；而这正是本次用户报的"刷入的模块重启后从列表消失"要防住的方向。
 // ---------------------------------------------------------------------------
 
-/// 读出两个开关（缺文件 / 缺键 / 值非法 = 关闭）。
+/// 读出两个开关。
+///
+/// **缺文件 / 缺键 = 开启**（出厂行为：内置模块要拦密钥证明）。只有用户明确写下
+/// `key=0` 才算关闭。这条方向是刻意的：
+///   * v31128 曾经把"缺文件 = 关闭"当默认，结果**全新安装、或者只更新了内核没装新管理器的
+///     设备上什么都没在拦**（用户 2026-10-16 报的"TEE 还是有问题"里就有这一条）；
+///   * 用户要的是"**我可以选**"，不是"默认什么都不做"；
+///   * "两个模块不打架"由让位逻辑（外部模块在位就 stand down）与"绝不删用户模块目录"
+///     保证，不需要靠默认关闭来实现。
 pub fn builtin_flags() -> BTreeMap<&'static str, bool> {
     let mut flags: BTreeMap<&'static str, bool> = BUILTIN_MODULES
         .iter()
-        .map(|(_, _, key)| (*key, false))
+        .map(|(_, _, key)| (*key, true))
         .collect();
 
     let raw = std::fs::read_to_string(defs::BUILTIN_FLAG_PATH).unwrap_or_default();
@@ -151,12 +159,16 @@ pub fn builtin_flags() -> BTreeMap<&'static str, bool> {
             continue;
         };
         let key = key.trim().to_ascii_lowercase();
-        let on = matches!(
+        // 只认"明确关闭"的写法；认不出来的值保持开启（"少拦一次"的代价比
+        // "用户以为开着、其实什么都没拦"小得多）。
+        let off = matches!(
             value.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "on" | "yes" | "enable" | "enabled"
+            "0" | "false" | "off" | "no" | "disable" | "disabled"
         );
-        if let Some(slot) = flags.get_mut(key.as_str()) {
-            *slot = on;
+        if off {
+            if let Some(slot) = flags.get_mut(key.as_str()) {
+                *slot = false;
+            }
         }
     }
     flags

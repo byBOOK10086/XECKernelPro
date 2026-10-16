@@ -98,9 +98,12 @@ LOG_BASE_DIR="/data/adb/.xudc_secure/ta-enhanced/logs"
 # 必须随之停下，否则用户关了它、下一轮它又把自己拉起来。
 BUILTIN_FLAG="/data/adb/.xudc_secure/builtin.conf"
 builtin_flag_on() {
-    [ -f "$BUILTIN_FLAG" ] || return 1
-    grep -qiE "^[[:space:]]*$1[[:space:]]*=[[:space:]]*(1|true|on|yes|enable|enabled)[[:space:]]*$" \
-        "$BUILTIN_FLAG" 2>/dev/null
+    # 缺文件 / 缺键 = **开启**：与 ksud 的 builtin_flags() 同口径，只有明确的
+    # 0/false/off/no 才算关闭（方向刻意：宁可多跑一次，也不要"用户以为开着、其实没拦"）。
+    [ -f "$BUILTIN_FLAG" ] || return 0
+    grep -qiE "^[[:space:]]*$1[[:space:]]*=[[:space:]]*(0|false|off|no|disable|disabled)[[:space:]]*$" \
+        "$BUILTIN_FLAG" 2>/dev/null && return 1
+    return 0
 }
 
 # 用户自己刷入的 TA_enhanced 模块在不在位？

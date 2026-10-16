@@ -790,7 +790,7 @@ See the log below for details.</string>
          engine and the built-in TA companion are independent, opt-in switches, backed by
          ksud's `builtin status|enable|disable` and /data/adb/.xudc_secure/builtin.conf. -->
     <string name="detect_builtin_title">Built-in modules (your choice)</string>
-    <string name="detect_builtin_note">The built-in TEE engine and the built-in TA companion ship with this app. They live in RAM only, so the module list cannot show them — that is why the switches are here. Both default to off and are independent; with them off nothing of the built-in modules is left on the device, and modules you flashed yourself are unaffected.</string>
+    <string name="detect_builtin_note">The built-in TEE engine and the built-in TA companion ship with this app. They live in RAM only, so the module list cannot show them — that is why the switches are here. They default to ON (a missing switch file means on) and are independent; with them off nothing of the built-in modules is left on the device, and modules you flashed yourself are unaffected.</string>
     <string name="detect_builtin_no_ksud">Could not read the built-in modules\' state: this device has no usable xudc/ksud (the mount-state Magisk route has no built-in modules at all), or its ksud is older than this manager — updating manager and kernel to the same version fixes it.</string>
     <string name="detect_builtin_tee_title">Built-in TEE engine</string>
     <string name="detect_builtin_tee_on">On · the engine is running and attestation requests are intercepted</string>

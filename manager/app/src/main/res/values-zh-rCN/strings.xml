@@ -792,7 +792,7 @@ XEC 项目组
          两者都由 ksud 的 `builtin status|enable|disable` 落地，开关文件是
          /data/adb/.xudc_secure/builtin.conf，默认关闭。 -->
     <string name="detect_builtin_title">内置模块（用户可选）</string>
-    <string name="detect_builtin_note">内置 TEE 引擎与内置 TA 增强都随本应用分发，本体在内存盘里、模块页看不到，所以开关放在这里。默认关闭，两个开关互相独立；关掉之后设备上不留任何内置模块的痕迹，你自己刷的模块也不受影响。</string>
+    <string name="detect_builtin_note">内置 TEE 引擎与内置 TA 增强都随本应用分发，本体在内存盘里、模块页看不到，所以开关放在这里。**默认开启**（缺开关文件即视为开启），两个开关互相独立；关掉之后设备上不留任何内置模块的痕迹，你自己刷的模块也不受影响。</string>
     <string name="detect_builtin_no_ksud">读不到内置模块的状态：这台设备上要么没有可用的 xudc/ksud（挂载态 Magisk 路线本来就没有内置模块），要么 ksud 比管理器旧 —— 管理器与内核更新到同一版本即可。</string>
     <string name="detect_builtin_tee_title">内置 TEE 引擎</string>
     <string name="detect_builtin_tee_on">已开启 · 引擎在跑，证明请求会被拦截</string>
