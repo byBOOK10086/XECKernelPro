@@ -791,10 +791,10 @@ See the log below for details.</string>
          ksud's `builtin status|enable|disable` and /data/adb/.xudc_secure/builtin.conf. -->
     <string name="detect_builtin_title">Built-in modules (your choice)</string>
     <string name="detect_builtin_note">The built-in TEE engine and the built-in TA companion ship with this app. They live in RAM only, so the module list cannot show them — that is why the switches are here. Both default to off and are independent; with them off nothing of the built-in modules is left on the device, and modules you flashed yourself are unaffected.</string>
-    <string name="detect_builtin_no_ksud">Could not read the built-in modules' state: this device has no usable xudc/ksud (the mount-state Magisk route has no built-in modules at all), or its ksud is older than this manager — updating manager and kernel to the same version fixes it.</string>
+    <string name="detect_builtin_no_ksud">Could not read the built-in modules\' state: this device has no usable xudc/ksud (the mount-state Magisk route has no built-in modules at all), or its ksud is older than this manager — updating manager and kernel to the same version fixes it.</string>
     <string name="detect_builtin_tee_title">Built-in TEE engine</string>
     <string name="detect_builtin_tee_on">On · the engine is running and attestation requests are intercepted</string>
-    <string name="detect_builtin_tee_on_down">On, but the engine is not running — use "Self-check and repair" above, or reboot</string>
+    <string name="detect_builtin_tee_on_down">On, but the engine is not running — use \"Self-check and repair\" above, or reboot</string>
     <string name="detect_builtin_tee_off">Off · nothing is intercepted, detectors see the real TEE attestation</string>
     <string name="detect_builtin_tee_external">Stood down: your own TEE module is installed, and two engines injecting at once would fight each other</string>
     <string name="detect_builtin_ta_title">Built-in TA companion</string>
@@ -802,15 +802,15 @@ See the log below for details.</string>
     <string name="detect_builtin_ta_on_down">On, but the daemon is not running — see /data/adb/.xudc_secure/ta-enhanced/logs</string>
     <string name="detect_builtin_ta_off">Off · keybox and interception list are not maintained automatically</string>
     <string name="detect_builtin_ta_external">Stood down: your own TA_enhanced module is installed</string>
-    <string name="detect_builtin_ta_needs_tee">Note: there is no usable TEE engine right now (the built-in TEE is off and no external module is installed), so TA's keybox and list maintenance is pointless at the moment.</string>
+    <string name="detect_builtin_ta_needs_tee">Note: there is no usable TEE engine right now (the built-in TEE is off and no external module is installed), so TA\'s keybox and list maintenance is pointless at the moment.</string>
     <string name="detect_builtin_toggle_on">Switched on and applied</string>
     <string name="detect_builtin_toggle_off">Switched off and applied</string>
     <string name="detect_builtin_toggle_failed">The switch did not take effect (see /data/adb/.xudc_secure/engine.log)</string>
     <string name="detect_builtin_restart_note">Switching the built-in TEE off also restarts keystore2 once, to drop the engine code that was injected into it; if a detector still sees simulated attestation afterwards, one reboot restores everything.</string>
     <string name="detect_builtin_off_short">Off</string>
-    <string name="detect_tee_sc_disabled">The built-in TEE was switched off by you — nothing is intercepted right now (turn it back on under "Built-in modules" below)</string>
+    <string name="detect_tee_sc_disabled">The built-in TEE was switched off by you — nothing is intercepted right now (turn it back on under \"Built-in modules\" below)</string>
     <string name="detect_tee_owner_builtin_disabled">the built-in TEE was switched off by you</string>
-    <string name="detect_tee_disabled_note">The built-in TEE is off: interception is disabled by your choice, so every app sees the real TEE attestation. To restore it, switch on "Built-in TEE engine" under "Built-in modules" below.</string>
+    <string name="detect_tee_disabled_note">The built-in TEE is off: interception is disabled by your choice, so every app sees the real TEE attestation. To restore it, switch on \"Built-in TEE engine\" under \"Built-in modules\" below.</string>
 
     <!-- 主题系统（商城 / 编辑器 / 发布）：键必须两边成对，见 check_strings_parity.py -->
     <string name="settings_themes">Themes</string>
