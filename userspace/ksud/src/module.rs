@@ -984,10 +984,12 @@ pub fn ensure_builtin_modules() -> Result<()> {
         }
     }
 
-    match first_error {
-        Some(e) => Err(e.context("built-in modules could not be provisioned")),
-        None => Ok(()),
-    }
+    // clippy::option_if_let_else：`match Option` 只有"映射 Some / 兜底 None"两种走向时，
+    // 应写成 map_or_else。
+    first_error.map_or_else(
+        || Ok(()),
+        |e| Err(e.context("built-in modules could not be provisioned")),
+    )
 }
 
 pub fn prune_modules() -> Result<()> {
