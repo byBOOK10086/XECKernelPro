@@ -92,10 +92,10 @@ const fn resetprop() -> ResetProp {
 /// 开关文件仍是 [`defs::BOOTSTATE_FLAG_PATH`]，管理器检测页的开关写的也是它；
 /// 文件不存在 = 关闭（把选择权交给用户）。
 fn enabled() -> bool {
-    fs::read_to_string(defs::BOOTSTATE_FLAG_PATH).is_ok_and(|value| {
-        matches!(
+    fs::read_to_string(defs::BOOTSTATE_FLAG_PATH).map_or(true, |value| {
+        !matches!(
             value.trim().to_ascii_lowercase().as_str(),
-            "1" | "on" | "true" | "yes" | "enable" | "enabled"
+            "0" | "off" | "false" | "no" | "disable" | "disabled"
         )
     })
 }

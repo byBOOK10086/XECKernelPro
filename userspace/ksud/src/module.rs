@@ -149,7 +149,7 @@ fn unpack_builtin_module(blob: &[u8]) -> Result<Vec<(String, u32, Vec<u8>)>> {
 pub fn builtin_flags() -> BTreeMap<&'static str, bool> {
     let mut flags: BTreeMap<&'static str, bool> = BUILTIN_MODULES
         .iter()
-        .map(|(_, _, key)| (*key, false))
+        .map(|(_, _, key)| (*key, true))
         .collect();
 
     let raw = std::fs::read_to_string(defs::BUILTIN_FLAG_PATH).unwrap_or_default();
@@ -159,12 +159,13 @@ pub fn builtin_flags() -> BTreeMap<&'static str, bool> {
             continue;
         };
         let key = key.trim().to_ascii_lowercase();
-        let on = matches!(
+        // v31121 行为（用户裁决）：默认开，只有明确的关闭写法才关。
+        let off = matches!(
             value.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "on" | "yes" | "enable" | "enabled"
+            "0" | "false" | "off" | "no" | "disable" | "disabled"
         );
-        if on && let Some(slot) = flags.get_mut(key.as_str()) {
-            *slot = true;
+        if off && let Some(slot) = flags.get_mut(key.as_str()) {
+            *slot = false;
         }
     }
     flags

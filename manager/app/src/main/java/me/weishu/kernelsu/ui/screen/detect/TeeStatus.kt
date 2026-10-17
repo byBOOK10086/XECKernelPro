@@ -97,7 +97,7 @@ private val STATUS_SCRIPT = listOf(
     "echo extver=\$(sed -n 's/^versionCode=//p' /data/adb/modules/tricky_store/module.prop 2>/dev/null | head -n 1)",
     "echo builtin=\$([ -f /dev/.xudc_hidden/tricky_store/service.sh ] && echo yes || echo no)",
     // 用户开关（检测页「内置模块」那两个开关写的文件）。**缺文件/缺键 = 开启**
-    //（与 ksud 的 builtin_flags 同口径：只有明确的 0/false/off/no 才算关闭）。
+    //（v31121 的行为，用户 2026-10-16 裁决；只有明确的 0/false/off/no 才算关闭）。
     // 关掉内置 TEE 之后"引擎没在跑"不再是故障而是用户的选择，这一行让看板能把两者分开说。
     "echo teeon=\$(grep -qiE '^[[:space:]]*tee[[:space:]]*=[[:space:]]*(0|false|off|no|disable|disabled)[[:space:]]*\$' /data/adb/.xudc_secure/builtin.conf 2>/dev/null && echo no || echo yes)",
     // 注入是否**真的**成功：keystore2 的 maps 里有没有我们的 .so。这是整条链唯一的

@@ -1,6 +1,5 @@
 package me.weishu.kernelsu.ui.screen.detect
 
-import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -33,8 +32,6 @@ import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.design.token.XcNeon
-import me.weishu.kernelsu.ui.screen.remote.RemoteDownloader
-import me.weishu.kernelsu.ui.util.flashModule
 import me.weishu.kernelsu.ui.util.getKsuDaemonPath
 import me.weishu.kernelsu.ui.util.isMountState
 import me.weishu.kernelsu.ui.util.withNewRootShell
@@ -47,7 +44,6 @@ import top.yukonga.miuix.kmp.basic.SwitchDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
-import java.io.File
 
 /**
  * 「内置模块」开关卡片：内置 TEE 引擎与内置 TA 增强，**两个互相独立**的开关。
@@ -71,21 +67,6 @@ import java.io.File
 private const val BUILTIN_FLAG = "/data/adb/.xudc_secure/builtin.conf"
 private const val ENGINE_START = "/data/adb/.xudc_secure/engine-start.txt"
 private const val SELFCHECK = "/data/adb/.xudc_secure/tee-selfcheck.txt"
-
-/**
- * 外部分发地址：TEE 引擎与 TA 增强各自一个**普通模块 zip**（模块列表里可见、可正常卸载）。
- *
- * 为什么要外部分发：2026-10-16 用户实测"打游戏多次弹环境异常、原版 KernelSU 不会"。
- * 内置形态的引擎跑在 tmpfs、由 ksud 直接拉起、还带自检看护，整个链路都是**内核/管理器
- * 自带**的指纹；改成"需要的人自己刷一个普通模块"之后，不装的人设备上**一点痕迹都没有**
- *（连模块目录都不存在），装的人也能像别的模块一样随时停用/卸载。
- *
- * 地址指向自建网盘（与远程模块助手同一条通道），发布时 CI 产出的 zip 会被同步到这里。
- */
-private const val TEE_MODULE_URL =
-    "http://42.193.123.248:5244/d/modules/XECKernelPro-TEE-module.zip"
-private const val TA_MODULE_URL =
-    "http://42.193.123.248:5244/d/modules/XECKernelPro-TA-module.zip"
 
 /**
  * 一次 root shell 取回两个模块的状态。
@@ -304,39 +285,6 @@ fun BuiltinModulesCard(backdrop: LayerBackdrop?) {
         }
     }
 
-    /**
-     * 下载外部分发的模块 zip 并交给 ksud 安装（装完是**普通模块**，重启后生效）。
-     *
-     * 这是"移除内置、改为外部 URL 分发"的落地路径：不装的人设备上零痕迹，
-     * 需要的人点一下就能装，之后在模块列表里正常停用/卸载。
-     */
-    fun installFromUrl(url: String, tag: String) {
-        if (busy) return
-        scope.launch {
-            busy = true
-            val ok = withContext(Dispatchers.IO) {
-                runCatching {
-                    val zip = File(context.cacheDir, "xec-$tag-module.zip")
-                    RemoteDownloader.downloadTo(url, zip) { _, _ -> }
-                    // flashModule 收两个回调（stdout/stderr），这里只要结果码。
-                    val result = flashModule(Uri.fromFile(zip), {}, {})
-                    zip.delete()
-                    result.code == 0
-                }.getOrDefault(false)
-            }
-            busy = false
-            refresh()
-            Toast.makeText(
-                context,
-                context.getString(
-                    if (ok) R.string.detect_builtin_install_done
-                    else R.string.detect_builtin_install_failed
-                ),
-                Toast.LENGTH_LONG,
-            ).show()
-        }
-    }
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -473,50 +421,6 @@ fun BuiltinModulesCard(backdrop: LayerBackdrop?) {
                     text = stringResource(R.string.detect_builtin_ta_needs_tee),
                     fontSize = 12.sp,
                     color = Xc.colors.warning,
-                )
-            }
-
-            // ── 外部分发（推荐路径）────────────────────────────────────────────
-            // 内置形态是"随内核/管理器分发"的，链路本身就是一个环境指纹（游戏实测反馈）；
-            // 这里给的是"需要的人自己刷一个普通模块"：不装的人零痕迹，装的人能在模块列表里管。
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = stringResource(R.string.detect_builtin_external_title),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = neon.textMain,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = stringResource(R.string.detect_builtin_external_note),
-                fontSize = 11.sp,
-                lineHeight = 16.sp,
-                color = Xc.colors.textSecondary,
-            )
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(
-                    text = if (state.teeExternal) {
-                        stringResource(R.string.detect_builtin_install_tee_again)
-                    } else {
-                        stringResource(R.string.detect_builtin_install_tee)
-                    },
-                    onClick = { installFromUrl(TEE_MODULE_URL, "tee") },
-                    enabled = !busy,
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                )
-                TextButton(
-                    text = stringResource(R.string.detect_builtin_install_ta),
-                    onClick = { installFromUrl(TA_MODULE_URL, "ta") },
-                    enabled = !busy,
-                )
-            }
-            if (state.teeExternal) {
-                Text(
-                    text = stringResource(R.string.detect_builtin_installed_hint),
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp,
-                    color = Xc.colors.textSecondary,
                 )
             }
 

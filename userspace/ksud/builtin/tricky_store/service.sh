@@ -41,11 +41,12 @@ builtin_flag_on() {
     # 用户自己刷进来的外部模块（模块目录在 /data/adb/modules 下）不受"内置开关"约束：
     # 刷了就是要它跑。开关只管内置那份（跑在 tmpfs /dev/.xudc_hidden 里）。
     case "${MODPATH:-}" in /data/adb/modules/*) return 0 ;; esac
-    # 内置形态：**必须显式打开**（缺文件 = 关闭）。内置那份默认不再运行，
-    # 需要拦截的用户改为从检测页「下载并刷入」装成普通模块。
-    [ -f "$BUILTIN_FLAG" ] || return 1
-    grep -qiE "^[[:space:]]*$1[[:space:]]*=[[:space:]]*(1|true|on|yes|enable|enabled)[[:space:]]*$" \
-        "$BUILTIN_FLAG" 2>/dev/null
+    # 内置形态：**缺文件 / 缺键 = 开启**（v31121 的行为：内置那份默认就运行），
+    # 只有明确的 0/false/off/no 才算关闭 —— 用户在检测页关掉时才写这种值。
+    [ -f "$BUILTIN_FLAG" ] || return 0
+    grep -qiE "^[[:space:]]*$1[[:space:]]*=[[:space:]]*(0|false|off|no|disable|disabled)[[:space:]]*$" \
+        "$BUILTIN_FLAG" 2>/dev/null && return 1
+    return 0
 }
 
 # 引擎进程判据：**两个名字都要认**。
