@@ -4,7 +4,26 @@
 
 ---
 
-## 未发版 · 内置 TEE / TA 改为「按需 URL 安装」，环境伪装改为默认关闭（修游戏「环境异常」）
+## v31141 · 2026-10-17 · 上游同步（67 提交）+ TEE 注入链修复；内置 TA/TEE 回到 v31121 的默认行为
+
+> 类型：上游同步 + 事故修复 + 行为回退（用户裁决：v31121 那版最正常）
+
+**这一版实际是什么样**（一句话版）：
+
+- **上游 `tiann/KernelSU` 的 67 个提交**（`dfadc08334..0faec0cc7b`）已合进来：kernel 拿到
+  module preinit（含 nolibc runner）、原生 module_blacklist、shell_su_adb_only、ksu_config
+  特征强制、SELinux/avtab/sidtab 与 pkg_observer/throne_tracker 的一系列修复、riscv64 LKM；
+  ksud 拿到热安装、preinit 钩子、boot 阶段超时、waitsys/软重启修复、坏 zip 与模块配置校验、
+  kallsyms token、resetprop ro 长值等。**管理器仍是我们自己的版本**（上游 manager 特性
+  与我们的主题/Miuix 重写正面冲突，留作独立一轮）。
+- **内置 TA/TEE 的行为回到 v31121**：默认开启并开机内置运行（缺开关文件即视为开启），
+  开机环境伪装（属性 + cmdline 回锁）也默认开启；**撤掉**上一版「按需下载并刷入」的入口。
+- **但保留注入链修复**：运行期开引擎会重打 keystore 侧 sepolicy、`ksud builtin repair`
+  与「修复引擎」按钮、注入/启动/策略三行诊断 —— 没有这些，v31128 之后那套开关下的引擎
+  根本起不来（这正是当时"内置模块无法启动"的根因）。
+- 两个模块 zip 仍随 Release 发布（`XECKernelPro-TEE-module.zip` / `-TA-module.zip`），
+  想当普通模块用的人可以自己刷；管理器不再推这条路。
+
 
 > 类型：行为变更 + 降指纹（对外可见：检测页出现「按需安装」，属性伪装默认不再生效）
 
@@ -55,7 +74,7 @@ tmpfs 运行目录、keystore 侧 sepolicy 规则），再叠加"开机把 ro.bo
 
 ---
 
-## 未发版 · TEE 注入链修复：运行期开引擎必须重打 keystore 侧 sepolicy + 全链可诊断
+### 附：TEE 注入链修复（本版已包含）
 
 > 类型：事故修复（用户实测："开关打不开内置模块，检测页还是老样子"）
 
