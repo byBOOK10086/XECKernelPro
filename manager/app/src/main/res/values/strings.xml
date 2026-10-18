@@ -808,6 +808,11 @@ See the log below for details.</string>
     <string name="detect_builtin_toggle_failed">The switch did not take effect (see /data/adb/.xudc_secure/engine.log)</string>
     <string name="detect_builtin_restart_note">Switching the built-in TEE off also restarts keystore2 once, to drop the engine code that was injected into it; if a detector still sees simulated attestation afterwards, one reboot restores everything.</string>
     <string name="detect_builtin_off_short">Off</string>
+    <string name="detect_tee_flash">Flash the TEE module</string>
+    <string name="detect_tee_flash_again">Flash the TEE module again</string>
+    <string name="hide_env_running">Hiding…</string>
+    <string name="hide_env_tee_title">Hide TEE and keys</string>
+    <string name="hide_env_tee_desc">Stop the engine, move the keybox, target lists and logs into a hidden directory (reversible, modules untouched)</string>
     <string name="detect_tee_sc_disabled">The built-in TEE was switched off by you — nothing is intercepted right now (turn it back on under \"Built-in modules\" below)</string>
     <string name="detect_tee_owner_builtin_disabled">the built-in TEE was switched off by you</string>
     <string name="detect_tee_disabled_note">The built-in TEE is off: interception is disabled by your choice, so every app sees the real TEE attestation. To restore it, switch on \"Built-in TEE engine\" under \"Built-in modules\" below.</string>

@@ -8,62 +8,15 @@ use anyhow::{Context, Result};
 use log::{error, info, warn};
 use std::{path::Path, time::Instant};
 
-/// Provision the built-in modules: extract the bundled binaries they are
-/// executed with, materialize them into the RAM-only module dir and apply their
-/// SELinux rules.
-fn provision_builtin_modules() {
-    // Built-in scripts run through the bundled busybox, so the binaries have to
-    // be extracted before any of them runs.
-    if let Err(e) = assets::ensure_binaries(true) {
-        warn!("Failed to extract bin assets: {e}");
-    }
-
-    if let Err(e) = crate::module::ensure_builtin_modules() {
-        warn!("ensure built-in modules failed: {e}");
-    }
-
-    // Drop Zygisk Next's failure leftovers (disable + .abort_msg) before its
-    // stage scripts run, so a previous failed daemon start cannot keep Zygisk
-    // disabled for this boot as well.
-    crate::module::clear_zygisk_failure_markers();
-
-    if crate::module::load_builtin_sepolicy_rule().is_err() {
-        warn!("load built-in sepolicy.rule failed");
-    }
-
-    // SUSFS baseline (kernel-support probe; no-op on kernels without SUSFS).
-    // 内核态专有：挂载态没有 KSU 内核侧可探，跳过。
-    #[cfg(target_arch = "aarch64")]
-    if !utils::is_mount_state() {
-        crate::susfs::provision_baseline();
-    }
-}
-
-/// Run the built-in modules' `<stage>.sh` scripts.
-///
-/// Only used on paths where the regular module pipeline is deliberately skipped
-/// because an external Magisk installation was detected. Built-in modules are
-/// shipped by this kernel itself, so leaving them on that skip path silently
-/// disables Zygisk whenever a stray `magisk` binary happens to be in PATH.
-fn exec_builtin_stage(stage: &str, wait: ScriptWait) {
-    if stage == "post-fs-data" {
-        provision_builtin_modules();
-    }
-
-    if let Err(e) = crate::module::exec_builtin_stage_script(stage, wait) {
-        warn!("Failed to exec built-in {stage} scripts: {e}");
-    }
-}
-
 pub fn on_post_fs_data() -> Result<()> {
     // 挂载态（<5.10）没有内核驱动：凡是"跟驱动说话"的步骤都得跳过，否则整条
     // 模块流水线会被 UAPI 校验挡在门外（那一句是 `return Ok(())`，会静默什么都不做）。
     // 反过来，挂载态也不许铺内核态的东西（`/data/adb/ksu` 那一套）。
     let mount_state = utils::is_mount_state();
 
-    // Resolve a pending direct-flash transaction before any module, built-in
-    // engine, SELinux, or SUSFS work can run. A successful rollback owns this
-    // boot and must return immediately.
+    // Resolve a pending direct-flash transaction before any module, SELinux, or
+    // SUSFS work can run. A successful rollback owns this boot and must return
+    // immediately.
     if !mount_state && crate::boot_txn::on_post_fs_data()? {
         warn!("boot transaction rollback completed; skipping module startup");
         return Ok(());
@@ -109,15 +62,6 @@ pub fn on_post_fs_data() -> Result<()> {
 
     if utils::has_magisk_installed() {
         warn!("Magisk detected, skip post-fs-data!");
-        // Built-in modules belong to this kernel, not to Magisk: they still have
-        // to be provisioned and started, otherwise a stray `magisk` binary in
-        // PATH silently disables Zygisk for the whole boot.
-        if !crate::utils::is_safe_mode() {
-            exec_builtin_stage(
-                "post-fs-data",
-                ScriptWait::Until(Instant::now() + defs::BOOT_STAGE_TIMEOUT),
-            );
-        }
         return Ok(());
     }
 
@@ -148,11 +92,6 @@ pub fn on_post_fs_data() -> Result<()> {
             warn!("disable all modules failed: {e}");
         }
         return Ok(());
-    }
-
-    // Provision bundled built-in modules before any module enumeration/execution.
-    if let Err(e) = crate::module::ensure_builtin_modules() {
-        warn!("ensure built-in modules failed: {e}");
     }
 
     // Clear Zygisk Next's failure leftovers (disable + .abort_msg) so that a
@@ -271,9 +210,6 @@ pub fn run_stage(stage: &str, wait: ScriptWait) {
 
     if utils::has_magisk_installed() {
         warn!("Magisk detected, skip {stage}");
-        // Built-in modules ship with this kernel and must not be skipped along
-        // with the external Magisk module pipeline (see `exec_builtin_stage`).
-        exec_builtin_stage(stage, wait);
         return;
     }
 

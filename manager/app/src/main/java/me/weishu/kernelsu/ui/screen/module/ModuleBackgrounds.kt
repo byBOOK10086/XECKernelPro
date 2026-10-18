@@ -15,10 +15,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
@@ -30,17 +33,18 @@ import me.weishu.kernelsu.ui.design.token.XcNeon
 /**
  * 模块卡 DIY 背景的存储 + 解码 + 渲染。
  *
- * 存储：SharedPreferences（`module_backgrounds`），键 = 模块 id，值 = content Uri 字符串。
+ * 存储：SharedPreferences（`module_backgrounds`），键 = 模块 id（首页状态卡这类没有模块 id
+ * 的位置用固定槽位，如 `home_status`），值 = content Uri 字符串。
  * 图片经系统文件选择器（OpenDocument）选取并 takePersistableUriPermission，重启后仍有效。
  *
  * 解码：内存 LruCache（约 1/8 堆），按「Uri @ 目标宽度」缓存；大图按 inSampleSize
  * 降到 ~1024px 宽再解，模块卡用不到全分辨率。
  *
- * 渲染契约（用户要求「不能掩盖字体」）：图片铺满卡体后必须压两层
- * 「介质色 scrim」——一层整体 alpha 0.68 的 cardBg 均匀罩 + 一层自上而下加重的
- * 竖向渐变（标题行最重）。文字永远画在 scrim 之上，深浅主题下对比度都不塌。
- * scrim 色取 [XcNeon.colors.cardBg]（与卡体同介质），所以有背景的卡和普通玻璃卡
- * 观感是同一语言。
+ * 渲染契约（用户要求「图要当主角，又不能掩盖字体」）：图铺满整卡后只压
+ * [cardImageScrim] 那两层——一层很轻的介质薄纱 + 一条**底部加重**的竖向渐变
+ * （中段全透，标题行与描述行两端各留一档）。文字永远画在 scrim 之上，深浅主题下
+ * 对比度都不塌。scrim 色由调用方给「卡体介质色」（模块卡取 [XcNeon.colors.cardBg]），
+ * 所以有背景的卡和普通玻璃卡观感是同一语言。
  */
 object ModuleBackgrounds {
 
@@ -141,46 +145,101 @@ object ModuleBackgrounds {
     }
 }
 
+// ---- 背景图上的 scrim：唯一一份实现，模块卡与首页状态卡共用 -------------------
+
+/** 均匀薄纱浓度：旧版 0.68 会把照片糊成一块色斑；0.28 放图出来，中段正文还站得住。 */
+private const val SCRIM_VEIL_ALPHA = 0.28f
+
+/** 顶部一档：标题行 / 开关直接压在图上，靠它保住对比度。 */
+private const val SCRIM_TOP_ALPHA = 0.32f
+
+/** 底部一档：名称下方那几行（版本 / 描述 / 进度条）都在下半张，压得最重。 */
+private const val SCRIM_BOTTOM_ALPHA = 0.58f
+
 /**
- * 模块卡的背景层：图片 + 双层 scrim，整体画在卡玻璃体之上、内容之下。
- * `uri == null` 时不渲染任何东西（零开销路径）。
+ * 自定义背景图上的 scrim：一层薄纱 + 一条**底部加重**的竖向渐变。
+ *
+ * [medium] 必须是「卡体介质色」而不是写死的黑：深色档文字近白、要压深，浅色档文字
+ * 近黑、只能压浅——写死 `Color.Black` 在浅色档会把近黑字压成糊。模块卡传
+ * `XcNeon.colors.cardBg`，首页状态卡传 `Xc.colors.backdropScrim`。
+ *
+ * 渐变中段全透是有意的：图要露出来才有意义；两端各留一档，字才读得出来。
+ * 尺寸与圆角由调用方负责（本 modifier 只画，不筛形状）。
+ */
+fun Modifier.cardImageScrim(medium: Color): Modifier = this
+    .background(medium.copy(alpha = SCRIM_VEIL_ALPHA))
+    .background(
+        Brush.verticalGradient(
+            0f to medium.copy(alpha = SCRIM_TOP_ALPHA),
+            0.5f to medium.copy(alpha = 0f),
+            1f to medium.copy(alpha = SCRIM_BOTTOM_ALPHA),
+        )
+    )
+
+/**
+ * 组合内取某个槽位的自定义背景图（已解码、已进 LruCache）。
+ *
+ * 槽位键与存储格式完全复用 [ModuleBackgrounds]（`module_backgrounds` 里的一条）：
+ * 模块卡传模块 id，首页状态卡传固定槽位（`home_status`）。没有另起一套格式，
+ * 将来任意入口给某个槽位写一条，这里就即时生效。
+ *
+ * Uri 从快照 map 读（[ModuleBackgrounds.backgroundOf]），所以设置 / 清除后自动重组；
+ * 解码与缓存走 [rememberBackgroundBitmap] 那一条，和模块卡用的是同一份
+ * [ModuleBackgrounds.bitmapCache]，不额外占内存。
+ */
+@Composable
+fun rememberModuleBackground(slotId: String?): ImageBitmap? {
+    if (slotId.isNullOrEmpty()) return null
+    val context = LocalContext.current
+    return rememberBackgroundBitmap(ModuleBackgrounds.backgroundOf(context, slotId))
+}
+
+/**
+ * Uri → 解码后的背景图，模块卡直接拿着 Uri 时走这一条（不必再回查槽位）。
+ *
+ * `uri == null/空` 时整段提前返回 ⇒ `produceState` 的 remember 组一并销毁，槽位被清掉时
+ * 不会残留上一张图（produceState 的 state 本身不随 key 自动清空，靠这层提前返回兜住）。
+ */
+@Composable
+fun rememberBackgroundBitmap(uri: String?): ImageBitmap? {
+    if (uri.isNullOrEmpty()) return null
+    val context = LocalContext.current
+    val bitmap by produceState<Bitmap?>(initialValue = null, uri) {
+        val current = uri ?: return@produceState
+        val cached = ModuleBackgrounds.bitmapCache.get(current)
+        if (cached != null) {
+            value = cached
+        } else {
+            val decoded = ModuleBackgrounds.decode(context, current)
+            if (decoded != null) ModuleBackgrounds.bitmapCache.put(current, decoded)
+            value = decoded
+        }
+    }
+    // asImageBitmap() 每次都新建一层包装，包在 remember 里让 Image 拿到稳定实例。
+    return remember(bitmap) { bitmap?.asImageBitmap() }
+}
+
+/**
+ * 模块卡的背景层：图铺满整卡（圆角按 [shape] 裁）＋ [cardImageScrim]，
+ * 整体画在卡玻璃体之上、内容之下。`uri == null` 时不渲染任何东西（零开销路径）。
  */
 @Composable
 fun ModuleCardBackdrop(uri: String?, shape: Shape, modifier: Modifier = Modifier) {
     if (uri.isNullOrEmpty()) return
-    val context = LocalContext.current
-    val neon = XcNeon.colors
-    val bitmap by produceState<Bitmap?>(initialValue = null, uri) {
-        val cached = ModuleBackgrounds.bitmapCache.get(uri)
-        if (cached != null) {
-            value = cached
-        } else {
-            val decoded = ModuleBackgrounds.decode(context, uri)
-            if (decoded != null) ModuleBackgrounds.bitmapCache.put(uri, decoded)
-            value = decoded
-        }
-    }
-    val bm = bitmap ?: return
-
-    Box(modifier = modifier) {
+    // 注意形参是「已解析好的背景 Uri」，不是槽位 id —— 别再回查一遍槽位。
+    val image = rememberBackgroundBitmap(uri) ?: return
+    Box(modifier = modifier.clip(shape)) {
         Image(
-            bitmap = bm.asImageBitmap(),
+            bitmap = image,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
         )
-        // 不能掩盖字体：先整体罩一层介质色，再在标题侧加重。
+        // 介质色取模块页的 cardBg：深色档是夜蓝、浅色档是白，两档都压得住字。
         Box(
             Modifier
                 .fillMaxSize()
-                .background(neon.cardBg.copy(alpha = 0.68f))
-                .background(
-                    Brush.verticalGradient(
-                        0f to neon.cardBg.copy(alpha = 0.42f),
-                        0.55f to Color.Transparent,
-                        1f to neon.cardBg.copy(alpha = 0.30f),
-                    )
-                ),
+                .cardImageScrim(XcNeon.colors.cardBg),
         )
     }
 }

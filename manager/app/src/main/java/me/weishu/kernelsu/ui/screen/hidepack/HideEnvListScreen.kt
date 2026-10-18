@@ -37,6 +37,10 @@ import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.navigation3.LocalNavigator
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import com.topjohnwu.superuser.ShellUtils
+import me.weishu.kernelsu.ui.util.withNewRootShell
 import me.weishu.kernelsu.ui.util.BlurredBar
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
 import me.weishu.kernelsu.ui.component.dialog.XDialog
@@ -56,10 +60,33 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
  * 本期只有「紫罗兰环境隐藏」；后续加新环境只需在 ENVS 里加一项并接路由。
  * 点卡片 → 确认框 → 进入 OneTapHideScreen 云下载 + 编排部署。
  */
+/**
+ * 「隐藏 TEE 与密钥」的本地动作（不下载 hidepack，纯 root 脚本）：
+ *   1. 停掉正在跑的引擎进程（keymint_svc）；
+ *   2. 把 keybox、拦截名单、引擎日志与自检文件移进 /data/adb/.xudc_secure/.hidden/（700）；
+ *   3. 不碰 /data/adb/modules 下用户刷的模块本体 —— 要恢复时把 .hidden 里的文件搬回去即可。
+ */
+private const val TEE_HIDE_SCRIPT = """
+P=\$(pidof keymint_svc 2>/dev/null)
+for p in \$P; do kill -9 \$p 2>/dev/null; done
+H=/data/adb/.xudc_secure/.hidden
+mkdir -p \$H 2>/dev/null
+chmod 700 \$H 2>/dev/null
+for f in keybox.xml target.txt target.baseline.txt engine.log tee-selfcheck.txt engine-start.txt ta-start.txt builtin.conf policy-status.txt; do
+  [ -f /data/adb/tricky_store/\$f ] && mv -f /data/adb/tricky_store/\$f \$H/ 2>/dev/null
+  [ -f /data/adb/.xudc_secure/\$f ] && mv -f /data/adb/.xudc_secure/\$f \$H/ 2>/dev/null
+done
+chmod -R 700 \$H 2>/dev/null
+echo hidden=\$(ls \$H 2>/dev/null | wc -l)
+"""
+
 private data class EnvEntry(val id: String, val titleRes: Int, val descRes: Int)
 
 private val ENVS = listOf(
     EnvEntry("violet", R.string.hide_env_violet_title, R.string.hide_env_violet_desc),
+    // 2026-10-17：TEE 改成外部模块之后，密钥/名单/日志仍然散在 /data/adb 下，
+    // 给一个"停引擎 + 收进隐藏目录"的本地动作（不动用户模块本体）。
+    EnvEntry("tee_hide", R.string.hide_env_tee_title, R.string.hide_env_tee_desc),
 )
 
 @Composable
@@ -70,6 +97,9 @@ fun HideEnvListScreen() {
     val backdrop = rememberBlurBackdrop(enableBlur)
     val listState = rememberLazyListState()
     var selected by remember { mutableStateOf<EnvEntry?>(null) }
+    var hiding by remember { mutableStateOf(false) }
+    var hideResult by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -135,12 +165,39 @@ fun HideEnvListScreen() {
         }
     }
 
+    XDialog(show = hideResult != null || hiding, onDismissRequest = { if (!hiding) hideResult = null }) {
+        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = if (hiding) stringResource(R.string.hide_env_running) else (hideResult ?: ""),
+                fontSize = 14.sp, color = Xc.colors.text, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
+            )
+            if (!hiding) {
+                TextButton(text = stringResource(android.R.string.ok), onClick = { hideResult = null },
+                    modifier = Modifier.weight(1f).fillMaxWidth())
+            }
+        }
+    }
+
     HideEnvConfirmDialog(
         show = selected != null,
         onDismissRequest = { selected = null },
         onUse = {
+            val env = selected
             selected = null
-            navigator.push(me.weishu.kernelsu.ui.navigation3.Route.OneTapHide)
+            if (env != null && env.id == "tee_hide") {
+                scope.launch {
+                    hiding = true
+                    val out = runCatching {
+                        withNewRootShell(true) { ShellUtils.fastCmd(this, TEE_HIDE_SCRIPT) }
+                    }.getOrDefault("")
+                    hiding = false
+                    hideResult = if (out.contains("hidden=")) "已隐藏：" + out.trim() else "失败：" + out.trim()
+                }
+            } else {
+                navigator.push(me.weishu.kernelsu.ui.navigation3.Route.OneTapHide)
+            }
         },
     )
 }

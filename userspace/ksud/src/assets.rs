@@ -114,23 +114,6 @@ pub fn get_asset(name: &str) -> Result<Box<dyn AsRef<[u8]>>> {
     Ok(Box::new(asset.data))
 }
 
-#[cfg(target_os = "android")]
-#[derive(RustEmbed)]
-#[folder = "builtin/"]
-pub struct BuiltinAsset;
-
-#[cfg(target_os = "android")]
-pub fn list_builtin_assets() -> std::vec::Vec<std::string::String> {
-    BuiltinAsset::iter().map(|c| c.to_string()).collect()
-}
-
-#[cfg(target_os = "android")]
-pub fn get_builtin_asset(name: &str) -> Result<std::vec::Vec<u8>> {
-    let asset = BuiltinAsset::get(name)
-        .ok_or_else(|| anyhow::anyhow!("builtin asset not found: {name}"))?;
-    Ok(asset.data.into_owned())
-}
-
 pub fn list_supported_kmi() -> std::vec::Vec<std::string::String> {
     let mut list = Vec::new();
     for file in Asset::iter() {

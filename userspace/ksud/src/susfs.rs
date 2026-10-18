@@ -463,7 +463,6 @@ pub fn provision_baseline() {
         (defs::WORKING_DIR, false),
         (defs::MODULE_DIR, false),
         (defs::DAEMON_PATH, false),
-        (defs::BUILTIN_MODULE_DIR, false),
     ] {
         let result = if loop_variant {
             add_sus_path_loop(path)

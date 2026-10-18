@@ -30,6 +30,7 @@ import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.token.Xc
+import me.weishu.kernelsu.ui.util.ExternalModules
 import me.weishu.kernelsu.ui.util.getKsuDaemonPath
 import me.weishu.kernelsu.ui.util.withNewRootShell
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -108,39 +109,6 @@ private val STATUS_SCRIPT = listOf(
     // 启动诊断：service.sh 把"走到哪一步、结果如何"写进 engine-start.txt（开机/手动/修复
     // 三种模式都写）。引擎起不来时这一行就是答案。
     "echo start=\$(sed -n '1,20p' /data/adb/.xudc_secure/engine-start.txt 2>/dev/null | tr '\\n' '|')",
-).joinToString("\n")
-
-/**
- * 强制内置引擎接管（tricky_store/service.sh 的 `--takeover` 分支）。
- * 用在"外部模块占位、但它的引擎没起来"这种最坏形态：模块列表一切正常，实际零拦截。
- *
- * 先 `builtin enable tee` 再接管：开关文件是唯一的权威（关掉的内置模块连 --takeover
- * 都不接受），而用户点这个按钮的语义就是"我要内置引擎来拦"，所以先把开关打开，
- * 再让它的 service.sh 立刻跑一轮。`cli` 用**管理器自带**那份 ksud：设备侧那份可能
- * 还是旧内核带着装的，不认 `builtin` 子命令。
- */
-private fun takeoverScript(cli: String): String = listOf(
-    "K=\"$cli\"; [ -x \"\$K\" ] || K=/data/adb/ksu/bin/ksud; [ -x \"\$K\" ] || K=/data/adb/xudc; [ -x \"\$K\" ] || K=ksud",
-    "\$K builtin enable tee >/dev/null 2>&1",
-    "MP=/dev/.xudc_hidden/tricky_store",
-    "if [ -f \$MP/service.sh ]; then",
-    "  sh \$MP/service.sh --takeover >/dev/null 2>&1",
-    "  sleep 8",
-    "  echo takeover=\$([ -n \"\$(pidof keymint_svc 2>/dev/null)\" ] && echo ok || echo failed)",
-    "  tail -n 3 /data/adb/.xudc_secure/engine.log 2>/dev/null",
-    "else",
-    "  echo takeover=missing",
-    "fi",
-).joinToString("\n")
-
-/**
- * 「修复引擎」：`ksud builtin repair tee` —— 重打 keystore 侧 sepolicy（这是运行期
- * 开引擎最容易漏的一步：keystore2 打不开要注入的 .so，注入必失败）、重新解密一份
- * 干净的运行目录、再用 `--repair` 干净重启注入链（必要时换一个 keystore2 进程）。
- */
-private fun repairScript(cli: String): String = listOf(
-    "K=\"$cli\"; [ -x \"\$K\" ] || K=/data/adb/ksu/bin/ksud; [ -x \"\$K\" ] || K=/data/adb/xudc; [ -x \"\$K\" ] || K=ksud",
-    "if \$K builtin repair tee >/dev/null 2>&1; then echo repair=ok; else echo repair=failed; fi",
 ).joinToString("\n")
 
 /**
@@ -655,10 +623,11 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                 // 接管引擎：没有任何引擎在跑、而用户也没把内置 TEE 关掉时才给 ——
                 // 关掉之后"接管"就不是用户想要的语义了（按钮里会先把开关打开）。
                 if (!current.engineAlive && !current.builtinDisabled) {
+                    // 2026-10-17：TEE 已从 ksud 取出，改成外部模块 —— 这里是"下载并刷入"。
                     TextButton(
-                        text = stringResource(R.string.detect_tee_takeover),
+                        text = stringResource(R.string.detect_tee_flash),
                         onClick = {
-                            runRepair(takeoverScript(cli), R.string.detect_tee_takeover_failed)
+                            flashEngine(context, scope) { scope.launch { refresh() } }
                         },
                         enabled = !busy,
                         colors = ButtonDefaults.textButtonColorsPrimary(),
@@ -668,9 +637,9 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                 // sepolicy + 重新解密 + 干净重启注入链，这是运行期开引擎最容易漏的一步。
                 if (current.notInjected || (current.builtinEnabled && !current.injected)) {
                     TextButton(
-                        text = stringResource(R.string.detect_tee_repair),
+                        text = stringResource(R.string.detect_tee_flash_again),
                         onClick = {
-                            runRepair(repairScript(cli), R.string.detect_tee_repair_failed)
+                            flashEngine(context, scope) { scope.launch { refresh() } }
                         },
                         enabled = !busy,
                         colors = ButtonDefaults.textButtonColorsPrimary(),
@@ -689,6 +658,17 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
 }
 
 @Composable
+/**
+ * 「刷入 TEE 模块」：TEE 已经不在 ksud 里了，走外部模块那套 —— 下载 zip → ksud 安装
+ * → 自动按音量上 → 成功后自动重启（重启后引擎才会起来）。
+ */
+private fun flashEngine(context: Context, scope: CoroutineScope, onDone: () -> Unit) {
+    scope.launch {
+        ExternalModules.install(scope, context, ExternalModules.TEE)
+        onDone()
+    }
+}
+
 private fun StatusRow(label: String, value: String, bad: Boolean) {
     Row(
         modifier = Modifier

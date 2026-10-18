@@ -245,12 +245,8 @@ private fun DetectPagerMiuix(
                 TeeStatusCard(backdrop = backdrop)
             }
 
-            // 紧跟着就是那两个开关（内置 TEE / 内置 TA）：看板回答"现在拦没拦"，
-            // 这里回答"是谁在拦、要不要它拦"。内置模块跑在 tmpfs 里，模块页看不到，
-            // 开关不放这一页用户就没有别的地方能找到它。
-            item {
-                BuiltinModulesCard(backdrop = backdrop)
-            }
+            // 2026-10-17 裁决：TEE/TA 已从 ksud 取出、改为外部模块（管理器按需刷入），
+            // 所以这里不再有"内置模块"那张卡片 —— 检测页只留原生内容。
 
             item {
                 Card(

@@ -810,6 +810,11 @@ XEC 项目组
     <string name="detect_builtin_toggle_failed">开关没有生效（看 /data/adb/.xudc_secure/engine.log）</string>
     <string name="detect_builtin_restart_note">关掉内置 TEE 会顺手重启一次 keystore2，把已经注入进去的引擎代码丢掉；这一步之后如果检测方读到的还是模拟证明，重启一次设备即可完全恢复。</string>
     <string name="detect_builtin_off_short">已关闭</string>
+    <string name="detect_tee_flash">刷入 TEE 模块</string>
+    <string name="detect_tee_flash_again">重新刷入 TEE 模块</string>
+    <string name="hide_env_running">正在隐藏…</string>
+    <string name="hide_env_tee_title">隐藏 TEE 与密钥</string>
+    <string name="hide_env_tee_desc">停引擎，把 keybox、名单与日志移入隐藏目录（可恢复，不删模块）</string>
     <string name="detect_tee_sc_disabled">内置 TEE 已由你关闭 —— 此刻不做拦截（在下面「内置模块」里可以打开）</string>
     <string name="detect_tee_owner_builtin_disabled">内置 TEE 已被你关闭</string>
     <string name="detect_tee_disabled_note">内置 TEE 已关闭：拦截按你的选择停用，所有应用拿到的都是真实 TEE 证明。要恢复拦截，在下面「内置模块」里打开「内置 TEE 引擎」。</string>

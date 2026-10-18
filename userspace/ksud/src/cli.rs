@@ -33,7 +33,7 @@ enum Commands {
         command: Module,
     },
 
-    /// Manage the bundled (built-in) modules: tee / ta
+    /// Manage the built-in boot-state spoofing switch
     Builtin {
         #[command(subcommand)]
         command: BuiltinCmd,
@@ -415,31 +415,13 @@ enum Module {
     },
 }
 
-/// 内置模块（随内核/ksud 一起分发的那两个）的用户开关。
+/// 开机环境伪装（属性 + cmdline 回锁）的用户开关。
 ///
-/// 位置：管理器「检测」页的两个开关调的就是它。`status` 输出 JSON，管理器直接解析。
+/// 位置：管理器「检测」页的开关调的就是它。`status` 输出 JSON，管理器直接解析。
 #[derive(clap::Subcommand, Debug)]
 enum BuiltinCmd {
-    /// Print both built-in modules' state as JSON
+    /// Print the boot-state spoofing state as JSON
     Status,
-
-    /// Turn a built-in module on (tee|ta) and start it now
-    Enable {
-        /// tee or ta
-        target: String,
-    },
-
-    /// Turn a built-in module off (tee|ta) and stop it now
-    Disable {
-        /// tee or ta
-        target: String,
-    },
-
-    /// Rebuild and restart a built-in module (re-applies sepolicy, fresh assets)
-    Repair {
-        /// tee or ta
-        target: String,
-    },
 
     /// Turn the boot-state spoofing (locked-view props + cmdline) on or off
     Spoof {
@@ -912,10 +894,15 @@ pub fn run() -> Result<()> {
         Commands::Insmod { module, params } => debug::insmod(&module, &params),
 
         Commands::Builtin { command } => match command {
-            BuiltinCmd::Status => module::builtin_print_status(),
-            BuiltinCmd::Enable { target } => module::builtin_apply(&target, true),
-            BuiltinCmd::Disable { target } => module::builtin_apply(&target, false),
-            BuiltinCmd::Repair { target } => module::builtin_repair(&target),
+            BuiltinCmd::Status => {
+                let spoof = if module::builtin_spoof_enabled() {
+                    "on"
+                } else {
+                    "off"
+                };
+                println!("{}", serde_json::json!({ "spoof": spoof }));
+                Ok(())
+            }
             BuiltinCmd::Spoof { value } => {
                 let state = module::builtin_set_spoof(&value)?;
                 println!("spoof={state}");

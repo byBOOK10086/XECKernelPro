@@ -1,10 +1,12 @@
 package me.weishu.kernelsu.ui.screen.home
 
+import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,9 +52,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.res.stringResource
@@ -78,6 +85,9 @@ import me.weishu.kernelsu.ui.design.island.IslandTopBar
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.design.token.XcBlockBackground
 import me.weishu.kernelsu.ui.design.token.XcBlocks
+import me.weishu.kernelsu.ui.screen.module.ModuleBackgrounds
+import me.weishu.kernelsu.ui.screen.module.cardImageScrim
+import me.weishu.kernelsu.ui.screen.module.rememberModuleBackground
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.util.BlurredBar
 import me.weishu.kernelsu.ui.util.module.LatestVersionInfo
@@ -197,11 +207,14 @@ fun HomePagerMiuix(
                         if (state.showDaemonMissingWarning) {
                             WarningCard(stringResource(id = R.string.home_daemon_missing), block = warningBlock)
                         }
-                        StatusCard(
+                        StatusCardWithBackground(
                             state = state,
                             actions = actions,
                             backdrop = backdrop,
                             block = rememberXcBlock(XcBlocks.HOME_STATUS),
+                            // 与模块卡同一套 DIY 背景：同一份存储 / 解码 / LruCache，
+                            // 只是键固定成 HOME_STATUS_BACKGROUND_SLOT（这张卡没有模块 id）。
+                            background = rememberModuleBackground(HOME_STATUS_BACKGROUND_SLOT),
                         )
                         // 未激活界面「提权」导航：GhostLock 一键提权控制台。
                         // 已激活（ksuVersion != null）时不出现——那时提权没有意义，
@@ -323,6 +336,16 @@ private fun TopBar(
 }
 
 /**
+ * 首页状态卡的自定义背景槽位 id。
+ *
+ * 与模块卡的 DIY 背景共用 [ModuleBackgrounds] 那一份存储（`module_backgrounds` 里的一条），
+ * 只是键固定成 `home_status` —— 它是"首页这张状态卡"这个位置，不属于任何模块。
+ * 今天还没有专门给它挑图的入口；渲染与取值链路先就位，将来任意入口往同一份 prefs
+ * 写这个键就即时生效（不在设置里另开一套格式）。
+ */
+private const val HOME_STATUS_BACKGROUND_SLOT = "home_status"
+
+/**
  * 首页状态卡。
  *
  * `backdrop` 由 `HomePagerMiuix` 透传（本组件是 private，自己拿不到页面级那一份）。
@@ -331,13 +354,54 @@ private fun TopBar(
  *
  * [block] 是这一大块（`home.status`）的专属背景，三支分支共用同一条 —— 用户设的是
  * "状态卡"这个位置，不该因为设备恰好是挂载态/未安装态就换个观感。
+ *
+ * [background] 是用户给这张卡单独挑的图片（按 [HOME_STATUS_BACKGROUND_SLOT] 从
+ * [ModuleBackgrounds] 取，和模块卡同一套解码/缓存）。默认 `null` ⇒ 卡体与今天逐字节一致；
+ * 非空 ⇒ 图铺满卡体、按卡体圆角裁切，上面只压一层 [cardImageScrim]，正文文字颜色一个
+ * 都不改，靠 scrim 保对比度（每个分支都吃这一层，见 [StatusCardBackdrop]）。
  */
 @Composable
+/**
+ * 「已激活」卡片的底图入口：长按弹出系统图片选择器，选完写进 `home_status` 槽位
+ * （与模块卡同一套存储与解码），下次进首页自动生效；不动主题包与壁纸槽位。
+ */
+private const val HOME_STATUS_PICKER = "home_status_picker"
+
+@Composable
+private fun StatusCardWithBackground(
+    state: HomeScreenState,
+    actions: HomeActions,
+    backdrop: LayerBackdrop? = null,
+    block: XcBlockBackground? = null,
+) {
+    val context = LocalContext.current
+    val picker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { ModuleBackgrounds.set(context, HOME_STATUS_BACKGROUND_SLOT, it.toString()) }
+    }
+    Box(
+        modifier = Modifier.combinedClickable(
+            onClick = { },
+            onLongClick = { picker.launch("image/*") },
+        ),
+    ) {
+        StatusCard(
+            state = state,
+            actions = actions,
+            backdrop = backdrop,
+            block = block,
+            background = rememberModuleBackground(HOME_STATUS_BACKGROUND_SLOT),
+        )
+    }
+}
+
 private fun StatusCard(
     state: HomeUiState,
     actions: HomeActions,
     backdrop: LayerBackdrop? = null,
     block: XcBlockBackground? = null,
+    background: ImageBitmap? = null,
 ) {
     Column {
         when {
@@ -400,6 +464,14 @@ private fun StatusCard(
                                 .fillMaxWidth()
                                 .height(140.dp),
                         ) {
+                            // 自定义背景：图铺满卡体（玻璃卡体之上、内容之下）。为 null 时
+                            // 整层跳过 —— 没设背景的卡与今天逐字节一致。
+                            if (background != null) {
+                                StatusCardBackdrop(
+                                    background = background,
+                                    modifier = Modifier.matchParentSize(),
+                                )
+                            }
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -498,6 +570,14 @@ private fun StatusCard(
                                 .fillMaxWidth()
                                 .height(140.dp),
                         ) {
+                            // 挂载态共用同一条背景：用户设的是"状态卡"这个位置，
+                            // 不该因为路线换了（KernelSU ↔ Magisk）就换观感。
+                            if (background != null) {
+                                StatusCardBackdrop(
+                                    background = background,
+                                    modifier = Modifier.matchParentSize(),
+                                )
+                            }
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -565,27 +645,38 @@ private fun StatusCard(
                         showIndication = !state.isLateLoadMode,
                         pressFeedbackType = PressFeedbackType.Tilt
                     ) {
-                        BasicComponent(
-                            title = stringResource(R.string.home_not_installed),
-                            summary = stringResource(R.string.home_click_to_install),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.ErrorOutline,
-                                    stringResource(R.string.home_not_installed),
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    tint = colorScheme.onBackground,
+                        // 这一支没有现成的 Box 可以叠背景，补一层：图铺满卡体、内容画在
+                        // 它上面；background 为 null 时 Box 的宽高仍由唯一子项决定，
+                        // 布局与今天一致。
+                        Box {
+                            if (background != null) {
+                                StatusCardBackdrop(
+                                    background = background,
+                                    modifier = Modifier.matchParentSize(),
                                 )
-                            },
-                            endActions = {
-                                if (state.isSELinuxPermissive) {
-                                    TextButton(
-                                        text = stringResource(R.string.home_jailbreak),
-                                        onClick = actions.onJailbreakClick,
-                                        colors = ButtonDefaults.textButtonColorsPrimary()
-                                    )
-                                }
                             }
-                        )
+                            BasicComponent(
+                                title = stringResource(R.string.home_not_installed),
+                                summary = stringResource(R.string.home_click_to_install),
+                                startAction = {
+                                    Icon(
+                                        Icons.Rounded.ErrorOutline,
+                                        stringResource(R.string.home_not_installed),
+                                        modifier = Modifier.padding(end = 6.dp),
+                                        tint = colorScheme.onBackground,
+                                    )
+                                },
+                                endActions = {
+                                    if (state.isSELinuxPermissive) {
+                                        TextButton(
+                                            text = stringResource(R.string.home_jailbreak),
+                                            onClick = actions.onJailbreakClick,
+                                            colors = ButtonDefaults.textButtonColorsPrimary()
+                                        )
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -602,21 +693,54 @@ private fun StatusCard(
                     showIndication = !state.isLateLoadMode,
                     pressFeedbackType = PressFeedbackType.Tilt
                 ) {
-                    BasicComponent(
-                        title = stringResource(R.string.home_unsupported),
-                        summary = stringResource(R.string.home_unsupported_reason),
-                        startAction = {
-                            Icon(
-                                Icons.Rounded.ErrorOutline,
-                                stringResource(R.string.home_unsupported),
-                                modifier = Modifier.padding(end = 16.dp),
-                                tint = colorScheme.onBackground,
+                    Box {
+                        if (background != null) {
+                            StatusCardBackdrop(
+                                background = background,
+                                modifier = Modifier.matchParentSize(),
                             )
                         }
-                    )
+                        BasicComponent(
+                            title = stringResource(R.string.home_unsupported),
+                            summary = stringResource(R.string.home_unsupported_reason),
+                            startAction = {
+                                Icon(
+                                    Icons.Rounded.ErrorOutline,
+                                    stringResource(R.string.home_unsupported),
+                                    modifier = Modifier.padding(end = 16.dp),
+                                    tint = colorScheme.onBackground,
+                                )
+                            }
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+/**
+ * 状态卡的自定义背景层：图铺满卡体（中裁填满、按卡体圆角裁切），上面压一层与模块卡
+ * 同款的 scrim（[cardImageScrim]）。
+ *
+ * scrim 的介质色取 [Xc.colors] 的 `backdropScrim` —— 那是设计令牌里"压在背景图上"的
+ * 那一条（深档近黑 / 浅档近白），所以深色档的近白字、浅色档的近黑字都还站得住，
+ * 正文一个颜色都不必改。
+ */
+@Composable
+private fun StatusCardBackdrop(background: ImageBitmap, modifier: Modifier = Modifier) {
+    Box(modifier = modifier.clip(Xc.shapes.md)) {
+        Image(
+            bitmap = background,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .cardImageScrim(Xc.colors.backdropScrim),
+        )
     }
 }
 
@@ -906,6 +1030,31 @@ private fun StatusCardJailbreakPreview() {
         state = previewHomeScreenState(ksuVersion = 12345, lkmMode = true, isLateLoadMode = true),
         actions = HomeActions({}, {})
     )
+}
+
+/**
+ * 新形参 [StatusCard.background] 的预览：没有可读的图片文件，用主题强调色铺一张占位图。
+ * 它同时起两个作用 —— 让编译期检查到"带背景"这条 API，以及肉眼确认 scrim 压在图的哪一段。
+ */
+@Preview(name = "Custom Background")
+@Composable
+private fun StatusCardCustomBackgroundPreview() {
+    StatusCard(
+        state = previewHomeScreenState(ksuVersion = 12345, lkmMode = true),
+        actions = HomeActions({}, {}),
+        background = rememberPreviewBackground(),
+    )
+}
+
+/** 预览专用位图：一张纯色 ImageBitmap（颜色取当前主题令牌，不写死十六进制）。 */
+@Composable
+private fun rememberPreviewBackground(): ImageBitmap {
+    val fill = Xc.colors.accent.toArgb()
+    return remember(fill) {
+        Bitmap.createBitmap(320, 200, Bitmap.Config.ARGB_8888)
+            .apply { eraseColor(fill) }
+            .asImageBitmap()
+    }
 }
 
 private val previewSystemInfo = SystemInfo(

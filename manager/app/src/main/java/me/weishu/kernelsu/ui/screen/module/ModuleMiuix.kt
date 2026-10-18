@@ -916,7 +916,9 @@ fun ModuleItem(
     Box(
         modifier = Modifier
             .padding(horizontal = 16.dp)
-            .padding(bottom = 20.dp)
+            // 卡间距 20 → 8dp：列表从「一张张各自为政的卡」变成一条连续滚动的卡带，
+            // 一屏多看到一张卡；首卡上方那 6dp 在 LazyColumn 的 contentPadding.top 里，不动。
+            .padding(bottom = 8.dp)
             .scale(scale)
             .dropShadow(
                 shape = Xc.shapes.sm,
@@ -957,9 +959,10 @@ fun ModuleItem(
                 },
             )
     ) {
-        // DIY 背景层：图片画在玻璃卡体之上、内容之下；双层 scrim 保证文字对比度
-        // （用户硬性要求「不能掩盖字体」）。有背景时 modifier 上那圈描边会被图片
-        // 盖住，这里再补一圈同色动效描边浮在最上面。
+        // DIY 背景层：图铺满整张卡（圆角由 ModuleCardBackdrop 按 shape 裁），画在玻璃
+        // 卡体之上、内容之下；scrim 见 ModuleBackgrounds.cardImageScrim —— 中段全透让
+        // 图当主角，只在标题行与底部压介质色保字（用户硬性要求「不能掩盖字体」）。
+        // 有背景时 modifier 上那圈描边会被图片盖住，这里再补一圈同色动效描边浮在最上面。
         if (backgroundUri != null) {
             ModuleCardBackdrop(
                 uri = backgroundUri,
@@ -977,7 +980,9 @@ fun ModuleItem(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 18.dp),
+                // 卡内竖向 18 → 14dp：配合 8dp 卡间距，单卡高度再省 8dp；
+                // 横向 16dp 不动（文字左缘与入口卡对齐），整卡仍是点击区（≥44dp）。
+                .padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -1155,7 +1160,8 @@ private fun ModuleEntryCard(
     Box(
         modifier = Modifier
             .padding(horizontal = 16.dp)
-            .padding(bottom = 20.dp)
+            // 入口卡与模块卡在同一张列表里滚动，间距必须同档（8dp），否则节奏断掉。
+            .padding(bottom = 8.dp)
             .scale(scale)
             .dropShadow(
                 shape = Xc.shapes.sm,

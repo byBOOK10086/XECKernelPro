@@ -84,7 +84,7 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
     crate::hot_install::clean_trash();
 
     // Late-load bypasses on_post_data_fs, so apply the same direct-flash
-    // transaction guard before any module or built-in startup work.
+    // transaction guard before any module startup work.
     if crate::boot_txn::on_post_fs_data()? {
         warn!("boot transaction rollback completed during late-load; skipping module startup");
         return Ok(());
@@ -98,16 +98,11 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
         warn!("KPM booted_load failed: {e}");
     }
 
-    // Provision the bundled built-in modules exactly like the init_boot path
-    // (on_post_data_fs) does. Late-load activates the kernel without a patched
-    // init_boot, so without this the built-in modules (TEE/TS, SUSFS, ...)
-    // never materialize and silently do nothing for the whole boot.
+    // Module stage scripts run through the bundled busybox, so extract the bin
+    // assets here too: late-load activates the kernel without a patched
+    // init_boot and therefore never runs on_post_fs_data.
     if let Err(e) = assets::ensure_binaries(true) {
         warn!("Failed to extract bin assets: {e}");
-    }
-
-    if let Err(e) = crate::module::ensure_builtin_modules() {
-        warn!("ensure built-in modules failed: {e}");
     }
 
     // Drop Zygisk Next's failure leftovers before its stage scripts run, so a

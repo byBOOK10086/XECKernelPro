@@ -430,7 +430,7 @@ pub struct BootPatchArgs {
     #[arg(short, long)]
     pub kernel: Option<PathBuf>,
 
-    /// LKM module path to replace, if not specified, will use the builtin one
+    /// LKM module path to replace, if not specified, will use the bundled one
     #[arg(short, long)]
     pub module: Option<PathBuf>,
 
