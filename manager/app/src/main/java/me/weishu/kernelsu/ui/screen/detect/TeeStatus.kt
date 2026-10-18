@@ -623,11 +623,21 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                 // 接管引擎：没有任何引擎在跑、而用户也没把内置 TEE 关掉时才给 ——
                 // 关掉之后"接管"就不是用户想要的语义了（按钮里会先把开关打开）。
                 if (!current.engineAlive && !current.builtinDisabled) {
-                    // 2026-10-17：TEE 已从 ksud 取出，改成外部模块 —— 这里是"下载并刷入"。
                     TextButton(
                         text = stringResource(R.string.detect_tee_flash),
                         onClick = {
-                            flashEngine(context, scope) { scope.launch { refresh() } }
+                            scope.launch {
+                                ExternalModules.install(scope, context, ExternalModules.TEE)
+                                refresh()
+                            }
+                        },
+                        enabled = !busy,
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                    )
+
+                                refresh()
+                            }
+                        }
                         },
                         enabled = !busy,
                         colors = ButtonDefaults.textButtonColorsPrimary(),
@@ -639,7 +649,18 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                     TextButton(
                         text = stringResource(R.string.detect_tee_flash_again),
                         onClick = {
-                            flashEngine(context, scope) { scope.launch { refresh() } }
+                            scope.launch {
+                                ExternalModules.install(scope, context, ExternalModules.TEE)
+                                refresh()
+                            }
+                        },
+                        enabled = !busy,
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                    )
+
+                                refresh()
+                            }
+                        }
                         },
                         enabled = !busy,
                         colors = ButtonDefaults.textButtonColorsPrimary(),
@@ -658,17 +679,6 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
 }
 
 @Composable
-/**
- * 「刷入 TEE 模块」：TEE 已经不在 ksud 里了，走外部模块那套 —— 下载 zip → ksud 安装
- * → 自动按音量上 → 成功后自动重启（重启后引擎才会起来）。
- */
-private fun flashEngine(context: Context, scope: CoroutineScope, onDone: () -> Unit) {
-    scope.launch {
-        ExternalModules.install(scope, context, ExternalModules.TEE)
-        onDone()
-    }
-}
-
 private fun StatusRow(label: String, value: String, bad: Boolean) {
     Row(
         modifier = Modifier

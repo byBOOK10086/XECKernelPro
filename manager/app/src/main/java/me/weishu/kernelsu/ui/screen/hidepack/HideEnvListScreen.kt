@@ -66,18 +66,18 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
  *   2. 把 keybox、拦截名单、引擎日志与自检文件移进 /data/adb/.xudc_secure/.hidden/（700）；
  *   3. 不碰 /data/adb/modules 下用户刷的模块本体 —— 要恢复时把 .hidden 里的文件搬回去即可。
  */
-private const val TEE_HIDE_SCRIPT = """
-P=\$(pidof keymint_svc 2>/dev/null)
-for p in \$P; do kill -9 \$p 2>/dev/null; done
+private val TEE_HIDE_SCRIPT = """
+P=\${'$'}(pidof keymint_svc 2>/dev/null)
+for p in \${'$'}P; do kill -9 \${'$'}p 2>/dev/null; done
 H=/data/adb/.xudc_secure/.hidden
-mkdir -p \$H 2>/dev/null
-chmod 700 \$H 2>/dev/null
+mkdir -p \${'$'}H 2>/dev/null
+chmod 700 \${'$'}H 2>/dev/null
 for f in keybox.xml target.txt target.baseline.txt engine.log tee-selfcheck.txt engine-start.txt ta-start.txt builtin.conf policy-status.txt; do
-  [ -f /data/adb/tricky_store/\$f ] && mv -f /data/adb/tricky_store/\$f \$H/ 2>/dev/null
-  [ -f /data/adb/.xudc_secure/\$f ] && mv -f /data/adb/.xudc_secure/\$f \$H/ 2>/dev/null
+  [ -f /data/adb/tricky_store/\${'$'}f ] && mv -f /data/adb/tricky_store/\${'$'}f \${'$'}H/ 2>/dev/null
+  [ -f /data/adb/.xudc_secure/\${'$'}f ] && mv -f /data/adb/.xudc_secure/\${'$'}f \${'$'}H/ 2>/dev/null
 done
-chmod -R 700 \$H 2>/dev/null
-echo hidden=\$(ls \$H 2>/dev/null | wc -l)
+chmod -R 700 \${'$'}H 2>/dev/null
+echo hidden=\${'$'}(ls \${'$'}H 2>/dev/null | wc -l)
 """
 
 private data class EnvEntry(val id: String, val titleRes: Int, val descRes: Int)
