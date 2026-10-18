@@ -635,13 +635,6 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                         colors = ButtonDefaults.textButtonColorsPrimary(),
                     )
 
-                                refresh()
-                            }
-                        }
-                        },
-                        enabled = !busy,
-                        colors = ButtonDefaults.textButtonColorsPrimary(),
-                    )
                 }
                 // 修复引擎：引擎在跑却没注入（或用户刚打开开关）时给 —— 重打 keystore 侧
                 // sepolicy + 重新解密 + 干净重启注入链，这是运行期开引擎最容易漏的一步。
@@ -658,13 +651,6 @@ fun TeeStatusCard(backdrop: LayerBackdrop?) {
                         colors = ButtonDefaults.textButtonColorsPrimary(),
                     )
 
-                                refresh()
-                            }
-                        }
-                        },
-                        enabled = !busy,
-                        colors = ButtonDefaults.textButtonColorsPrimary(),
-                    )
                 }
                 if (current.verifiedBoot != "green" || current.flashLocked != "1") {
                     TextButton(
