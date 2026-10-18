@@ -207,7 +207,7 @@ fun HomePagerMiuix(
                         if (state.showDaemonMissingWarning) {
                             WarningCard(stringResource(id = R.string.home_daemon_missing), block = warningBlock)
                         }
-                        StatusCardWithBackground(
+                        StatusCard(
                             state = state,
                             actions = actions,
                             backdrop = backdrop,
@@ -361,41 +361,6 @@ private const val HOME_STATUS_BACKGROUND_SLOT = "home_status"
  * 都不改，靠 scrim 保对比度（每个分支都吃这一层，见 [StatusCardBackdrop]）。
  */
 @Composable
-/**
- * 「已激活」卡片的底图入口：长按弹出系统图片选择器，选完写进 `home_status` 槽位
- * （与模块卡同一套存储与解码），下次进首页自动生效；不动主题包与壁纸槽位。
- */
-private const val HOME_STATUS_PICKER = "home_status_picker"
-
-@Composable
-private fun StatusCardWithBackground(
-    state: HomeScreenState,
-    actions: HomeActions,
-    backdrop: LayerBackdrop? = null,
-    block: XcBlockBackground? = null,
-) {
-    val context = LocalContext.current
-    val picker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        uri?.let { ModuleBackgrounds.set(context, HOME_STATUS_BACKGROUND_SLOT, it.toString()) }
-    }
-    Box(
-        modifier = Modifier.combinedClickable(
-            onClick = { },
-            onLongClick = { picker.launch("image/*") },
-        ),
-    ) {
-        StatusCard(
-            state = state,
-            actions = actions,
-            backdrop = backdrop,
-            block = block,
-            background = rememberModuleBackground(HOME_STATUS_BACKGROUND_SLOT),
-        )
-    }
-}
-
 private fun StatusCard(
     state: HomeUiState,
     actions: HomeActions,
