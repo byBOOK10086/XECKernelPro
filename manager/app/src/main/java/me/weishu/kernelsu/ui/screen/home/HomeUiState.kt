@@ -23,6 +23,11 @@ data class HomeUiState(
     val isDaemonPresent: Boolean,
     val susfsVersion: String?,
     val susfsVariant: String?,
+    /**
+     * Whether libTEESimulator is actually mapped into keystore2. `null` means
+     * the probe did not run/was inconclusive; it is not counted as healthy.
+     */
+    val teeInjected: Boolean? = null,
     val checkUpdateEnabled: Boolean,
     val latestVersionInfo: LatestVersionInfo,
     val currentManagerVersionCode: Long,
@@ -86,4 +91,6 @@ data class HomeActions(
     val onJailbreakClick: () -> Unit = {},
     /** 未激活界面「提权」导航：进 GhostLock 提权控制台。 */
     val onPrivilegeClick: () -> Unit = {},
+    /** XEC Score 点击进入「检测」pager。 */
+    val onDetectClick: () -> Unit = {},
 )

@@ -2,6 +2,85 @@
 
 基于 [KernelSU](https://github.com/tiann/KernelSU) 修改开发的 Android root 方案与管理器：内核级 su、模块系统、App Profile、内置 TEE 引擎与 SUSFS 支持。
 
+<p align="center">
+  <img src="docs/assets/xec-hero.svg" alt="XECKernelPro Liquid Home / XEC Score" width="100%">
+</p>
+
+<p align="center">
+  <b>Liquid Home · XEC Score · 桌面小组件 · 一键隐藏</b><br>
+  <sub>不是换一套图标，而是把“设备现在到底安不安全”做成第一眼就能看到的东西。</sub>
+</p>
+
+<p align="center">
+  <img alt="license" src="https://img.shields.io/badge/license-GPL--3.0-12b886">
+  <img alt="android" src="https://img.shields.io/badge/Android-12%2B-0ea5e9">
+  <img alt="ui" src="https://img.shields.io/badge/UI-Jetpack%20Compose%20%2F%20Miuix-8b5cf6">
+  <img alt="kernel" src="https://img.shields.io/badge/kernel-KernelSU%20GPL--2.0-64748b">
+</p>
+
+## 这次更新：Liquid Home
+
+- **XEC Score**：按 Root、SELinux、SUSFS、TEE 注入、守护组件、LKM、UAPI、稳定版、运行模式实时算分（0–100，S/A/B/C/D），每一项都可解释。
+- **动态首页 Hero**：评分环、呼吸光晕、扫描线、守护天数；分数和颜色随状态变化，不再是一张静态玻璃卡。
+- **状态卡外观编辑器**：选图、预览、模糊 0–24 dp、压暗 0–65%、一键恢复默认；图片只进应用私有目录。
+- **分享设备卡**：本地 Canvas 生成 1080×1440 PNG，带评分/设备/内核/检查项，直接走系统分享。
+- **桌面小组件 + 快捷设置磁贴**：桌面看分数，点一下进入现有「一键隐藏」流程；磁贴带状态高亮。
+- **入场动效**：启动 Splash 与首页卡片错峰淡入，保留 Liquid Glass 的层次感。
+
+> 这些是当前开发分支的更新，不是一次只改文案的“假更新”。所有代码都在本仓库，构建命令见下文。
+
+## 核心能力
+
+| 能力 | 实现 |
+|---|---|
+| 内核级 root | KernelSU fork，内核态 su + 模块系统 |
+| App Profile | 按 UID 控制 root / umount / 非 root 行为 |
+| TEE / TA | 内置或外置引擎，检测页可开关、诊断、修复 |
+| SUSFS | 只随 GKI 内核补丁提供，LKM 不提供 |
+| Liquid Glass | 全应用玻璃、灵动岛、模块卡 DIY 背景、主题商店/编辑器 |
+| XEC Score | Root / SELinux / SUSFS / TEE / 守护 / LKM / UAPI / 稳定性 / 模式 |
+| 一键隐藏 | OneTapHide 资源包编排，桌面磁贴/小组件作为入口 |
+| 设备卡 | 本地生成，不上传图片或设备信息 |
+
+## 界面结构
+
+```
+Home
+├── XEC Score hero        score ring / aura / checks / share
+├── Status card           root state, LKM/GKI, appearance editor
+├── Privilege / Info      GhostLock, device, kernel, SELinux, SUSFS
+└── Support links
+
+Detect
+├── TEE engine status     injection proof, policy, diagnostics
+├── TEE / TA switches     user-selectable, repair path
+└── Keybox / checker      local verification
+
+Modules / Repo / Themes
+├── module cards          actions, DIY backgrounds, repo source
+├── KPM                   KernelPatch module manager
+└── theme store           install, edit, publish, live apply
+```
+
+## 构建
+
+管理器要求 **JDK 21**、**compileSdk 37.0**、**NDK 29.0.14206865**，并且先把 `ksud` 放到
+`manager/app/src/main/jniLibs/arm64-v8a/libxeccli.so`（完整步骤见 `manager/README.md`）：
+
+```bash
+cd manager
+./gradlew :app:assembleDebug
+```
+
+Kernel、LKM、GKI SUSFS 内核均由 `.github/workflows/` 构建；签名密钥只从 Actions Secrets 注入。
+
+## 相关文档
+
+- [使用与安装说明](docs/README_CN.md)
+- [挂载态 / <5.10 路线](docs/mount-state-root-guide.md)
+- [第三方署名与许可证](THIRD_PARTY_NOTICES.md)
+- [更新日志](CHANGELOG.md)
+
 ## 许可证与上游归属（License & Attribution）
 
 本项目基于 **tiann/KernelSU** 修改开发，遵守上游原始许可证，并保留上游版权与作者署名：

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="home">主页</string>
     <string name="home_not_installed">未安装</string>
     <string name="home_click_to_install">点击安装</string>
@@ -954,4 +954,62 @@ XEC 项目组
     <string name="theme_editor_pick_image">选择图片</string>
     <string name="theme_editor_overwrite">已经有一个同 ID 的主题，要覆盖它吗？</string>
     <string name="theme_editor_dirty">有未保存的改动</string>
+
+    <!-- XEC Score / Liquid Home -->
+    <string name="xec_score_title" tools:ignore="MissingTranslation">XEC SCORE · 设备健康度</string>
+    <string name="xec_score_guard" tools:ignore="MissingTranslation">已守护 %1$d 天</string>
+    <string name="xec_score_share" tools:ignore="MissingTranslation">分享设备卡</string>
+    <string name="xec_score_share_chooser" tools:ignore="MissingTranslation">分享 XEC 设备卡</string>
+    <string name="xec_score_out_of" tools:ignore="MissingTranslation">满分 100</string>
+    <string name="xec_score_rank" tools:ignore="MissingTranslation">%1$s 级</string>
+    <string name="xec_score_rank_label" tools:ignore="MissingTranslation">评级 %1$s</string>
+    <string name="xec_score_passed" tools:ignore="MissingTranslation">%1$d/%2$d 项通过</string>
+    <string name="xec_score_healthy" tools:ignore="MissingTranslation">关键防护全部在线，保持这个状态。</string>
+    <string name="xec_score_attention" tools:ignore="MissingTranslation">有项目未通过，打开「检测」查看原因。</string>
+    <string name="xec_score_check_root" tools:ignore="MissingTranslation">Root</string>
+    <string name="xec_score_check_selinux" tools:ignore="MissingTranslation">SELinux</string>
+    <string name="xec_score_check_susfs" tools:ignore="MissingTranslation">SUSFS</string>
+    <string name="xec_score_check_tee" tools:ignore="MissingTranslation">TEE 注入</string>
+    <string name="xec_score_check_daemon" tools:ignore="MissingTranslation">守护组件</string>
+    <string name="xec_score_check_lkm" tools:ignore="MissingTranslation">LKM</string>
+    <string name="xec_score_check_compat" tools:ignore="MissingTranslation">接口兼容</string>
+    <string name="xec_score_check_stable" tools:ignore="MissingTranslation">稳定版</string>
+    <string name="xec_score_check_mode" tools:ignore="MissingTranslation">正常模式</string>
+    <string name="xec_share_score_title" tools:ignore="MissingTranslation">XEC SCORE</string>
+    <string name="xec_share_rank" tools:ignore="MissingTranslation">安全评级</string>
+    <string name="xec_share_passed" tools:ignore="MissingTranslation">%1$d/%2$d 项通过</string>
+    <string name="xec_share_generated" tools:ignore="MissingTranslation">生成于 %1$s</string>
+    <string name="xec_share_device" tools:ignore="MissingTranslation">设备</string>
+    <string name="xec_share_not_available" tools:ignore="MissingTranslation">未检测</string>
+    <string name="xec_share_checks" tools:ignore="MissingTranslation">检查项</string>
+    <string name="xec_share_footer" tools:ignore="MissingTranslation">XECKernelPro · 本地生成，不上传任何数据</string>
+
+    <!-- Home appearance editor -->
+    <string name="home_appearance_edit" tools:ignore="MissingTranslation">编辑外观</string>
+    <string name="home_appearance_title" tools:ignore="MissingTranslation">首页状态卡外观</string>
+    <string name="home_appearance_summary" tools:ignore="MissingTranslation">选一张图，再调模糊和压暗；图片只保存在本应用私有目录。</string>
+    <string name="home_appearance_preview" tools:ignore="MissingTranslation">预览</string>
+    <string name="home_appearance_preview_empty" tools:ignore="MissingTranslation">还没有选择图片</string>
+    <string name="home_appearance_pick" tools:ignore="MissingTranslation">选择图片</string>
+    <string name="home_appearance_replace" tools:ignore="MissingTranslation">更换图片</string>
+    <string name="home_appearance_clear" tools:ignore="MissingTranslation">恢复默认</string>
+    <string name="home_appearance_blur" tools:ignore="MissingTranslation">模糊 · %1$d dp</string>
+    <string name="home_appearance_dim" tools:ignore="MissingTranslation">压暗 · %1$d%%</string>
+    <string name="home_appearance_done" tools:ignore="MissingTranslation">完成</string>
+
+    <!-- Widget + Quick Settings tile -->
+    <string name="xec_widget_label" tools:ignore="MissingTranslation">XEC 安全分</string>
+    <string name="xec_widget_description" tools:ignore="MissingTranslation">桌面查看 XEC 设备健康分，并一键进入隐藏流程。</string>
+    <string name="xec_widget_summary_empty" tools:ignore="MissingTranslation">打开管理器同步状态</string>
+    <string name="xec_widget_detail_empty" tools:ignore="MissingTranslation">尚未同步</string>
+    <string name="xec_widget_detail" tools:ignore="MissingTranslation">%1$s · %2$d/%3$d 项</string>
+    <string name="xec_widget_hide" tools:ignore="MissingTranslation">一键隐藏</string>
+    <string name="xec_widget_status_s" tools:ignore="MissingTranslation">防护优秀</string>
+    <string name="xec_widget_status_a" tools:ignore="MissingTranslation">防护良好</string>
+    <string name="xec_widget_status_b" tools:ignore="MissingTranslation">防护一般</string>
+    <string name="xec_widget_status_c" tools:ignore="MissingTranslation">需要处理</string>
+    <string name="xec_widget_status_d" tools:ignore="MissingTranslation">风险较高</string>
+    <string name="xec_tile_label" tools:ignore="MissingTranslation">XEC 隐藏</string>
+    <string name="xec_tile_subtitle" tools:ignore="MissingTranslation">点击进入一键隐藏</string>
+    <string name="xec_one_tap_safe_mode" tools:ignore="MissingTranslation">安全模式下不能执行一键隐藏</string>
 </resources>

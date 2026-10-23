@@ -63,6 +63,7 @@ import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -184,6 +185,13 @@ open class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) intent?.let { intentChannel.trySend(it) }
 
         setContent {
+            var showBootSplash by rememberSaveable { mutableStateOf(true) }
+            LaunchedEffect(Unit) {
+                if (showBootSplash) {
+                    delay(900)
+                    showBootSplash = false
+                }
+            }
             val viewModel = viewModel<MainActivityViewModel>()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val selectedMainPage by viewModel.selectedMainPage.collectAsStateWithLifecycle()
@@ -482,6 +490,7 @@ open class MainActivity : ComponentActivity() {
                                     state = dialogHostState,
                                     backdrop = dialogBackdrop,
                                 )
+                                XecBootSplash(visible = showBootSplash)
                                 SideEffect { contentReady = true }
                             }
                         }

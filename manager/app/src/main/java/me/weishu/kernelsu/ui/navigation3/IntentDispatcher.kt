@@ -23,6 +23,7 @@ import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.screen.flash.FlashIt
 import me.weishu.kernelsu.ui.util.DownloadService
 import me.weishu.kernelsu.ui.util.getFileName
+import com.xecpro.kernel.XecIntents
 import com.xecpro.kernel.XecWebUIActivity
 
 private const val SCHEME_KSU = "ksu"
@@ -166,6 +167,15 @@ fun IntentDispatcher(intentChannel: ReceiveChannel<Intent>) {
 
     CollectIntentChannel(intentChannel) { intent ->
         if (!isManager) return@CollectIntentChannel
+        // Widget / Quick Settings tile: a one-shot token, not an exported action.
+        if (XecIntents.isAuthorized(context, intent)) {
+            if (isSafeMode) {
+                Toast.makeText(context, R.string.xec_one_tap_safe_mode, Toast.LENGTH_SHORT).show()
+            } else {
+                navigator.push(Route.OneTapHide)
+            }
+            return@CollectIntentChannel
+        }
         val action = resolveIntent(intent) ?: return@CollectIntentChannel
 
         when (action) {

@@ -2,11 +2,14 @@ package me.weishu.kernelsu.ui.screen.home
 
 import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +32,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.DeveloperBoard
@@ -40,18 +44,25 @@ import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.VolunteerActivism
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CheckCircleOutline
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material3.Icon as M3Icon
+import androidx.compose.material3.IconButton as M3IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -60,6 +71,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.res.stringResource
@@ -121,6 +133,12 @@ fun HomePagerMiuix(
     val scrollBehavior = MiuixScrollBehavior()
     val enableBlur = LocalEnableBlur.current
     val backdrop = rememberBlurBackdrop(enableBlur)
+    val context = LocalContext.current
+    val cardAppearance = rememberHomeCardAppearance()
+    var showAppearance by rememberSaveable { mutableStateOf(false) }
+    val score = remember(state) { XecScore.evaluate(state) }
+    var revealed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { revealed = true }
     // 首页六张卡片各自的专属背景（主题 `blocks` 里的一条；没主题就是 null = 今天的样子）。
     // 在**这里**取告警那一块、再传给七处 WarningCard：告警卡在全 App 复用（日志页也在用），
     // 区块背景是"首页那张卡"的语义，不该跟着组件跑到别的页面去。
@@ -207,15 +225,67 @@ fun HomePagerMiuix(
                         if (state.showDaemonMissingWarning) {
                             WarningCard(stringResource(id = R.string.home_daemon_missing), block = warningBlock)
                         }
-                        StatusCard(
-                            state = state,
-                            actions = actions,
-                            backdrop = backdrop,
-                            block = rememberXcBlock(XcBlocks.HOME_STATUS),
-                            // 与模块卡同一套 DIY 背景：同一份存储 / 解码 / LruCache，
-                            // 只是键固定成 HOME_STATUS_BACKGROUND_SLOT（这张卡没有模块 id）。
-                            background = rememberModuleBackground(HOME_STATUS_BACKGROUND_SLOT),
-                        )
+                        AnimatedVisibility(
+                            visible = revealed,
+                            enter = fadeIn(tween(420)) +
+                                slideInVertically(tween(420)) { it / 5 },
+                        ) {
+                            XecHeroCard(
+                                state = state,
+                                score = score,
+                                onShare = { XecShareCard.share(context, state, score) },
+                                onDetect = actions.onDetectClick,
+                            )
+                        }
+                        AnimatedVisibility(
+                            visible = revealed,
+                            enter = fadeIn(tween(460, delayMillis = 70)) +
+                                slideInVertically(tween(460, delayMillis = 70)) { it / 5 },
+                        ) {
+                            Box {
+                            StatusCard(
+                                state = state,
+                                actions = actions,
+                                backdrop = backdrop,
+                                block = rememberXcBlock(XcBlocks.HOME_STATUS),
+                                // 与模块卡同一套 DIY 背景：同一份存储 / 解码 / LruCache，
+                                // 只是键固定成 HOME_STATUS_BACKGROUND_SLOT（这张卡没有模块 id）。
+                                background = rememberModuleBackground(HOME_STATUS_BACKGROUND_SLOT),
+                                appearance = cardAppearance.value,
+                            )
+                            M3IconButton(
+                                onClick = { showAppearance = true },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(10.dp)
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.28f)),
+                            ) {
+                                M3Icon(
+                                    imageVector = Icons.Rounded.Palette,
+                                    contentDescription = stringResource(R.string.home_appearance_edit),
+                                    tint = Color.White,
+                                )
+                            }
+                        }
+                        if (showAppearance) {
+                            HomeAppearanceDialog(
+                                backgroundUri = ModuleBackgrounds.backgroundOf(
+                                    context,
+                                    HOME_STATUS_BACKGROUND_SLOT,
+                                ),
+                                appearance = cardAppearance.value,
+                                onAppearanceChange = {
+                                    cardAppearance.value = it
+                                },
+                                onDismiss = {
+                                    HomeCardAppearanceStore.save(context, cardAppearance.value)
+                                    showAppearance = false
+                                },
+                            )
+                        }
+                        }
                         // 未激活界面「提权」导航：GhostLock 一键提权控制台。
                         // 已激活（ksuVersion != null）时不出现——那时提权没有意义，
                         // 更新走「修补方式 → 提权更新」。挂载态也不出现：那条路的 root
@@ -343,8 +413,6 @@ private fun TopBar(
  * 今天还没有专门给它挑图的入口；渲染与取值链路先就位，将来任意入口往同一份 prefs
  * 写这个键就即时生效（不在设置里另开一套格式）。
  */
-private const val HOME_STATUS_BACKGROUND_SLOT = "home_status"
-
 /**
  * 首页状态卡。
  *
@@ -367,6 +435,7 @@ private fun StatusCard(
     backdrop: LayerBackdrop? = null,
     block: XcBlockBackground? = null,
     background: ImageBitmap? = null,
+    appearance: HomeCardAppearance = HomeCardAppearance(),
 ) {
     Column {
         when {
@@ -434,6 +503,7 @@ private fun StatusCard(
                             if (background != null) {
                                 StatusCardBackdrop(
                                     background = background,
+                                    appearance = appearance,
                                     modifier = Modifier.matchParentSize(),
                                 )
                             }
@@ -540,6 +610,7 @@ private fun StatusCard(
                             if (background != null) {
                                 StatusCardBackdrop(
                                     background = background,
+                                    appearance = appearance,
                                     modifier = Modifier.matchParentSize(),
                                 )
                             }
@@ -617,6 +688,7 @@ private fun StatusCard(
                             if (background != null) {
                                 StatusCardBackdrop(
                                     background = background,
+                                    appearance = appearance,
                                     modifier = Modifier.matchParentSize(),
                                 )
                             }
@@ -662,6 +734,7 @@ private fun StatusCard(
                         if (background != null) {
                             StatusCardBackdrop(
                                 background = background,
+                                appearance = appearance,
                                 modifier = Modifier.matchParentSize(),
                             )
                         }
@@ -693,14 +766,36 @@ private fun StatusCard(
  * 正文一个颜色都不必改。
  */
 @Composable
-private fun StatusCardBackdrop(background: ImageBitmap, modifier: Modifier = Modifier) {
+private fun StatusCardBackdrop(
+    background: ImageBitmap,
+    appearance: HomeCardAppearance,
+    modifier: Modifier = Modifier,
+) {
     Box(modifier = modifier.clip(Xc.shapes.md)) {
         Image(
             bitmap = background,
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (appearance.blur > 0f) {
+                        Modifier.blur(
+                            radius = appearance.blur.dp,
+                            edgeTreatment = BlurredEdgeTreatment.Unbounded,
+                        )
+                    } else {
+                        Modifier
+                    }
+                ),
         )
+        if (appearance.dim > 0f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = appearance.dim.coerceIn(0f, 0.65f))),
+            )
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()

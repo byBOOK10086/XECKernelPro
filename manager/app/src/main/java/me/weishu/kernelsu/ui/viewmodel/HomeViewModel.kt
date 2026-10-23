@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.BuildConfig
 import me.weishu.kernelsu.Natives
+import me.weishu.kernelsu.R
 import me.weishu.kernelsu.data.repository.SettingsRepository
 import me.weishu.kernelsu.data.repository.SettingsRepositoryImpl
 import me.weishu.kernelsu.getKernelVersion
@@ -21,7 +22,12 @@ import me.weishu.kernelsu.mountstate.MagiskRoot
 import me.weishu.kernelsu.ksuApp
 import me.weishu.kernelsu.ui.screen.home.HomeUiState
 import me.weishu.kernelsu.ui.screen.home.SystemInfo
+import me.weishu.kernelsu.ui.screen.home.XecScore
 import me.weishu.kernelsu.ui.screen.home.getManagerVersion
+import me.weishu.kernelsu.widget.XecQuickTileService
+import me.weishu.kernelsu.widget.XecScoreWidgetProvider
+import me.weishu.kernelsu.widget.XecWidgetSnapshot
+import me.weishu.kernelsu.widget.XecWidgetStore
 import me.weishu.kernelsu.ui.util.checkNewVersion
 import me.weishu.kernelsu.ui.util.getKsuDaemonPath
 import me.weishu.kernelsu.ui.util.getSELinuxStatusRaw
@@ -54,6 +60,48 @@ class HomeViewModel(
             // 始终拉取一次版本信息，用于首页展示累计下载量；更新提示仍由 checkUpdateEnabled 控制
             val latestVersionInfo = withContext(Dispatchers.IO) { checkNewVersion() }
             _uiState.update { it.copy(latestVersionInfo = latestVersionInfo) }
+            publishWidgetState(_uiState.value)
+        }
+    }
+
+    /**
+     * The widget is a cold-start surface: when the process is dead it cannot
+     * recompute root/SELinux/TEE, so Home writes the last known result here.
+     * The one-tap action itself is token-authenticated elsewhere.
+     */
+    private suspend fun publishWidgetState(state: HomeUiState) {
+        val score = XecScore.evaluate(state)
+        val summary = ksuApp.getString(
+            when {
+                score.total >= 90 -> R.string.xec_widget_status_s
+                score.total >= 75 -> R.string.xec_widget_status_a
+                score.total >= 60 -> R.string.xec_widget_status_b
+                score.total >= 40 -> R.string.xec_widget_status_c
+                else -> R.string.xec_widget_status_d
+            },
+        )
+        val detail = ksuApp.getString(
+            R.string.xec_widget_detail,
+            score.rank.name,
+            score.passed,
+            score.items.size,
+        )
+        withContext(Dispatchers.IO) {
+            runCatching {
+                XecWidgetStore.write(
+                    ksuApp,
+                    XecWidgetSnapshot(
+                        score = score.total,
+                        rank = score.rank.name,
+                        summary = summary,
+                        detail = detail,
+                        active = score.isHealthy,
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                )
+                XecScoreWidgetProvider.updateAll(ksuApp)
+                XecQuickTileService.requestUpdate(ksuApp)
+            }
         }
     }
 
@@ -81,6 +129,23 @@ class HomeViewModel(
             val shell = getRootShell()
             ShellUtils.fastCmd(shell, "${getKsuDaemonPath()} susfs variant").trim().ifEmpty { null }
         }.getOrNull() else null
+        // TEE 注入是"真的拦到"的唯一硬证据：keystore2 的 maps 里有引擎 .so。
+        // 只看 pidof 会把"进程活着但注入失败"误判为健康；这里用一次只读 root 探测，
+        // 结果同时供首页 XEC Score 使用。
+        val teeInjected: Boolean? = if (isRootAvailable) runCatching {
+            val shell = getRootShell()
+            val pid = ShellUtils.fastCmd(shell, "pidof keystore2 2>/dev/null")
+                .trim()
+                .substringBefore(' ')
+            if (pid.isNotEmpty() && pid.all(Char::isDigit)) {
+                ShellUtils.fastCmd(
+                    shell,
+                    "grep -q libTEESimulator /proc/$pid/maps 2>/dev/null && echo -n yes",
+                ).trim() == "yes"
+            } else {
+                false
+            }
+        }.getOrNull() else null
         val managerVersion = getManagerVersion(ksuApp)
 
         return HomeUiState(
@@ -101,6 +166,7 @@ class HomeViewModel(
             isDaemonPresent = isDaemonPresent,
             susfsVersion = susfsVersion,
             susfsVariant = susfsVariant,
+            teeInjected = teeInjected,
             checkUpdateEnabled = settingsRepo.checkUpdate,
             latestVersionInfo = LatestVersionInfo(),
             currentManagerVersionCode = managerVersion.versionCode,

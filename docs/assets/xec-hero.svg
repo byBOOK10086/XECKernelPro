@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-label="XECKernelPro Liquid Home">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071112"/>
+      <stop offset="0.55" stop-color="#0b1a19"/>
+      <stop offset="1" stop-color="#101d2b"/>
+    </linearGradient>
+    <radialGradient id="aqua" cx="0.12" cy="0.18" r="0.8">
+      <stop offset="0" stop-color="#12b886" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#12b886" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="cyan" cx="0.92" cy="0.35" r="0.7">
+      <stop offset="0" stop-color="#3b82f6" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#3b82f6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5eead4"/>
+      <stop offset="0.5" stop-color="#12b886"/>
+      <stop offset="1" stop-color="#0ea5e9"/>
+    </linearGradient>
+    <linearGradient id="pill" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#12b886" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#0ea5e9" stop-opacity="0.12"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="9" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e7edee" stroke-opacity="0.035"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="420" rx="28" fill="url(#bg)"/>
+  <rect width="1200" height="420" rx="28" fill="url(#grid)"/>
+  <rect width="1200" height="420" rx="28" fill="url(#aqua)"/>
+  <rect width="1200" height="420" rx="28" fill="url(#cyan)"/>
+  <g transform="translate(64 54)">
+    <rect width="62" height="62" rx="18" fill="#12b886" opacity="0.18" stroke="#5eead4" stroke-opacity="0.45"/>
+    <path d="M31 12 L47 18 L47 30 C47 39 40 47 31 51 C22 47 15 39 15 30 L15 18 Z" fill="#12b886"/>
+    <path d="M24 31 L29 36 L39 25" fill="none" stroke="#071112" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="80" y="30" fill="#e7edee" font-family="Segoe UI, Arial, sans-serif" font-size="30" font-weight="700">XECKernelPro</text>
+    <text x="80" y="56" fill="#94a3b8" font-family="Segoe UI, Arial, sans-serif" font-size="16" letter-spacing="2">LIQUID HOME · XEC SCORE</text>
+    <rect x="0" y="92" width="1072" height="232" rx="26" fill="#0f1b1b" fill-opacity="0.72" stroke="#12b886" stroke-opacity="0.24"/>
+    <g transform="translate(44 124)">
+      <circle cx="74" cy="74" r="66" fill="none" stroke="#94a3b8" stroke-opacity="0.2" stroke-width="12"/>
+      <circle cx="74" cy="74" r="66" fill="none" stroke="url(#ring)" stroke-width="12" stroke-linecap="round"
+              stroke-dasharray="414 415" transform="rotate(-90 74 74)" filter="url(#glow)"/>
+      <text x="74" y="86" text-anchor="middle" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="46" font-weight="700">96</text>
+      <text x="74" y="110" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Arial, sans-serif" font-size="12">/100</text>
+    </g>
+    <g transform="translate(232 128)">
+      <text x="0" y="26" fill="#5eead4" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="600" letter-spacing="2">XEC SCORE</text>
+      <text x="0" y="74" fill="#e7edee" font-family="Segoe UI, Arial, sans-serif" font-size="40" font-weight="700">S Grade</text>
+      <text x="0" y="106" fill="#94a3b8" font-family="Segoe UI, Arial, sans-serif" font-size="16">Root · SELinux · SUSFS · TEE · LKM all online</text>
+      <g transform="translate(0 130)">
+        <rect width="122" height="30" rx="15" fill="url(#pill)" stroke="#12b886" stroke-opacity="0.22"/>
+        <text x="61" y="20" text-anchor="middle" fill="#5eead4" font-family="Segoe UI, Arial, sans-serif" font-size="13">Root online</text>
+        <rect x="132" width="122" height="30" rx="15" fill="url(#pill)" stroke="#12b886" stroke-opacity="0.22"/>
+        <text x="193" y="20" text-anchor="middle" fill="#5eead4" font-family="Segoe UI, Arial, sans-serif" font-size="13">SELinux enforcing</text>
+        <rect x="264" width="122" height="30" rx="15" fill="url(#pill)" stroke="#12b886" stroke-opacity="0.22"/>
+        <text x="325" y="20" text-anchor="middle" fill="#5eead4" font-family="Segoe UI, Arial, sans-serif" font-size="13">TEE injected</text>
+      </g>
+    </g>
+    <g transform="translate(824 128)">
+      <rect width="204" height="92" rx="18" fill="#0b1112" fill-opacity="0.6" stroke="#94a3b8" stroke-opacity="0.18"/>
+      <text x="20" y="30" fill="#94a3b8" font-family="Segoe UI, Arial, sans-serif" font-size="12">ONE-TAP HIDE</text>
+      <text x="20" y="58" fill="#e7edee" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="600">Quick Settings tile</text>
+      <text x="20" y="80" fill="#5eead4" font-family="Segoe UI, Arial, sans-serif" font-size="12">Widget · Share card</text>
+    </g>
+  </g>
+</svg>

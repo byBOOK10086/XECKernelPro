@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="home">Home</string>
     <string name="home_not_installed">Not installed</string>
     <string name="home_click_to_install">Tap to install</string>
@@ -952,4 +952,62 @@ See the log below for details.</string>
     <string name="theme_editor_pick_image">Pick an image</string>
     <string name="theme_editor_overwrite">A theme with this ID exists. Overwrite it?</string>
     <string name="theme_editor_dirty">You have unsaved changes</string>
+
+    <!-- XEC Score / Liquid Home -->
+    <string name="xec_score_title" tools:ignore="MissingTranslation">XEC SCORE · DEVICE HEALTH</string>
+    <string name="xec_score_guard" tools:ignore="MissingTranslation">Guarding for %1$d days</string>
+    <string name="xec_score_share" tools:ignore="MissingTranslation">Share device card</string>
+    <string name="xec_score_share_chooser" tools:ignore="MissingTranslation">Share XEC device card</string>
+    <string name="xec_score_out_of" tools:ignore="MissingTranslation">of 100</string>
+    <string name="xec_score_rank" tools:ignore="MissingTranslation">%1$s grade</string>
+    <string name="xec_score_rank_label" tools:ignore="MissingTranslation">Grade %1$s</string>
+    <string name="xec_score_passed" tools:ignore="MissingTranslation">%1$d/%2$d checks</string>
+    <string name="xec_score_healthy" tools:ignore="MissingTranslation">All critical protections are online.</string>
+    <string name="xec_score_attention" tools:ignore="MissingTranslation">Some checks need attention. Open Detect for details.</string>
+    <string name="xec_score_check_root" tools:ignore="MissingTranslation">Root</string>
+    <string name="xec_score_check_selinux" tools:ignore="MissingTranslation">SELinux</string>
+    <string name="xec_score_check_susfs" tools:ignore="MissingTranslation">SUSFS</string>
+    <string name="xec_score_check_tee" tools:ignore="MissingTranslation">TEE inject</string>
+    <string name="xec_score_check_daemon" tools:ignore="MissingTranslation">Daemon</string>
+    <string name="xec_score_check_lkm" tools:ignore="MissingTranslation">LKM</string>
+    <string name="xec_score_check_compat" tools:ignore="MissingTranslation">UAPI</string>
+    <string name="xec_score_check_stable" tools:ignore="MissingTranslation">Stable</string>
+    <string name="xec_score_check_mode" tools:ignore="MissingTranslation">Normal mode</string>
+    <string name="xec_share_score_title" tools:ignore="MissingTranslation">XEC SCORE</string>
+    <string name="xec_share_rank" tools:ignore="MissingTranslation">Security grade</string>
+    <string name="xec_share_passed" tools:ignore="MissingTranslation">%1$d/%2$d checks passed</string>
+    <string name="xec_share_generated" tools:ignore="MissingTranslation">Generated %1$s</string>
+    <string name="xec_share_device" tools:ignore="MissingTranslation">DEVICE</string>
+    <string name="xec_share_not_available" tools:ignore="MissingTranslation">not detected</string>
+    <string name="xec_share_checks" tools:ignore="MissingTranslation">CHECKS</string>
+    <string name="xec_share_footer" tools:ignore="MissingTranslation">XECKernelPro · generated locally, nothing uploaded</string>
+
+    <!-- Home appearance editor -->
+    <string name="home_appearance_edit" tools:ignore="MissingTranslation">Edit appearance</string>
+    <string name="home_appearance_title" tools:ignore="MissingTranslation">Status card appearance</string>
+    <string name="home_appearance_summary" tools:ignore="MissingTranslation">Choose a photo, then tune blur and dim. The image never leaves this app.</string>
+    <string name="home_appearance_preview" tools:ignore="MissingTranslation">Preview</string>
+    <string name="home_appearance_preview_empty" tools:ignore="MissingTranslation">No image selected</string>
+    <string name="home_appearance_pick" tools:ignore="MissingTranslation">Choose image</string>
+    <string name="home_appearance_replace" tools:ignore="MissingTranslation">Replace image</string>
+    <string name="home_appearance_clear" tools:ignore="MissingTranslation">Restore default</string>
+    <string name="home_appearance_blur" tools:ignore="MissingTranslation">Blur · %1$d dp</string>
+    <string name="home_appearance_dim" tools:ignore="MissingTranslation">Dim · %1$d%%</string>
+    <string name="home_appearance_done" tools:ignore="MissingTranslation">Done</string>
+
+    <!-- Widget + Quick Settings tile -->
+    <string name="xec_widget_label" tools:ignore="MissingTranslation">XEC Score</string>
+    <string name="xec_widget_description" tools:ignore="MissingTranslation">Live XEC device health score with a one-tap hide shortcut.</string>
+    <string name="xec_widget_summary_empty" tools:ignore="MissingTranslation">Open the manager to sync</string>
+    <string name="xec_widget_detail_empty" tools:ignore="MissingTranslation">Not synced yet</string>
+    <string name="xec_widget_detail" tools:ignore="MissingTranslation">%1$s · %2$d/%3$d checks</string>
+    <string name="xec_widget_hide" tools:ignore="MissingTranslation">One-tap hide</string>
+    <string name="xec_widget_status_s" tools:ignore="MissingTranslation">Protected</string>
+    <string name="xec_widget_status_a" tools:ignore="MissingTranslation">Healthy</string>
+    <string name="xec_widget_status_b" tools:ignore="MissingTranslation">Fair</string>
+    <string name="xec_widget_status_c" tools:ignore="MissingTranslation">Needs work</string>
+    <string name="xec_widget_status_d" tools:ignore="MissingTranslation">At risk</string>
+    <string name="xec_tile_label" tools:ignore="MissingTranslation">XEC Hide</string>
+    <string name="xec_tile_subtitle" tools:ignore="MissingTranslation">Open one-tap hide</string>
+    <string name="xec_one_tap_safe_mode" tools:ignore="MissingTranslation">One-tap hide is disabled in safe mode</string>
 </resources>

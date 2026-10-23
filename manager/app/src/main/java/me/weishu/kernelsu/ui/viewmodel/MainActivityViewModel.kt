@@ -102,6 +102,8 @@ object MainPagerConfig {
      */
     const val PAGE_COUNT = 5
     const val LAST_PAGE_INDEX = PAGE_COUNT - 1
+    /** Home / SuperUser / Module / Detect / Settings. */
+    const val DETECT_PAGE_INDEX = 3
 
     fun coercePage(page: Int): Int = page.coerceIn(0, LAST_PAGE_INDEX)
 }

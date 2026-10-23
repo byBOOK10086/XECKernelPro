@@ -26,7 +26,9 @@ import com.xecpro.kernel.XecMagicaService
 import me.weishu.kernelsu.ui.component.dialog.rememberLoadingDialog
 import me.weishu.kernelsu.ui.navigation3.Navigator
 import me.weishu.kernelsu.ui.navigation3.Route
+import me.weishu.kernelsu.ui.LocalMainPagerState
 import me.weishu.kernelsu.ui.viewmodel.HomeViewModel
+import me.weishu.kernelsu.ui.viewmodel.MainPagerConfig
 import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
@@ -39,6 +41,7 @@ fun HomePager(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val uriHandler = LocalUriHandler.current
     val context = LocalContext.current
+    val mainPagerState = LocalMainPagerState.current
     val loadingDialog = rememberLoadingDialog()
     val scope = rememberCoroutineScope()
     val latestIsCurrentPage by rememberUpdatedState(isCurrentPage)
@@ -77,6 +80,9 @@ fun HomePager(
             }
         },
         onPrivilegeClick = { navigator.push(Route.Privilege(updateMode = false)) },
+        onDetectClick = {
+            mainPagerState.animateToPage(MainPagerConfig.DETECT_PAGE_INDEX)
+        },
     )
 
     HomePagerMiuix(

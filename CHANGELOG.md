@@ -4,6 +4,35 @@
 
 ---
 
+## v31142 · 2026-10-24 · Liquid Home：XEC Score、外观编辑器、分享卡、小组件与磁贴
+
+> 类型：管理器 UI / 交互更新（不改 supercall、allowlist、内核 ABI）
+
+### 新增
+
+- **XEC Score**：9 项本地检查——Root、SELinux、SUSFS、TEE 注入、守护组件、LKM、UAPI、稳定版、运行模式；0–100 分，S/A/B/C/D 评级，每项在卡片上可解释。
+- **动态 Hero**：评分环、呼吸光晕、扫描线、守护天数；评级颜色随分数变化。
+- **首页状态卡外观编辑器**：右上角 Palette 入口，选图、预览、模糊（0–24 dp）、压暗（0–65%）、恢复默认；图片仍走 `ModuleBackgrounds` 私有存储，不新增权限。
+- **分享设备卡**：Canvas 生成 1080×1440 PNG，带评分、设备、内核、SUSFS 与检查项；FileProvider + 系统分享，本地生成不上传。
+- **桌面小组件 `XEC Score`**：显示分数/评级/状态，点击打开管理器，按钮进入现有 OneTapHide 流程。
+- **快捷设置磁贴 `XEC Hide`**：显示上次健康状态；点击打开 OneTapHide（安全模式会拦截）。
+- **首页入场动效**：Hero 与状态卡错峰淡入/上滑；保留 Splash 与 Liquid Glass 采样链。
+
+### 安全/一致性
+
+- 磁贴/小组件的“一键隐藏”使用与模块深链相同的 `SettingsRepository.intentToken`，不是导出的无名 Activity action。
+- TEE 评分使用 `keystore2` 的 `/proc/<pid>/maps` 是否真的映射 `libTEESimulator`，不把“进程活着”误判成注入成功。
+- 外观图片只写入应用私有目录；分享卡只写 `cacheDir` 并在生成后保留最近 3 张。
+
+### 验证
+
+- `:app:compileDebugKotlin`、`:app:assembleDebug` 通过（JDK 21 / compileSdk 37.0 / NDK 29）。
+- 本机调试包约 49 MB，放在 `manager/app/build/outputs/apk/debug/`；本地冒烟使用了 v31147 release 的 `xudc` 作为 `libxeccli.so`，正式构建由 CI 从当前 `userspace/ksud` 源码生成。
+- lint 的缺翻译项是仓库既有问题；本次新增的 XEC 字符串已做局部 `MissingTranslation` 抑制，widget RemoteView / TileService 的新增错误已修掉。
+- 尚未发布。
+
+---
+
 ## v31141 · 2026-10-17 · 上游同步（67 提交）+ TEE 注入链修复；内置 TA/TEE 回到 v31121 的默认行为
 
 > 类型：上游同步 + 事故修复 + 行为回退（用户裁决：v31121 那版最正常）
