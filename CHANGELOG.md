@@ -4,7 +4,7 @@
 
 ---
 
-## v31142 · 2026-10-24 · Liquid Home：XEC Score、外观编辑器、分享卡、小组件与磁贴
+## v31148 · 2026-10-24 · Liquid Home：XEC Score、外观编辑器、分享卡、小组件与磁贴
 
 > 类型：管理器 UI / 交互更新（不改 supercall、allowlist、内核 ABI）
 
