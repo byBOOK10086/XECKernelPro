@@ -94,7 +94,13 @@ jobs:
             ls "$KDIR" || true
             exit 1
           }
-          make -C kpm_samples/susfs_lite KDIR="$KDIR"
+          # kdir 只带 generated 头，静态头在源树（KBUILD 的 srctree+objtree 组合）
+          SRC="/opt/ddk/src/android15-6.6"
+          test -f "$SRC/include/linux/types.h" || {
+            echo "::error::kernel source tree missing static headers: $SRC"
+            exit 1
+          }
+          make -C kpm_samples/susfs_lite KDIR="$KDIR" SRC="$SRC"
           ls -la kpm_samples/susfs_lite/susfs_lite.kpm
           # 守卫：.kpm.* 节必须在（装载器按节取 init/ctl0/exit 指针）。
           READELF="$(command -v llvm-readelf || command -v readelf)"

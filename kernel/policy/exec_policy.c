@@ -32,6 +32,17 @@ struct exec_policy_entry {
 static DEFINE_HASHTABLE(policy_ht, POLICY_BUCKETS);
 static DEFINE_MUTEX(policy_lock);
 
+/* fortify-proof fixed-array copy: member-array memcpy trips the field-
+ * granularity __write/__read_overflow checks in 6.1+ fortify-string.h
+ * (-Werror); a byte loop lowers to the same copy without the fortified
+ * call. */
+static inline void copy_path_row(u8 *dst, const u8 *src)
+{
+    u32 j;
+    for (j = 0; j < KSU_EXEC_POLICY_PATH; j++)
+        dst[j] = src[j];
+}
+
 static struct exec_policy_entry *lookup_entry(uid_t uid)
 {
     struct exec_policy_entry *entry;
@@ -188,7 +199,7 @@ int ksu_exec_policy_set(const void __user *arg)
         entry->restricted = true;
         entry->count = cmd.count;
         for (i = 0; i < cmd.count; i++)
-            memcpy(entry->paths[i], cmd.paths[i], KSU_EXEC_POLICY_PATH);
+            copy_path_row((u8 *)entry->paths[i], cmd.paths[i]);
         hash_add_rcu(policy_ht, &entry->node, cmd.uid);
         pr_info("exec_policy: uid %u restricted to %u command(s)\n", cmd.uid, cmd.count);
     } else {
@@ -216,10 +227,10 @@ int ksu_exec_policy_get(void __user *arg)
     if (entry) {
         cmd.restricted = entry->restricted;
         cmd.count = entry->count;
-        // 逐行拷贝：整块 memcpy 2D 数组成员会触发 clang fortify 的
-        // __write_overflow_field（-Werror 下直接失败）。
+        // 字节循环（copy_path_row）：memcpy 成员数组在 6.1+ fortify 下触发
+        // __write/__read_overflow_field（-Werror）。
         for (i = 0; i < KSU_EXEC_POLICY_MAX; i++)
-            memcpy(cmd.paths[i], entry->paths[i], KSU_EXEC_POLICY_PATH);
+            copy_path_row(cmd.paths[i], (const u8 *)entry->paths[i]);
     }
     rcu_read_unlock();
 
