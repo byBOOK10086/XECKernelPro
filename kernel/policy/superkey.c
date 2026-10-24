@@ -162,9 +162,10 @@ void ksu_superkey_set_guard(bool armed)
 
 /* ---- feature handler: KSU_FEATURE_SUPERKEY_GUARD ---- */
 
-static u64 superkey_guard_get(void)
+static int superkey_guard_get(u64 *value)
 {
-    return ksu_superkey_guard_armed() ? 1 : 0;
+    *value = ksu_superkey_guard_armed() ? 1 : 0;
+    return 0;
 }
 
 static int superkey_guard_set(u64 value)
@@ -188,7 +189,7 @@ static const struct ksu_feature_handler superkey_guard_handler = {
     .set_handler = superkey_guard_set,
 };
 
-void __init ksu_superkey_init(void)
+void ksu_superkey_init(void)
 {
     int ret = ksu_register_feature_handler(&superkey_guard_handler);
     if (ret)
