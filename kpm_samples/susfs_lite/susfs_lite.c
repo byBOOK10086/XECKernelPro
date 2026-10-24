@@ -35,9 +35,12 @@
 #include <linux/uaccess.h>
 #include <linux/errno.h>
 #include <linux/string.h>
-#include <linux/sscanf.h>
 #include <linux/rcupdate.h>
 #include <linux/version.h>
+/* sscanf 的声明 6.8 起从 kernel.h 拆到 sscanf.h；6.6 仍在 kernel.h。 */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+#include <linux/sscanf.h>
+#endif
 
 #include "kpmodule.h"
 

@@ -43,6 +43,7 @@ CFLAGS := --target=aarch64-linux-gnu \
     -fno-stack-protector -fno-asynchronous-unwind-tables \
     -mgeneral-regs-only \
     -O2 -Wall -Wextra -Wno-unused-parameter \
+    -Wno-sign-compare -Wno-pointer-sign \
     -I.
 
 all: susfs_lite.kpm
