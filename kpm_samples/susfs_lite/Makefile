@@ -12,24 +12,27 @@
 # what the "one universal binary" honest note in CHANGELOG.md rejects.
 #
 # Build (DDK container or any prepared arm64 kernel tree):
-#   make KDIR=/path/to/prepared-kernel-tree
+#   make KDIR=/path/to/prepared-output-tree SRC=/path/to/kernel-source
 #
-# The prepared tree needs generated headers (include/generated/autoconf.h),
-# i.e. one that already built a module (the ddk-min images ship one in $KDIR).
+# The prepared output tree (O= dir) only carries GENERATED headers
+# (include/generated/*); the static headers (include/linux/*, arch includes)
+# live in the source tree. That is exactly how KBUILD composes LINUXINCLUDE
+# (srctree + objtree), mirrored below. In-tree builds (KDIR == SRC) work too.
 #
 # Load: xudc kpm load /data/adb/kpm/susfs_lite.kpm "allow_uids=<uid>;prefix=/data/adb"
 
 KDIR ?= $(KDIR)
+SRC ?= $(KDIR)
 CC := clang
 
-KINCLUDES := -I$(KDIR)/arch/arm64/include \
+KINCLUDES := -I$(SRC)/arch/arm64/include \
     -I$(KDIR)/arch/arm64/include/generated \
-    -I$(KDIR)/arch/arm64/include/uapi \
-    -I$(KDIR)/arch/arm64/include/generated/uapi \
+    -I$(SRC)/include \
     -I$(KDIR)/include \
-    -I$(KDIR)/include/generated \
-    -I$(KDIR)/include/generated/uapi \
-    -I$(KDIR)/include/uapi
+    -I$(SRC)/arch/arm64/include/uapi \
+    -I$(KDIR)/arch/arm64/include/generated/uapi \
+    -I$(SRC)/include/uapi \
+    -I$(KDIR)/include/generated/uapi
 
 CFLAGS := --target=aarch64-linux-gnu \
     -nostdinc $(KINCLUDES) \

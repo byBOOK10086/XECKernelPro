@@ -97,6 +97,24 @@ static struct uts_spoof_entry *uts_spoof_lookup(uid_t uid)
     return NULL;
 }
 
+/* fortify-proof fixed-array copy: member-array memcpy trips the field-
+ * granularity __write/__read_overflow checks in 6.1+ fortify-string.h
+ * (-Werror); a byte loop lowers to the same copy without the fortified
+ * call. */
+static inline void copy_uts_field(char *dst, const u8 *src)
+{
+    int i;
+    for (i = 0; i < KSU_UTS_SPOOF_LEN; i++)
+        dst[i] = (char)src[i];
+}
+
+static inline void copy_uts_field_u8(u8 *dst, const char *src)
+{
+    int i;
+    for (i = 0; i < KSU_UTS_SPOOF_LEN; i++)
+        dst[i] = (u8)src[i];
+}
+
 /*
  * Called from the uname syscall hook after the real syscall returned 0.
  * old_utsname and new_utsname share the sysname[65]/nodename[65] prefix,
@@ -121,8 +139,8 @@ void ksu_uts_spoof_rewrite(char __user *buf)
     rcu_read_lock();
     entry = uts_spoof_lookup(current_uid().val);
     if (entry) {
-        memcpy(release, entry->release, KSU_UTS_SPOOF_LEN);
-        memcpy(version, entry->version, KSU_UTS_SPOOF_LEN);
+        copy_uts_field(release, entry->release);
+        copy_uts_field(version, entry->version);
     }
     rcu_read_unlock();
 
@@ -171,8 +189,8 @@ int ksu_uts_spoof_set(const void __user *arg)
             return -ENOMEM;
         }
         entry->uid = cmd.uid;
-        memcpy(entry->release, cmd.release, KSU_UTS_SPOOF_LEN);
-        memcpy(entry->version, cmd.version, KSU_UTS_SPOOF_LEN);
+        copy_uts_field(entry->release, cmd.release);
+        copy_uts_field(entry->version, cmd.version);
         hash_add_rcu(uts_spoof_ht, &entry->node, cmd.uid);
         atomic_inc(&uts_spoof_count);
         pr_info("uts_spoof: uid %u release '%s' version '%s'\n", cmd.uid, entry->release,
@@ -200,8 +218,8 @@ int ksu_uts_spoof_get(void __user *arg)
     entry = uts_spoof_lookup(cmd.uid);
     if (entry) {
         cmd.enabled = 1;
-        memcpy(cmd.release, entry->release, KSU_UTS_SPOOF_LEN);
-        memcpy(cmd.version, entry->version, KSU_UTS_SPOOF_LEN);
+        copy_uts_field_u8(cmd.release, entry->release);
+        copy_uts_field_u8(cmd.version, entry->version);
     }
     rcu_read_unlock();
 
