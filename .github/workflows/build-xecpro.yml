@@ -67,6 +67,47 @@ jobs:
   build-xecinit:
     uses: ./.github/workflows/xecinit.yml
 
+  # ③ KPM 产品化：susfs_lite.kpm 必须对真内核树编译（kretprobe/pt_regs 结构
+  # 布局来自目标内核头；freestanding 硬编偏移=布局赌博）。ddk-min 容器自带
+  # 预备好的内核树（$KDIR，含 generated 头），对 android15-6.6 编出 ET_REL。
+  build-kpm:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ylarod/ddk-min:android15-6.6-20260828
+      options: --privileged
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build susfs_lite.kpm against android15-6.6 headers
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          echo "KDIR=${KDIR:-<unset>}"
+          if [ -z "${KDIR:-}" ]; then
+            # 镜像应导出 KDIR；兜底按 ddk-min 的目录约定找第一个预备树。
+            KDIR="$(ls -d /opt/ddk/kdir/* 2>/dev/null | head -n 1)"
+            echo "KDIR=$KDIR" >> "$GITHUB_ENV"
+            echo "fallback KDIR=$KDIR"
+          fi
+          test -f "$KDIR/include/generated/autoconf.h" || {
+            echo "::error::prepared kernel tree missing generated headers: $KDIR"
+            ls "$KDIR" || true
+            exit 1
+          }
+          make -C kpm_samples/susfs_lite KDIR="$KDIR"
+          ls -la kpm_samples/susfs_lite/susfs_lite.kpm
+          # 守卫：.kpm.* 节必须在（装载器按节取 init/ctl0/exit 指针）。
+          READELF="$(command -v llvm-readelf || command -v readelf)"
+          SECS=$("$READELF" -S kpm_samples/susfs_lite/susfs_lite.kpm | grep -c '\.kpm\.')
+          echo ".kpm sections: $SECS"
+          [ "$SECS" -ge 4 ] || { echo "::error::expected >=4 .kpm sections, got $SECS"; exit 1; }
+
+      - name: Upload built-in KPM payload
+        uses: actions/upload-artifact@v7
+        with:
+          name: builtin-kpm
+          path: kpm_samples/susfs_lite/susfs_lite.kpm
+
   build-ksud:
     needs: [build-lkm, build-ksuinit, build-xecinit]
     strategy:
@@ -82,7 +123,7 @@ jobs:
       pack_xecinit: true
 
   build-manager:
-    needs: [generate-key]
+    needs: [generate-key, build-kpm]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -261,22 +302,20 @@ jobs:
           file manager/app/src/main/jniLibs/arm64-v8a/libmagiskboot.so
           ls -la manager/app/src/main/assets/magisk/ manager/app/src/main/jniLibs/arm64-v8a/
 
-      - name: Build built-in KPM payload (susfs_lite)
-        # ③ KPM 产品化：kpm_samples/susfs_lite 用 NDK clang 编成 ET_REL
-        # .kpm，打进 APK assets/kpm/；管理器 KPM 页的「内置加载」入口从
-        # assets 提取后经 xudc kpm load 装载（与手动刷 .kpm 同一条路）。
-        # 样例自身保持实验性定位：加载与否完全由用户在管理器里决定。
+      - name: Download built-in KPM artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: builtin-kpm
+          path: artifacts/builtin-kpm
+
+      - name: Place built-in KPM payload into assets
+        # ③ build-kpm job 用真内核树编出的 susfs_lite.kpm，打进 APK assets/kpm/；
+        # 管理器 KPM 页的「内置加载」入口从这里提取（KsuCli.flashBuiltinSusfsLite）。
         working-directory: .
         run: |
           set -euo pipefail
-          NDK_DIR="$(ls -d "${ANDROID_SDK_ROOT:-${ANDROID_HOME:?}}"/ndk/* 2>/dev/null | sort | tail -n 1)"
-          if [ -z "$NDK_DIR" ]; then
-            echo "::error::no NDK found under the Android SDK"
-            exit 1
-          fi
-          make -C kpm_samples/susfs_lite NDK="$NDK_DIR"
           mkdir -p manager/app/src/main/assets/kpm
-          cp -f kpm_samples/susfs_lite/susfs_lite.kpm manager/app/src/main/assets/kpm/susfs_lite.kpm
+          cp -f artifacts/builtin-kpm/susfs_lite.kpm manager/app/src/main/assets/kpm/susfs_lite.kpm
           file manager/app/src/main/assets/kpm/susfs_lite.kpm
           ls -la manager/app/src/main/assets/kpm/
 

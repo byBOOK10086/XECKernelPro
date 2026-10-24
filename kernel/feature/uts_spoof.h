@@ -16,7 +16,7 @@ int ksu_set_spoof_version(const char *release, const char *version);
  * real syscall succeeded; it copies the uid's release/version overrides
  * into the userspace buffer (kernel uts state untouched).
  */
-void ksu_uts_spoof_rewrite(const char __user *buf);
+void ksu_uts_spoof_rewrite(char __user *buf);
 
 int ksu_uts_spoof_set(const void __user *arg);
 int ksu_uts_spoof_get(void __user *arg);

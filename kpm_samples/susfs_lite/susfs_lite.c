@@ -18,24 +18,36 @@
  *   API — available on every kernel this repo builds for.
  *
  * HONEST LIMITS (read before shipping)
- *   - EXPERIMENTAL. Not wired into CI, not device-verified. Load manually:
- *       xudc kpm load /data/local/tmp/susfs_lite.kpm "allow_uids=10236,prefix=/data/adb"
+ *   - EXPERIMENTAL. Built against a real kernel tree by CI (build-kpm job,
+ *     android15-6.6 headers) and shipped inside the manager APK, but NOT
+ *     device-verified. struct layouts come from the build tree's headers:
+ *     kernels with a different kprobes ABI are out of scope.
  *   - Covers stat-family + faccessat only. getdents64 (directory listings)
  *     is NOT hidden: a detector that lists /data will still see "adb".
  *   - This is a stop-gap for BL-locked stock kernels that cannot run the
  *     real SUSFS (built into GKI kernels only). Where SUSFS exists, use it.
  */
 
+#include <linux/types.h>
 #include <linux/kernel.h>
+#include <linux/printk.h>
 #include <linux/kprobes.h>
 #include <linux/uaccess.h>
-#include <linux/cred.h>
 #include <linux/errno.h>
 #include <linux/string.h>
-#include <linux/slab.h>
+#include <linux/sscanf.h>
+#include <linux/rcupdate.h>
 #include <linux/version.h>
 
 #include "kpmodule.h"
+
+/*
+ * Current uid via the engine's compact table (kernel/kpm/compact.c): `current`
+ * is percpu and current_uid() a macro — neither can be linked from an ET_REL
+ * module. Resolved by the KPM loader at load time, like every other kernel
+ * function referenced below.
+ */
+extern u32 get_current_uid(void);
 
 KPM_NAME("susfs_lite");
 KPM_VERSION("0.1.0");
@@ -74,7 +86,7 @@ static bool path_hidden(const char *path)
 
 static bool caller_allowed(void)
 {
-    u32 uid = current_uid().val;
+    u32 uid = get_current_uid();
     int i;
     if (uid == 0)
         return true;
@@ -114,7 +126,7 @@ static int ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
     if (regs->regs[0] != 0)
         return 0; // already failing
     if (path_hidden(data->path)) {
-        pr_info("susfs_lite: hiding '%s' from uid %u\n", data->path, current_uid().val);
+        pr_info("susfs_lite: hiding '%s' from uid %u\n", data->path, get_current_uid());
         regs->regs[0] = (unsigned long)-ENOENT;
     }
     return 0;
