@@ -14,12 +14,6 @@
 #include "logging.h"
 
 extern "C"
-JNIEXPORT jint JNICALL
-extern "C"
-JNIEXPORT jboolean JNICALL
-extern "C"
-JNIEXPORT jboolean JNICALL
-extern "C"
 JNIEXPORT jboolean JNICALL
 Java_me_weishu_kernelsu_Natives_setSuperkeyGuard(JNIEnv *env, jobject, jboolean armed) {
     return set_superkey_guard(armed == JNI_TRUE);

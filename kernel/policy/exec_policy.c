@@ -202,6 +202,7 @@ int ksu_exec_policy_get(void __user *arg)
 {
     struct ksu_exec_policy_cmd cmd;
     struct exec_policy_entry *entry;
+    u32 i;
 
     if (copy_from_user(&cmd, arg, sizeof(cmd)))
         return -EFAULT;
@@ -215,7 +216,10 @@ int ksu_exec_policy_get(void __user *arg)
     if (entry) {
         cmd.restricted = entry->restricted;
         cmd.count = entry->count;
-        memcpy(cmd.paths, entry->paths, sizeof(cmd.paths));
+        // 逐行拷贝：整块 memcpy 2D 数组成员会触发 clang fortify 的
+        // __write_overflow_field（-Werror 下直接失败）。
+        for (i = 0; i < KSU_EXEC_POLICY_MAX; i++)
+            memcpy(cmd.paths[i], entry->paths[i], KSU_EXEC_POLICY_PATH);
     }
     rcu_read_unlock();
 
