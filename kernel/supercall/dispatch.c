@@ -11,6 +11,9 @@
 
 #include "policy/exec_policy.h"
 #include "policy/superkey.h"
+
+/* superkey auth 成功哨兵：handler 层拿不到 filp，凭它让 handle_ioctl 打标 fd */
+#define KSU_SUPERKEY_AUTH_OK 0x534b5959
 #ifdef CONFIG_KSU_SUSFS
 #include <linux/susfs.h>
 #include <linux/susfs_def.h>
@@ -1140,6 +1143,16 @@ static int do_get_exec_policy(void __user *arg)
     return ksu_exec_policy_get(arg);
 }
 
+static int do_set_uts_spoof(void __user *arg)
+{
+    return ksu_uts_spoof_set(arg);
+}
+
+static int do_get_uts_spoof(void __user *arg)
+{
+    return ksu_uts_spoof_get(arg);
+}
+
 // IOCTL handlers mapping table
 // clang-format off
 static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
@@ -1171,6 +1184,18 @@ static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
         .cmd = KSU_IOCTL_GET_EXEC_POLICY,
         .name = "GET_EXEC_POLICY",
         .handler = do_get_exec_policy,
+        .perm_check = manager_or_root
+    },
+    {
+        .cmd = KSU_IOCTL_SET_UTS_SPOOF,
+        .name = "SET_UTS_SPOOF",
+        .handler = do_set_uts_spoof,
+        .perm_check = only_manager
+    },
+    {
+        .cmd = KSU_IOCTL_GET_UTS_SPOOF,
+        .name = "GET_UTS_SPOOF",
+        .handler = do_get_uts_spoof,
         .perm_check = manager_or_root
     },
     { 
@@ -1378,12 +1403,11 @@ static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
 };
 // clang-format on
 
-#define KSU_SUPERKEY_AUTH_OK 0x534b5959 /* "SKYY" sentinel */
-
 static bool cmd_is_superkey_guarded(unsigned int cmd)
 {
     return cmd == KSU_IOCTL_SET_APP_PROFILE || cmd == KSU_IOCTL_SET_SEPOLICY ||
-           cmd == KSU_IOCTL_SET_FEATURE || cmd == KSU_IOCTL_SET_EXEC_POLICY;
+           cmd == KSU_IOCTL_SET_FEATURE || cmd == KSU_IOCTL_SET_EXEC_POLICY ||
+           cmd == KSU_IOCTL_SET_UTS_SPOOF;
 }
 
 long ksu_supercall_handle_ioctl(const struct file *filp, unsigned int cmd, void __user *argp)

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
-# susfs_lite.kpm build (experimental sample, NOT wired into CI).
+# susfs_lite.kpm build (experimental sample; built into the manager APK
+# by build-xecpro.yml -> assets/kpm/susfs_lite.kpm).
 #
 # A KPM is a relocatable AArch64 ELF (ET_REL). Build against the kernel's
 # kpmodule.h ABI header with a bare-metal aarch64 toolchain:
@@ -9,7 +10,7 @@
 #
 # Load: xudc kpm load /data/local/tmp/susfs_lite.kpm "allow_uids=<manager_uid>;prefix=/data/adb"
 
-NDK ?= $(HOME/Android/Sdk/ndk/latest)
+NDK ?= $(HOME)/Android/Sdk/ndk/latest
 CC := $(NDK)/toolchains/llvm/prebuilt/*/bin/clang
 
 CFLAGS := --target=aarch64-linux-android \

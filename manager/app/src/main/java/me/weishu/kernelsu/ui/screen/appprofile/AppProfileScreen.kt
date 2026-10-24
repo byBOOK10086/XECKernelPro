@@ -27,6 +27,7 @@ import me.weishu.kernelsu.ui.util.setSepolicy
 import me.weishu.kernelsu.ui.viewmodel.SuperUserViewModel
 import me.weishu.kernelsu.privilege.ExecPolicyStore
 import me.weishu.kernelsu.privilege.SuperkeyStore
+import me.weishu.kernelsu.privilege.UtsSpoofStore
 import me.weishu.kernelsu.ui.viewmodel.getTemplateInfoById
 
 @Composable
@@ -84,6 +85,11 @@ fun AppProfileScreen(uid: Int) {
     var execRestricted by rememberSaveable(uid) { mutableStateOf(initialExecPaths.isNotEmpty()) }
     var execPaths by rememberSaveable(uid) { mutableStateOf(initialExecPaths) }
 
+    // Per-app uname 身份：同样以持久层为事实源。
+    val initialUts = remember(uid) { UtsSpoofStore.get(context, uid) }
+    var utsRelease by rememberSaveable(uid) { mutableStateOf(initialUts.first) }
+    var utsVersion by rememberSaveable(uid) { mutableStateOf(initialUts.second) }
+
     val state = AppProfileUiState(
         uid = uid,
         packageName = packageName,
@@ -92,6 +98,8 @@ fun AppProfileScreen(uid: Int) {
         sharedUserId = sharedUserId,
         execRestricted = execRestricted,
         execPaths = execPaths,
+        utsRelease = utsRelease,
+        utsVersion = utsVersion,
     )
 
     val actions = AppProfileActions(
@@ -119,6 +127,19 @@ fun AppProfileScreen(uid: Int) {
             }
             execRestricted = restricted && paths.any { it.isNotBlank() }
             execPaths = paths
+        },
+        onUtsSpoofChange = { release, version ->
+            val ok = if (!SuperkeyStore.ensureAuthed(context)) {
+                showMessage(context.getString(R.string.superkey_auth_required))
+                false
+            } else {
+                UtsSpoofStore.set(context, uid, release, version)
+            }
+            if (!ok && (release.isNotBlank() || version.isNotBlank())) {
+                showMessage(context.getString(R.string.uts_spoof_kernel_too_old))
+            }
+            utsRelease = release.trim()
+            utsVersion = version.trim()
         },
         onProfileChange = { updatedProfile ->
             scope.launch {

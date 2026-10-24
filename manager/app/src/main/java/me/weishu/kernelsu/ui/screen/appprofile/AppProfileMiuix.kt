@@ -346,6 +346,14 @@ private fun AppProfileInner(
             )
         }
 
+        // Per-app uname 身份（XECKernelPro 扩展）：按 uid 改写 uname 的
+        // release/version，无需授 root 也生效（应用侦测内核指纹用）。
+        UtsSpoofCard(
+            release = state.utsRelease,
+            version = state.utsVersion,
+            onChange = actions.onUtsSpoofChange,
+        )
+
         val initialRootMode = if (profile.rootUseDefault) {
             Mode.Default
         } else if (profile.rootTemplate != null) {
@@ -644,6 +652,79 @@ private fun ProfileBox(
             selectedIndex = if (selectedIndex == -1) 0 else selectedIndex,
         ) {
             onModeChange(modesAndTitles[it].first)
+        }
+    }
+}
+
+/**
+ * Per-app uname 身份卡：release/version 两个覆写位 + 应用。
+ * 语义（与内核 feature/uts_spoof.c 对齐）：真 uname 成功后按 uid 改写用户
+ * 缓冲，内核 uts 状态不动；空串 = 保留真实字段；两串都空 = 移除条目。
+ */
+@Composable
+private fun UtsSpoofCard(
+    release: String,
+    version: String,
+    onChange: (String, String) -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 12.dp),
+        colors = CardDefaults.defaultColors(color = Color.Transparent),
+    ) {
+        Column(Modifier.padding(vertical = 8.dp)) {
+            Text(
+                text = stringResource(id = R.string.uts_spoof_title),
+                modifier = Modifier.padding(horizontal = 16.dp),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = colorScheme.onBackground,
+            )
+            Text(
+                text = stringResource(id = R.string.uts_spoof_summary),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+            var rel by rememberSaveable(release) { mutableStateOf(release) }
+            var ver by rememberSaveable(version) { mutableStateOf(version) }
+            TextField(
+                value = rel,
+                onValueChange = { rel = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                label = stringResource(id = R.string.uts_spoof_release_label),
+                singleLine = true,
+            )
+            Spacer(Modifier.height(8.dp))
+            TextField(
+                value = ver,
+                onValueChange = { ver = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                label = stringResource(id = R.string.uts_spoof_version_label),
+                singleLine = true,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(id = R.string.uts_spoof_hint),
+                modifier = Modifier.padding(horizontal = 16.dp),
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+            TextButton(
+                text = stringResource(id = R.string.uts_spoof_apply),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                onClick = { onChange(rel, ver) },
+            )
         }
     }
 }

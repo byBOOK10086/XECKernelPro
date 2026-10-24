@@ -233,6 +233,28 @@ superkey_status superkey_status_query() {
     return {cmd.set != 0, cmd.guard_armed != 0};
 }
 
+bool set_uts_spoof(uid_t uid, bool enabled, const std::string &release, const std::string &version) {
+    struct ksu_uts_spoof_cmd cmd = {};
+    cmd.uid = uid;
+    cmd.enabled = enabled;
+    snprintf((char *) cmd.release, sizeof(cmd.release), "%s", release.c_str());
+    snprintf((char *) cmd.version, sizeof(cmd.version), "%s", version.c_str());
+    return ksuctl(KSU_IOCTL_SET_UTS_SPOOF, &cmd) == 0;
+}
+
+int get_uts_spoof(uid_t uid, std::string &release, std::string &version) {
+    struct ksu_uts_spoof_cmd cmd = {};
+    cmd.uid = uid;
+    int ret = ksuctl(KSU_IOCTL_GET_UTS_SPOOF, &cmd);
+    if (ret != 0)
+        return -1;
+    if (!cmd.enabled)
+        return 0;
+    release = (const char *) cmd.release;
+    version = (const char *) cmd.version;
+    return 1;
+}
+
 bool set_su_enabled(bool enabled) {
     struct ksu_set_feature_cmd cmd = {};
     cmd.feature_id = KSU_FEATURE_SU_COMPAT;

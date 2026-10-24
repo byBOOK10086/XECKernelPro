@@ -45,7 +45,7 @@ JNIEXPORT jbooleanArray JNICALL
 Java_me_weishu_kernelsu_Natives_superkeyStatus(JNIEnv *env, jobject) {
     superkey_status st = superkey_status_query();
     jbooleanArray out = env->NewBooleanArray(2);
-    jboolean vals[2] = {st.set ? JNI_TRUE : JNI_FALSE, st.guard_armed ? JNI_TRUE : JNI_FALSE};
+    jboolean vals[2] = {(jboolean)(st.set ? JNI_TRUE : JNI_FALSE), (jboolean)(st.guard_armed ? JNI_TRUE : JNI_FALSE)};
     env->SetBooleanArrayRegion(out, 0, 2, vals);
     return out;
 }
@@ -81,6 +81,37 @@ Java_me_weishu_kernelsu_Natives_getExecPolicy(JNIEnv *env, jobject, jint uid) {
         env->SetObjectArrayElement(
             out, (jsize) i, env->NewStringUTF(paths[i].c_str()));
     }
+    return out;
+}
+
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_me_weishu_kernelsu_Natives_setUtsSpoof(JNIEnv *env, jobject, jint uid, jboolean enabled, jstring release, jstring version) {
+    std::string rel, ver;
+    if (release) {
+        const char *chars = env->GetStringUTFChars(release, nullptr);
+        if (chars) rel = chars;
+        env->ReleaseStringUTFChars(release, chars);
+    }
+    if (version) {
+        const char *chars = env->GetStringUTFChars(version, nullptr);
+        if (chars) ver = chars;
+        env->ReleaseStringUTFChars(version, chars);
+    }
+    return set_uts_spoof((uid_t) uid, enabled == JNI_TRUE, rel, ver);
+}
+
+extern "C"
+JNIEXPORT jobjectArray JNICALL
+Java_me_weishu_kernelsu_Natives_getUtsSpoof(JNIEnv *env, jobject, jint uid) {
+    std::string release, version;
+    int state = get_uts_spoof((uid_t) uid, release, version);
+    if (state != 1)
+        return nullptr;
+    jclass stringClass = env->FindClass("java/lang/String");
+    jobjectArray out = env->NewObjectArray(2, stringClass, nullptr);
+    env->SetObjectArrayElement(out, 0, env->NewStringUTF(release.c_str()));
+    env->SetObjectArrayElement(out, 1, env->NewStringUTF(version.c_str()));
     return out;
 }
 

@@ -287,6 +287,44 @@ fun flashKpmModule(
     }
 }
 
+/**
+ * 内置 susfs_lite.kpm 装载（③）：从 APK assets/kpm/ 提取到 cacheDir，拷入
+ * /data/adb/kpm/ 全局副本（与手动刷 .kpm 完全同一条路，boot 时自动重载），
+ * 默认参数 = 管理器自身 uid 可见 + 隐藏 /data/adb 与 /debug_ramdisk 前缀。
+ * 样例保持实验性定位：只覆盖 stat 族 + faccessat，getdents64 不隐藏。
+ */
+fun flashBuiltinSusfsLite(
+    onStdout: (String) -> Unit,
+    onStderr: (String) -> Unit
+): FlashResult {
+    val safeName = "susfs_lite.kpm"
+    // assets/kpm/ 由 CI（build-xecpro.yml）填充；本地直接 assembleRelease 的
+    // APK 没有这个条目——返回失败而不是抛异常（调用方只认 code）。
+    val present = runCatching { ksuApp.assets.list("kpm") }.getOrNull()
+        ?.contains(safeName) == true
+    if (!present) {
+        return FlashResult(-1, "built-in kpm payload missing from assets", false)
+    }
+    val file = File(ksuApp.cacheDir, safeName)
+    ksuApp.assets.open("kpm/$safeName").use { input ->
+        file.outputStream().use { output ->
+            input.copyTo(output)
+        }
+    }
+    val managerUid = ksuApp.applicationInfo.uid
+    val dest = "/data/adb/kpm/$safeName"
+    val args = "allow_uids=$managerUid;prefix=/data/adb,/debug_ramdisk"
+    val cmd =
+        "mkdir -p /data/adb/kpm && cp ${file.absolutePath} $dest && " +
+            "${getKsuDaemonPath()} kpm load $dest '$args'"
+    val result = flashWithIO(cmd, onStdout, onStderr)
+    Log.i("XECKernelPro", "flash builtin kpm result: $result")
+
+    file.delete()
+
+    return FlashResult(result)
+}
+
 private const val AK3_UPDATER_ENTRY = "META-INF/com/google/android/update-binary"
 
 /**

@@ -19,6 +19,7 @@
 #include "hook/syscall_hook.h"
 #include "hook/syscall_event_bridge.h"
 #include "feature/adb_root.h"
+#include "feature/uts_spoof.h"
 #include "preinit/preinit.h"
 
 #ifndef CONFIG_KSU_SUSFS
@@ -154,3 +155,16 @@ long __nocfi ksu_hook_setresuid(int orig_nr, const struct pt_regs *regs)
     return ret;
 }
 #endif /* !CONFIG_KSU_SUSFS */
+
+// Per-app uname identity (XECKernelPro extension, ioctl 115): after the real
+// syscall fills the userspace buffer, rewrite release/version for the current
+// uid. Registered in both SUSFS and non-SUSFS modes — the baseline SUSFS
+// patch has no uname hook, so the dispatcher registration is always ours.
+long __nocfi ksu_hook_uname(int orig_nr, const struct pt_regs *regs)
+{
+    long ret = ksu_syscall_table[orig_nr](regs);
+
+    if (!ret)
+        ksu_uts_spoof_rewrite((const char __user *)(unsigned long)PT_REGS_SYSCALL_PARM1(regs));
+    return ret;
+}

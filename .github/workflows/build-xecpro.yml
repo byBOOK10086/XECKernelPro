@@ -261,6 +261,25 @@ jobs:
           file manager/app/src/main/jniLibs/arm64-v8a/libmagiskboot.so
           ls -la manager/app/src/main/assets/magisk/ manager/app/src/main/jniLibs/arm64-v8a/
 
+      - name: Build built-in KPM payload (susfs_lite)
+        # ③ KPM 产品化：kpm_samples/susfs_lite 用 NDK clang 编成 ET_REL
+        # .kpm，打进 APK assets/kpm/；管理器 KPM 页的「内置加载」入口从
+        # assets 提取后经 xudc kpm load 装载（与手动刷 .kpm 同一条路）。
+        # 样例自身保持实验性定位：加载与否完全由用户在管理器里决定。
+        working-directory: .
+        run: |
+          set -euo pipefail
+          NDK_DIR="$(ls -d "${ANDROID_SDK_ROOT:-${ANDROID_HOME:?}}"/ndk/* 2>/dev/null | sort | tail -n 1)"
+          if [ -z "$NDK_DIR" ]; then
+            echo "::error::no NDK found under the Android SDK"
+            exit 1
+          fi
+          make -C kpm_samples/susfs_lite NDK="$NDK_DIR"
+          mkdir -p manager/app/src/main/assets/kpm
+          cp -f kpm_samples/susfs_lite/susfs_lite.kpm manager/app/src/main/assets/kpm/susfs_lite.kpm
+          file manager/app/src/main/assets/kpm/susfs_lite.kpm
+          ls -la manager/app/src/main/assets/kpm/
+
       - name: Build branded manager
         run: |
           ./gradlew clean assembleRelease \

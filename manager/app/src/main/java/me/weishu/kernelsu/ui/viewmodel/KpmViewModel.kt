@@ -18,6 +18,7 @@ import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ksuApp
 import me.weishu.kernelsu.ui.screen.kpm.KpmEffect
 import me.weishu.kernelsu.ui.screen.kpm.KpmUiState
+import me.weishu.kernelsu.ui.util.flashBuiltinSusfsLite
 import me.weishu.kernelsu.ui.util.flashKpmModule
 import me.weishu.kernelsu.ui.util.kpmList
 import me.weishu.kernelsu.ui.util.kpmVersion
@@ -63,6 +64,30 @@ class KpmViewModel : ViewModel() {
             try {
                 val result = withContext(Dispatchers.IO) {
                     flashKpmModule(uri, {}, {})
+                }
+                val res = ksuApp.resources
+                val message = if (result.code == 0) {
+                    R.string.kpm_flash_success
+                } else {
+                    R.string.kpm_flash_failed
+                }
+                emitEffect(KpmEffect.SnackBar(res.getString(message)))
+                if (result.code == 0) {
+                    load()
+                }
+            } finally {
+                _uiState.update { it.copy(isFlashing = false) }
+            }
+        }
+    }
+
+    /** 内置 susfs_lite.kpm（③）：从 APK assets 提取装载，参数默认管理器可见。 */
+    fun flashBuiltin() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isFlashing = true) }
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    flashBuiltinSusfsLite({}, {})
                 }
                 val res = ksuApp.resources
                 val message = if (result.code == 0) {

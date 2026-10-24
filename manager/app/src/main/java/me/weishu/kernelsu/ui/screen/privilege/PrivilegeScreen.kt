@@ -290,6 +290,26 @@ fun PrivilegeScreen(updateMode: Boolean = false) {
                             }
                         }
                     },
+                    onGenerateProfile = {
+                        scope.launch {
+                            log("<k> generating profile for this kernel ...")
+                            when (val r = me.weishu.kernelsu.privilege.ProfileGenerator.generate(runner, context)) {
+                                is me.weishu.kernelsu.privilege.ProfileGenerator.GenResult.AlreadySupported ->
+                                    log("<k> ${context.getString(R.string.privilege_gen_already, r.release)}")
+                                is me.weishu.kernelsu.privilege.ProfileGenerator.GenResult.Generated -> {
+                                    log("<k> ${context.getString(R.string.privilege_gen_ok, r.release, r.donorRelease, r.importedName)}")
+                                    log("<!> ${context.getString(R.string.privilege_gen_warning)}")
+                                    importToken++
+                                }
+                                is me.weishu.kernelsu.privilege.ProfileGenerator.GenResult.TemplateBound -> {
+                                    log("<k> ${context.getString(R.string.privilege_gen_template, r.release, r.template)}")
+                                    importToken++
+                                }
+                                is me.weishu.kernelsu.privilege.ProfileGenerator.GenResult.NoMatch ->
+                                    log("<-> ${context.getString(R.string.privilege_gen_none, r.release, r.reason)}")
+                            }
+                        }
+                    },
                     onOpenUpstream = {
                         runCatching {
                             context.startActivity(
@@ -558,6 +578,7 @@ private fun ManualCard(
     onImport: () -> Unit,
     onDelete: (String) -> Unit,
     onUpdateProfiles: () -> Unit,
+    onGenerateProfile: () -> Unit,
     onOpenUpstream: () -> Unit,
 ) {
     val importedNames by produceState(initialValue = emptyList<String>(), key1 = importToken) {
@@ -587,6 +608,11 @@ private fun ManualCard(
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 text = stringResource(R.string.privilege_update_profiles),
                 onClick = onUpdateProfiles,
+            )
+            TextButton(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                text = stringResource(R.string.privilege_generate_profile),
+                onClick = onGenerateProfile,
             )
             if (importedNames.isNotEmpty()) {
                 Text(

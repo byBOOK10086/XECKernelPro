@@ -348,4 +348,25 @@ static const __u32 KSU_IOCTL_SET_SUPERKEY = _IOW('K', 112, struct ksu_superkey_c
 static const __u32 KSU_IOCTL_SUPERKEY_AUTH = _IOW('K', 113, struct ksu_superkey_auth_cmd);
 static const __u32 KSU_IOCTL_SUPERKEY_STATUS = _IOWR('K', 114, struct ksu_superkey_status_cmd);
 
+/*
+ * XECKernelPro extension (ioctl 115/116): per-app uname identity. After the
+ * real uname(2) fills the userspace buffer, release/version are rewritten
+ * per uid (kernel uts state is untouched, so init/sshd style consumers of
+ * the kernel-side uts stay honest). An empty string keeps the real field;
+ * enabled = 0 removes the entry. 32-bit compat processes are not covered
+ * (the syscall dispatcher skips them).
+ */
+#define KSU_UTS_SPOOF_LEN 65
+
+struct ksu_uts_spoof_cmd {
+    __u32 uid;
+    __u8 enabled; /* 0 = remove the entry */
+    __u8 reserved[3];
+    __u8 release[KSU_UTS_SPOOF_LEN]; /* NUL-terminated; "" keeps real */
+    __u8 version[KSU_UTS_SPOOF_LEN]; /* NUL-terminated; "" keeps real */
+};
+
+static const __u32 KSU_IOCTL_SET_UTS_SPOOF = _IOW('K', 115, struct ksu_uts_spoof_cmd);
+static const __u32 KSU_IOCTL_GET_UTS_SPOOF = _IOWR('K', 116, struct ksu_uts_spoof_cmd);
+
 #endif // __KSU_H_SUPERCALL_UAPI
