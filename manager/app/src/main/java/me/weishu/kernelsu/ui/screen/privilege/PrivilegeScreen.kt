@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -840,20 +841,23 @@ private fun PermanentCard(
                         color = Color(0xFFEF5350),
                         modifier = Modifier.padding(top = 10.dp),
                     )
+                    // stringResource 是 @Composable：先在组合上下文里取出，
+                    // 再进 onClick（非组合 lambda）。
+                    val confirmTitle = stringResource(R.string.permanent_confirm_title)
+                    val confirmBody = stringResource(R.string.permanent_confirm_body)
                     TextButton(
                         text = stringResource(R.string.permanent_run),
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                         enabled = !running,
                         colors = ButtonDefaults.textButtonColorsPrimary(),
                         onClick = {
-                            confirm.showConfirm(
-                                title = stringResource(R.string.permanent_confirm_title),
-                                content = stringResource(R.string.permanent_confirm_body),
-                            )
+                            confirm.showConfirm(title = confirmTitle, content = confirmBody)
                         },
                     )
                 }
                 else -> {
+                    val confirmTitle = stringResource(R.string.permanent_confirm_title)
+                    val confirmBody = stringResource(R.string.permanent_confirm_body)
                     TextButton(
                         text = stringResource(
                             if (running) R.string.permanent_running else R.string.permanent_run
@@ -862,10 +866,7 @@ private fun PermanentCard(
                         enabled = !running && bootlock.locked == false,
                         colors = ButtonDefaults.textButtonColorsPrimary(),
                         onClick = {
-                            confirm.showConfirm(
-                                title = stringResource(R.string.permanent_confirm_title),
-                                content = stringResource(R.string.permanent_confirm_body),
-                            )
+                            confirm.showConfirm(title = confirmTitle, content = confirmBody)
                         },
                     )
                 }
