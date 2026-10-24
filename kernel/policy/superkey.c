@@ -21,6 +21,7 @@
  */
 #include "superkey.h"
 
+#include <linux/init.h>
 #include <linux/mutex.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
@@ -189,7 +190,9 @@ static const struct ksu_feature_handler superkey_guard_handler = {
     .set_handler = superkey_guard_set,
 };
 
-void ksu_superkey_init(void)
+// __init：只被 kernelsu_init 调一次；无注解会让 modpost 报
+// .text -> .init.text 段失配（android14-6.1 起按 ERROR 处理）。
+void __init ksu_superkey_init(void)
 {
     int ret = ksu_register_feature_handler(&superkey_guard_handler);
     if (ret)
