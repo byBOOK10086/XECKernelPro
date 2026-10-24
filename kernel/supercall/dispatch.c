@@ -10,6 +10,7 @@
 #include <linux/thread_info.h>
 
 #include "policy/exec_policy.h"
+#include "policy/superkey.h"
 #ifdef CONFIG_KSU_SUSFS
 #include <linux/susfs.h>
 #include <linux/susfs_def.h>
@@ -1105,6 +1106,30 @@ out:
     return ret;
 }
 
+static int do_set_superkey(void __user *arg)
+{
+    struct ksu_superkey_cmd cmd;
+    if (copy_from_user(&cmd, arg, sizeof(cmd)))
+        return -EFAULT;
+    return cmd.clear ? ksu_superkey_clear(arg) : ksu_superkey_set(arg);
+}
+
+static int do_superkey_auth(void __user *arg)
+{
+    // 认证成功后标记当前 driver fd；守卫生效期间受控命令据此放行。
+    if (!ksu_superkey_auth(arg)) {
+        pr_warn("superkey: auth failed uid=%d\n", current_uid().val);
+        return -EACCES;
+    }
+    // filp 在 handle_ioctl 层，这里拿不到 —— 通过返回值让上层打标。
+    return KSU_SUPERKEY_AUTH_OK;
+}
+
+static int do_superkey_status(void __user *arg)
+{
+    return ksu_superkey_status(arg);
+}
+
 static int do_set_exec_policy(void __user *arg)
 {
     return ksu_exec_policy_set(arg);
@@ -1123,6 +1148,24 @@ static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
         .name = "SET_EXEC_POLICY",
         .handler = do_set_exec_policy,
         .perm_check = only_manager
+    },
+    {
+        .cmd = KSU_IOCTL_SET_SUPERKEY,
+        .name = "SET_SUPERKEY",
+        .handler = do_set_superkey,
+        .perm_check = only_manager
+    },
+    {
+        .cmd = KSU_IOCTL_SUPERKEY_AUTH,
+        .name = "SUPERKEY_AUTH",
+        .handler = do_superkey_auth,
+        .perm_check = manager_or_root
+    },
+    {
+        .cmd = KSU_IOCTL_SUPERKEY_STATUS,
+        .name = "SUPERKEY_STATUS",
+        .handler = do_superkey_status,
+        .perm_check = manager_or_root
     },
     {
         .cmd = KSU_IOCTL_GET_EXEC_POLICY,
@@ -1335,6 +1378,14 @@ static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
 };
 // clang-format on
 
+#define KSU_SUPERKEY_AUTH_OK 0x534b5959 /* "SKYY" sentinel */
+
+static bool cmd_is_superkey_guarded(unsigned int cmd)
+{
+    return cmd == KSU_IOCTL_SET_APP_PROFILE || cmd == KSU_IOCTL_SET_SEPOLICY ||
+           cmd == KSU_IOCTL_SET_FEATURE || cmd == KSU_IOCTL_SET_EXEC_POLICY;
+}
+
 long ksu_supercall_handle_ioctl(const struct file *filp, unsigned int cmd, void __user *argp)
 {
     int i;
@@ -1351,8 +1402,22 @@ long ksu_supercall_handle_ioctl(const struct file *filp, unsigned int cmd, void 
                 pr_warn("ksu ioctl: permission denied for cmd=0x%x uid=%d\n", cmd, current_uid().val);
                 return -EPERM;
             }
+            // XECKernelPro superkey guard: while armed, policy-mutating
+            // ioctls require this fd to have been authenticated (113) first.
+            // SET_SUPERKEY is excluded: it carries its own old-key proof.
+            if (cmd_is_superkey_guarded(cmd) && ksu_superkey_guard_armed() &&
+                !ksu_fd_is_superkey_authed(filp)) {
+                pr_warn("superkey: guarded cmd=0x%x rejected (unauthenticated fd) uid=%d\n",
+                        cmd, current_uid().val);
+                return -EACCES;
+            }
             // Execute handler
-            return ksu_ioctl_handlers[i].handler(argp);
+            int __ret = ksu_ioctl_handlers[i].handler(argp);
+            if (cmd == KSU_IOCTL_SUPERKEY_AUTH && __ret == KSU_SUPERKEY_AUTH_OK) {
+                ksu_fd_mark_superkey_authed((struct file *)filp);
+                return 0;
+            }
+            return __ret;
         }
     }
 

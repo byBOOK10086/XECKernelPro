@@ -24,6 +24,11 @@ int ksu_install_fd(void);
 int ksu_install_su_fd(void);
 bool ksu_is_su_session_fd(const struct file *filp);
 
+// XECKernelPro superkey guard: fd-scoped authentication bits
+// (implementation in supercall.c, checks in dispatch.c).
+void ksu_fd_mark_superkey_authed(struct file *filp);
+bool ksu_fd_is_superkey_authed(const struct file *filp);
+
 void ksu_supercalls_init(void);
 void ksu_supercalls_exit(void);
 

@@ -42,6 +42,16 @@ bool set_app_profile(const app_profile *profile);
 // Capability-level restricted su authorization (XECKernelPro extension).
 // A restricted uid may only root-run whitelisted commands via `su -c`.
 bool set_exec_policy(uid_t uid, bool restricted, const std::vector<std::string> &paths);
+
+// APatch-style superkey guard (XECKernelPro extension, ioctl 112/113/114).
+struct superkey_status {
+    bool set;
+    bool guard_armed;
+};
+bool set_superkey(const std::string &new_key, const std::string &old_key, bool clear);
+bool superkey_auth(const std::string &key);
+superkey_status superkey_status_query();
+bool set_superkey_guard(bool armed);
 std::vector<std::string> get_exec_policy(uid_t uid, bool &restricted);
 
 int get_app_profile(app_profile *profile);

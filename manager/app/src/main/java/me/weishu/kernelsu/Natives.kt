@@ -80,6 +80,18 @@ object Natives {
     external fun getExecPolicy(uid: Int): Array<String>?
 
     /**
+     * APatch 式超级密钥（XECKernelPro 扩展，ioctl 112/113/114）。
+     * @param clear true = 用 oldKey 清除内核密钥（newKey 忽略）
+     */
+    external fun setSuperkey(newKey: String, oldKey: String?, clear: Boolean): Boolean
+    external fun superkeyAuth(key: String): Boolean
+    /** @return [已设置, 守卫已武装]；null = 内核不认识（老内核） */
+    external fun superkeyStatus(): BooleanArray?
+
+    /** 守卫开关（feature 通道：KSU_FEATURE_SUPERKEY_GUARD）。 */
+    external fun setSuperkeyGuard(armed: Boolean): Boolean
+
+    /**
      * `su` compat mode can be disabled temporarily.
      *  0: disabled
      *  1: enabled
