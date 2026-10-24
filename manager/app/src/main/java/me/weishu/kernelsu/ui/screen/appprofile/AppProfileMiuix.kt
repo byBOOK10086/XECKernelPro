@@ -162,6 +162,12 @@ fun AppProfileScreenMiuix(
                         onViewTemplate = actions.onViewTemplate,
                         onManageTemplate = actions.onManageTemplate,
                         onProfileChange = actions.onProfileChange,
+                        execRestricted = state.execRestricted,
+                        execPaths = state.execPaths,
+                        onExecPolicyChange = actions.onExecPolicyChange,
+                        utsRelease = state.utsRelease,
+                        utsVersion = state.utsVersion,
+                        onUtsSpoofChange = actions.onUtsSpoofChange,
                     )
                     Spacer(
                         Modifier.height(
@@ -193,6 +199,13 @@ private fun AppProfileInner(
     onViewTemplate: (id: String) -> Unit = {},
     onManageTemplate: () -> Unit = {},
     onProfileChange: (Natives.Profile) -> Unit,
+    // 受限授权与 per-app uname 身份：值与回调由外层 state/actions 穿进来。
+    execRestricted: Boolean = false,
+    execPaths: List<String> = emptyList(),
+    onExecPolicyChange: (Boolean, List<String>) -> Unit = { _, _ -> },
+    utsRelease: String = "",
+    utsVersion: String = "",
+    onUtsSpoofChange: (String, String) -> Unit = { _, _ -> },
 ) {
     val isRootGranted = !isSpecialApp && profile.allowSu
     val userId = appUid / 100000
@@ -340,18 +353,18 @@ private fun AppProfileInner(
         // 受限授权（XECKernelPro 扩展）：白名单内的 `su -c` 才授予 root。
         AnimatedVisibility(visible = isRootGranted) {
             ExecPolicyCard(
-                restricted = state.execRestricted,
-                paths = state.execPaths,
-                onChange = actions.onExecPolicyChange,
+                restricted = execRestricted,
+                paths = execPaths,
+                onChange = onExecPolicyChange,
             )
         }
 
         // Per-app uname 身份（XECKernelPro 扩展）：按 uid 改写 uname 的
         // release/version，无需授 root 也生效（应用侦测内核指纹用）。
         UtsSpoofCard(
-            release = state.utsRelease,
-            version = state.utsVersion,
-            onChange = actions.onUtsSpoofChange,
+            release = utsRelease,
+            version = utsVersion,
+            onChange = onUtsSpoofChange,
         )
 
         val initialRootMode = if (profile.rootUseDefault) {

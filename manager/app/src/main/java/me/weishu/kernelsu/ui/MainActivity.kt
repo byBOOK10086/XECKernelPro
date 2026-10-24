@@ -552,9 +552,9 @@ fun MainScreen(
 
         // 受限授权（exec 白名单）与 per-app uname 身份开机重放：内核表重启
         // 即空，从持久层推回。幂等；失败（老内核不认识 ioctl）不阻塞启动流程。
-        val appContext = applicationContext
-        runCatching { me.weishu.kernelsu.privilege.ExecPolicyStore.pushAll(appContext) }
-        runCatching { me.weishu.kernelsu.privilege.UtsSpoofStore.pushAll(appContext) }
+        // ksuApp：此处上下文不是 Activity 接收者，applicationContext 解析不到。
+        runCatching { me.weishu.kernelsu.privilege.ExecPolicyStore.pushAll(me.weishu.kernelsu.ksuApp) }
+        runCatching { me.weishu.kernelsu.privilege.UtsSpoofStore.pushAll(me.weishu.kernelsu.ksuApp) }
 
         moduleViewModel.initializePreferences()
         val moduleState = moduleViewModel.uiState.value

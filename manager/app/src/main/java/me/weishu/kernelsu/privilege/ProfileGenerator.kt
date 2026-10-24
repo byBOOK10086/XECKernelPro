@@ -157,11 +157,10 @@ object ProfileGenerator {
             GenResult.NoMatch(release, "no ${device.versionPrefix} profile or template in library")
         }
 
-    private companion object {
-        // index.conf 行：{ release = "...", file = "..." }
-        // 普通转义字符串而不是 raw string：正则尾巴的 `"` 会与收尾 `"""` 粘连。
-        val INDEX_RE =
-            Regex("release\\s*=\\s*\"([^\"]+)\"\\s*,\\s*file\\s*=\\s*\"([^\"]+)\"")
-        val RELEASE_RE = Regex("(?m)^release\\s*=\\s*\"[^\"]*\"")
-    }
+    // object 里不能放 companion object；正则直接做成对象级私有 val。
+    // index.conf 行：{ release = "...", file = "..." }
+    // 普通转义字符串而不是 raw string：正则尾巴的引号会与收尾三引号粘连。
+    private val INDEX_RE =
+        Regex("release\\s*=\\s*\"([^\"]+)\"\\s*,\\s*file\\s*=\\s*\"([^\"]+)\"")
+    private val RELEASE_RE = Regex("(?m)^release\\s*=\\s*\"[^\"]*\"")
 }

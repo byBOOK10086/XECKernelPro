@@ -57,6 +57,7 @@ object SuperkeyStore {
                     setUnlockedDeviceRequired(true)
                 }
             }
+            .build()
         generator.init(spec)
         return generator.generateKey()
     }
@@ -99,8 +100,10 @@ object SuperkeyStore {
 
     data class KernelStatus(val set: Boolean, val guardArmed: Boolean)
 
+    /** Natives.superkeyStatus() 返回 [已设置, 守卫已武装]；null = 内核不认识。 */
     fun kernelStatus(): KernelStatus? = runCatching {
-        Natives.superkeyStatus()
+        val st = Natives.superkeyStatus() ?: return null
+        KernelStatus(st.getOrElse(0) { false }, st.getOrElse(1) { false })
     }.getOrNull()
 
     /** 首次设置或更换（更换需旧密钥持证）。 */
