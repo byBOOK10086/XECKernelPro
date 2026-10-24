@@ -22,12 +22,29 @@
 
 struct ksu_driver_context {
     unsigned long permissions;
+    // XECKernelPro superkey guard: set on this fd after a successful
+    // KSU_IOCTL_SUPERKEY_AUTH; policy-mutating ioctls check it while the
+    // guard is armed. Dies with the fd (anon_ksu_release frees the context).
+    bool superkey_authed;
 };
 
 struct ksu_install_fd_tw {
     struct callback_head cb;
     int __user *outp;
 };
+
+void ksu_fd_mark_superkey_authed(struct file *filp)
+{
+    struct ksu_driver_context *ctx = filp ? filp->private_data : NULL;
+    if (ctx)
+        ctx->superkey_authed = true;
+}
+
+bool ksu_fd_is_superkey_authed(const struct file *filp)
+{
+    const struct ksu_driver_context *ctx = filp ? filp->private_data : NULL;
+    return ctx && ctx->superkey_authed;
+}
 
 static int anon_ksu_release(struct inode *inode, struct file *filp)
 {

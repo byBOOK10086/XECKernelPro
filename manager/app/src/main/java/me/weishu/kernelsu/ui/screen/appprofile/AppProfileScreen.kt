@@ -26,6 +26,7 @@ import me.weishu.kernelsu.ui.util.restartApp
 import me.weishu.kernelsu.ui.util.setSepolicy
 import me.weishu.kernelsu.ui.viewmodel.SuperUserViewModel
 import me.weishu.kernelsu.privilege.ExecPolicyStore
+import me.weishu.kernelsu.privilege.SuperkeyStore
 import me.weishu.kernelsu.ui.viewmodel.getTemplateInfoById
 
 @Composable
@@ -107,7 +108,12 @@ fun AppProfileScreen(uid: Int) {
             navigator.push(Route.AppProfileTemplate)
         },
         onExecPolicyChange = { restricted, paths ->
-            val ok = ExecPolicyStore.set(context, uid, if (restricted) paths else emptyList())
+            val ok = if (!SuperkeyStore.ensureAuthed(context)) {
+                showMessage(context.getString(R.string.superkey_auth_required))
+                false
+            } else {
+                ExecPolicyStore.set(context, uid, if (restricted) paths else emptyList())
+            }
             if (!ok && restricted) {
                 showMessage(context.getString(R.string.exec_policy_kernel_too_old))
             }
@@ -134,6 +140,10 @@ fun AppProfileScreen(uid: Int) {
                         showMessage(failToUpdateSepolicy)
                         return@launch
                     }
+                }
+                if (!SuperkeyStore.ensureAuthed(context)) {
+                    showMessage(context.getString(R.string.superkey_auth_required))
+                    return@launch
                 }
                 if (!Natives.setAppProfile(profileToSave)) {
                     showMessage(failToUpdateAppProfile)

@@ -17,6 +17,47 @@ extern "C"
 JNIEXPORT jint JNICALL
 extern "C"
 JNIEXPORT jboolean JNICALL
+extern "C"
+JNIEXPORT jboolean JNICALL
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_me_weishu_kernelsu_Natives_setSuperkeyGuard(JNIEnv *env, jobject, jboolean armed) {
+    return set_superkey_guard(armed == JNI_TRUE);
+}
+
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_me_weishu_kernelsu_Natives_setSuperkey(JNIEnv *env, jobject, jstring newKey, jstring oldKey, jboolean clear) {
+    const char *n = newKey ? env->GetStringUTFChars(newKey, nullptr) : "";
+    const char *o = oldKey ? env->GetStringUTFChars(oldKey, nullptr) : "";
+    bool ok = set_superkey(n, o, clear == JNI_TRUE);
+    if (newKey) env->ReleaseStringUTFChars(newKey, n);
+    if (oldKey) env->ReleaseStringUTFChars(oldKey, o);
+    return ok;
+}
+
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_me_weishu_kernelsu_Natives_superkeyAuth(JNIEnv *env, jobject, jstring key) {
+    if (!key) return JNI_FALSE;
+    const char *k = env->GetStringUTFChars(key, nullptr);
+    bool ok = superkey_auth(k);
+    env->ReleaseStringUTFChars(key, k);
+    return ok;
+}
+
+extern "C"
+JNIEXPORT jbooleanArray JNICALL
+Java_me_weishu_kernelsu_Natives_superkeyStatus(JNIEnv *env, jobject) {
+    superkey_status st = superkey_status_query();
+    jbooleanArray out = env->NewBooleanArray(2);
+    jboolean vals[2] = {st.set ? JNI_TRUE : JNI_FALSE, st.guard_armed ? JNI_TRUE : JNI_FALSE};
+    env->SetBooleanArrayRegion(out, 0, 2, vals);
+    return out;
+}
+
+extern "C"
+JNIEXPORT jboolean JNICALL
 Java_me_weishu_kernelsu_Natives_setExecPolicy(JNIEnv *env, jobject, jint uid, jboolean restricted, jobjectArray paths) {
     std::vector<std::string> vec;
     jsize n = env->GetArrayLength(paths);

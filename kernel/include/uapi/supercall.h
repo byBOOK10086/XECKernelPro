@@ -315,4 +315,37 @@ struct ksu_exec_policy_cmd {
 static const __u32 KSU_IOCTL_SET_EXEC_POLICY = _IOW('K', 110, struct ksu_exec_policy_cmd);
 static const __u32 KSU_IOCTL_GET_EXEC_POLICY = _IOWR('K', 111, struct ksu_exec_policy_cmd);
 
+/*
+ * XECKernelPro extension (ioctl 112/113/114): APatch-style superkey guard.
+ * The kernel stores only the SHA-256 of the key; while the guard is armed
+ * (feature KSU_FEATURE_SUPERKEY_GUARD), policy-mutating ioctls additionally
+ * require the calling driver fd to be authenticated first via
+ * KSU_IOCTL_SUPERKEY_AUTH. GRANT_ROOT is not guarded (per-uid allow list
+ * already governs app su; a key slot would break standard su clients).
+ */
+#define KSU_SUPERKEY_HASH_LEN 32
+#define KSU_SUPERKEY_MAX_LEN 64
+
+struct ksu_superkey_cmd {
+    __u8 new_key[KSU_SUPERKEY_MAX_LEN]; /* NUL-terminated plaintext */
+    __u8 old_key[KSU_SUPERKEY_MAX_LEN]; /* proof-of-possession when changing */
+    __u8 has_old; /* first set = 0 */
+    __u8 clear; /* 1 = clear the key (old_key still required) */
+    __u8 reserved[2];
+};
+
+struct ksu_superkey_auth_cmd {
+    __u8 key[KSU_SUPERKEY_MAX_LEN]; /* NUL-terminated plaintext */
+};
+
+struct ksu_superkey_status_cmd {
+    __u8 set; /* a key is present */
+    __u8 guard_armed; /* key present AND guard feature on */
+    __u8 reserved[6];
+};
+
+static const __u32 KSU_IOCTL_SET_SUPERKEY = _IOW('K', 112, struct ksu_superkey_cmd);
+static const __u32 KSU_IOCTL_SUPERKEY_AUTH = _IOW('K', 113, struct ksu_superkey_auth_cmd);
+static const __u32 KSU_IOCTL_SUPERKEY_STATUS = _IOWR('K', 114, struct ksu_superkey_status_cmd);
+
 #endif // __KSU_H_SUPERCALL_UAPI

@@ -37,6 +37,8 @@ endif
 kernelsu-objs += policy/allowlist.o
 kernelsu-objs += policy/app_profile.o
 kernelsu-objs += policy/exec_policy.o
+kernelsu-objs += policy/superkey.o
+kernelsu-objs += policy/superkey_sha256.o
 kernelsu-objs += policy/feature.o
 
 kernelsu-objs += runtime/boot_event.o

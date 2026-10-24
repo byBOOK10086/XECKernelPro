@@ -2,7 +2,7 @@ package me.weishu.kernelsu.kpatch
 
 import android.content.Context
 import java.io.File
-import java.util.UUID
+import me.weishu.kernelsu.privilege.SuperkeyStore
 
 /**
  * KernelPatch 路线（5.10 以下内核的匹配刷写方案）。
@@ -29,11 +29,22 @@ object KPatch {
     private const val PREFS = "kpatch_prefs"
     private const val KEY_SUPERKEY = "superkey"
 
+    /**
+     * 统一密钥来源（2026-10-24 起）：与内核态守卫共用 SuperkeyStore 的
+     * Keystore 加密存储；KPatch 修补（kptools -S）与内核 ioctl 守卫拿到的
+     * 是同一个密钥。旧版明文 prefs 里的密钥自动迁移（取一次即迁）。
+     */
     fun superkey(context: Context): String {
+        // 迁移旧明文密钥
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        prefs.getString(KEY_SUPERKEY, null)?.let { return it }
-        val key = UUID.randomUUID().toString().replace("-", "").take(32)
-        prefs.edit().putString(KEY_SUPERKEY, key).apply()
+        prefs.getString(KEY_SUPERKEY, null)?.let { legacy ->
+            SuperkeyStore.saveLocal(context, legacy)
+            prefs.edit().remove(KEY_SUPERKEY).apply()
+            return legacy
+        }
+        SuperkeyStore.loadLocal(context)?.let { return it }
+        val key = SuperkeyStore.generateKey()
+        SuperkeyStore.saveLocal(context, key)
         return key
     }
 

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DeveloperMode
 import androidx.compose.material.icons.rounded.FlashOn
@@ -47,6 +48,8 @@ import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.KsuIsValid
 import me.weishu.kernelsu.ui.component.dialog.rememberLoadingDialog
 import me.weishu.kernelsu.ui.component.miuix.SendLogDialog
+import me.weishu.kernelsu.ui.component.dialog.XDialogTitle
+import me.weishu.kernelsu.ui.component.dialog.XDialog
 import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.component.uninstalldialog.UninstallDialog
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
@@ -56,6 +59,7 @@ import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.util.BlurredBar
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
@@ -87,6 +91,7 @@ fun SettingPagerMiuix(
     val loadingDialog = rememberLoadingDialog()
     val showUninstallDialog = rememberSaveable { mutableStateOf(false) }
     val showUnloadConfirm = rememberSaveable { mutableStateOf(false) }
+    val showSuperkeyDialog = rememberSaveable { mutableStateOf(false) }
     var unloading by rememberSaveable { mutableStateOf(false) }
 
     // 零足迹卸载确认：跑 ksud unload（恢复钩子、停守护、删模块），随后 stop/start
@@ -99,6 +104,9 @@ fun SettingPagerMiuix(
             ).submit { unloading = false }
         }
     )
+    if (showSuperkeyDialog.value) {
+        SuperkeyDialog(onDismiss = { showSuperkeyDialog.value = false })
+    }
     if (showUnloadConfirm.value) {
         unloadConfirm.showConfirm(
             title = stringResource(id = R.string.settings_unload_title),
@@ -531,6 +539,20 @@ fun SettingPagerMiuix(
                             onClick = actions.onOpenTerminal,
                         )
                         // 零足迹卸载：ksud unload（钩子恢复/守护停止/模块删除）。
+                        // APatch 式超级密钥：策略级操作的第二因素。
+                        ArrowPreference(
+                            title = stringResource(id = R.string.superkey_settings_title),
+                            summary = stringResource(id = R.string.superkey_settings_summary),
+                            startAction = {
+                                Icon(
+                                    Icons.Rounded.Key,
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    contentDescription = null,
+                                    tint = colorScheme.onBackground
+                                )
+                            },
+                            onClick = { showSuperkeyDialog.value = true },
+                        )
                         ArrowPreference(
                             title = stringResource(id = R.string.settings_unload_title),
                             summary = stringResource(id = R.string.settings_unload_summary),
@@ -577,6 +599,125 @@ fun SettingPagerMiuix(
                     }
                     Spacer(Modifier.height(bottomInnerPadding))
                 }
+            }
+        }
+    }
+}
+
+/**
+ * APatch 式超级密钥设置（借鉴 bmax121/APatch 的 superkey 模型）：
+ * 设置/更换/清除内核密钥 + 守卫武装开关。内核只存 SHA-256、掉电即失——
+ * 重启后需重新武装（这也是忘记密钥时的恢复路径）。
+ */
+@Composable
+private fun SuperkeyDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var status by remember { mutableStateOf<SuperkeyStore.KernelStatus?>(null) }
+    var newKey by rememberSaveable { mutableStateOf("") }
+    var oldKey by rememberSaveable { mutableStateOf("") }
+    var message by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) { status = SuperkeyStore.kernelStatus() }
+
+    XDialog(show = true, onDismissRequest = onDismiss) {
+        Column(Modifier.padding(20.dp)) {
+            XDialogTitle(text = stringResource(R.string.superkey_settings_title))
+            Text(
+                text = stringResource(R.string.superkey_status,
+                    stringResource(if (status?.set == true) R.string.superkey_state_set else R.string.superkey_state_unset),
+                    stringResource(if (status?.guardArmed == true) R.string.superkey_state_armed else R.string.superkey_state_disarmed)),
+                fontSize = 13.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(vertical = 8.dp),
+            )
+            Text(
+                text = stringResource(R.string.superkey_dialog_hint),
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+            Spacer(Modifier.height(12.dp))
+            if (status?.set == true) {
+                TextField(
+                    value = oldKey,
+                    onValueChange = { oldKey = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = stringResource(R.string.superkey_old_key_label),
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            TextField(
+                value = newKey,
+                onValueChange = { newKey = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = stringResource(R.string.superkey_new_key_label),
+                maxLines = 1,
+            )
+            Row(Modifier.padding(top = 4.dp)) {
+                TextButton(
+                    text = stringResource(R.string.superkey_generate),
+                    onClick = { newKey = SuperkeyStore.generateKey() },
+                )
+                Spacer(Modifier.weight(1f))
+            }
+            message?.let {
+                Text(it, fontSize = 12.sp, color = colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(vertical = 4.dp))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(R.string.superkey_arm_guard),
+                    fontSize = 14.sp,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(
+                    enabled = newKey.isNotBlank() || status?.set == true,
+                    checked = status?.guardArmed == true,
+                    onCheckedChange = { arm ->
+                        val ok = SuperkeyStore.armGuard(arm)
+                        message = context.getString(
+                            if (ok) R.string.superkey_applied else R.string.superkey_apply_failed
+                        )
+                        status = SuperkeyStore.kernelStatus()
+                    },
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Row {
+                TextButton(
+                    text = stringResource(R.string.superkey_apply),
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        val old = oldKey.ifBlank { null }
+                        val ok = SuperkeyStore.setKernelKey(newKey, old)
+                        if (ok) {
+                            SuperkeyStore.saveLocal(context, newKey)
+                            newKey = ""
+                            oldKey = ""
+                        }
+                        message = context.getString(
+                            if (ok) R.string.superkey_applied else R.string.superkey_apply_failed
+                        )
+                        status = SuperkeyStore.kernelStatus()
+                    },
+                )
+                Spacer(Modifier.width(8.dp))
+                TextButton(
+                    text = stringResource(R.string.superkey_clear),
+                    modifier = Modifier.weight(1f),
+                    enabled = status?.set == true,
+                    onClick = {
+                        val ok = SuperkeyStore.clearKernelKey(oldKey)
+                        if (ok) {
+                            SuperkeyStore.clearLocal(context)
+                            oldKey = ""
+                        }
+                        message = context.getString(
+                            if (ok) R.string.superkey_applied else R.string.superkey_apply_failed
+                        )
+                        status = SuperkeyStore.kernelStatus()
+                    },
+                )
             }
         }
     }

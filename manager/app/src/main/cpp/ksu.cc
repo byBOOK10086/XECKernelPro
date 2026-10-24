@@ -205,6 +205,34 @@ std::vector<std::string> get_exec_policy(uid_t uid, bool &restricted) {
     return out;
 }
 
+bool set_superkey(const std::string &new_key, const std::string &old_key, bool clear) {
+    struct ksu_superkey_cmd cmd = {};
+    snprintf((char *) cmd.new_key, sizeof(cmd.new_key), "%s", new_key.c_str());
+    snprintf((char *) cmd.old_key, sizeof(cmd.old_key), "%s", old_key.c_str());
+    cmd.has_old = !old_key.empty();
+    cmd.clear = clear;
+    return ksuctl(KSU_IOCTL_SET_SUPERKEY, &cmd) == 0;
+}
+
+bool superkey_auth(const std::string &key) {
+    struct ksu_superkey_auth_cmd cmd = {};
+    snprintf((char *) cmd.key, sizeof(cmd.key), "%s", key.c_str());
+    return ksuctl(KSU_IOCTL_SUPERKEY_AUTH, &cmd) == 0;
+}
+
+bool set_superkey_guard(bool armed) {
+    struct ksu_set_feature_cmd cmd = {};
+    cmd.feature_id = KSU_FEATURE_SUPERKEY_GUARD;
+    cmd.value = armed ? 1 : 0;
+    return ksuctl(KSU_IOCTL_SET_FEATURE, &cmd) == 0;
+}
+
+superkey_status superkey_status_query() {
+    struct ksu_superkey_status_cmd cmd = {};
+    ksuctl(KSU_IOCTL_SUPERKEY_STATUS, &cmd);
+    return {cmd.set != 0, cmd.guard_armed != 0};
+}
+
 bool set_su_enabled(bool enabled) {
     struct ksu_set_feature_cmd cmd = {};
     cmd.feature_id = KSU_FEATURE_SU_COMPAT;

@@ -10,6 +10,7 @@
 #include "policy/allowlist.h"
 #include "policy/app_profile.h"
 #include "policy/exec_policy.h"
+#include "policy/superkey.h"
 #include "policy/feature.h"
 #include "klog.h" // IWYU pragma: keep
 #include "manager/manager_observer.h"
@@ -174,6 +175,7 @@ int __init kernelsu_init(void)
     ksu_shell_su_adb_only_init();
 
     ksu_supercalls_init();
+    ksu_superkey_init();
     // APatch/KernelPatch 兼容层：必须在 ksu_syscall_hook_init()（决定
     // ksu_syscall_table 是否可用）之后。没开 CONFIG_KSU_APATCH_COMPAT 时是空实现。
     ksu_apatch_compat_init();
@@ -257,6 +259,7 @@ void __exit kernelsu_exit(void)
     ksu_allowlist_exit();
 
     ksu_shell_su_adb_only_exit();
+    ksu_superkey_exit();
     ksu_exec_policy_exit();
     ksu_selinux_hide_exit();
     ksu_lsm_hook_exit();

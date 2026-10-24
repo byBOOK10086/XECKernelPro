@@ -1058,4 +1058,23 @@ See the log below for details.</string>
     <!-- GhostLock profile auto-updater -->
     <string name="privilege_update_profiles">Update profile library</string>
 
+    <!-- APatch-style superkey guard -->
+    <string name="superkey_settings_title">Superkey</string>
+    <string name="superkey_settings_summary">Second factor for policy-changing operations (APatch-style)</string>
+    <string name="superkey_auth_required">Superkey guard is armed: authentication failed, unlock and try again</string>
+    <string name="superkey_status">Kernel key: %1$s · Guard: %2$s</string>
+    <string name="superkey_state_set">set</string>
+    <string name="superkey_state_unset">not set</string>
+    <string name="superkey_state_armed">armed</string>
+    <string name="superkey_state_disarmed">off</string>
+    <string name="superkey_dialog_hint">The kernel keeps only the key hash and loses it on reboot (the recovery path if you forget it: reboot, then re-arm or change it here). While armed, changing app profiles, restricted whitelists and feature switches requires this key.</string>
+    <string name="superkey_old_key_label">Current key (required to change/clear)</string>
+    <string name="superkey_new_key_label">New key</string>
+    <string name="superkey_generate">Generate</string>
+    <string name="superkey_arm_guard">Arm guard</string>
+    <string name="superkey_apply">Set key</string>
+    <string name="superkey_clear">Clear</string>
+    <string name="superkey_applied">Applied</string>
+    <string name="superkey_apply_failed">Rejected (wrong key, or kernel too old)</string>
+
 </resources>
