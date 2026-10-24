@@ -24,12 +24,23 @@ public class BootCompletedReceiver extends BroadcastReceiver {
             return;
         }
         if (KsuCliKt.rootAvailable()) return;
+        // 路径一：Magica（app-zygote 预载 exec ksud late-load）——内核已打
+        // kpimg/KPM 的设备的快路。
         try {
             context.startService(new Intent(context, XecMagicaService.class));
             Log.i(TAG, "MagicaService started from boot action: " + action);
         } catch (Throwable e) {
 
             Log.e(TAG, "Failed to start MagicaService from boot action: " + action, e);
+        }
+        // 路径二：自动重放（GhostLock 漏洞）——BL 锁定原厂内核设备。服务自己
+        // 会先等 Magica 的窗口，等到了就直接收工，不会白跑漏洞。
+        try {
+            Intent replay = new Intent(context, me.weishu.kernelsu.privilege.AutoReplayService.class);
+            context.startForegroundService(replay);
+            Log.i(TAG, "AutoReplayService started from boot action: " + action);
+        } catch (Throwable e) {
+            Log.e(TAG, "Failed to start AutoReplayService from boot action: " + action, e);
         }
     }
 }

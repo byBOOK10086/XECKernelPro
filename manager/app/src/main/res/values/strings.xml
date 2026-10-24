@@ -1010,4 +1010,52 @@ See the log below for details.</string>
     <string name="xec_tile_label" tools:ignore="MissingTranslation">XEC Hide</string>
     <string name="xec_tile_subtitle" tools:ignore="MissingTranslation">Open one-tap hide</string>
     <string name="xec_one_tap_safe_mode" tools:ignore="MissingTranslation">One-tap hide is disabled in safe mode</string>
+    <!-- Auto replay (boot-time root restore) -->
+    <string name="auto_replay_channel">Auto elevate</string>
+    <string name="auto_replay_running">Restoring root after boot…</string>
+    <string name="auto_replay_attempt">GhostLock attempt %1$d of %2$d</string>
+    <string name="auto_replay_success_exploit">Root restored via exploit; manager restarting…</string>
+    <string name="auto_replay_success_zygote">Root restored (kernel patch path)</string>
+    <string name="auto_replay_failed">Auto elevate failed:</string>
+    <string name="auto_replay_profile_stale">Kernel changed (OTA?). The profile no longer matches — open the manager to import a new one.</string>
+
+    <!-- Bootloader intel -->
+    <string name="bl_card_title">Bootloader</string>
+    <string name="bl_state_locked">Locked</string>
+    <string name="bl_state_unlocked">Unlocked</string>
+    <string name="bl_state_unknown">Unknown</string>
+    <string name="bl_channel">Official unlock channel</string>
+    <string name="bl_avail_open">Available</string>
+    <string name="bl_avail_limited">Limited (waiting period / quota)</string>
+    <string name="bl_avail_closed">No public channel</string>
+    <string name="bl_open_link">Open official page</string>
+
+    <!-- One-tap permanent root (BL-unlocked gate) -->
+    <string name="permanent_title">Permanent root</string>
+    <string name="permanent_summary">Turn the current temporary root into a persistent one — no PC, no fastboot. Requires an unlocked bootloader; a stock backup is kept before anything is written.</string>
+    <string name="permanent_run">One-tap permanent</string>
+    <string name="permanent_running">Patching…</string>
+    <string name="permanent_confirm_title">Make root permanent?</string>
+    <string name="permanent_confirm_body">This patches the current boot image and flashes it back. A stock backup is kept in /data/adb/xec. Requires an unlocked bootloader; reboot to take effect.</string>
+    <string name="permanent_success">Done! Reboot to activate.</string>
+    <string name="permanent_failed">Failed:</string>
+    <string name="permanent_reboot_now">Reboot now</string>
+    <string name="permanent_needs_unlock">Bootloader is locked: flashing boot would break verified boot and brick the device. Use boot-time auto elevate, or unlock through the official channel above.</string>
+
+    <!-- Capability-restricted su (exec whitelist) -->
+    <string name="exec_policy_title">Restricted root</string>
+    <string name="exec_policy_summary">This app may only run whitelisted commands as root (su -c); everything else is denied</string>
+    <string name="exec_policy_paths_label">Whitelisted commands (one per line)</string>
+    <string name="exec_policy_hint">Matching is by full path or basename of the first token of the command. Interactive su and direct root grants are denied for restricted apps (fail closed).</string>
+    <string name="exec_policy_apply">Apply whitelist</string>
+    <string name="exec_policy_kernel_too_old">Kernel rejected the policy (older kernel without ioctl 110 support)</string>
+
+    <!-- Zero-footprint unload -->
+    <string name="settings_unload_title">Unload root (zero footprint)</string>
+    <string name="settings_unload_summary">Restore syscall hooks, stop the daemon, remove the kernel module until next boot</string>
+    <string name="settings_unload_confirm">This unloads KernelSU right now: hooks are restored, the daemon stops and the kernel module is removed; Android services restart once during the process. Root is gone until the next reboot (or a re-elevate). Continue?</string>
+
+    <!-- GhostLock profile auto-updater -->
+    <string name="privilege_update_profiles">Update profile library</string>
+
 </resources>

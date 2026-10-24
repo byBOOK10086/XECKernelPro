@@ -85,6 +85,8 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.MoreCircle
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
@@ -333,6 +335,15 @@ private fun AppProfileInner(
                     onCheckedChange = { onProfileChange(profile.copy(allowSu = it)) },
                 )
             }
+        }
+
+        // 受限授权（XECKernelPro 扩展）：白名单内的 `su -c` 才授予 root。
+        AnimatedVisibility(visible = isRootGranted) {
+            ExecPolicyCard(
+                restricted = state.execRestricted,
+                paths = state.execPaths,
+                onChange = actions.onExecPolicyChange,
+            )
         }
 
         val initialRootMode = if (profile.rootUseDefault) {
@@ -633,6 +644,63 @@ private fun ProfileBox(
             selectedIndex = if (selectedIndex == -1) 0 else selectedIndex,
         ) {
             onModeChange(modesAndTitles[it].first)
+        }
+    }
+}
+
+/**
+ * 受限授权卡：开关 + 白名单编辑（一行一条命令；basename 匹配）。
+ * 语义（与内核 exec_policy.c 对齐）：受限后 GRANT_ROOT 与交互式 su 一律拒绝，
+ * 仅 `su -c <白名单命令>` 授予 root —— fail closed。
+ */
+@Composable
+private fun ExecPolicyCard(
+    restricted: Boolean,
+    paths: List<String>,
+    onChange: (Boolean, List<String>) -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp),
+        colors = CardDefaults.defaultColors(color = Color.Transparent),
+    ) {
+        Column(Modifier.padding(vertical = 8.dp)) {
+            SwitchPreference(
+                title = stringResource(id = R.string.exec_policy_title),
+                summary = stringResource(id = R.string.exec_policy_summary),
+                checked = restricted,
+                onCheckedChange = { onChange(it, if (it) paths else paths) },
+            )
+            AnimatedVisibility(visible = restricted) {
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    var text by rememberSaveable(paths) {
+                        mutableStateOf(paths.joinToString("\n"))
+                    }
+                    TextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = stringResource(id = R.string.exec_policy_paths_label),
+                        maxLines = 8,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(id = R.string.exec_policy_hint),
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(
+                        text = stringResource(id = R.string.exec_policy_apply),
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            onChange(true, text.split('\n').map { it.trim() }.filter { it.isNotEmpty() })
+                        },
+                    )
+                }
+            }
         }
     }
 }

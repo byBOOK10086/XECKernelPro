@@ -16,6 +16,8 @@
 #include <climits>
 #include <sys/syscall.h>
 #include <cerrno>
+#include <vector>
+#include <algorithm>
 #include "ksu.h"
 
 static int fd = -1;
@@ -167,6 +169,40 @@ int get_app_profile(app_profile *profile) {
     int ret = ksuctl(KSU_IOCTL_GET_APP_PROFILE, &cmd);
     *profile = cmd.profile;
     return ret;
+}
+
+bool set_exec_policy(uid_t uid, bool restricted, const std::vector<std::string> &paths) {
+    struct ksu_exec_policy_cmd cmd = {};
+    cmd.uid = uid;
+    cmd.restricted = restricted && !paths.empty();
+    cmd.count = 0;
+    for (const auto &path : paths) {
+        if (cmd.count >= KSU_EXEC_POLICY_MAX)
+            break;
+        if (path.empty())
+            continue;
+        // 截断到 KSU_EXEC_POLICY_PATH-1，保证 NUL 终止。
+        size_t n = std::min(path.size(), (size_t)(KSU_EXEC_POLICY_PATH - 1));
+        memcpy(cmd.paths[cmd.count], path.data(), n);
+        cmd.paths[cmd.count][n] = '\0';
+        cmd.count++;
+    }
+    return ksuctl(KSU_IOCTL_SET_EXEC_POLICY, &cmd) == 0;
+}
+
+std::vector<std::string> get_exec_policy(uid_t uid, bool &restricted) {
+    std::vector<std::string> out;
+    struct ksu_exec_policy_cmd cmd = {};
+    cmd.uid = uid;
+    if (ksuctl(KSU_IOCTL_GET_EXEC_POLICY, &cmd) != 0) {
+        restricted = false;
+        return out;
+    }
+    restricted = cmd.restricted;
+    for (unsigned i = 0; i < cmd.count && i < KSU_EXEC_POLICY_MAX; i++) {
+        out.emplace_back((const char *) cmd.paths[i]);
+    }
+    return out;
 }
 
 bool set_su_enabled(bool enabled) {

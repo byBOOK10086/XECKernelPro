@@ -9,6 +9,7 @@
 
 #include "policy/allowlist.h"
 #include "policy/app_profile.h"
+#include "policy/exec_policy.h"
 #include "policy/feature.h"
 #include "klog.h" // IWYU pragma: keep
 #include "manager/manager_observer.h"
@@ -256,6 +257,7 @@ void __exit kernelsu_exit(void)
     ksu_allowlist_exit();
 
     ksu_shell_su_adb_only_exit();
+    ksu_exec_policy_exit();
     ksu_selinux_hide_exit();
     ksu_lsm_hook_exit();
     ksu_adb_root_exit();

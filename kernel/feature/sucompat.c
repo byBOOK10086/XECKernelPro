@@ -1,4 +1,6 @@
 #include "linux/file.h"
+
+#include "policy/exec_policy.h"
 #include "linux/fcntl.h"
 #include "linux/namei.h"
 #include <linux/compiler_types.h>
@@ -232,6 +234,15 @@ static long ksu_handle_execve_sucompat_common(const char __user **filename_user,
         goto do_orig_execve;
 
     pr_info("sys_execve su found\n");
+
+    /*
+     * 受限授权（XECKernelPro 扩展）：白名单 uid 的 su 授权以 -c 命令首
+     * token 匹配白名单；不匹配/交互式 su/读不到 argv 一律不授予——落回
+     * 原始 execve，效果等同未安装 su（ENOENT）。fail closed。
+     */
+    if (unlikely(ksu_exec_policy_is_restricted(current_uid().val)) &&
+        !ksu_exec_policy_allows_argv(current_uid().val, argv_user))
+        goto do_orig_execve;
 
     tmp_fd = get_unused_fd_flags(O_CLOEXEC);
     if (tmp_fd < 0) {

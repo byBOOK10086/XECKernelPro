@@ -8,6 +8,8 @@
 #include <linux/uaccess.h>
 #include <linux/version.h>
 #include <linux/thread_info.h>
+
+#include "policy/exec_policy.h"
 #ifdef CONFIG_KSU_SUSFS
 #include <linux/susfs.h>
 #include <linux/susfs_def.h>
@@ -42,6 +44,13 @@ static int do_grant_root(void __user *arg)
     int ret;
     __u32 audit_uid = current_uid().val;
     __u32 audit_euid = current_euid().val;
+
+    // 受限授权（XECKernelPro 扩展）：白名单 uid 不允许走 GRANT_ROOT——
+    // 那会直接把整个进程变成全量 root，白名单形同虚设。只能走 su -c 路径。
+    if (unlikely(ksu_exec_policy_is_restricted(audit_uid))) {
+        pr_info("grant root denied for restricted uid: %d\n", audit_uid);
+        return -EACCES;
+    }
 
     // we already check uid above on allowed_for_su()
 
@@ -1096,9 +1105,31 @@ out:
     return ret;
 }
 
+static int do_set_exec_policy(void __user *arg)
+{
+    return ksu_exec_policy_set(arg);
+}
+
+static int do_get_exec_policy(void __user *arg)
+{
+    return ksu_exec_policy_get(arg);
+}
+
 // IOCTL handlers mapping table
 // clang-format off
 static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
+    {
+        .cmd = KSU_IOCTL_SET_EXEC_POLICY,
+        .name = "SET_EXEC_POLICY",
+        .handler = do_set_exec_policy,
+        .perm_check = only_manager
+    },
+    {
+        .cmd = KSU_IOCTL_GET_EXEC_POLICY,
+        .name = "GET_EXEC_POLICY",
+        .handler = do_get_exec_policy,
+        .perm_check = manager_or_root
+    },
     { 
         .cmd = KSU_IOCTL_GRANT_ROOT,
         .name = "GRANT_ROOT",

@@ -6,7 +6,10 @@
 #define KERNELSU_KSU_H
 
 #include <cstdint>
+#include <string>
+#include <vector>
 #include <sys/ioctl.h>
+#include <sys/types.h>
 #include <sys/prctl.h>
 #include <utility>
 
@@ -35,6 +38,11 @@ bool is_pr_build();
 using p_key_t = char[KSU_MAX_PACKAGE_NAME];
 
 bool set_app_profile(const app_profile *profile);
+
+// Capability-level restricted su authorization (XECKernelPro extension).
+// A restricted uid may only root-run whitelisted commands via `su -c`.
+bool set_exec_policy(uid_t uid, bool restricted, const std::vector<std::string> &paths);
+std::vector<std::string> get_exec_policy(uid_t uid, bool &restricted);
 
 int get_app_profile(app_profile *profile);
 

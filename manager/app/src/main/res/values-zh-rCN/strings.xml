@@ -1012,4 +1012,52 @@ XEC 项目组
     <string name="xec_tile_label" tools:ignore="MissingTranslation">XEC 隐藏</string>
     <string name="xec_tile_subtitle" tools:ignore="MissingTranslation">点击进入一键隐藏</string>
     <string name="xec_one_tap_safe_mode" tools:ignore="MissingTranslation">安全模式下不能执行一键隐藏</string>
+    <!-- 自动重放（开机自动恢复 root） -->
+    <string name="auto_replay_channel">自动提权</string>
+    <string name="auto_replay_running">开机恢复 root 中…</string>
+    <string name="auto_replay_attempt">GhostLock 第 %1$d / %2$d 次尝试</string>
+    <string name="auto_replay_success_exploit">漏洞提权成功，管理器即将重启…</string>
+    <string name="auto_replay_success_zygote">root 已恢复（内核补丁路径）</string>
+    <string name="auto_replay_failed">自动提权失败：</string>
+    <string name="auto_replay_profile_stale">内核已更新（OTA？），profile 不再匹配——请打开管理器导入新 profile。</string>
+
+    <!-- Bootloader 情报 -->
+    <string name="bl_card_title">Bootloader</string>
+    <string name="bl_state_locked">已锁定</string>
+    <string name="bl_state_unlocked">已解锁</string>
+    <string name="bl_state_unknown">未知</string>
+    <string name="bl_channel">官方解锁通道</string>
+    <string name="bl_avail_open">可用</string>
+    <string name="bl_avail_limited">受限（等待期/名额）</string>
+    <string name="bl_avail_closed">无公开通道</string>
+    <string name="bl_open_link">打开官方页面</string>
+
+    <!-- 一键永久（BL 已解锁闸门） -->
+    <string name="permanent_title">永久 Root</string>
+    <string name="permanent_summary">把当前的临时 root 转成持久 root——免电脑、免 fastboot。需要 bootloader 已解锁；写入前会保留原厂备份。</string>
+    <string name="permanent_run">一键永久</string>
+    <string name="permanent_running">正在修补…</string>
+    <string name="permanent_confirm_title">转为永久 Root？</string>
+    <string name="permanent_confirm_body">将修补当前 boot 镜像并写回。原厂镜像会备份到 /data/adb/xec。需要 bootloader 已解锁；重启后生效。</string>
+    <string name="permanent_success">完成！重启后生效。</string>
+    <string name="permanent_failed">失败：</string>
+    <string name="permanent_reboot_now">立即重启</string>
+    <string name="permanent_needs_unlock">Bootloader 已锁定：写 boot 会破坏验证链导致变砖。请使用开机自动提权，或走上方官方通道解锁。</string>
+
+    <!-- 受限授权（exec 白名单） -->
+    <string name="exec_policy_title">受限 Root</string>
+    <string name="exec_policy_summary">此应用只能以白名单命令取 root（su -c），其余一律拒绝</string>
+    <string name="exec_policy_paths_label">白名单命令（一行一条）</string>
+    <string name="exec_policy_hint">按完整路径或命令首 token 的 basename 匹配。受限应用的交互式 su 与直接授权会被拒绝（fail closed）。</string>
+    <string name="exec_policy_apply">应用白名单</string>
+    <string name="exec_policy_kernel_too_old">内核拒绝了策略（内核较旧，不支持 110 号 ioctl）</string>
+
+    <!-- 零足迹卸载 -->
+    <string name="settings_unload_title">卸载 Root（零足迹）</string>
+    <string name="settings_unload_summary">恢复系统调用钩子、停止守护进程、移除内核模块（至下次开机）</string>
+    <string name="settings_unload_confirm">将立即卸载 KernelSU：钩子恢复、守护停止、内核模块移除，期间 Android 服务会重启一次。重启设备（或重新提权）前 root 不再存在。继续？</string>
+
+    <!-- GhostLock profile 自动更新器 -->
+    <string name="privilege_update_profiles">更新 profile 库</string>
+
 </resources>

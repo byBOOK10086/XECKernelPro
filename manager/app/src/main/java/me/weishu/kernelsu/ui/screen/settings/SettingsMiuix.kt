@@ -47,6 +47,7 @@ import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.KsuIsValid
 import me.weishu.kernelsu.ui.component.dialog.rememberLoadingDialog
 import me.weishu.kernelsu.ui.component.miuix.SendLogDialog
+import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.component.uninstalldialog.UninstallDialog
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.island.IslandTopBar
@@ -85,6 +86,26 @@ fun SettingPagerMiuix(
     val barColor = if (blurActive) Color.Transparent else colorScheme.surface.copy(alpha = 1f)
     val loadingDialog = rememberLoadingDialog()
     val showUninstallDialog = rememberSaveable { mutableStateOf(false) }
+    val showUnloadConfirm = rememberSaveable { mutableStateOf(false) }
+    var unloading by rememberSaveable { mutableStateOf(false) }
+
+    // 零足迹卸载确认：跑 ksud unload（恢复钩子、停守护、删模块），随后 stop/start
+    // 全部 Android 服务——界面会闪一下，属预期。
+    val unloadConfirm = rememberConfirmDialog(
+        onConfirm = {
+            unloading = true
+            com.topjohnwu.superuser.Shell.cmd(
+                me.weishu.kernelsu.ui.util.getKsuDaemonPath() + " unload"
+            ).submit { unloading = false }
+        }
+    )
+    if (showUnloadConfirm.value) {
+        unloadConfirm.showConfirm(
+            title = stringResource(id = R.string.settings_unload_title),
+            content = stringResource(id = R.string.settings_unload_confirm),
+        )
+        showUnloadConfirm.value = false
+    }
     val showSendLogDialog = rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
@@ -508,6 +529,20 @@ fun SettingPagerMiuix(
                                 )
                             },
                             onClick = actions.onOpenTerminal,
+                        )
+                        // 零足迹卸载：ksud unload（钩子恢复/守护停止/模块删除）。
+                        ArrowPreference(
+                            title = stringResource(id = R.string.settings_unload_title),
+                            summary = stringResource(id = R.string.settings_unload_summary),
+                            startAction = {
+                                Icon(
+                                    Icons.Rounded.Delete,
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    contentDescription = null,
+                                    tint = colorScheme.onBackground
+                                )
+                            },
+                            onClick = { showUnloadConfirm.value = true },
                         )
                         ArrowPreference(
                             title = stringResource(id = R.string.send_log),

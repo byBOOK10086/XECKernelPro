@@ -131,6 +131,10 @@ class GhostLockRunner(context: Context) {
         }
     }
 
+    /** 供 profile 自动更新器批量导入（文本直写 store，不经 SAF）。 */
+    suspend fun importProfileText(name: String, text: String): String =
+        withContext(Dispatchers.IO) { userProfileStore.save(name, text) }
+
     suspend fun importedProfileNames(): List<String> = withContext(Dispatchers.IO) {
         userProfileStore.list().map { it.name }
     }
