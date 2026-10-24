@@ -165,6 +165,6 @@ long __nocfi ksu_hook_uname(int orig_nr, const struct pt_regs *regs)
     long ret = ksu_syscall_table[orig_nr](regs);
 
     if (!ret)
-        ksu_uts_spoof_rewrite((const char __user *)(unsigned long)PT_REGS_SYSCALL_PARM1(regs));
+        ksu_uts_spoof_rewrite((char __user *)PT_REGS_SYSCALL_PARM1(regs));
     return ret;
 }

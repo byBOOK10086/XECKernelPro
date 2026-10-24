@@ -1,6 +1,7 @@
 #include <linux/export.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/cred.h>
 #include <linux/fs.h>
 #include <linux/kernfs.h>
 #include <linux/file.h>
@@ -50,6 +51,17 @@ static int sukisu_is_current_uid_manager(void)
     return is_manager();
 }
 
+/*
+ * Portable current-uid accessor for KPM modules: a freestanding ET_REL
+ * cannot reach `current` (percpu) or the current_uid() macro, so modules
+ * declare `extern u32 get_current_uid(void);` and the loader resolves it
+ * through the compact table below.
+ */
+static u32 sukisu_get_current_uid(void)
+{
+    return current_uid().val;
+}
+
 static uid_t sukisu_get_manager_uid(void)
 {
     return ksu_manager_appid;
@@ -75,6 +87,7 @@ static struct CompactAddressSymbol address_symbol[] = { { "kallsyms_lookup_name"
                                                         { "get_ap_mod_exclude", &sukisu_get_ap_mod_exclude },
                                                         { "is_uid_should_umount", &sukisu_is_uid_should_umount },
                                                         { "is_current_uid_manager", &sukisu_is_current_uid_manager },
+                                                        { "get_current_uid", &sukisu_get_current_uid },
                                                         { "get_manager_uid", &sukisu_get_manager_uid },
                                                         { "sukisu_set_manager_uid", &sukisu_set_manager_uid } };
 

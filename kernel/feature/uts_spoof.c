@@ -100,26 +100,42 @@ static struct uts_spoof_entry *uts_spoof_lookup(uid_t uid)
 /*
  * Called from the uname syscall hook after the real syscall returned 0.
  * old_utsname and new_utsname share the sysname[65]/nodename[65] prefix,
- * so one pair of offsets serves both buffer layouts.
+ * so one pair of offsets serves both buffer layouts. The strings are copied
+ * out of the RCU entry first: copy_to_user() may fault and must not run
+ * under rcu_read_lock. A faulted rewrite is ignored — the syscall already
+ * succeeded and must keep its result.
  */
-void ksu_uts_spoof_rewrite(const char __user *buf)
+void ksu_uts_spoof_rewrite(char __user *buf)
 {
     struct uts_spoof_entry *entry;
+    char release[KSU_UTS_SPOOF_LEN];
+    char version[KSU_UTS_SPOOF_LEN];
+    unsigned long not_copied = 0;
 
     if (!buf || !atomic_read(&uts_spoof_count))
         return;
 
+    release[0] = '\0';
+    version[0] = '\0';
+
     rcu_read_lock();
     entry = uts_spoof_lookup(current_uid().val);
     if (entry) {
-        if (entry->release[0])
-            copy_to_user(buf + offsetof(struct new_utsname, release), entry->release,
-                         KSU_UTS_SPOOF_LEN);
-        if (entry->version[0])
-            copy_to_user(buf + offsetof(struct new_utsname, version), entry->version,
-                         KSU_UTS_SPOOF_LEN);
+        memcpy(release, entry->release, KSU_UTS_SPOOF_LEN);
+        memcpy(version, entry->version, KSU_UTS_SPOOF_LEN);
     }
     rcu_read_unlock();
+
+    if (!entry)
+        return;
+
+    if (release[0])
+        not_copied |= copy_to_user(buf + offsetof(struct new_utsname, release), release,
+                                   KSU_UTS_SPOOF_LEN);
+    if (version[0])
+        not_copied |= copy_to_user(buf + offsetof(struct new_utsname, version), version,
+                                   KSU_UTS_SPOOF_LEN);
+    (void)not_copied;
 }
 
 static void uts_spoof_free_rcu(struct rcu_head *rcu)
