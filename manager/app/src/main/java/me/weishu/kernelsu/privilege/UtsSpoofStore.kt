@@ -20,11 +20,11 @@ object UtsSpoofStore {
     fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** release 与 version 都为空 = 移除该 uid 的条目。 */
-    fun set(context: Context, uid: Int, release: String, version: String) {
+    /** release 与 version 都为空 = 移除该 uid 的条目。@return 内核是否接受。 */
+    fun set(context: Context, uid: Int, release: String, version: String): Boolean {
         val rel = release.trim().take(MAX_LEN)
         val ver = version.trim().take(MAX_LEN)
-        if (rel.isEmpty() && ver.isEmpty()) {
+        return if (rel.isEmpty() && ver.isEmpty()) {
             prefs(context).edit().remove(uid.toString()).apply()
             push(uid, "", "")
         } else {

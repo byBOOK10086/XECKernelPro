@@ -21,8 +21,8 @@ object ExecPolicyStore {
     fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** paths 为空 = 解除限制。 */
-    fun set(context: Context, uid: Int, paths: List<String>) {
+    /** paths 为空 = 解除限制。@return 内核是否接受（调用方以此提示"内核较旧"）。 */
+    fun set(context: Context, uid: Int, paths: List<String>): Boolean {
         val cleaned = paths.map { it.trim() }
             .filter { it.isNotEmpty() }
             .take(MAX_ENTRIES)
@@ -31,7 +31,7 @@ object ExecPolicyStore {
         } else {
             prefs(context).edit().putString(uid.toString(), cleaned.joinToString("\n")).apply()
         }
-        push(uid, cleaned)
+        return push(uid, cleaned)
     }
 
     fun get(context: Context, uid: Int): List<String> =
