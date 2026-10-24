@@ -70,6 +70,16 @@ object Natives {
     external fun setAppProfile(profile: Profile?): Boolean
 
     /**
+     * 受限授权（XECKernelPro 扩展）：限制 uid 只能以 `su -c <白名单命令>` 拿 root。
+     * @param restricted false = 解除限制
+     * @return 内核是否接受（老内核不认识 ioctl 会返回 false）
+     */
+    external fun setExecPolicy(uid: Int, restricted: Boolean, paths: Array<String>): Boolean
+
+    /** @return 受限时返回白名单；未受限返回 null。 */
+    external fun getExecPolicy(uid: Int): Array<String>?
+
+    /**
      * `su` compat mode can be disabled temporarily.
      *  0: disabled
      *  1: enabled

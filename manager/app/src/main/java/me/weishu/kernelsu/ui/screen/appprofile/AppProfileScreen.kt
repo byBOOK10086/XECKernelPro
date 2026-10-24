@@ -25,6 +25,7 @@ import me.weishu.kernelsu.ui.util.launchApp
 import me.weishu.kernelsu.ui.util.restartApp
 import me.weishu.kernelsu.ui.util.setSepolicy
 import me.weishu.kernelsu.ui.viewmodel.SuperUserViewModel
+import me.weishu.kernelsu.privilege.ExecPolicyStore
 import me.weishu.kernelsu.ui.viewmodel.getTemplateInfoById
 
 @Composable
@@ -77,12 +78,19 @@ fun AppProfileScreen(uid: Int) {
         }
     }
 
+    // 受限授权：持久层是事实源（内核表重启即空），进页面时读回。
+    val initialExecPaths = remember(uid) { ExecPolicyStore.get(context, uid) }
+    var execRestricted by rememberSaveable(uid) { mutableStateOf(initialExecPaths.isNotEmpty()) }
+    var execPaths by rememberSaveable(uid) { mutableStateOf(initialExecPaths) }
+
     val state = AppProfileUiState(
         uid = uid,
         packageName = packageName,
         profile = profile,
         appGroup = appGroup,
         sharedUserId = sharedUserId,
+        execRestricted = execRestricted,
+        execPaths = execPaths,
     )
 
     val actions = AppProfileActions(
@@ -97,6 +105,14 @@ fun AppProfileScreen(uid: Int) {
         },
         onManageTemplate = {
             navigator.push(Route.AppProfileTemplate)
+        },
+        onExecPolicyChange = { restricted, paths ->
+            val ok = ExecPolicyStore.set(context, uid, if (restricted) paths else emptyList())
+            if (!ok && restricted) {
+                showMessage(context.getString(R.string.exec_policy_kernel_too_old))
+            }
+            execRestricted = restricted && paths.any { it.isNotBlank() }
+            execPaths = paths
         },
         onProfileChange = { updatedProfile ->
             scope.launch {

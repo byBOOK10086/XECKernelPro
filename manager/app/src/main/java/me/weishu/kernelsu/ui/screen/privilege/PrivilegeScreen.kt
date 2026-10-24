@@ -1,9 +1,15 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package me.weishu.kernelsu.ui.screen.privilege
 
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -58,7 +64,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.dropUnlessResumed
 import kotlinx.coroutines.launch
 import me.weishu.kernelsu.R
+import com.topjohnwu.superuser.Shell
+import me.weishu.kernelsu.mountstate.AutoPermanent
+import me.weishu.kernelsu.privilege.BootlockStatus
 import me.weishu.kernelsu.privilege.GhostLockRunner
+import me.weishu.kernelsu.privilege.UnlockChannels
+import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.navigation3.LocalNavigator
@@ -109,6 +120,12 @@ fun PrivilegeScreen(updateMode: Boolean = false) {
     var selectedCpuPair by remember { mutableIntStateOf(0) }
     // 已导入 profile 列表的刷新令牌：增删后 +1 触发 produceState 重读。
     var importToken by remember { mutableIntStateOf(0) }
+    // 一键永久（BL 已解锁闸门）：运行态与结果。
+    var permanentRunning by remember { mutableStateOf(false) }
+    var permanentOutcome by remember { mutableStateOf<AutoPermanent.Outcome?>(null) }
+    val bootlock by produceState(initialValue = BootlockStatus.State(null, null, "...")) {
+        value = BootlockStatus.detect()
+    }
 
     val snapshot by produceState<GhostLockRunner.Snapshot?>(initialValue = null) {
         value = runner.snapshot()
@@ -197,6 +214,9 @@ fun PrivilegeScreen(updateMode: Boolean = false) {
                 DeviceCard(snapshot = snapshot, updateMode = updateMode, hasRoot = hasRoot)
             }
             item {
+                BootloaderCard(state = bootlock)
+            }
+            item {
                 RiskCard()
             }
             if ((snapshot?.cpuPairs?.size ?: 0) > 1) {
@@ -221,6 +241,26 @@ fun PrivilegeScreen(updateMode: Boolean = false) {
                 )
             }
             item {
+                PermanentCard(
+                    hasRoot = hasRoot,
+                    bootlock = bootlock,
+                    running = permanentRunning,
+                    outcome = permanentOutcome,
+                    onRun = {
+                        if (!permanentRunning) {
+                            permanentRunning = true
+                            permanentOutcome = null
+                            scope.launch {
+                                val out = AutoPermanent.run(context, ::log)
+                                permanentOutcome = out
+                                permanentRunning = false
+                            }
+                        }
+                    },
+                    onReboot = { Shell.cmd("reboot").submit() },
+                )
+            }
+            item {
                 LogCard(lines = logLines)
             }
             item {
@@ -234,6 +274,18 @@ fun PrivilegeScreen(updateMode: Boolean = false) {
                         scope.launch {
                             if (runner.deleteImportedProfile(name)) {
                                 log("<k> deleted profile: $name")
+                                importToken++
+                            }
+                        }
+                    },
+                    onUpdateProfiles = {
+                        scope.launch {
+                            log("<k> updating profile library from upstream ...")
+                            val result = me.weishu.kernelsu.privilege.ProfileUpdater.update(runner, ::log)
+                            if (result.error != null) {
+                                log("<-> update failed: ${result.error}")
+                            } else {
+                                log("<k> update done: imported=${result.imported} skipped=${result.skipped}")
                                 importToken++
                             }
                         }
@@ -505,6 +557,7 @@ private fun ManualCard(
     importToken: Int,
     onImport: () -> Unit,
     onDelete: (String) -> Unit,
+    onUpdateProfiles: () -> Unit,
     onOpenUpstream: () -> Unit,
 ) {
     val importedNames by produceState(initialValue = emptyList<String>(), key1 = importToken) {
@@ -529,6 +582,11 @@ private fun ManualCard(
                 modifier = Modifier.fillMaxWidth(),
                 text = stringResource(R.string.privilege_import_profile),
                 onClick = onImport,
+            )
+            TextButton(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                text = stringResource(R.string.privilege_update_profiles),
+                onClick = onUpdateProfiles,
             )
             if (importedNames.isNotEmpty()) {
                 Text(
@@ -594,5 +652,198 @@ private fun ManualStep(index: Int, text: String) {
             lineHeight = 19.sp,
             color = colorScheme.onSurfaceVariantSummary,
         )
+    }
+}
+
+/**
+ * Bootloader 情报卡（⑧）：本机 BL 状态 + 官方解锁通道。
+ * 只陈述事实：锁着就明说"写 boot 会变砖"，通道代价如实写。
+ */
+@Composable
+private fun BootloaderCard(state: BootlockStatus.State) {
+    val context = LocalContext.current
+    val channel = remember { UnlockChannels.forDevice() }
+    Card(
+        modifier = Modifier.fillMaxWidth().xGlassBody(backdrop = null, shape = Xc.shapes.md),
+        colors = CardDefaults.defaultColors(color = Color.Transparent),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (state.locked == false) Icons.Rounded.LockOpen else Icons.Rounded.Lock,
+                    contentDescription = null,
+                    tint = if (state.locked == false) Color(0xFF4CAF50) else Color(0xFFFFB300),
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.bl_card_title),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = stringResource(
+                        when (state.locked) {
+                            false -> R.string.bl_state_unlocked
+                            true -> R.string.bl_state_locked
+                            else -> R.string.bl_state_unknown
+                        }
+                    ),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (state.locked == false) Color(0xFF4CAF50) else Color(0xFFFFB300),
+                )
+            }
+            Text(
+                text = state.source,
+                fontSize = 11.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(R.string.bl_channel),
+                    fontSize = 13.sp,
+                    color = colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = stringResource(
+                        when (channel.availability) {
+                            UnlockChannels.Availability.OPEN -> R.string.bl_avail_open
+                            UnlockChannels.Availability.LIMITED -> R.string.bl_avail_limited
+                            UnlockChannels.Availability.CLOSED -> R.string.bl_avail_closed
+                        }
+                    ),
+                    fontSize = 12.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                )
+            }
+            if (state.locked != false) {
+                Text(
+                    text = stringResource(R.string.permanent_needs_unlock),
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+            if (channel.url != null) {
+                Text(
+                    text = stringResource(R.string.bl_open_link),
+                    fontSize = 12.sp,
+                    color = colorScheme.primary,
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .combinedClickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(
+                                            Intent.ACTION_VIEW,
+                                            android.net.Uri.parse(channel.url),
+                                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                    )
+                                }
+                            },
+                        ),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 一键永久卡（①修正版）：BL 已解锁 + 当前有 root 才可用；
+ * 锁定/未知 → 明确拒绝并指向解锁通道或自动重放。
+ */
+@Composable
+private fun PermanentCard(
+    hasRoot: Boolean?,
+    bootlock: BootlockStatus.State,
+    running: Boolean,
+    outcome: AutoPermanent.Outcome?,
+    onRun: () -> Unit,
+    onReboot: () -> Unit,
+) {
+    if (hasRoot != true) return
+    val confirm = rememberConfirmDialog(onConfirm = onRun)
+    Card(
+        modifier = Modifier.fillMaxWidth().xGlassBody(backdrop = null, shape = Xc.shapes.md),
+        colors = CardDefaults.defaultColors(color = Color.Transparent),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.permanent_title),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = colorScheme.onSurface,
+            )
+            Text(
+                text = stringResource(R.string.permanent_summary),
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            when {
+                outcome?.success == true -> {
+                    Text(
+                        text = stringResource(R.string.permanent_success),
+                        fontSize = 13.sp,
+                        color = Color(0xFF4CAF50),
+                        modifier = Modifier.padding(top = 10.dp),
+                    )
+                    TextButton(
+                        text = stringResource(R.string.permanent_reboot_now),
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                        onClick = onReboot,
+                    )
+                }
+                outcome != null -> {
+                    Text(
+                        text = stringResource(R.string.permanent_failed) + " " + outcome.message,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                        color = Color(0xFFEF5350),
+                        modifier = Modifier.padding(top = 10.dp),
+                    )
+                    TextButton(
+                        text = stringResource(R.string.permanent_run),
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        enabled = !running,
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                        onClick = {
+                            confirm.showConfirm(
+                                title = stringResource(R.string.permanent_confirm_title),
+                                content = stringResource(R.string.permanent_confirm_body),
+                            )
+                        },
+                    )
+                }
+                else -> {
+                    TextButton(
+                        text = stringResource(
+                            if (running) R.string.permanent_running else R.string.permanent_run
+                        ),
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                        enabled = !running && bootlock.locked == false,
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                        onClick = {
+                            confirm.showConfirm(
+                                title = stringResource(R.string.permanent_confirm_title),
+                                content = stringResource(R.string.permanent_confirm_body),
+                            )
+                        },
+                    )
+                }
+            }
+        }
     }
 }

@@ -293,4 +293,26 @@ static const __u32 KSU_IOCTL_LIST_TRY_UMOUNT = _IOC(_IOC_READ | _IOC_WRITE, 'K',
 static const __u32 KSU_IOCTL_SET_SPOOF_VERSION = _IOC(_IOC_WRITE, 'K', 104, 0);
 static const __u32 KSU_IOCTL_KPM = _IOC(_IOC_READ | _IOC_WRITE, 'K', 200, 0);
 
-#endif
+/*
+ * XECKernelPro extension (ioctl 110/111, outside the upstream numbering
+ * blocks): capability-level restricted su authorization. A restricted uid
+ * may only obtain root via `su -c <command>` when the command's first
+ * token (basename match) is on the whitelist; GRANT_ROOT and interactive
+ * su are denied for restricted uids. Upstream commands keep their numbers
+ * and semantics untouched.
+ */
+#define KSU_EXEC_POLICY_MAX 8
+#define KSU_EXEC_POLICY_PATH 96
+
+struct ksu_exec_policy_cmd {
+    __u32 uid;
+    __u32 count; /* 0 = unrestrict */
+    __u8 restricted;
+    __u8 reserved[3];
+    __u8 paths[KSU_EXEC_POLICY_MAX][KSU_EXEC_POLICY_PATH];
+};
+
+static const __u32 KSU_IOCTL_SET_EXEC_POLICY = _IOW('K', 110, struct ksu_exec_policy_cmd);
+static const __u32 KSU_IOCTL_GET_EXEC_POLICY = _IOWR('K', 111, struct ksu_exec_policy_cmd);
+
+#endif // __KSU_H_SUPERCALL_UAPI

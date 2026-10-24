@@ -8,9 +8,46 @@
 
 #include <android/log.h>
 #include <cstring>
+#include <vector>
 
 #include "ksu.h"
 #include "logging.h"
+
+extern "C"
+JNIEXPORT jint JNICALL
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_me_weishu_kernelsu_Natives_setExecPolicy(JNIEnv *env, jobject, jint uid, jboolean restricted, jobjectArray paths) {
+    std::vector<std::string> vec;
+    jsize n = env->GetArrayLength(paths);
+    for (jsize i = 0; i < n; i++) {
+        auto js = (jstring) env->GetObjectArrayElement(paths, i);
+        if (!js)
+            continue;
+        const char *chars = env->GetStringUTFChars(js, nullptr);
+        if (chars)
+            vec.emplace_back(chars);
+        env->ReleaseStringUTFChars(js, chars);
+        env->DeleteLocalRef(js);
+    }
+    return set_exec_policy((uid_t) uid, restricted == JNI_TRUE, vec);
+}
+
+extern "C"
+JNIEXPORT jobjectArray JNICALL
+Java_me_weishu_kernelsu_Natives_getExecPolicy(JNIEnv *env, jobject, jint uid) {
+    bool restricted = false;
+    std::vector<std::string> paths = get_exec_policy((uid_t) uid, restricted);
+    if (!restricted)
+        return nullptr;
+    jobjectArray out = env->NewObjectArray(
+        (jsize) paths.size(), env->FindClass("java/lang/String"), nullptr);
+    for (size_t i = 0; i < paths.size(); i++) {
+        env->SetObjectArrayElement(
+            out, (jsize) i, env->NewStringUTF(paths[i].c_str()));
+    }
+    return out;
+}
 
 extern "C"
 JNIEXPORT jint JNICALL

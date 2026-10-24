@@ -90,6 +90,13 @@
             android:isolatedProcess="true"
             android:useAppZygote="true" />
 
+        <!-- 自动重放引擎：BL 锁定原厂内核设备的开机自动提权（跑 GhostLock 漏洞路径）。
+             普通进程前台服务：隔离进程无法访问文件/通知/exec nativeLibraryDir。 -->
+        <service
+            android:name="me.weishu.kernelsu.privilege.AutoReplayService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <service
             android:name="com.xecpro.kernel.XecDownloadService"
             android:exported="false"
