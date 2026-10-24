@@ -48,6 +48,8 @@
     <string name="kpm_not_activated_hint">Enable CONFIG_KPM in your kernel and reboot to use kernel patch modules</string>
     <string name="kpm_version">KPM version: %s</string>
     <string name="kpm_flash">Flash KPM module</string>
+    <string name="kpm_builtin_load">Load built-in susfs_lite (experimental)</string>
+    <string name="kpm_builtin_hint">Hides /data/adb and /debug_ramdisk from stat-family and faccessat probes for other apps (directory listings are NOT hidden). Same load path as flashing a .kpm; unload with `xudc kpm unload susfs_lite`.</string>
     <string name="kpm_flash_success">KPM module flashed successfully</string>
     <string name="kpm_flash_failed">Failed to flash KPM module</string>
     <string name="kpm_embed">Embed KPM engine</string>
@@ -1050,6 +1052,15 @@ See the log below for details.</string>
     <string name="exec_policy_apply">Apply whitelist</string>
     <string name="exec_policy_kernel_too_old">Kernel rejected the policy (older kernel without ioctl 110 support)</string>
 
+    <!-- Per-app uname identity -->
+    <string name="uts_spoof_title">Uname identity</string>
+    <string name="uts_spoof_summary">Override the kernel release/version this app sees via uname(2)</string>
+    <string name="uts_spoof_release_label">Release override (empty = real)</string>
+    <string name="uts_spoof_version_label">Version override (empty = real)</string>
+    <string name="uts_spoof_hint">Only the app\'s uname(2) copy is rewritten (kernel state untouched). Applies to 64-bit processes; the entry is stored in kernel RAM and re-pushed after reboot.</string>
+    <string name="uts_spoof_apply">Apply identity</string>
+    <string name="uts_spoof_kernel_too_old">Kernel rejected the override (older kernel without ioctl 115 support)</string>
+
     <!-- Zero-footprint unload -->
     <string name="settings_unload_title">Unload root (zero footprint)</string>
     <string name="settings_unload_summary">Restore syscall hooks, stop the daemon, remove the kernel module until next boot</string>
@@ -1057,6 +1068,12 @@ See the log below for details.</string>
 
     <!-- GhostLock profile auto-updater -->
     <string name="privilege_update_profiles">Update profile library</string>
+    <string name="privilege_generate_profile">Generate profile (same-KMI neighbor)</string>
+    <string name="privilege_gen_already">Kernel %1$s already has a profile; nothing to generate</string>
+    <string name="privilege_gen_ok">Generated profile for %1$s from same-KMI neighbor %2$s (imported as %3$s)</string>
+    <string name="privilege_gen_warning">Offsets are inherited, not device-verified. GKI KMI stability makes them likely correct, but a wrong offset can panic the kernel — keep a fastboot/recovery rescue path available.</string>
+    <string name="privilege_gen_template">No same-KMI neighbor in the library; imported the %2$s template bound to %1$s — every offset must be filled manually before it can run</string>
+    <string name="privilege_gen_none">Cannot generate for %1$s: %2$s</string>
 
     <!-- APatch-style superkey guard -->
     <string name="superkey_settings_title">Superkey</string>

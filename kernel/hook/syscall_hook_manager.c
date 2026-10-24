@@ -146,6 +146,13 @@ void __init ksu_syscall_hook_manager_init(void)
     ksu_register_syscall_hook(__NR_newfstatat, ksu_hook_newfstatat);
     ksu_register_syscall_hook(__NR_faccessat, ksu_hook_faccessat);
 #endif
+    // Per-app uname identity：uname 没有基线源码钩子，SUSFS 与非 SUSFS
+    // 模式都由 dispatcher 接管。arm64/riscv 的 __NR_uname 即 newuname 语义；
+    // x86_64 另有 old_utsname 版 __NR_newuname，两者 release/version 偏移一致。
+    ksu_register_syscall_hook(__NR_uname, ksu_hook_uname);
+#ifdef __NR_newuname
+    ksu_register_syscall_hook(__NR_newuname, ksu_hook_uname);
+#endif
     ksu_register_syscall_hook(__NR_prctl, ksu_hook_prctl);
 
 #ifdef CONFIG_HAVE_SYSCALL_TRACEPOINTS
@@ -184,6 +191,10 @@ void __exit ksu_syscall_hook_manager_exit(void)
     ksu_unregister_syscall_hook(__NR_execveat);
     ksu_unregister_syscall_hook(__NR_newfstatat);
     ksu_unregister_syscall_hook(__NR_faccessat);
+#endif
+    ksu_unregister_syscall_hook(__NR_uname);
+#ifdef __NR_newuname
+    ksu_unregister_syscall_hook(__NR_newuname);
 #endif
     ksu_unregister_syscall_hook(__NR_prctl);
 

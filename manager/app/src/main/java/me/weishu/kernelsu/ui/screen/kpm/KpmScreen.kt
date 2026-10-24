@@ -108,6 +108,7 @@ fun KpmScreen(
         snackbarHostState = miuixSnackbarHostState,
         onFlash = { pickKpmLauncher.launch("*/*") },
         onEmbed = onEmbed,
+        onFlashBuiltin = { viewModel.flashBuiltin() },
         onBack = { navigator.pop() },
     )
 }
@@ -118,6 +119,7 @@ private fun KpmScreenMiuix(
     snackbarHostState: MiuixSnackbarHostState,
     onFlash: () -> Unit,
     onEmbed: () -> Unit,
+    onFlashBuiltin: () -> Unit,
     onBack: () -> Unit,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
@@ -212,6 +214,27 @@ private fun KpmScreenMiuix(
                                 )
                             },
                         )
+                    }
+                    // 内置 susfs_lite（③）：APK assets/kpm/ 里随 CI 构建的实验件，
+                    // 一键提取装载；与手动刷 .kpm 走同一条 xudc kpm load 通路。
+                    if (uiState.active) {
+                        Card(
+                            modifier = Modifier.xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
+                            colors = CardDefaults.defaultColors(color = Color.Transparent),
+                            onClick = onFlashBuiltin,
+                        ) {
+                            BasicComponent(
+                                title = stringResource(R.string.kpm_builtin_load),
+                                summary = stringResource(R.string.kpm_builtin_hint),
+                                startAction = {
+                                    MiuixIcon(
+                                        imageVector = Icons.Rounded.Memory,
+                                        contentDescription = null,
+                                        tint = colorScheme.primary,
+                                    )
+                                },
+                            )
+                        }
                     }
                 }
             }

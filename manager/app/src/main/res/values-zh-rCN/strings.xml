@@ -37,6 +37,8 @@
     <string name="kpm_not_activated_hint">请在内核中启用 CONFIG_KPM 并重启以使用内核补丁模块</string>
     <string name="kpm_version">KPM 版本：%s</string>
     <string name="kpm_flash">刷入 KPM 模块</string>
+    <string name="kpm_builtin_load">加载内置 susfs_lite（实验性）</string>
+    <string name="kpm_builtin_hint">对其它应用隐藏 /data/adb 与 /debug_ramdisk 的 stat 族与 faccessat 探测（列目录不隐藏）。与手动刷 .kpm 同一条装载通路；卸载用 `xudc kpm unload susfs_lite`。</string>
     <string name="kpm_flash_success">KPM 模块刷入成功</string>
     <string name="kpm_flash_failed">KPM 模块刷入失败</string>
     <string name="kpm_embed">嵌入 KPM 引擎</string>
@@ -1052,6 +1054,15 @@ XEC 项目组
     <string name="exec_policy_apply">应用白名单</string>
     <string name="exec_policy_kernel_too_old">内核拒绝了策略（内核较旧，不支持 110 号 ioctl）</string>
 
+    <!-- Per-app uname 身份 -->
+    <string name="uts_spoof_title">Uname 身份</string>
+    <string name="uts_spoof_summary">改写此应用经由 uname(2) 看到的内核 release/version</string>
+    <string name="uts_spoof_release_label">Release 覆写（留空 = 真实值）</string>
+    <string name="uts_spoof_version_label">Version 覆写（留空 = 真实值）</string>
+    <string name="uts_spoof_hint">仅改写应用的 uname(2) 用户缓冲（内核 uts 状态不动）。只覆盖 64 位进程；条目存内核内存，重启后自动重推。</string>
+    <string name="uts_spoof_apply">应用身份</string>
+    <string name="uts_spoof_kernel_too_old">内核拒绝了覆写（内核较旧，不支持 115 号 ioctl）</string>
+
     <!-- 零足迹卸载 -->
     <string name="settings_unload_title">卸载 Root（零足迹）</string>
     <string name="settings_unload_summary">恢复系统调用钩子、停止守护进程、移除内核模块（至下次开机）</string>
@@ -1059,6 +1070,12 @@ XEC 项目组
 
     <!-- GhostLock profile 自动更新器 -->
     <string name="privilege_update_profiles">更新 profile 库</string>
+    <string name="privilege_generate_profile">生成 profile（同 KMI 近邻）</string>
+    <string name="privilege_gen_already">内核 %1$s 已有 profile，无需生成</string>
+    <string name="privilege_gen_ok">已为 %1$s 生成 profile（克隆自同 KMI 近邻 %2$s，导入为 %3$s）</string>
+    <string name="privilege_gen_warning">偏移为同 KMI 近邻继承值，未经本机验证。GKI KMI 稳定契约使其大概率正确，但错误偏移可能导致内核 panic——请保留 fastboot/Recovery 外部救援通道。</string>
+    <string name="privilege_gen_template">库里没有同 KMI 近邻；已把 %2$s 模板绑定到 %1$s 导入——所有偏移须人工填写后才能运行</string>
+    <string name="privilege_gen_none">无法为 %1$s 生成：%2$s</string>
 
     <!-- APatch 式超级密钥 -->
     <string name="superkey_settings_title">超级密钥</string>

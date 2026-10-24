@@ -54,6 +54,14 @@ superkey_status superkey_status_query();
 bool set_superkey_guard(bool armed);
 std::vector<std::string> get_exec_policy(uid_t uid, bool &restricted);
 
+// Per-app uname identity (XECKernelPro extension, ioctl 115/116). Empty
+// strings keep the real uts field; enabled = false removes the entry.
+bool set_uts_spoof(uid_t uid, bool enabled, const std::string &release, const std::string &version);
+
+// Returns 1 and fills release/version when an entry exists, 0 when none,
+// -1 when the kernel rejected the ioctl (older kernel).
+int get_uts_spoof(uid_t uid, std::string &release, std::string &version);
+
 int get_app_profile(app_profile *profile);
 
 // Su compat

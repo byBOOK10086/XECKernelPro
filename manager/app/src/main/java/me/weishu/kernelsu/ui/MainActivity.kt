@@ -550,10 +550,11 @@ fun MainScreen(
             return@LaunchedEffect
         }
 
-        // 受限授权（exec 白名单）开机重放：内核表重启即空，从持久层推回。
-        // 幂等；失败（老内核不认识 ioctl）不阻塞启动流程。
+        // 受限授权（exec 白名单）与 per-app uname 身份开机重放：内核表重启
+        // 即空，从持久层推回。幂等；失败（老内核不认识 ioctl）不阻塞启动流程。
         val appContext = applicationContext
         runCatching { me.weishu.kernelsu.privilege.ExecPolicyStore.pushAll(appContext) }
+        runCatching { me.weishu.kernelsu.privilege.UtsSpoofStore.pushAll(appContext) }
 
         moduleViewModel.initializePreferences()
         val moduleState = moduleViewModel.uiState.value

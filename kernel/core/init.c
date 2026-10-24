@@ -261,6 +261,7 @@ void __exit kernelsu_exit(void)
     ksu_shell_su_adb_only_exit();
     ksu_superkey_exit();
     ksu_exec_policy_exit();
+    ksu_uts_spoof_exit();
     ksu_selinux_hide_exit();
     ksu_lsm_hook_exit();
     ksu_adb_root_exit();

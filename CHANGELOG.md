@@ -4,6 +4,33 @@
 
 ---
 
+## 未发布 · 质变批（六方向）+ APatch 式超级密钥
+
+> 类型：内核 UAPI 扩展 + 管理器能力扩展（新增 ioctl 110–116，全部在本树扩展号段，上游命令号与语义不动）
+
+### 新增
+
+- **受限 Root（④，ioctl 110/111）**：白名单 uid 只能 `su -c <命令>` 取 root（basename/全路径匹配）；GRANT_ROOT 与交互式 su 一律拒绝，fail closed。白名单只存内核 RAM，管理器持久层开机重放。
+- **超级密钥（ioctl 112/113/114，feature 7）**：APatch 式守卫——内核只存 SHA-256（自含 FIPS 180-4 实现），掉电即失；守卫武装期间 SET_APP_PROFILE / SET_SEPOLICY / SET_FEATURE / SET_EXEC_POLICY / SET_UTS_SPOOF 需先经 SUPERKEY_AUTH 认证的 driver fd；GRANT_ROOT 故意不拦（allow list 已管 su，加密钥位会毁掉标准 su 客户端）。密钥本体经 AndroidKeystore AES/GCM 加密落盘。
+- **Per-app Uname 身份（⑥，ioctl 115/116）**：按 uid 改写 uname(2) 的 release/version——真 syscall 成功后只改写用户缓冲，内核 uts 状态不动（init 等内核侧消费者不受影响）。空串保留真实字段；条目存内核 RAM + 管理器持久层重放；仅覆盖 64 位进程（syscall dispatcher 跳过 compat，这是现有钩子基建的边界）。
+- **Profile 离线生成器（②）**：提权页一键「同 KMI 近邻生成」——精确匹配缺失时，克隆同 androidXX-kmi 代、patch 版本最近的已发布 profile 并重绑本机 release。**诚实边界**：偏移是同 KMI 近邻的继承值而非本机实测（GKI KMI 稳定契约使其大概率正确）；派生头注释写明来源与风险；近邻也没有时退 major.minor 模板（全 null，运行时 fail closed 拒绝执行直到人工填完）。
+- **内置 KPM 装载（③）**：`kpm_samples/susfs_lite` 由 CI（build-xecpro.yml）编进 APK assets/kpm/，KPM 页一键装载（与手动刷 .kpm 同一条 `xudc kpm load` 通路，boot 自动重载；默认参数 = 管理器 uid 可见 + 隐藏 /data/adb、/debug_ramdisk）。样例保持实验定位：只覆盖 stat 族 + faccessat，getdents64 不隐藏；`xudc kpm unload susfs_lite` 可完整撤掉。
+- **自动重放引擎（⑦）**：开机 BOOT_COMPLETED 无头重跑 GhostLock（BL 锁定设备的“准永久”root）——通知栏进度、失败重试上限、OTA 后 profile 失效不硬跑。
+- **BL 解锁情报（⑧）**：三 prop 交叉检测本机锁定状态（未知按锁定）+ 机型×官方解锁通道×代价表；只陈述事实，锁着就明说“写 boot 会变砖”，不假承诺强制解锁。
+- **一键永久（①，BL 闸门）**：仅 BL 已解锁设备显示；GKI 走 installBoot 强制备份、<5.10 走 dd 导出，写回前后 sha256 对账，备份落 /data/adb/xec。
+
+### 「一个 .ko 通吃全部内核」的诚实结论（②）
+
+做不到，且不要相信声称能做到的工具。技术账：本树 `kernel/infra/symbol_resolver.c` 已经把**符号层**做成运行时 kallsyms 解析（符号名不再编译期绑定），但**结构布局**（task_struct/cred 等的字段偏移、percpu 布局）是各内核编译期固化的，ELF 重定位只能对上编它时的那个布局。GKI 的 KMI 稳定契约正是为此存在：同 KMI 代内布局冻结，所以按 KMI 分发 .ko（本树现状，8 个 KMI 各一）是可达的最细粒度；跨 KMI/非 GKI 内核没有通用 .ko。GhostLock 那类“运行时探测偏移”路线（提权 profile 里那堆 task_struct 偏移）就是绕开这个限制的另一种代价。
+
+### 验证
+
+- 内核：stub 类型检查 + 工作流 `bash -n`（本地无 Android 工具链，clang/NDK 编译在 CI）；CI 三轮错误（jni.cc 孤儿前缀、exec_policy fortify、superkey 头文件与 feature 签名、jni 窄化、宏前置）已全修。
+- 管理器：`check_kt_all.py`（char-literal 感知配平 v2）全量过；新增字符串双语齐。
+- 真机验证未做（等用户开口）。
+
+---
+
 ## v31148 · 2026-10-24 · Liquid Home：XEC Score、外观编辑器、分享卡、小组件与磁贴
 
 > 类型：管理器 UI / 交互更新（不改 supercall、allowlist、内核 ABI）

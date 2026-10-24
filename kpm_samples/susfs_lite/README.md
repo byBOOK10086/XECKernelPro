@@ -6,8 +6,9 @@ newfstatat / faccessat 的返回值为 `-ENOENT`，让不在 allow 集里的进�
 
 ## 诚实边界（先读这个）
 
-- **实验性，未真机验证**，不在 CI 里构建。出问题 `xudc kpm unload` 即可
-  完整撤掉（kretprobe unregister 是干净的可逆操作）。
+- **实验性，未真机验证**。CI（build-xecpro.yml）会把它编进管理器 APK 的
+  assets/kpm/，管理器 KPM 页有内置加载入口；装载与卸载仍由用户手动决定。
+  出问题 `xudc kpm unload` 即可完整撤掉（kretprobe unregister 是干净的可逆操作）。
 - 只覆盖 **stat 族 + faccessat**。`getdents64`（列目录）**不隐藏**——
   检测方列 `/data` 仍会看到 `adb` 条目名；只是 stat 它会得到 ENOENT。
 - 有真 SUSFS（GKI 内置内核）的设备**不要用这个**，直接用 SUSFS。
@@ -18,6 +19,7 @@ newfstatat / faccessat 的返回值为 `-ENOENT`，让不在 allow 集里的进�
 
 ```sh
 make NDK=/path/to/android-ndk        # 产物 susfs_lite.kpm（ET_REL ELF）
+# CI 自动路径：build-xecpro.yml 的 *Build built-in KPM payload* 步骤
 ```
 
 ## 装载
