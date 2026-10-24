@@ -15,7 +15,7 @@ int ksu_superkey_clear(const void __user *arg);
 bool ksu_superkey_auth(const void __user *arg);
 int ksu_superkey_status(void __user *arg);
 
-void __init ksu_superkey_init(void);
+void ksu_superkey_init(void);
 void ksu_superkey_exit(void);
 
 /* self-contained SHA-256 (no crypto API dependency) */
