@@ -37,6 +37,7 @@ KINCLUDES := -I$(SRC)/arch/arm64/include \
 CFLAGS := --target=aarch64-linux-gnu \
     -nostdinc $(KINCLUDES) \
     -include $(KDIR)/include/generated/autoconf.h \
+    -include $(SRC)/include/linux/kconfig.h \
     -D__KERNEL__ \
     -ffreestanding -fno-builtin -fno-common -fno-pie \
     -fno-stack-protector -fno-asynchronous-unwind-tables \
