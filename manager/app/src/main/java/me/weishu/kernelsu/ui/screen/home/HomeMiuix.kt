@@ -253,6 +253,7 @@ fun HomePagerMiuix(
                                 // 只是键固定成 HOME_STATUS_BACKGROUND_SLOT（这张卡没有模块 id）。
                                 background = rememberModuleBackground(HOME_STATUS_BACKGROUND_SLOT),
                                 appearance = cardAppearance.value,
+                                badgeStyle = modeBadgeStyle.value,
                             )
                             M3IconButton(
                                 onClick = { showAppearance = true },
@@ -280,7 +281,7 @@ fun HomePagerMiuix(
                                 onAppearanceChange = {
                                     cardAppearance.value = it
                                 },
-                                keyword = workingMode,
+                                keyword = workingModeKeyword(state),
                                 badgeStyle = modeBadgeStyle.value,
                                 onBadgeChange = {
                                     modeBadgeStyle.value = it
@@ -435,6 +436,17 @@ private fun TopBar(
  * 非空 ⇒ 图铺满卡体、按卡体圆角裁切，上面只压一层 [cardImageScrim]，正文文字颜色一个
  * 都不改，靠 scrim 保对比度（每个分支都吃这一层，见 [StatusCardBackdrop]）。
  */
+/**
+ * 主页模式关键词（KernelPatch/LKM/GKI）：由系统按设备真实路线生成，永远不落库、
+ * 不可编辑（模式牌红线）。状态卡与外观对话框共用这一个来源。
+ */
+@Composable
+private fun workingModeKeyword(state: HomeUiState): String = when {
+    !getKernelVersion().isGKI() -> stringResource(R.string.home_working_kpatch)
+    state.lkmMode == true -> "LKM"
+    else -> "GKI"
+}
+
 @Composable
 private fun StatusCard(
     state: HomeUiState,
@@ -443,6 +455,7 @@ private fun StatusCard(
     block: XcBlockBackground? = null,
     background: ImageBitmap? = null,
     appearance: HomeCardAppearance = HomeCardAppearance(),
+    badgeStyle: ModeBadgeStyle = ModeBadgeStyle(),
 ) {
     Column {
         when {
@@ -462,11 +475,7 @@ private fun StatusCard(
                 // 顺序要紧：HomeViewModel 里 lkmMode 只在 GKI 设备上取值（非 GKI 恒为
                 // null），非 GKI 判断必须排在 lkmMode == null 之前，否则
                 // home_working_kpatch 永远显示不出来。
-                val workingMode = when {
-                    !getKernelVersion().isGKI() -> stringResource(R.string.home_working_kpatch)
-                    state.lkmMode == true -> "LKM"
-                    else -> "GKI"
-                }
+                val workingMode = workingModeKeyword(state)
                 val workingText = "${stringResource(id = R.string.home_working)}$workingState"
 
                 Row(
@@ -534,7 +543,7 @@ private fun StatusCard(
                                         .padding(16.dp, 10.dp),
                                     contentAlignment = Alignment.BottomStart,
                                 ) {
-                                    if (modeBadgeStyle.value.isDefault()) {
+                                    if (badgeStyle.isDefault()) {
                                         // 默认态：与历史渲染逐字节一致。
                                         Text(
                                             text = workingMode,
@@ -546,7 +555,7 @@ private fun StatusCard(
                                         // 关键词（LKM/GKI/KernelPatch）永远由上面的 when 生成，不落库。
                                         ModeBadge(
                                             keyword = workingMode,
-                                            style = modeBadgeStyle.value,
+                                            style = badgeStyle,
                                         )
                                     }
                                 }

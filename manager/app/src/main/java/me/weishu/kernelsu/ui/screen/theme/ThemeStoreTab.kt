@@ -214,6 +214,7 @@ fun ThemeStoreTab(
                                 state = state,
                                 actions = actions,
                                 onOpen = { detailId = row[0].themeId },
+                                backdrop = backdrop,
                                 modifier = Modifier.weight(1f),
                             )
                             if (row.size > 1) {
@@ -222,6 +223,7 @@ fun ThemeStoreTab(
                                     state = state,
                                     actions = actions,
                                     onOpen = { detailId = row[1].themeId },
+                                    backdrop = backdrop,
                                     modifier = Modifier.weight(1f),
                                 )
                             } else {

@@ -66,14 +66,14 @@ data class ModeBadgeStyle(
     companion object {
         /** 前后缀清洗唯一真源在 [ThemeCodec.sanitizeBadgeText]，这里只是别名。 */
         fun sanitize(s: String): String = ThemeCodec.sanitizeBadgeText(s)
-
-        /** 底图在 [ModuleBackgrounds] 里的存储槽位（复用其解码/LruCache 管线）。 */
-        const val MODE_BADGE_BG_SLOT = "home_mode_badge"
     }
 }
 
 object ModeBadgeStyleStore {
     private const val PREFS = "home_mode_badge"
+
+    /** 底图在 [ModuleBackgrounds] 里的存储槽位（复用其解码/LruCache 管线）。 */
+    const val MODE_BADGE_BG_SLOT = "home_mode_badge"
 
     fun load(context: Context): ModeBadgeStyle {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
