@@ -225,6 +225,14 @@ enum Commands {
         command: kpm_cmd::Kpm,
     },
 
+    /// 隐身入口守卫：设置→关于手机→版本号连点（默认10下）拉起管理器。
+    /// 连点 5 下的原生开发者选项行为不受影响。
+    #[cfg(target_os = "android")]
+    Stealth {
+        #[command(subcommand)]
+        command: crate::stealth::StealthCli,
+    },
+
     /// Susfs
     #[cfg(target_arch = "aarch64")]
     Susfs {
@@ -1261,6 +1269,8 @@ pub fn run() -> Result<()> {
                 Kpm::Version => crate::kpm::version(),
             }
         }
+        #[cfg(target_os = "android")]
+        Commands::Stealth { command } => crate::stealth::handle(command),
         #[cfg(target_arch = "aarch64")]
         Commands::Susfs { command } => match command {
             Susfs::Status => {
