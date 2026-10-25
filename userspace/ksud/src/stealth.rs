@@ -153,7 +153,7 @@ fn spawn_watcher() -> Result<()> {
 
 pub fn handle(cmd: StealthCli) -> Result<()> {
     match cmd {
-        StealthCmd::Start {
+        StealthCli::Start {
             component,
             count,
             window_ms,
@@ -173,12 +173,12 @@ pub fn handle(cmd: StealthCli) -> Result<()> {
             info!("stealth entrance armed: {component} on {count} taps");
             println!("stealth: armed ({component}, {count} taps, window {window_ms}ms)");
         }
-        StealthCmd::Stop => {
+        StealthCli::Stop => {
             let _ = fs::remove_file(conf_path());
             kill_watcher();
             println!("stealth: stopped");
         }
-        StealthCmd::Status => {
+        StealthCli::Status => {
             let conf = read_config().ok();
             match (watcher_alive(), conf) {
                 (Some(pid), Some(c)) => println!(
@@ -191,7 +191,7 @@ pub fn handle(cmd: StealthCli) -> Result<()> {
                 _ => println!("stealth: disabled"),
             }
         }
-        StealthCmd::Watcher => {
+        StealthCli::Watcher => {
             if let Err(e) = run_watcher() {
                 error!("stealth watcher: {e:#}");
             }
@@ -286,11 +286,8 @@ fn run_watcher() -> Result<()> {
 
         let now = Instant::now();
         for (idx, p) in polls.iter().enumerate() {
-            let ready = match p.revents() {
-                Some(ev) => ev.contains(PollFlags::IN),
-                None => false,
-            };
-            if !ready {
+            // revents() 在本 rustix 版本直接返回 PollFlags（非 Option）。
+            if !p.revents().contains(PollFlags::IN) {
                 continue;
             }
             loop {

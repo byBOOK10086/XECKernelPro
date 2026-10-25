@@ -25,9 +25,10 @@ object StealthEntrance {
         ComponentName(context.packageName, MAIN_ACTIVITY)
 
     fun isIconHidden(context: Context): Boolean {
-        val state = context.packageManager
-            .getComponentEnabledSetting(launcherComponent(context))
-        return state.newEnabledState == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        // 本 compileSdk 的 getComponentEnabledSetting 返回 int。
+        return context.packageManager
+            .getComponentEnabledSetting(launcherComponent(context)) ==
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED
     }
 
     private fun daemonCmd(sub: String): Shell.Result =
