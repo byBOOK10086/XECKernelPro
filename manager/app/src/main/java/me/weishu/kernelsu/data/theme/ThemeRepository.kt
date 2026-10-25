@@ -156,7 +156,13 @@ object ThemeRepository {
     }
 
     fun remove(context: Context, id: String): Boolean {
-        if (activeId(context) == id) setActiveId(context, null)
+        val wasActive = activeId(context) == id
+        if (wasActive) {
+            // 卸载正在生效的主题 = 先回收它铺出去的一切影响（模式牌），再清 activeId。
+            // 不做这步，模式牌会指向一个即将被删的目录，前后缀还会残留在主页上。
+            ThemeApplier.revertAppliedModeBadge(context)
+            setActiveId(context, null)
+        }
         val dir = themeDir(context, id)
         if (!dir.exists()) return false
         // 只删自己的目录，绝不碰 WallpaperStore（用户可能把主题背景设成了当前壁纸 —— 那一份
@@ -164,7 +170,7 @@ object ThemeRepository {
         return dir.deleteRecursively()
     }
 
-    /** 导出成 `.xectheme`（含背景图、区块图与预览图）。 */
+    /** 导出成 `.xectheme`（含背景图、区块图、模式牌资产与预览图）。 */
     fun export(context: Context, id: String): ByteArray {
         val entry = find(context, id) ?: throw ThemeCodec.InvalidTheme("主题 $id 不在本地")
         val backgrounds = LinkedHashMap<String, ByteArray>()
@@ -178,6 +184,13 @@ object ThemeRepository {
         // 区块图直接按 spec 里记的名字读：`install()` 已经把名字归一成派生名了。
         spec.blocks.forEach { (_, block) ->
             val name = block.image ?: return@forEach
+            File(entry.dir, name).takeIf { it.isFile }?.let { backgrounds[name] = it.readBytes() }
+        }
+        // 模式牌资产（schema 2）：底图与字体按声明名一起带走，导出的包必须能独立安装。
+        spec.modeBadge?.image?.let { name ->
+            File(entry.dir, name).takeIf { it.isFile }?.let { backgrounds[name] = it.readBytes() }
+        }
+        spec.modeBadge?.font?.let { name ->
             File(entry.dir, name).takeIf { it.isFile }?.let { backgrounds[name] = it.readBytes() }
         }
         val preview = File(entry.dir, "preview.jpg").takeIf { it.isFile }?.readBytes()

@@ -158,11 +158,26 @@ data class StoreTheme(
     val accentHex: String = "",
     val backdropDarkHex: String = "",
     val backdropLightHex: String = "",
+    /** 索引 v2：精选横幅（带预览图的主题才会被横幅挑中）。 */
+    val featured: Boolean = false,
+    /** 索引 v2：元素类型（"colors"=配色 / "modeBadge"=模式牌），决定商店分类。 */
+    val types: List<String> = emptyList(),
+    /** 索引 v2：多张预览图（详情页用；横幅/卡片取第一张）。 */
+    val previews: List<String> = emptyList(),
     /** 本地是否已经装了这个版本。 */
     val installedVersionCode: Int = 0,
 ) {
     val installed: Boolean get() = installedVersionCode > 0
     val updatable: Boolean get() = installed && versionCode > installedVersionCode
+
+    companion object {
+        const val TYPE_COLORS = "colors"
+        const val TYPE_MODE_BADGE = "modeBadge"
+    }
+
+    /** 商店分类：带模式牌元素的进「模式牌」，其余归「配色」。 */
+    val category: String
+        get() = if (types.contains(TYPE_MODE_BADGE)) TYPE_MODE_BADGE else TYPE_COLORS
 }
 
 object ThemeStoreRepository {
@@ -227,6 +242,22 @@ object ThemeStoreRepository {
         val id = obj.optString("themeId", "").ifEmpty { obj.optString("id", "") }.trim()
         if (id.isEmpty()) return null
         val colors = obj.optJSONObject("colors")
+        // 索引 v2 字段（featured / types / previews）全部宽容读取：v1 索引没有就是默认值。
+        val previews = mutableListOf<String>()
+        obj.optJSONArray("previews")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                arr.optString(i, "").trim().takeIf { it.isNotEmpty() }?.let { previews.add(it) }
+            }
+        }
+        val types = mutableListOf<String>()
+        obj.optJSONArray("types")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                arr.optString(i, "").trim().takeIf { it.isNotEmpty() }?.let { types.add(it) }
+            }
+        }
+        val previewUrl = obj.optString("previewUrl", "").trim()
+            .ifEmpty { obj.optString("preview", "").trim() }
+            .ifEmpty { previews.firstOrNull().orEmpty() }
         return StoreTheme(
             themeId = id,
             name = obj.optString("name", id).trim(),
@@ -238,11 +269,14 @@ object ThemeStoreRepository {
             size = obj.optLong("size", 0L),
             sha256 = obj.optString("sha256", "").trim(),
             downloadUrl = obj.optString("downloadUrl", "").trim(),
-            previewUrl = obj.optString("previewUrl", "").trim(),
+            previewUrl = previewUrl,
             updatedAt = obj.optString("updatedAt", "").trim(),
             accentHex = colors?.optString("accent", "").orEmpty(),
             backdropDarkHex = colors?.optString("backdropDark", "").orEmpty(),
             backdropLightHex = colors?.optString("backdropLight", "").orEmpty(),
+            featured = obj.optBoolean("featured", false),
+            types = types,
+            previews = previews,
             installedVersionCode = installed[id] ?: 0,
         )
     }

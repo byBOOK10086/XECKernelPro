@@ -49,24 +49,9 @@
                     android:mimeType="application/zip"
                     android:scheme="content" />
             </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-
-                <data
-                    android:host="action"
-                    android:scheme="ksu" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-
-                <data
-                    android:host="webui"
-                    android:scheme="ksu" />
-            </intent-filter>
+            <!-- ksu:// 深链 filter 已摘除（2026-10-26）：春秋检测按 manifest 里的 root 管理器
+                 指纹（root_manager_intents）扫描 ksux 系 scheme；深链解析有独立 token 门禁，
+                 应用内也没有隐式 ksu:// 发送方，摘 filter 不影响功能。 -->
         </activity>
 
         <activity
@@ -111,7 +96,7 @@
             android:name="com.xecpro.kernel.XecBootReceiver"
             android:directBootAware="true"
             android:enabled="false"
-            android:exported="true"
+            android:exported="false"
             android:process=":magica_boot">
             <intent-filter>
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />

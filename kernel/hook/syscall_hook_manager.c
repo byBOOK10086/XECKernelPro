@@ -145,6 +145,8 @@ void __init ksu_syscall_hook_manager_init(void)
     ksu_register_syscall_hook(__NR_execveat, ksu_hook_execveat);
     ksu_register_syscall_hook(__NR_newfstatat, ksu_hook_newfstatat);
     ksu_register_syscall_hook(__NR_faccessat, ksu_hook_faccessat);
+    // statx 归一化：抵消 stat 类重定向的时序侧信道（见 syscall_event_bridge.c）
+    ksu_register_syscall_hook(__NR_statx, ksu_hook_statx);
 #endif
     // Per-app uname identity：uname 没有基线源码钩子，SUSFS 与非 SUSFS
     // 模式都由 dispatcher 接管。arm64/riscv 的 __NR_uname 即 newuname 语义；
@@ -191,6 +193,7 @@ void __exit ksu_syscall_hook_manager_exit(void)
     ksu_unregister_syscall_hook(__NR_execveat);
     ksu_unregister_syscall_hook(__NR_newfstatat);
     ksu_unregister_syscall_hook(__NR_faccessat);
+    ksu_unregister_syscall_hook(__NR_statx);
 #endif
     ksu_unregister_syscall_hook(__NR_uname);
 #ifdef __NR_newuname
