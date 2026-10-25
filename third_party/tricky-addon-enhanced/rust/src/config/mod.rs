@@ -88,6 +88,10 @@ pub struct SecurityPatchConfig {
     pub interval: u32,
     pub custom_date: String,
     pub boot_retries: u32,
+    /// false（默认）= 跟随设备 OS 的真实补丁级别；true = 跟随安卓公告最新日期。
+    /// 证书的 patch tag 必须与系统属性一致（春秋检测 Tampered Attestation Key(26)
+    /// 的判据），公告日期只在该值显式打开时才使用。
+    pub follow_bulletin: bool,
 }
 
 impl Default for SecurityPatchConfig {
@@ -97,6 +101,7 @@ impl Default for SecurityPatchConfig {
             interval: 86400,
             custom_date: String::new(),
             boot_retries: 10,
+            follow_bulletin: false,
         }
     }
 }

@@ -972,6 +972,8 @@ XEC 项目组
     <string name="themes_category_all">全部</string>
     <string name="themes_category_colors">配色</string>
     <string name="themes_category_mode_badge">模式牌</string>
+    <string name="themes_section_latest">最新上架</string>
+    <string name="themes_section_all">全部主题</string>
     <string name="stealth_title">隐身入口</string>
     <string name="stealth_summary">隐藏图标；设置 → 关于手机 → 连点版本号 10 下打开管理器（连点 5 下的开发者选项行为不受影响）</string>
     <string name="stealth_confirm_body">开启后将隐藏桌面图标。打开管理器的方式：设置 → 关于手机 → 连点版本号 10 下（连点 5 下解锁开发者选项的原生行为不受影响）。注意：开启后管理器会退回桌面一次——那是它在隐藏自己的图标，属预期。随时可用的兜底命令：

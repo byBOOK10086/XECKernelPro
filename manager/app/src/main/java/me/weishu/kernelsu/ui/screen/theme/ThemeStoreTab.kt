@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -20,13 +21,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,11 +47,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.data.theme.StoreTheme
 import me.weishu.kernelsu.data.theme.ThemeCodec
 import me.weishu.kernelsu.data.theme.ThemeStoreSettings
 import me.weishu.kernelsu.ui.component.RemotePreview
+import me.weishu.kernelsu.ui.component.dialog.XDialog
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.token.Xc
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -67,15 +72,12 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 /**
- * 主题商城 Tab：搜索 + 刷新 + 一条主题一张玻璃卡。
+ * 主题商城 Tab —— 小米主题商店式布局：
+ * 自动轮播的精选横幅（页点指示）→ 分类 chips → 「最新上架」横排货架 →
+ * 双列竖版卡网格（图上文字下），点卡片弹详情玻璃对话框。
  *
- * 分工与模块仓库（[me.weishu.kernelsu.ui.screen.modulerepo.ModuleRepoMiuix]）一致：
- * 状态与动作都在 [ThemeUiState] / [ThemeActions] 上，这里只负责画，
- * 唯一自己算的东西是"索引里那三个颜色十六进制能不能解析成色块"。
- *
- * [innerPadding] 由外层 `ThemeScreenMiuix` 的 Scaffold 给出（顶栏 + 系统栏），
- * 这里把 top/start/end 交给整体内边距、bottom 交给列表尾部，
- * 于是内容既不会钻到顶栏下面，也不会被导航栏压住。
+ * 数据诚实原则：索引里没有下载量/评分就不画假的排行 —— 「最新上架」用
+ * updatedAt 真排序，排行位永远展示真实数据。
  */
 @Composable
 fun ThemeStoreTab(
@@ -96,6 +98,12 @@ fun ThemeStoreTab(
     val featured = remember(store) {
         store.filter { it.featured && (it.previews.isNotEmpty() || it.previewUrl.isNotEmpty()) }
     }
+    val latest = remember(store) {
+        store.sortedByDescending { it.updatedAt }.take(4)
+    }
+    // 详情对话框：存 themeId（rememberSaveable 可保存），用的时候再查回对象。
+    var detailId by rememberSaveable { mutableStateOf<String?>(null) }
+    val detailTheme = detailId?.let { id -> store.firstOrNull { it.themeId == id } }
 
     Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
         Column(
@@ -161,10 +169,13 @@ fun ThemeStoreTab(
                     ),
                     overscrollEffect = null,
                 ) {
-                    // 精选横幅（索引 v2 的 featured + 预览图）：小米主题商店式的门面。
+                    // 精选轮播（索引 v2 的 featured + 预览图）：小米主题商店的门面位。
                     if (featured.isNotEmpty()) {
                         item(key = "featured", contentType = "featured") {
-                            FeaturedRow(featured)
+                            FeaturedBanner(
+                                themes = featured,
+                                onOpen = { detailId = it },
+                            )
                         }
                     }
                     item(key = "categories", contentType = "categories") {
@@ -173,16 +184,62 @@ fun ThemeStoreTab(
                             onSelect = { category = it },
                         )
                     }
-                    items(items = visible, key = { it.themeId }, contentType = { "theme" }) { theme ->
-                        StoreThemeCard(
-                            theme = theme,
-                            state = state,
-                            actions = actions,
-                            backdrop = backdrop,
+                    if (category == "all" && latest.size > 1) {
+                        item(key = "latest_header", contentType = "header") {
+                            SectionHeader(stringResource(R.string.themes_section_latest))
+                        }
+                        item(key = "latest_shelf", contentType = "shelf") {
+                            LatestShelf(
+                                themes = latest,
+                                onOpen = { detailId = it },
+                            )
+                        }
+                    }
+                    item(key = "all_header", contentType = "header") {
+                        SectionHeader(
+                            if (category == "all") stringResource(R.string.themes_section_all)
+                            else stringResource(R.string.themes_category_all),
                         )
+                    }
+                    val rows = visible.chunked(2)
+                    itemsIndexed(rows, key = { _, row -> row.first().themeId }, contentType = { _, _ -> "theme_row" }) { _, row ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            StoreThemeCard(
+                                theme = row[0],
+                                state = state,
+                                actions = actions,
+                                onOpen = { detailId = row[0].themeId },
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (row.size > 1) {
+                                StoreThemeCard(
+                                    theme = row[1],
+                                    state = state,
+                                    actions = actions,
+                                    onOpen = { detailId = row[1].themeId },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            } else {
+                                Spacer(Modifier.weight(1f))
+                            }
+                        }
                     }
                 }
             }
+        }
+
+        detailTheme?.let { theme ->
+            ThemeDetailDialog(
+                theme = theme,
+                state = state,
+                actions = actions,
+                onDismiss = { detailId = null },
+            )
         }
     }
 }
@@ -331,188 +388,49 @@ private fun StoreHint(
     }
 }
 
-/** 商城里的一条主题：色卡 + 版本/作者/体积 + 右对齐的操作按钮。 */
+/** 小节标题：左侧粗体、右侧留白（小米主题商店的分区样式）。 */
 @Composable
-private fun StoreThemeCard(
-    theme: StoreTheme,
-    state: ThemeUiState,
-    actions: ThemeActions,
-    backdrop: LayerBackdrop?,
+private fun SectionHeader(title: String) {
+    Text(
+        text = title,
+        fontSize = 16.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = Xc.colors.text,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 2.dp),
+    )
+}
+
+/**
+ * 精选横幅：自动轮播的大图卡（4s 一换、手动滑动后从当前页继续计时），
+ * 底部中央页点，名字/作者/精选徽章压在渐变纱上。点开进详情。
+ */
+@Composable
+private fun FeaturedBanner(
+    themes: List<StoreTheme>,
+    onOpen: (String) -> Unit,
 ) {
-    val downloading = state.downloadingId == theme.themeId
-    val active = state.activeId == theme.themeId
-    // 索引里的颜色是用户提供的输入：解析不了的直接跳过，不画灰块占位。
-    val swatches = remember(theme.accentHex, theme.backdropDarkHex, theme.backdropLightHex) {
-        listOf(theme.accentHex, theme.backdropDarkHex, theme.backdropLightHex)
-            .mapNotNull { ThemeCodec.parseColor(it) }
-            .map { Color(it) }
-    }
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp)
-            .padding(bottom = 12.dp)
-            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-        colors = CardDefaults.defaultColors(color = Color.Transparent),
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                // 预览缩略图（索引带 previewUrl 时）：有图优先于色卡，更接近商店的"看图挑"。
-                if (theme.previewUrl.isNotEmpty()) {
-                    RemotePreview(
-                        url = theme.previewUrl,
-                        contentDescription = theme.name,
-                        modifier = Modifier
-                            .size(width = 64.dp, height = 64.dp)
-                            .clip(Xc.shapes.md),
-                        placeholder = Xc.colors.surfaceMuted,
-                    )
-                    Spacer(Modifier.width(10.dp))
-                }
-                Text(
-                    text = theme.name,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Xc.colors.text,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                if (theme.version.isNotEmpty()) {
-                    ThemeTag(
-                        text = "v" + theme.version,
-                        containerColor = Xc.colors.surfaceMuted,
-                        contentColor = Xc.colors.textSecondary,
-                    )
-                }
-                if (theme.installed) {
-                    ThemeTag(
-                        text = stringResource(R.string.themes_installed),
-                        containerColor = Xc.colors.successTint,
-                        contentColor = Xc.colors.onSuccessTint,
-                    )
-                }
-                if (theme.updatable) {
-                    ThemeTag(
-                        text = stringResource(R.string.themes_updatable),
-                        containerColor = Xc.colors.warningTint,
-                        contentColor = Xc.colors.onWarningTint,
-                    )
-                }
-            }
-
-            if (theme.author.isNotEmpty()) {
-                Text(
-                    text = stringResource(R.string.themes_by, theme.author),
-                    fontSize = 12.sp,
-                    color = Xc.colors.textMuted,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-
-            if (theme.summary.isNotEmpty()) {
-                Text(
-                    text = theme.summary,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
-                    color = Xc.colors.textSecondary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-
-            if (swatches.isNotEmpty() || theme.size > 0L) {
-                Row(
-                    modifier = Modifier.padding(top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    ThemeSwatches(swatches)
-                    if (theme.size > 0L) {
-                        Text(
-                            // 索引里的 size 是字节，文案自己带 "KB"，所以这里先换算好整数。
-                            text = stringResource(R.string.themes_size, (theme.size / 1024L).toString()),
-                            fontSize = 12.sp,
-                            color = Xc.colors.textMuted,
-                        )
-                    }
-                }
-            }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(vertical = 8.dp),
-                thickness = 0.5.dp,
-                color = Xc.colors.glassRim.copy(alpha = 0.5f),
-            )
-
-            if (downloading) {
-                // 下载中把按钮整行换掉：按钮留在那儿只会被反复点，进度才是这时候唯一有用的信息。
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = stringResource(R.string.themes_downloading, state.downloadProgress),
-                        fontSize = 12.sp,
-                        color = Xc.colors.textSecondary,
-                        textAlign = TextAlign.End,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    ThemeProgressBar(progress = state.downloadProgress)
-                }
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Spacer(Modifier.weight(1f))
-                    if (!theme.installed || theme.updatable) {
-                        TextButton(
-                            text = stringResource(R.string.themes_download),
-                            onClick = { actions.onDownload(theme) },
-                            enabled = !state.busy,
-                        )
-                    }
-                    if (theme.installed) {
-                        if (active) {
-                            // 已经生效的主题不给"应用"：点了也不会变，给个禁用标签说明现状。
-                            TextButton(
-                                text = stringResource(R.string.themes_installed),
-                                onClick = {},
-                                enabled = false,
-                            )
-                        } else {
-                            TextButton(
-                                text = stringResource(R.string.themes_apply),
-                                onClick = { actions.onApply(theme.themeId) },
-                                enabled = !state.busy,
-                                colors = ButtonDefaults.textButtonColorsPrimary(),
-                            )
-                        }
-                    }
-                }
+    val pagerState = rememberPagerState(pageCount = { themes.size })
+    LaunchedEffect(pagerState, themes.size) {
+        while (themes.size > 1) {
+            delay(4000)
+            if (!pagerState.isScrollInProgress && pagerState.pageCount > 0) {
+                pagerState.animateScrollToPage((pagerState.currentPage + 1) % pagerState.pageCount)
             }
         }
     }
-}
-
-/** 精选横幅：一张带预览大图的玻璃卡，名字/作者压在底部渐变上（小米主题商店的门面位）。 */
-@Composable
-private fun FeaturedRow(themes: List<StoreTheme>) {
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        itemsIndexed(items = themes, key = { _, t -> t.themeId }) { _, theme ->
+    Column {
+        HorizontalPager(
+            state = pagerState,
+            contentPadding = PaddingValues(horizontal = 12.dp),
+            pageSpacing = 10.dp,
+        ) { page ->
+            val theme = themes[page]
             Box(
                 modifier = Modifier
-                    .width(248.dp)
-                    .height(148.dp)
-                    .clip(Xc.shapes.lg),
+                    .fillMaxWidth()
+                    .height(176.dp)
+                    .clip(Xc.shapes.lg)
+                    .clickable { onOpen(theme.themeId) },
             ) {
                 RemotePreview(
                     url = theme.previews.firstOrNull() ?: theme.previewUrl,
@@ -526,7 +444,7 @@ private fun FeaturedRow(themes: List<StoreTheme>) {
                         .matchParentSize()
                         .background(
                             Brush.verticalGradient(
-                                0f to Color.Transparent,
+                                0.35f to Color.Transparent,
                                 1f to Color.Black.copy(alpha = 0.62f),
                             )
                         ),
@@ -534,12 +452,12 @@ private fun FeaturedRow(themes: List<StoreTheme>) {
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(12.dp),
+                        .padding(14.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
                             text = theme.name,
-                            fontSize = 16.sp,
+                            fontSize = 17.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White,
                             maxLines = 1,
@@ -563,6 +481,436 @@ private fun FeaturedRow(themes: List<StoreTheme>) {
                             color = Color.White.copy(alpha = 0.85f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+        // 页点：当前页放大拉长成胶囊（小米横幅的指示样式）。
+        if (themes.size > 1) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                repeat(themes.size) { i ->
+                    val active = pagerState.currentPage == i
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 3.dp)
+                            .width(if (active) 16.dp else 6.dp)
+                            .height(6.dp)
+                            .clip(Xc.shapes.pill)
+                            .background(if (active) Xc.colors.accent else Xc.colors.surfaceMuted),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 「最新上架」横排货架：紧凑竖版卡（小米的横向专题架）。 */
+@Composable
+private fun LatestShelf(
+    themes: List<StoreTheme>,
+    onOpen: (String) -> Unit,
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+    ) {
+        itemsIndexed(themes, key = { _, t -> t.themeId }) { _, theme ->
+            Column(
+                modifier = Modifier
+                    .width(148.dp)
+                    .clickable { onOpen(theme.themeId) },
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(4f / 3f)
+                        .clip(Xc.shapes.md),
+                ) {
+                    RemotePreview(
+                        url = theme.previews.firstOrNull() ?: theme.previewUrl,
+                        contentDescription = theme.name,
+                        modifier = Modifier.matchParentSize(),
+                        placeholder = Xc.colors.surfaceMuted,
+                    )
+                    if (theme.installed) {
+                        Text(
+                            text = stringResource(R.string.themes_installed),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Xc.colors.onSuccessTint,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(6.dp)
+                                .clip(Xc.shapes.pill)
+                                .background(Xc.colors.successTint)
+                                .padding(horizontal = 5.dp, vertical = 1.dp),
+                        )
+                    }
+                }
+                Text(
+                    text = theme.name,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Xc.colors.text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+                Text(
+                    text = if (theme.author.isNotEmpty()) {
+                        stringResource(R.string.themes_by, theme.author)
+                    } else {
+                        theme.updatedAt.substringBefore("T")
+                    },
+                    fontSize = 11.sp,
+                    color = Xc.colors.textMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 网格里的竖版主题卡（图上、文字下）：小米商店的标准卡片形态。
+ * 下载中把底部行换成进度；点卡片本体进详情，按钮仍然直接可用。
+ */
+@Composable
+private fun StoreThemeCard(
+    theme: StoreTheme,
+    state: ThemeUiState,
+    actions: ThemeActions,
+    onOpen: () -> Unit,
+    backdrop: LayerBackdrop?,
+    modifier: Modifier = Modifier,
+) {
+    val downloading = state.downloadingId == theme.themeId
+    val active = state.activeId == theme.themeId
+
+    Card(
+        modifier = modifier
+            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md)
+            .clickable(onClick = onOpen),
+        colors = CardDefaults.defaultColors(color = Color.Transparent),
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(4f / 3f),
+            ) {
+                RemotePreview(
+                    url = theme.previews.firstOrNull() ?: theme.previewUrl,
+                    contentDescription = theme.name,
+                    modifier = Modifier.matchParentSize(),
+                    placeholder = Xc.colors.surfaceMuted,
+                )
+                if (theme.updatable) {
+                    Text(
+                        text = stringResource(R.string.themes_updatable),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Xc.colors.onWarningTint,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                            .clip(Xc.shapes.pill)
+                            .background(Xc.colors.warningTint)
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                    )
+                } else if (theme.installed) {
+                    Text(
+                        text = stringResource(R.string.themes_installed),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Xc.colors.onSuccessTint,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                            .clip(Xc.shapes.pill)
+                            .background(Xc.colors.successTint)
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                    )
+                }
+            }
+            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                Text(
+                    text = theme.name,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Xc.colors.text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(
+                    modifier = Modifier.padding(top = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (theme.author.isNotEmpty()) {
+                            stringResource(R.string.themes_by, theme.author)
+                        } else {
+                            "v" + theme.version
+                        },
+                        fontSize = 11.sp,
+                        color = Xc.colors.textMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Spacer(Modifier.weight(1f))
+                    if (theme.size > 0L) {
+                        Text(
+                            text = stringResource(R.string.themes_size, (theme.size / 1024L).toString()),
+                            fontSize = 10.sp,
+                            color = Xc.colors.textMuted,
+                        )
+                    }
+                }
+                if (downloading) {
+                    Text(
+                        text = stringResource(R.string.themes_downloading, state.downloadProgress),
+                        fontSize = 10.sp,
+                        color = Xc.colors.textSecondary,
+                        modifier = Modifier.padding(top = 5.dp),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    ThemeProgressBar(progress = state.downloadProgress)
+                } else if (!theme.installed || theme.updatable) {
+                    TextButton(
+                        text = stringResource(R.string.themes_download),
+                        onClick = { actions.onDownload(theme) },
+                        enabled = !state.busy,
+                        modifier = Modifier
+                            .padding(top = 6.dp)
+                            .fillMaxWidth(),
+                    )
+                } else if (!active) {
+                    TextButton(
+                        text = stringResource(R.string.themes_apply),
+                        onClick = { actions.onApply(theme.themeId) },
+                        enabled = !state.busy,
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                        modifier = Modifier
+                            .padding(top = 6.dp)
+                            .fillMaxWidth(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 详情玻璃对话框：大图轮播 + 元信息 + 操作行（小米主题商店的详情页浓缩）。 */
+@Composable
+private fun ThemeDetailDialog(
+    theme: StoreTheme,
+    state: ThemeUiState,
+    actions: ThemeActions,
+    onDismiss: () -> Unit,
+) {
+    val pages = remember(theme.themeId) {
+        if (theme.previews.isNotEmpty()) theme.previews else listOfNotNull(theme.previewUrl.takeIf { it.isNotEmpty() })
+    }
+    val pagerState = rememberPagerState(pageCount = { pages.size })
+    val downloading = state.downloadingId == theme.themeId
+    val active = state.activeId == theme.themeId
+    val swatches = remember(theme.accentHex, theme.backdropDarkHex, theme.backdropLightHex) {
+        listOf(theme.accentHex, theme.backdropDarkHex, theme.backdropLightHex)
+            .mapNotNull { ThemeCodec.parseColor(it) }
+            .map { Color(it) }
+    }
+
+    XDialog(show = true, onDismissRequest = onDismiss, maxWidth = 460.dp) {
+        if (pages.size > 1) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxWidth(),
+                pageSpacing = 8.dp,
+            ) { page ->
+                RemotePreview(
+                    url = pages[page],
+                    contentDescription = theme.name,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(210.dp)
+                        .clip(Xc.shapes.md),
+                    placeholder = Xc.colors.surfaceMuted,
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                repeat(pages.size) { i ->
+                    val activePage = pagerState.currentPage == i
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 3.dp)
+                            .width(if (activePage) 14.dp else 5.dp)
+                            .height(5.dp)
+                            .clip(Xc.shapes.pill)
+                            .background(if (activePage) Xc.colors.accent else Xc.colors.surfaceMuted),
+                    )
+                }
+            }
+        } else if (pages.size == 1) {
+            RemotePreview(
+                url = pages[0],
+                contentDescription = theme.name,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(210.dp)
+                    .clip(Xc.shapes.md),
+                placeholder = Xc.colors.surfaceMuted,
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = theme.name,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Xc.colors.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (theme.featured) {
+                Text(
+                    text = stringResource(R.string.themes_featured),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White,
+                    modifier = Modifier
+                        .clip(Xc.shapes.pill)
+                        .background(Xc.colors.accent)
+                        .padding(horizontal = 6.dp, vertical = 1.dp),
+                )
+            }
+            if (theme.installed) {
+                ThemeTag(
+                    text = stringResource(R.string.themes_installed),
+                    containerColor = Xc.colors.successTint,
+                    contentColor = Xc.colors.onSuccessTint,
+                )
+            }
+            if (theme.updatable) {
+                ThemeTag(
+                    text = stringResource(R.string.themes_updatable),
+                    containerColor = Xc.colors.warningTint,
+                    contentColor = Xc.colors.onWarningTint,
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.padding(top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (theme.author.isNotEmpty()) {
+                Text(
+                    text = stringResource(R.string.themes_by, theme.author),
+                    fontSize = 12.sp,
+                    color = Xc.colors.textMuted,
+                )
+            }
+            if (theme.size > 0L) {
+                Text(
+                    text = stringResource(R.string.themes_size, (theme.size / 1024L).toString()),
+                    fontSize = 12.sp,
+                    color = Xc.colors.textMuted,
+                )
+            }
+            if (theme.updatedAt.isNotEmpty()) {
+                Text(
+                    text = theme.updatedAt.substringBefore("T"),
+                    fontSize = 12.sp,
+                    color = Xc.colors.textMuted,
+                )
+            }
+        }
+
+        if (swatches.isNotEmpty()) {
+            Row(
+                modifier = Modifier.padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                ThemeSwatches(swatches)
+            }
+        }
+
+        if (theme.summary.isNotEmpty() || theme.description.isNotEmpty()) {
+            Text(
+                text = if (theme.description.isNotEmpty()) theme.description else theme.summary,
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+                color = Xc.colors.textSecondary,
+                modifier = Modifier.padding(top = 10.dp),
+            )
+        }
+
+        HorizontalDivider(
+            modifier = Modifier.padding(vertical = 10.dp),
+            thickness = 0.5.dp,
+            color = Xc.colors.glassRim.copy(alpha = 0.5f),
+        )
+
+        if (downloading) {
+            Text(
+                text = stringResource(R.string.themes_downloading, state.downloadProgress),
+                fontSize = 12.sp,
+                color = Xc.colors.textSecondary,
+            )
+            Spacer(Modifier.height(6.dp))
+            ThemeProgressBar(progress = state.downloadProgress)
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (!theme.installed || theme.updatable) {
+                    TextButton(
+                        text = stringResource(R.string.themes_download),
+                        onClick = { actions.onDownload(theme) },
+                        enabled = !state.busy,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (theme.installed) {
+                    if (active) {
+                        TextButton(
+                            text = stringResource(R.string.themes_installed),
+                            onClick = {},
+                            enabled = false,
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        TextButton(
+                            text = stringResource(R.string.themes_apply),
+                            onClick = { actions.onApply(theme.themeId) },
+                            enabled = !state.busy,
+                            colors = ButtonDefaults.textButtonColorsPrimary(),
+                            modifier = Modifier.weight(1f),
                         )
                     }
                 }
