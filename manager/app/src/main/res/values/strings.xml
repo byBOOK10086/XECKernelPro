@@ -60,7 +60,6 @@
     <string name="hide_one_tap_title">One-Tap Hide</string>
     <string name="hide_one_tap_subtitle">Violet Toolbox · deploy hidden environment</string>
     <string name="kpm_entry_subtitle">Kernel patch module (KPM) management</string>
-    <string name="settings_terminal_subtitle">Web control console of Auto_Trigger module</string>
     <string name="hide_pack_step_manifest">Fetching resource manifest…</string>
     <string name="hide_pack_step_download">Preparing resource bundle (download / verify)…</string>
     <string name="hide_pack_manifest_fail">Failed to fetch resource manifest: %1$s</string>
@@ -424,26 +423,6 @@ XEC Project Team
     <string name="nav_rail_collapse">Collapse navigation rail</string>
     <string name="settings_navigation_badge">Navigation badge</string>
     <string name="settings_navigation_badge_summary">Show granted app and enabled module counts on the navigation bar</string>
-    <string name="detection">Detection</string>
-    <string name="detect_app_name">KeyChain Integrity Check</string>
-    <string name="detect_checking">Checking…</string>
-    <string name="detect_not_installed">Not installed</string>
-    <string name="detect_installed_fmt">Installed · v%s</string>
-    <string name="detect_install">Install checker</string>
-    <string name="detect_reinstall">Reinstall checker</string>
-    <string name="detect_install_hint">Bundled checker APK, installed silently with root</string>
-    <string name="detect_working">Working…</string>
-    <string name="detect_open">Open checker</string>
-    <string name="detect_open_hint">Launch the integrity check</string>
-    <string name="detect_uninstall">Uninstall checker</string>
-    <string name="detect_uninstall_hint">Remove the checker from this device</string>
-    <string name="detect_install_done">Checker installed</string>
-    <string name="detect_install_failed">Install failed, is root active?</string>
-    <string name="detect_uninstall_done">Checker removed</string>
-    <string name="detect_uninstall_failed">Uninstall failed</string>
-    <string name="detect_about_title">About this checker</string>
-    <string name="detect_about_body">Bundled verification tool: validates key chain integrity, bootloader lock state and environment anomalies. Use it to confirm that the built-in TEE key simulation and boot-state spoofing are actually working.</string>
-    <string name="detect_about_tricky_note">Known behaviour: this tool carries its own anti-interception probe — it imports a self-signed certificate under its own alias and reads it back. Once the engine covers it, the row “TrickyStore or a similar module detected” therefore ALWAYS appears; it does not mean the spoofing failed. Judge by the “bootloader locked / Google attestation root” rows, and by the TEE panel above for the engine verdict. Third-party checkers (vvb2060 Key Attestation, Play Integrity) have no such probe.</string>
     <!-- Remote Module Assistant -->
     <string name="remote_assistant_title">Remote Module Assistant</string>
     <string name="remote_assistant_subtitle">Share and receive module direct links</string>
@@ -537,55 +516,12 @@ See the log below for details.</string>
     <string name="wallpaper_note_title">How it works</string>
     <string name="wallpaper_note">The image is written to this app\'s private directory only: no storage permission, no upload, and it is removed together with the app when you uninstall it.\nLight and dark are configured separately — leave one alone and it keeps using the built-in random pool.\nEvery liquid-glass surface refracts the image you pick. The AMOLED black theme still covers the background to keep true black.\nOn import the image is re-encoded to JPEG with a 2560 px long edge; the original in your gallery is never modified.</string>
     <!-- TEE 引擎实测看板（验机页）：决定"模拟是否真的生效"的四项事实。 -->
-    <string name="detect_tee_title">TEE engine &amp; interception</string>
-    <string name="detect_tee_engine">Engine</string>
-    <string name="detect_tee_keybox">Keybox</string>
-    <string name="detect_tee_coverage">Intercept list</string>
-    <string name="detect_tee_bootstate">Boot state</string>
-    <string name="detect_tee_engine_files">Engine files</string>
-    <string name="detect_tee_files_ok">staged</string>
-    <string name="detect_tee_files_missing">MISSING — the engine cannot start</string>
-    <string name="detect_tee_served_rot">Served boot state</string>
-    <string name="detect_tee_served_rot_none">no attestation handled yet</string>
-    <string name="detect_tee_selfcheck">Self-check</string>
-    <string name="detect_tee_selfcheck_run">Self-check &amp; repair</string>
-    <string name="detect_tee_selfcheck_failed">Self-check did not answer — is the module older than this build?</string>
-    <string name="detect_tee_selfcheck_repair">Auto-repaired</string>
-    <string name="detect_tee_sc_ok">Keystore intercepted · %1$d attestation request(s) served</string>
-    <string name="detect_tee_sc_idle">Engine is running, but no app has asked for attestation yet — open the checker once to verify</string>
-    <string name="detect_tee_sc_engine_down">Engine NOT running — keystore is not intercepted, detectors read the real TEE chain (the self-check already tried to restart it)</string>
-    <string name="detect_tee_sc_keybox_expired">The keybox chains to a Google root that has EXPIRED — detectors report the chain as untrusted; a valid bundled copy was swapped in if one was available</string>
-    <string name="detect_tee_sc_keybox_bad">The keybox root is unusable (%1$s) — detectors report an unknown root certificate; a valid bundled copy was swapped in if one was available</string>
-    <string name="detect_tee_sc_coverage">A checker was missing from the intercept list — it was merged back in</string>
-    <string name="detect_tee_sc_props">The locked-state properties had drifted — they were rewritten</string>
-    <string name="detect_tee_sc_absent">No self-check record on the device yet — this build needs one boot (or tap "Self-check &amp; repair")</string>
-    <string name="detect_tee_patch_errors">Patch failures</string>
-    <string name="detect_tee_patch_errors_none">none</string>
     <!-- Root certificate: the engine signs the chain with the keybox chain, and its last
          certificate is the "root" a detector sees. The bundled checker
          (wu.keyChain.test) compares that certificate\'s public key against hardcoded
          Google/AOSP/Knox root keys; anything else is reported as an unknown root
          certificate — while the chain still verifies, so "bootloader locked" and
          "unknown root certificate" show up together. -->
-    <string name="detect_tee_root">Root cert</string>
-    <string name="detect_tee_root_google">Google attestation root (%1$s)</string>
-    <string name="detect_tee_root_expired">A Google root, but EXPIRED (%1$s) — detectors report the chain as untrusted even though the key is genuine; the device-side self-check swaps in a valid copy</string>
-    <string name="detect_tee_root_other">Not a Google root (%1$s) — detectors report an unknown root certificate; the guardian self-heals, reboot once if it stays red</string>
-    <string name="detect_tee_root_missing">No keybox — the engine can only issue a self-signed chain, so detectors report an unknown root certificate</string>
-    <string name="detect_tee_root_unknown">undetermined (no sha256sum or the status file was not written yet)</string>
-    <string name="detect_tee_vvb_missing">vvb2060 KeyAttestation (io.github.vvb2060.keyattestation) is not in the intercept list — its bootloader row still reads the real TEE. The list is merged on every boot, so reboot once after installing this build.</string>
-    <string name="detect_tee_patch_failed_note">Patch failures mean the engine handed out the REAL TEE chain: its keybox is genuine, so detectors call the key trusted, while its RootOfTrust still carries the device\'s true unlocked state.</string>
-    <string name="detect_tee_running">running</string>
-    <string name="detect_tee_not_running">NOT running</string>
-    <string name="detect_tee_covered_fmt">%1$d entries · bundled checker covered</string>
-    <string name="detect_tee_not_covered_fmt">%1$d entries · bundled checker NOT covered</string>
-    <string name="detect_tee_add">Add the checker to the list</string>
-    <string name="detect_tee_add_done">Intercept list updated</string>
-    <string name="detect_tee_add_failed">Could not update the intercept list</string>
-    <string name="detect_tee_refresh">Refresh</string>
-    <string name="detect_tee_note">Detectors only receive a simulated TEE when their package is in the engine\'s list — the list is exhaustive and has no wildcard. Anything unlisted gets the real TEE attestation, which reads as an unknown root plus an unlocked state.</string>
-    <string name="detect_tee_engine_down_note">The engine is not running, so nothing is intercepted and every app sees the real TEE. Reboot so the builtin module can start it again, then check /data/adb/.xudc_secure/engine.log.</string>
-    <string name="detect_tee_zeromount_note">ZeroMount is active: the bootloader-state props are skipped for this boot by design, so property-based detectors still read the real state.</string>
     <!-- Privilege (GhostLock elevate) console -->
     <string name="privilege_title">Elevate</string>
     <string name="privilege_entry_subtitle">GhostLock one-tap elevate, with a manual path for unmatched devices</string>
@@ -777,81 +713,17 @@ See the log below for details.</string>
     <string name="magisk_su_self_tag">this manager</string>
     <string name="magisk_su_user_tag">user %1$d</string>
     <!-- TEE 看板：拦截归属 + 两个一键修复（接管引擎 / 立即回锁属性） -->
-    <string name="detect_tee_owner">Interception</string>
-    <string name="detect_tee_owner_deadlock">external module v%1$s holds the injection surface but its engine is NOT running — builtin stood down, so nothing is intercepted right now. Tap Take over.</string>
-    <string name="detect_tee_owner_external">external module v%1$s</string>
-    <string name="detect_tee_owner_builtin">builtin engine</string>
-    <string name="detect_tee_owner_builtin_down">builtin engine is not running and no external module is holding the surface — tap Take over to start it</string>
-    <string name="detect_tee_owner_none">no engine started</string>
-    <string name="detect_tee_takeover">Take over now</string>
-    <string name="detect_tee_takeover_failed">Could not read the takeover result (see /data/adb/.xudc_secure/engine.log)</string>
-    <string name="detect_tee_relock">Re-apply locked state now</string>
-    <string name="detect_tee_relock_failed">Could not re-apply the locked state properties</string>
 
     <!-- Built-in module switches (second card on the detection page): the built-in TEE
          engine and the built-in TA companion are independent, opt-in switches, backed by
          ksud's `builtin status|enable|disable` and /data/adb/.xudc_secure/builtin.conf. -->
-    <string name="detect_builtin_title">Built-in modules (your choice)</string>
-    <string name="detect_builtin_note">The built-in TEE engine and the built-in TA companion ship with this app. They live in RAM only, so the module list cannot show them — that is why the switches are here. They default to ON (a missing switch file means on) and are independent; with them off nothing of the built-in modules is left on the device, and modules you flashed yourself are unaffected.</string>
-    <string name="detect_builtin_no_ksud">Could not read the built-in modules\' state: this device has no usable xudc/ksud (the mount-state Magisk route has no built-in modules at all), or its ksud is older than this manager — updating manager and kernel to the same version fixes it.</string>
-    <string name="detect_builtin_tee_title">Built-in TEE engine</string>
-    <string name="detect_builtin_tee_on">On · the engine is running and attestation requests are intercepted</string>
-    <string name="detect_builtin_tee_on_down">On, but the engine is not running — use \"Self-check and repair\" above, or reboot</string>
-    <string name="detect_builtin_tee_off">Off · nothing is intercepted, detectors see the real TEE attestation</string>
-    <string name="detect_builtin_tee_external">Stood down: your own TEE module is installed, and two engines injecting at once would fight each other</string>
-    <string name="detect_builtin_ta_title">Built-in TA companion</string>
-    <string name="detect_builtin_ta_on">On · keybox and interception list are maintained automatically</string>
-    <string name="detect_builtin_ta_on_down">On, but the daemon is not running — see /data/adb/.xudc_secure/ta-enhanced/logs</string>
-    <string name="detect_builtin_ta_off">Off · keybox and interception list are not maintained automatically</string>
-    <string name="detect_builtin_ta_external">Stood down: your own TA_enhanced module is installed</string>
-    <string name="detect_builtin_ta_needs_tee">Note: there is no usable TEE engine right now (the built-in TEE is off and no external module is installed), so TA\'s keybox and list maintenance is pointless at the moment.</string>
-    <string name="detect_builtin_toggle_on">Switched on and applied</string>
-    <string name="detect_builtin_toggle_off">Switched off and applied</string>
-    <string name="detect_builtin_toggle_failed">The switch did not take effect (see /data/adb/.xudc_secure/engine.log)</string>
-    <string name="detect_builtin_restart_note">Switching the built-in TEE off also restarts keystore2 once, to drop the engine code that was injected into it; if a detector still sees simulated attestation afterwards, one reboot restores everything.</string>
-    <string name="detect_builtin_off_short">Off</string>
-    <string name="detect_tee_flash">Flash the TEE module</string>
-    <string name="detect_tee_flash_again">Flash the TEE module again</string>
     <string name="hide_env_running">Hiding…</string>
     <string name="hide_env_tee_title">Hide TEE and keys</string>
     <string name="hide_env_tee_desc">Stop the engine, move the keybox, target lists and logs into a hidden directory (reversible, modules untouched)</string>
-    <string name="detect_tee_sc_disabled">The built-in TEE was switched off by you — nothing is intercepted right now (turn it back on under \"Built-in modules\" below)</string>
-    <string name="detect_tee_owner_builtin_disabled">the built-in TEE was switched off by you</string>
-    <string name="detect_tee_disabled_note">The built-in TEE is off: interception is disabled by your choice, so every app sees the real TEE attestation. To restore it, switch on \"Built-in TEE engine\" under \"Built-in modules\" below.</string>
 
     <!-- Diagnostics for the built-in engine: the switches go through the manager's own ksud,
          injection is proven by the keystore2 maps, and the start diagnosis comes from
          /data/adb/.xudc_secure/engine-start.txt. -->
-    <string name="detect_builtin_cli_failed">The switch command failed — the ksud bundled in this manager did not run (see the diagnosis line below).</string>
-    <string name="detect_builtin_mount_state">This device is on the mount-state route (Magisk, kernel below 5.10): built-in modules do not exist there, so these switches do not apply. Use Magisk modules (TrickyStore / TEESimulator / TA) to intercept attestation instead.</string>
-    <string name="detect_builtin_not_injected">The engine is running but keystore2 is **not injected** — still zero interception; use \"Repair engine\" below</string>
-    <string name="detect_builtin_diag">Start diagnosis</string>
-    <string name="detect_builtin_repair">Repair engine</string>
-    <string name="detect_builtin_repair_done">Re-applied the injection policy and restarted the engine cleanly</string>
-    <string name="detect_builtin_boot_ksud_old">The kernel-side ksud (the one that actually runs the built-in modules at boot) does not support these switches yet: they only hold for the current boot and are lost after a reboot — update the kernel / LKM as well.</string>
-    <string name="detect_builtin_boot_ksud_missing">No kernel-side xudc/ksud found: nothing will decrypt the built-in modules at boot (switches still work for the current boot).</string>
-    <string name="detect_tee_inject">Keystore injection</string>
-    <string name="detect_tee_injected">Injected (our library runs inside keystore2)</string>
-    <string name="detect_tee_not_injected">The engine runs, but our library is not inside keystore2 — zero interception</string>
-    <string name="detect_tee_inject_unknown">Not injected (engine not running)</string>
-    <string name="detect_tee_start_diag">Start diagnosis</string>
-    <string name="detect_tee_sc_not_injected">The engine is running but injection failed (keystore2 is not intercepted) — the injection chain was restarted automatically; if it still fails, use \"Repair engine\"</string>
-    <string name="detect_tee_owner_builtin_noinject">built-in engine (keystore2 not injected)</string>
-    <string name="detect_tee_repair">Repair engine</string>
-    <string name="detect_tee_repair_failed">Repair did not succeed (see /data/adb/.xudc_secure/engine-start.txt and engine.log)</string>
-    <string name="detect_builtin_spoof_mismatch">Note: the property spoofing is on while no TEE engine covers attestation — the two contradict each other (properties say locked, attestation says deviceLocked=false), which games and banking apps flag as an environment anomaly more readily. Either install the TEE engine or switch this off.</string>
-    <string name="detect_builtin_external_title">Install on demand (recommended)</string>
-    <string name="detect_builtin_external_note">The built-in form ships with the kernel/manager, and that whole chain is itself an environment fingerprint. Below are the externally distributed plain modules: with them uninstalled the device carries no trace, and once installed they can be disabled or removed from the module list like any other module. A reboot applies them.</string>
-    <string name="detect_builtin_install_tee">Download and flash the TEE engine</string>
-    <string name="detect_builtin_install_tee_again">Download and flash the TEE engine again</string>
-    <string name="detect_builtin_install_ta">Download and flash the TA companion</string>
-    <string name="detect_builtin_installed_hint">An external TEE module is present (visible in the module list). Disable or remove it from the Modules page.</string>
-    <string name="detect_builtin_install_done">Downloaded and installed; a reboot applies it</string>
-    <string name="detect_builtin_install_failed">Download or install failed (check the network and retry)</string>
-    <string name="detect_builtin_spoof_title">Boot-state spoofing (locked-view props)</string>
-    <string name="detect_builtin_spoof_on">On · boot rewrites ro.boot.* and the cmdline to the locked view</string>
-    <string name="detect_builtin_spoof_off">Off · properties and raw boot parameters stay real (same as stock KernelSU)</string>
-    <string name="detect_builtin_spoof_done">Switched; a reboot applies it</string>
 
     <!-- 主题系统（商城 / 编辑器 / 发布）：键必须两边成对，见 check_strings_parity.py -->
     <string name="settings_themes">Themes</string>
@@ -1076,26 +948,31 @@ See the log below for details.</string>
     <string name="privilege_gen_none">Cannot generate for %1$s: %2$s</string>
 
     <!-- APatch-style superkey guard -->
-    <string name="superkey_settings_title">Superkey</string>
-    <string name="superkey_settings_summary">Second factor for policy-changing operations (APatch-style)</string>
+    <string name="superkey_settings_title">Security lock</string>
+    <string name="superkey_settings_summary">Once on, changing any app's Root permissions requires the lock password — malware cannot silently change them</string>
+    <!-- Toolbox: terminal / security lock / stealth entrance -->
+    <string name="tools_title">Toolbox</string>
+    <string name="tools_summary">Terminal, security lock and stealth entrance</string>
+    <string name="tools_terminal_title">Terminal</string>
+    <string name="tools_terminal_summary">Command-line terminal with a file manager</string>
     <string name="stealth_title">Stealth entrance</string>
     <string name="stealth_summary">Hide the icon; open the manager by tapping the build number in Settings 10 times (the 5-tap developer options behavior is untouched)</string>
     <string name="stealth_confirm_body">The launcher icon will be hidden. To open the manager: Settings → About phone → tap the build number 10 times in a row. The native 5-tap developer options unlock keeps working. Note: after enabling, the manager closes to the desktop once — that is it hiding its own icon. Fallback at any time:
 %1$s</string>
-    <string name="superkey_auth_required">Superkey guard is armed: authentication failed, unlock and try again</string>
-    <string name="superkey_status">Kernel key: %1$s · Guard: %2$s</string>
+    <string name="superkey_auth_required">Security lock is on: verification failed, unlock the screen and try again</string>
+    <string name="superkey_status">Lock password: %1$s · Protection: %2$s</string>
     <string name="superkey_state_set">set</string>
     <string name="superkey_state_unset">not set</string>
-    <string name="superkey_state_armed">armed</string>
+    <string name="superkey_state_armed">protected</string>
     <string name="superkey_state_disarmed">off</string>
-    <string name="superkey_dialog_hint">The kernel keeps only the key hash and loses it on reboot (the recovery path if you forget it: reboot, then re-arm or change it here). While armed, changing app profiles, restricted whitelists and feature switches requires this key.</string>
-    <string name="superkey_old_key_label">Current key (required to change/clear)</string>
-    <string name="superkey_new_key_label">New key</string>
-    <string name="superkey_generate">Generate</string>
-    <string name="superkey_arm_guard">Arm guard</string>
-    <string name="superkey_apply">Set key</string>
+    <string name="superkey_dialog_hint">The lock password never leaves this phone: stored encrypted on-device. Protection clears itself on reboot (that is also the recovery path if you forget it — just set a new one here). While protection is on, changing app permissions, restricted lists and feature switches requires the password.</string>
+    <string name="superkey_old_key_label">Current lock password (required to change/clear)</string>
+    <string name="superkey_new_key_label">New lock password</string>
+    <string name="superkey_generate">Random</string>
+    <string name="superkey_arm_guard">Turn on protection</string>
+    <string name="superkey_apply">Set password</string>
     <string name="superkey_clear">Clear</string>
     <string name="superkey_applied">Applied</string>
-    <string name="superkey_apply_failed">Rejected (wrong key, or kernel too old)</string>
+    <string name="superkey_apply_failed">Rejected (wrong password, or the phone was rebooted since it was set)</string>
 
 </resources>

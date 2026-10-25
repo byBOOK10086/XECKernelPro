@@ -128,6 +128,11 @@ sealed interface Route : NavKey, Parcelable {
     @Serializable
     data object Terminal : Route
 
+    /** 工具箱：终端 / 安全锁（超级密钥）/ 隐身入口的统一菜单（从设置页进入）。 */
+    @Parcelize
+    @Serializable
+    data object Tools : Route
+
     /**
      * 提权控制台：GhostLock（CVE-2026-43499）一键提权 + 手动 profile 操作空间。
      * [updateMode] 为 true 时表示来自「修补方式 → 提权更新」：管理器升级后重放
