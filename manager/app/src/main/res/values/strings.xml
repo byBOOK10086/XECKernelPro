@@ -970,6 +970,8 @@ See the log below for details.</string>
     <string name="themes_category_all">All</string>
     <string name="themes_category_colors">Colors</string>
     <string name="themes_category_mode_badge">Mode badge</string>
+    <string name="themes_section_latest">Latest</string>
+    <string name="themes_section_all">All themes</string>
     <string name="stealth_title">Stealth entrance</string>
     <string name="stealth_summary">Hide the icon; open the manager by tapping the build number in Settings 10 times (the 5-tap developer options behavior is untouched)</string>
     <string name="stealth_confirm_body">The launcher icon will be hidden. To open the manager: Settings → About phone → tap the build number 10 times in a row. The native 5-tap developer options unlock keeps working. Note: after enabling, the manager closes to the desktop once — that is it hiding its own icon. Fallback at any time:

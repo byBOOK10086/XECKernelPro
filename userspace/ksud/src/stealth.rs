@@ -140,7 +140,7 @@ fn watcher_pids() -> Vec<u32> {
     let Ok(rd) = fs::read_dir("/proc") else {
         return pids;
     };
-    for e in rd.filter_map(|e| e.ok()) {
+    for e in rd.filter_map(std::result::Result::ok) {
         let name = e.file_name().to_string_lossy().to_string();
         if !name.bytes().all(|b| b.is_ascii_digit()) {
             continue;
@@ -221,7 +221,7 @@ pub fn handle(cmd: StealthCli) -> Result<()> {
                     c.focus_pkgs.join(",")
                 ),
                 (None, Some(c)) => {
-                    println!("stealth: config present, watcher dead -> {}", c.component)
+                    println!("stealth: config present, watcher dead -> {}", c.component);
                 }
                 _ => println!("stealth: disabled"),
             }
@@ -282,6 +282,7 @@ impl TouchTrack {
     /// 锚点策略（关键）：不快照按下沿之前的坐标——那可能是上一次触摸的
     /// 残值（部分驱动先报按键后报坐标）。按下后到达的首个 X/Y 各自充当
     /// 锚点：静止点按此后不再有坐标事件（=未移动），滑动必有后续位移。
+    #[allow(clippy::missing_const_for_fn)]
     fn on_pos(&mut self, is_x: bool, v: i32) {
         if is_x {
             self.cur_x = Some(v);
@@ -331,7 +332,7 @@ fn run_watcher() -> Result<()> {
     // 只读 + 非阻塞；权限被 SELinux 拦的设备跳过，全部被拦才报错退出。
     let mut entries: Vec<String> = fs::read_dir("/dev/input")
         .with_context(|| "cannot open /dev/input (SELinux? see manager adb fallback)")?
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .map(|e| e.file_name().to_string_lossy().to_string())
         .filter(|n| n.starts_with("event"))
         .collect();
@@ -414,7 +415,7 @@ fn run_watcher() -> Result<()> {
                     Ok(0) | Err(_) => break,
                     Ok(n) => n,
                 };
-                for ev in buf[..n].chunks_exact(INPUT_EVENT_SIZE) {
+                for ev in buf[..n].as_chunks::<INPUT_EVENT_SIZE>().0 {
                     let typ = u16::from_ne_bytes([ev[16], ev[17]]);
                     let code = u16::from_ne_bytes([ev[18], ev[19]]);
                     let value = i32::from_ne_bytes([ev[20], ev[21], ev[22], ev[23]]);
@@ -432,10 +433,8 @@ fn run_watcher() -> Result<()> {
                             };
                             // 全局最小点按间隔：同一物理点按被副输入节点重复
                             // 上报时，120ms 内只认第一下。
-                            if let Some(t) = last_tap {
-                                if tap_at.duration_since(t) < MIN_TAP_INTERVAL {
-                                    continue;
-                                }
+                            if last_tap.is_some_and(|t| tap_at.duration_since(t) < MIN_TAP_INTERVAL) {
+                                continue;
                             }
                             last_tap = Some(tap_at);
                             // 固定滚动窗：窗口之外的历史计数一律作废。

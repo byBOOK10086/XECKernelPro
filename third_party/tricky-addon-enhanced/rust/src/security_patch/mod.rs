@@ -49,7 +49,7 @@ pub fn handle_security_patch(action: SecurityPatchAction, cfg: &Config) -> Resul
         }
         SecurityPatchAction::Update { force } => {
             if force {
-                update_force()?;
+                update_force(cfg)?;
             } else {
                 update(cfg)?;
             }
@@ -114,7 +114,7 @@ pub fn detect_variant() -> TrickyStoreVariant {
 
 pub fn set(config: &Config) -> Result<()> {
     let dates = if config.security_patch.custom_date.is_empty() {
-        read_device_dates()
+        device_dates_for_patch()
     } else {
         PatchDates {
             system: config.security_patch.custom_date.clone(),
@@ -133,7 +133,9 @@ pub fn set(config: &Config) -> Result<()> {
 }
 
 pub fn set_custom(system: &str, boot: &str, vendor: &str) -> Result<()> {
-    let device = read_device_dates();
+    // "prop" 占位替换走与自动更新一致的格式（system=YYYYMM），避免同一文件里
+    // 两种日期形态混用。
+    let device = device_dates_for_patch();
     let dates = PatchDates {
         system: if system == "prop" { device.system } else { system.to_string() },
         boot: if boot == "prop" { device.boot } else { boot.to_string() },
@@ -149,20 +151,50 @@ pub fn update(config: &Config) -> Result<()> {
         info!("security patch auto-update is disabled");
         return Ok(());
     }
-    update_force()
+    update_force(config)
 }
 
-pub fn update_force() -> Result<()> {
-    let latest = bulletin::fetch_latest_patch()?;
-    let dates = PatchDates {
-        system: latest.clone(),
-        boot: latest.clone(),
-        vendor: latest,
+/// 证书 patch tag 必须与设备 OS 一致（春秋检测 Tampered Attestation Key(26) 的
+/// 判据）。默认（follow_bulletin=false）写设备真实补丁级别，格式按社区验证过的
+/// 方案：system=YYYYMM、boot/vendor=完整日期；只有显式打开 follow_bulletin 才
+/// 去爬安卓公告的最新日期——那是与 OS 属性脱节的自找检测项。
+pub fn update_force(config: &Config) -> Result<()> {
+    let dates = if config.security_patch.follow_bulletin {
+        let latest = bulletin::fetch_latest_patch()?;
+        PatchDates {
+            system: latest.clone(),
+            boot: latest.clone(),
+            vendor: latest,
+        }
+    } else {
+        device_dates_for_patch()
     };
 
     let variant = detect_variant();
     info!("updating security patch to {} (variant: {variant})", dates.system);
     write_patch_dates(&variant, &dates)
+}
+
+/// 设备真实补丁级别，system 压成 YYYYMM（"2023-12-01" → "202312"），
+/// boot/vendor 保持完整日期。任一属性读不到就留空，由调用方判空报错。
+pub fn device_dates_for_patch() -> PatchDates {
+    let system_full = get_system_patch_date().unwrap_or_default();
+    let system = if system_full.is_empty() {
+        String::new()
+    } else {
+        system_full
+            .split('-')
+            .take(2)
+            .collect::<Vec<_>>()
+            .join("")
+            .trim()
+            .to_string()
+    };
+    PatchDates {
+        system,
+        boot: get_boot_patch_date().unwrap_or_default(),
+        vendor: get_vendor_patch_date().unwrap_or_default(),
+    }
 }
 
 pub fn show_current() -> Result<String> {
