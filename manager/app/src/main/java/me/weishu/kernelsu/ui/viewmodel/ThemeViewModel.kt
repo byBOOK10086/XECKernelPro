@@ -307,6 +307,23 @@ class ThemeViewModel : ViewModel() {
         if (isDark) spec.copy(dark = spec.dark + (token to hex)) else spec.copy(light = spec.light + (token to hex))
     }
 
+    /**
+     * 编辑模式牌元素（前后字 + 文字色）。模式词本身（LKM/GKI/KernelPatch）是系统
+     * 生成的，编辑器只开放前后缀 —— 与首页外观对话框同一红线。前后缀与颜色全空
+     * 且元素没有图/字体时，视为移除该元素（写出的包 schema 回 1）。
+     */
+    fun editBadge(prefix: String?, suffix: String?, textColor: String?) = mutateSpec { spec ->
+        val old = spec.modeBadge ?: ThemeCodec.ModeBadgeSpec()
+        val next = old.copy(
+            prefix = (prefix ?: old.prefix).trim(),
+            suffix = (suffix ?: old.suffix).trim(),
+            textColor = textColor ?: old.textColor,
+        )
+        val cleared = next.prefix.isBlank() && next.suffix.isBlank() &&
+            next.textColor.isNullOrBlank() && next.image.isNullOrEmpty() && next.font.isNullOrEmpty()
+        spec.copy(modeBadge = if (cleared) null else next)
+    }
+
     fun resetColor(isDark: Boolean, token: String) = mutateSpec { spec ->
         if (isDark) spec.copy(dark = spec.dark - token) else spec.copy(light = spec.light - token)
     }

@@ -271,6 +271,7 @@ fun ThemeEditorTab(
                 onPickColor = { id -> target = ColorTarget(isDark = false, token = id, blockId = id) },
             )
         }
+        item(key = "badge") { ModeBadgeCard(spec, actions, backdrop) }
         item(key = "save") { SaveRow(state, actions) }
         item(key = "tail") { Spacer(Modifier.height(12.dp)) }
     }
@@ -358,6 +359,49 @@ private fun MetaField(labelRes: Int, value: String, onValueChange: (String) -> U
         label = stringResource(labelRes),
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
+}
+
+// ------------------------------------------------------------------ 模式牌
+
+/**
+ * 模式牌元素（schema 2 可选）：主页 root 方式牌的前后字与文字色。
+ *
+ * 红线：模式词本身（LKM/GKI/KernelPatch）由系统按设备真实路线生成，永远不可编辑，
+ * 这里只暴露前后缀与文字色（与首页外观对话框同一约定）。前后缀与颜色全空且元素
+ * 没有图/字体时，[me.weishu.kernelsu.ui.viewmodel.ThemeViewModel.editBadge] 会把
+ * 元素整个移除 —— 写出的包 schema 回 1。
+ */
+@Composable
+private fun ModeBadgeCard(
+    spec: ThemeCodec.Spec,
+    actions: ThemeActions,
+    backdrop: LayerBackdrop?,
+) {
+    val badge = spec.modeBadge
+    SectionTitle(R.string.theme_editor_badge_title)
+    Spacer(Modifier.height(6.dp))
+    ThemeCard(backdrop) {
+        MetaField(R.string.theme_editor_badge_prefix, badge?.prefix.orEmpty()) {
+            actions.onEditBadge(it, null, null)
+        }
+        MetaField(R.string.theme_editor_badge_suffix, badge?.suffix.orEmpty()) {
+            actions.onEditBadge(null, it, null)
+        }
+        MetaField(R.string.theme_editor_badge_color, badge?.textColor.orEmpty()) {
+            actions.onEditBadge(null, null, it)
+        }
+        // 实时预览：模式词用样本"GKI"占位（真词由系统按路线生成）。
+        val previewColor = ThemeCodec.parseColor(badge?.textColor.orEmpty())?.let { Color(it) }
+            ?: Xc.colors.text
+        Text(
+            text = stringResource(R.string.theme_editor_badge_preview, badge?.prefix.orEmpty(), badge?.suffix.orEmpty()),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = previewColor,
+            modifier = Modifier.padding(top = 10.dp),
+        )
+        MutedText(stringResource(R.string.theme_editor_badge_hint), Modifier.padding(top = 8.dp))
+    }
 }
 
 // ------------------------------------------------------------------ 颜色
