@@ -9,8 +9,12 @@
  *    不取）。我们只在 root 侧观察。
  *  - 版本号连点 5 下 = 原生开发者选项行为，照常生效，守卫对此无感知也不干扰；
  *    连点到第 10 下（默认）= 拉起管理器。计数在守卫进程里独立进行。
- *  - 触发条件收紧到“前台焦点在系统设置包 + 时间窗内连点 N 次”，
- *    避免游戏等快速点击场景误触发。
+ *  - v4 计数语义（真机教训 v1-v3）：只数「点按质量」的触摸——按下到抬起
+ *    无位移（排除滑动）、时长 <400ms（排除长按/拖拽）才算一下；窗口是
+ *    固定滚动窗（默认 3s，窗口内满 N 下才触发），窗口外的历史计数一律
+ *    丢弃。此前「每次按下都计数 + 链式续窗」会在浏览设置时被滑动/点按
+ *    持续攒满，造成"点一下关于手机就跳转"。
+ *  - 触发条件收紧到"前台焦点在系统设置包 + 固定窗内 N 下点按"。
  *  - 兜底永远存在：adb / root shell 一句 am start 就能拉起管理器，
  *    守卫挂了也只是少了入口，不会锁死。
  *
@@ -21,18 +25,19 @@
  *  - 配置 /data/adb/ksu/stealth.conf；启动写 pid 到 stealth.pid；
  *    守卫周期性自检配置被删即退出（Stop 免锁死）。
  */
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Subcommand;
 use log::{error, info, warn};
+use std::collections::VecDeque;
 use std::fs;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use rustix::event::{poll, PollFd, PollFlags};
+use rustix::event::{PollFd, PollFlags, poll};
 use rustix::fd::OwnedFd;
-use rustix::fs::{open, Mode, OFlags, Timespec};
+use rustix::fs::{Mode, OFlags, Timespec, open};
 use rustix::io::read;
 
 use crate::defs;
@@ -47,8 +52,8 @@ pub enum StealthCli {
         /// 触发点击次数（须 >5，5 下属于原生开发者选项）
         #[arg(long, default_value_t = 10)]
         count: u32,
-        /// 连点时间窗（毫秒）
-        #[arg(long, default_value_t = 1000)]
+        /// 连点时间窗（毫秒）：窗内攒满 count 下才触发，窗外计数作废
+        #[arg(long, default_value_t = 3000)]
         window_ms: u64,
         /// 允许触发的前台包列表（逗号分隔）
         #[arg(long, default_value = "com.android.settings,com.xiaomi.misettings")]
@@ -82,7 +87,7 @@ fn read_config() -> Result<StealthConfig> {
     let text = fs::read_to_string(conf_path()).context("stealth.conf missing")?;
     let mut component = String::new();
     let mut count = 10u32;
-    let mut window_ms = 1000u64;
+    let mut window_ms = 3000u64;
     let mut focus_pkgs = vec!["com.android.settings".to_string()];
     for line in text.lines() {
         let line = line.trim();
@@ -107,10 +112,10 @@ fn read_config() -> Result<StealthConfig> {
     if focus_pkgs.is_empty() {
         focus_pkgs.push("com.android.settings".to_string());
     }
-    // 历史默认 1600ms 太宽（设置内正常点按会连跳续计数，实测教训）；只可能
-    // 是我们自己写进去的值，收紧到 1000ms。
-    if window_ms > 1200 {
-        window_ms = 1000;
+    // 历史配置（v1-v3 写入的 1000/1600ms）配新语义太窄：固定窗内 10 下
+    // 人类点不到，守卫会永远不触发。统一抬到 2s 下限（3s 默认）。
+    if window_ms < 2000 {
+        window_ms = 3000;
     }
     Ok(StealthConfig {
         component,
@@ -127,17 +132,40 @@ fn write_config(component: &str, count: u32, window_ms: u64, focus_pkgs: &str) -
     fs::write(conf_path(), text).context("write stealth.conf")
 }
 
-fn watcher_alive() -> Option<u32> {
-    let pid: u32 = fs::read_to_string(pid_path()).ok()?.trim().parse().ok()?;
-    if fs::metadata(format!("/proc/{pid}")).is_ok() {
-        Some(pid)
-    } else {
-        None
+/// 扫描 /proc 找出所有 stealth watcher 进程（exe 为 ksud 且 argv 是
+/// "stealth watcher"）。比只信 pid 文件可靠：升级核心后旧进程仍在跑、
+/// pid 复用、多次 start 叠加，都会产生多份守卫各自计数。
+fn watcher_pids() -> Vec<u32> {
+    let mut pids = Vec::new();
+    let Ok(rd) = fs::read_dir("/proc") else {
+        return pids;
+    };
+    for e in rd.filter_map(|e| e.ok()) {
+        let name = e.file_name().to_string_lossy().to_string();
+        if !name.bytes().iter().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        let Ok(cmd) = fs::read_to_string(format!("/proc/{name}/cmdline")) else {
+            continue;
+        };
+        let args: Vec<&str> = cmd.split('\0').filter(|s| !s.is_empty()).collect();
+        if args.len() >= 3
+            && args[0].ends_with("ksud")
+            && args[1] == "stealth"
+            && args[2] == "watcher"
+        {
+            pids.push(name.parse().unwrap_or(0));
+        }
     }
+    pids
+}
+
+fn watcher_alive() -> Option<u32> {
+    watcher_pids().into_iter().next()
 }
 
 fn kill_watcher() {
-    if let Some(pid) = watcher_alive() {
+    for pid in watcher_pids() {
         let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
     }
     let _ = fs::remove_file(pid_path());
@@ -192,7 +220,9 @@ pub fn handle(cmd: StealthCli) -> Result<()> {
                     c.count,
                     c.focus_pkgs.join(",")
                 ),
-                (None, Some(c)) => println!("stealth: config present, watcher dead -> {}", c.component),
+                (None, Some(c)) => {
+                    println!("stealth: config present, watcher dead -> {}", c.component)
+                }
                 _ => println!("stealth: disabled"),
             }
         }
@@ -209,17 +239,90 @@ pub fn handle(cmd: StealthCli) -> Result<()> {
 pub fn on_boot() -> Result<()> {
     if conf_path().is_file() {
         info!("stealth: config present, starting watcher at boot");
+        // 先清残留（核心升级后旧进程可能还活着，双实例会各自计数）。
+        kill_watcher();
         spawn_watcher()?;
     }
     Ok(())
 }
 
 const EV_KEY: u16 = 0x01;
+const EV_ABS: u16 = 0x03;
 const BTN_TOUCH: u16 = 0x14a;
+const ABS_X: u16 = 0x00;
+const ABS_Y: u16 = 0x01;
+const ABS_MT_POSITION_X: u16 = 0x35;
+const ABS_MT_POSITION_Y: u16 = 0x36;
 const INPUT_EVENT_SIZE: usize = 24; // arm64: timeval(16) + type(2) + code(2) + value(4)
 const POLL_TICK: Duration = Duration::from_millis(200);
 /// 同一物理点按的最小间隔：滤掉副输入节点重复上报与压力抖动（第一版教训）。
 const MIN_TAP_INTERVAL: Duration = Duration::from_millis(120);
+/// 按下期间的位移阈值（原始坐标单位）：超过即视为滑动而非点按（v4 教训：
+/// 把滑动计入连点会让浏览设置本身攒满计数，导致"点一下就跳转"）。
+const MOVE_THRESHOLD: i32 = 96;
+/// 按下时长上限：超过视为长按/拖拽，不算点按。
+const TAP_MAX_DOWN: Duration = Duration::from_millis(400);
+
+/// 单个输入节点的触摸轨迹态：用于区分「点按」与「滑动/长按」（v4 语义）。
+struct DownState {
+    at: Instant,
+    x: Option<i32>,
+    y: Option<i32>,
+    moved: bool,
+}
+
+struct TouchTrack {
+    cur_x: Option<i32>,
+    cur_y: Option<i32>,
+    down: Option<DownState>,
+}
+
+impl TouchTrack {
+    /// 坐标事件：更新当前坐标；按下期间做锚点与位移判定。
+    /// 锚点策略（关键）：不快照按下沿之前的坐标——那可能是上一次触摸的
+    /// 残值（部分驱动先报按键后报坐标）。按下后到达的首个 X/Y 各自充当
+    /// 锚点：静止点按此后不再有坐标事件（=未移动），滑动必有后续位移。
+    fn on_pos(&mut self, is_x: bool, v: i32) {
+        if is_x {
+            self.cur_x = Some(v);
+        } else {
+            self.cur_y = Some(v);
+        }
+        let Some(d) = self.down.as_mut() else {
+            return;
+        };
+        match (is_x, d.x, d.y) {
+            (true, None, _) => d.x = Some(v),
+            (false, _, None) => d.y = Some(v),
+            (true, Some(x0), _) if (x0 - v).abs() > MOVE_THRESHOLD => d.moved = true,
+            (false, _, Some(y0)) if (y0 - v).abs() > MOVE_THRESHOLD => d.moved = true,
+            _ => {}
+        }
+    }
+
+    /// BTN_TOUCH 边沿：抬起时判定是否为有效点按，返回其时间戳。
+    fn on_btn(&mut self, value: i32, now: Instant) -> Option<Instant> {
+        if value == 1 {
+            if self.down.is_none() {
+                self.down = Some(DownState {
+                    at: now,
+                    x: None,
+                    y: None,
+                    moved: false,
+                });
+            }
+            None
+        } else if value == 0 {
+            let d = self.down.take()?;
+            if d.moved || now.duration_since(d.at) >= TAP_MAX_DOWN {
+                return None;
+            }
+            Some(now)
+        } else {
+            None
+        }
+    }
+}
 
 fn run_watcher() -> Result<()> {
     let cfg = read_config().context("watcher: no config")?;
@@ -257,15 +360,23 @@ fn run_watcher() -> Result<()> {
         cfg.focus_pkgs.join(",")
     );
 
-    let window = Duration::from_millis(cfg.window_ms.max(300));
+    // v4：固定滚动窗内的有效点按时间戳。窗口是硬边界——新点按到来时把
+    // 窗口外的时间戳整批作废，绝不链式续窗（v3 的教训）。
+    let window = Duration::from_millis(cfg.window_ms.max(2000));
     let cooldown = Duration::from_secs(3);
-    let mut count: u32 = 0;
+    let mut tap_times: VecDeque<Instant> = VecDeque::new();
     let mut last_tap: Option<Instant> = None;
     let mut last_trigger = Instant::now()
         .checked_sub(cooldown)
         .unwrap_or_else(Instant::now);
-    // 每个输入节点各自的按下态（完整周期判定用）。
-    let mut touch_down = vec![false; devices.len()];
+    let mut tracks: Vec<TouchTrack> = devices
+        .iter()
+        .map(|_| TouchTrack {
+            cur_x: None,
+            cur_y: None,
+            down: None,
+        })
+        .collect();
     let mut conf_seen = Instant::now();
     let mut buf = [0u8; INPUT_EVENT_SIZE * 32];
     let tick = Timespec::try_from(POLL_TICK)?;
@@ -293,7 +404,6 @@ fn run_watcher() -> Result<()> {
             return Ok(());
         }
 
-        let now = Instant::now();
         for (idx, p) in polls.iter().enumerate() {
             // revents() 在本 rustix 版本直接返回 PollFlags（非 Option）。
             if !p.revents().contains(PollFlags::IN) {
@@ -308,43 +418,49 @@ fn run_watcher() -> Result<()> {
                     let typ = u16::from_ne_bytes([ev[16], ev[17]]);
                     let code = u16::from_ne_bytes([ev[18], ev[19]]);
                     let value = i32::from_ne_bytes([ev[20], ev[21], ev[22], ev[23]]);
-                    if typ != EV_KEY || code != BTN_TOUCH {
-                        continue;
-                    }
-                    // 完整周期计数（第一版教训）：只认「抬起之后的按下」为一次新
-                    // 点按；压力抖动的 down/down 序列不重复计。
-                    if value == 1 {
-                        if touch_down[idx] {
-                            continue;
+                    let now = Instant::now();
+                    match typ {
+                        EV_ABS => match code {
+                            ABS_X | ABS_MT_POSITION_X => tracks[idx].on_pos(true, value),
+                            ABS_Y | ABS_MT_POSITION_Y => tracks[idx].on_pos(false, value),
+                            _ => {}
+                        },
+                        EV_KEY if code == BTN_TOUCH => {
+                            // 抬起沿才判点按质量（无位移且时长合格）。
+                            let Some(tap_at) = tracks[idx].on_btn(value, now) else {
+                                continue;
+                            };
+                            // 全局最小点按间隔：同一物理点按被副输入节点重复
+                            // 上报时，120ms 内只认第一下。
+                            if let Some(t) = last_tap {
+                                if tap_at.duration_since(t) < MIN_TAP_INTERVAL {
+                                    continue;
+                                }
+                            }
+                            last_tap = Some(tap_at);
+                            // 固定滚动窗：窗口之外的历史计数一律作废。
+                            while let Some(&front) = tap_times.front() {
+                                if tap_at.duration_since(front) > window {
+                                    tap_times.pop_front();
+                                } else {
+                                    break;
+                                }
+                            }
+                            tap_times.push_back(tap_at);
+                            if tap_times.len() as u32 >= cfg.count
+                                && tap_at.duration_since(last_trigger) > cooldown
+                            {
+                                last_trigger = tap_at;
+                                tap_times.clear();
+                                if focus_matches(&cfg.focus_pkgs) {
+                                    launch_manager(&cfg.component);
+                                } else {
+                                    // 计数达标但前台不在设置：静默重置，不打扰。
+                                    info!("stealth: taps reached but focus not in settings; reset");
+                                }
+                            }
                         }
-                        touch_down[idx] = true;
-                    } else if value == 0 {
-                        touch_down[idx] = false;
-                        continue;
-                    } else {
-                        continue;
-                    }
-                    // 全局最小点按间隔：同一物理点按被副输入节点/固件重复上报、
-                    // 或抖动产生的密集 down-up，在 120ms 内只计第一下。
-                    if let Some(t) = last_tap {
-                        if now.duration_since(t) < MIN_TAP_INTERVAL {
-                            continue;
-                        }
-                        if now.duration_since(t) > window {
-                            count = 0;
-                        }
-                    }
-                    count += 1;
-                    last_tap = Some(now);
-                    if count >= cfg.count && now.duration_since(last_trigger) > cooldown {
-                        count = 0;
-                        last_trigger = now;
-                        if focus_matches(&cfg.focus_pkgs) {
-                            launch_manager(&cfg.component);
-                        } else {
-                            // 计数达标但前台不在设置：静默重置，不打扰。
-                            info!("stealth: taps reached but focus not in settings; reset");
-                        }
+                        _ => {}
                     }
                 }
                 if n < buf.len() {
