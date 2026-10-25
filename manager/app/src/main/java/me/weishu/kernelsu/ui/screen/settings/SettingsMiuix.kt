@@ -743,7 +743,14 @@ private fun SuperkeyDialog(onDismiss: () -> Unit) {
                     enabled = newKey.isNotBlank() || status?.set == true,
                     checked = status?.guardArmed == true,
                     onCheckedChange = { arm ->
-                        val ok = SuperkeyStore.armGuard(arm)
+                        // SET_FEATURE 在武装态被内核守卫：解除必须先给本进程 fd
+                        // 认证（113），否则 EACCES——守卫"能开不能关"的实锤根因。
+                        // 首次武装时守卫尚未生效，无需认证。
+                        val ok = if (arm) {
+                            SuperkeyStore.armGuard(true)
+                        } else {
+                            SuperkeyStore.ensureAuthed(context) && SuperkeyStore.armGuard(false)
+                        }
                         message = context.getString(
                             if (ok) R.string.superkey_applied else R.string.superkey_apply_failed
                         )

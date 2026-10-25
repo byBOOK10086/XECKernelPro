@@ -1,7 +1,6 @@
 package me.weishu.kernelsu.privilege
 
 import android.content.Context
-import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -37,7 +36,12 @@ object SuperkeyStore {
     private const val KEY_CIPHER = "superkey_cipher"
     private const val KEY_IV = "superkey_iv"
     private const val ANDROID_KEYSTORE = "AndroidKeyStore"
-    private const val ALIAS = "xec_superkey_alias"
+
+    // v2：旧 alias 的密钥带着 setUnlockedDeviceRequired(true) 生成——该属性
+    // 生成后不可改，锁屏状态下解密必败（鉴权失败的第二根因）。换 alias 让
+    // 存量安装重新生成无此限制的密钥；旧密文解不开会被 runCatching 吞掉，
+    // 用户重新保存一次密钥即可。
+    private const val ALIAS = "xec_superkey_alias_v2"
 
     // ---- Keystore 加密的本地存储 ----
 
@@ -52,11 +56,6 @@ object SuperkeyStore {
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             .setKeySize(256)
-            .apply {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    setUnlockedDeviceRequired(true)
-                }
-            }
             .build()
         generator.init(spec)
         return generator.generateKey()
