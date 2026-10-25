@@ -49,7 +49,6 @@
     <string name="hide_one_tap_title">一键隐藏</string>
     <string name="hide_one_tap_subtitle">紫罗兰工具箱 · 隐藏环境一键部署</string>
     <string name="kpm_entry_subtitle">KPM 内核模块管理</string>
-    <string name="settings_terminal_subtitle">Auto_Trigger 模块的网页控制台</string>
     <string name="hide_pack_step_manifest">获取资源清单…</string>
     <string name="hide_pack_step_download">准备资源包（下载 / 校验）…</string>
     <string name="hide_pack_manifest_fail">获取资源清单失败：%1$s</string>
@@ -429,26 +428,6 @@ XEC 项目组
     <string name="nav_rail_collapse">收起导航栏</string>
     <string name="settings_navigation_badge">导航栏角标</string>
     <string name="settings_navigation_badge_summary">在导航栏显示已授权应用和已启用模块数量</string>
-    <string name="detection">检测</string>
-    <string name="detect_app_name">密钥链完整性检测</string>
-    <string name="detect_checking">检测中…</string>
-    <string name="detect_not_installed">未安装</string>
-    <string name="detect_installed_fmt">已安装 · v%s</string>
-    <string name="detect_install">安装检测工具</string>
-    <string name="detect_reinstall">重新安装检测工具</string>
-    <string name="detect_install_hint">内置检测 APK，root 静默安装</string>
-    <string name="detect_working">处理中…</string>
-    <string name="detect_open">打开检测工具</string>
-    <string name="detect_open_hint">启动完整性检测</string>
-    <string name="detect_uninstall">卸载检测工具</string>
-    <string name="detect_uninstall_hint">从本机移除检测工具</string>
-    <string name="detect_install_done">检测工具已安装</string>
-    <string name="detect_install_failed">安装失败，请确认 root 已激活</string>
-    <string name="detect_uninstall_done">检测工具已卸载</string>
-    <string name="detect_uninstall_failed">卸载失败</string>
-    <string name="detect_about_title">关于这个检测工具</string>
-    <string name="detect_about_body">内置验机工具：校验密钥链有效性、bootloader 锁定状态与环境异常。用于验证内置 TEE 密钥模拟与回锁伪装是否真实生效。</string>
-    <string name="detect_about_tricky_note">已知行为：这个工具自带一条反拦截探针——它把自己签的一张证书以固定别名写进系统密钥库再读回来比对。所以只要引擎覆盖了它，界面上那行「检测到TrickyStore或类似模块」必然出现，它不代表伪装失败。判断成败请看「引导加载程序已锁定 / 谷歌硬件根证书」两行，以及上方 TEE 看板的引擎结论。第三方验机工具（vvb2060 密钥认证、Play Integrity）没有这种探针。</string>
     <!-- 远程模块助手 -->
     <string name="remote_assistant_title">远程模块助手</string>
     <string name="remote_assistant_subtitle">模块直链的分享与接收</string>
@@ -542,53 +521,10 @@ XEC 项目组
     <string name="wallpaper_note_title">说明</string>
     <string name="wallpaper_note">图片只写入本机应用私有目录：不申请存储权限、不上传，卸载应用时随应用一起删除。\n浅色、深色两档分别指定——只改一档时，另一档继续用内置随机池。\n全应用的液态玻璃都采你选的这张图作为折射源；AMOLED 纯黑档为了保住纯黑底，仍然会把背景盖住。\n导入时会按最长边 2560 重编码为 JPEG，相册里的原图不会被改动。</string>
     <!-- TEE 引擎实测看板（验机页）：决定"模拟是否真的生效"的四项事实。 -->
-    <string name="detect_tee_title">TEE 引擎与拦截</string>
-    <string name="detect_tee_engine">引擎</string>
-    <string name="detect_tee_keybox">当前 keybox</string>
-    <string name="detect_tee_coverage">拦截列表</string>
-    <string name="detect_tee_bootstate">锁态属性</string>
-    <string name="detect_tee_engine_files">引擎文件</string>
-    <string name="detect_tee_files_ok">已就位</string>
-    <string name="detect_tee_files_missing">缺失——引擎起不来</string>
-    <string name="detect_tee_served_rot">引擎给出的锁态</string>
-    <string name="detect_tee_served_rot_none">还没有处理过证明请求</string>
-    <string name="detect_tee_selfcheck">开机自检</string>
-    <string name="detect_tee_selfcheck_run">自检并修复</string>
-    <string name="detect_tee_selfcheck_failed">自检没有回应——模块是不是比这一版旧？</string>
-    <string name="detect_tee_selfcheck_repair">已自动修复</string>
-    <string name="detect_tee_sc_ok">已接管 keystore · 已服务 %1$d 次证明请求</string>
-    <string name="detect_tee_sc_idle">引擎在跑，但还没有应用查过证明——打开验机工具验证一次</string>
-    <string name="detect_tee_sc_engine_down">引擎没在跑——keystore 未被接管，检测方拿到的是真实 TEE 链（自检已尝试自动重启）</string>
-    <string name="detect_tee_sc_keybox_expired">keybox 链末挂的 Google 根**已过期**——检测方会报"证书链不受信任"；已尽力换回内置的有效副本</string>
-    <string name="detect_tee_sc_keybox_bad">keybox 链末不可用（%1$s）——检测方会报"未知根证书"；已尽力换回内置的有效副本</string>
-    <string name="detect_tee_sc_coverage">有验机工具不在拦截名单里——已经补回去</string>
-    <string name="detect_tee_sc_props">锁态属性漂移了——已经回写</string>
-    <string name="detect_tee_sc_absent">设备上还没有自检记录——这一版需要开机一次（或点"自检并修复"）</string>
-    <string name="detect_tee_patch_errors">补丁失败次数</string>
-    <string name="detect_tee_patch_errors_none">无</string>
     <!-- 根证书：引擎签链用的是 keybox 里的链，链末证书就是检测方眼里的"根"。
          内置验机工具（wu.keyChain.test）的 identifyRootCertificateType() 只拿链末证书
          的公钥与硬编码的 Google/AOSP/Knox 根公钥比对，对不上就报"未知根证书"——
          而链照样签得出来，于是界面会同时出现"已锁定 + 未知根证书"。 -->
-    <string name="detect_tee_root">根证书</string>
-    <string name="detect_tee_root_google">Google 证明根（%1$s）</string>
-    <string name="detect_tee_root_expired">是 Google 根，但**已经过期**（%1$s）——密钥本身没问题，检测方仍会报"证书链不受信任"；设备侧自检会换成有效副本</string>
-    <string name="detect_tee_root_other">非 Google 根（%1$s）——验机工具会报"未知根证书"；看护会自愈，仍红请重启一次</string>
-    <string name="detect_tee_root_missing">无 keybox——引擎只能用自签链，检测方必然报未知根证书</string>
-    <string name="detect_tee_root_unknown">未判定（缺 sha256sum 或状态文件未生成）</string>
-    <string name="detect_tee_vvb_missing">vvb2060「密钥认证」(io.github.vvb2060.keyattestation) 不在拦截名单里——它的启动状态一行读到的还是真实 TEE。名单每次开机会重新合并，装上本版本后重启一次即可。</string>
-    <string name="detect_tee_patch_failed_note">出现补丁失败时，引擎交出去的其实是**真实 TEE 证书链**：它的 keybox 是真的（所以检测方说"密钥没问题"），但 RootOfTrust 里仍是真实的解锁态。</string>
-    <string name="detect_tee_running">运行中</string>
-    <string name="detect_tee_not_running">未运行</string>
-    <string name="detect_tee_covered_fmt">%1$d 条 · 内置验机工具已覆盖</string>
-    <string name="detect_tee_not_covered_fmt">%1$d 条 · 内置验机工具未覆盖</string>
-    <string name="detect_tee_add">把内置验机工具加入拦截列表</string>
-    <string name="detect_tee_add_done">拦截列表已更新</string>
-    <string name="detect_tee_add_failed">拦截列表更新失败</string>
-    <string name="detect_tee_refresh">刷新</string>
-    <string name="detect_tee_note">只有被列进引擎拦截名单的包才会拿到模拟的 TEE 证明——这份名单是穷举的，没有通配符。不在名单里的包会原样拿到真实 TEE 证明，检测方看到的就是"未知根证书 + 真实解锁态"。</string>
-    <string name="detect_tee_engine_down_note">引擎未运行：拦截完全没生效，所有应用拿到的都是真实 TEE。重启设备让内置模块重新拉起，然后看 /data/adb/.xudc_secure/engine.log。</string>
-    <string name="detect_tee_zeromount_note">ZeroMount 生效：本次开机按设计跳过锁态属性，属性类检测方读到的仍是真实状态。</string>
     <!-- 提权（GhostLock）控制台 -->
     <string name="privilege_title">提权</string>
     <string name="privilege_entry_subtitle">GhostLock 一键提权，识别不了的机型给手动操作空间</string>
@@ -779,81 +715,17 @@ XEC 项目组
     <string name="magisk_su_self_tag">本管理器</string>
     <string name="magisk_su_user_tag">用户 %1$d</string>
     <!-- TEE 看板：拦截归属 + 两个一键修复（接管引擎 / 立即回锁属性） -->
-    <string name="detect_tee_owner">拦截归属</string>
-    <string name="detect_tee_owner_deadlock">外部模块 v%1$s 占住了注入面，但它的引擎没在运行 —— 内置按设计让位，此刻整机零拦截。点「接管引擎」。</string>
-    <string name="detect_tee_owner_external">外部模块 v%1$s</string>
-    <string name="detect_tee_owner_builtin">内置引擎</string>
-    <string name="detect_tee_owner_builtin_down">内置引擎没有在跑，也没有外部模块占位 —— 点「接管引擎」把它拉起来</string>
-    <string name="detect_tee_owner_none">没有任何引擎在跑</string>
-    <string name="detect_tee_takeover">接管引擎</string>
-    <string name="detect_tee_takeover_failed">没读到接管结果（看 /data/adb/.xudc_secure/engine.log）</string>
-    <string name="detect_tee_relock">立即回锁属性</string>
-    <string name="detect_tee_relock_failed">回锁属性写入失败</string>
 
     <!-- 内置模块开关（检测页第二张卡）：内置 TEE / 内置 TA 两个互相独立的开关。
          两者都由 ksud 的 `builtin status|enable|disable` 落地，开关文件是
          /data/adb/.xudc_secure/builtin.conf，默认关闭。 -->
-    <string name="detect_builtin_title">内置模块（用户可选）</string>
-    <string name="detect_builtin_note">内置 TEE 引擎与内置 TA 增强都随本应用分发，本体在内存盘里、模块页看不到，所以开关放在这里。**默认开启**（缺开关文件即视为开启），两个开关互相独立；关掉之后设备上不留任何内置模块的痕迹，你自己刷的模块也不受影响。</string>
-    <string name="detect_builtin_no_ksud">读不到内置模块的状态：这台设备上要么没有可用的 xudc/ksud（挂载态 Magisk 路线本来就没有内置模块），要么 ksud 比管理器旧 —— 管理器与内核更新到同一版本即可。</string>
-    <string name="detect_builtin_tee_title">内置 TEE 引擎</string>
-    <string name="detect_builtin_tee_on">已开启 · 引擎在跑，证明请求会被拦截</string>
-    <string name="detect_builtin_tee_on_down">已开启，但引擎没在跑 —— 点上面「自检并修复」，或重启一次</string>
-    <string name="detect_builtin_tee_off">已关闭 · 不做任何拦截，检测方拿到的是真实 TEE 证明</string>
-    <string name="detect_builtin_tee_external">已让位：检测到你装的 TEE 模块在位，两套引擎同时注入会互相打架</string>
-    <string name="detect_builtin_ta_title">内置 TA 增强</string>
-    <string name="detect_builtin_ta_on">已开启 · keybox 与拦截名单自动维护</string>
-    <string name="detect_builtin_ta_on_down">已开启，但守护进程没在跑 —— 看 /data/adb/.xudc_secure/ta-enhanced/logs</string>
-    <string name="detect_builtin_ta_off">已关闭 · 不自动维护 keybox 与拦截名单</string>
-    <string name="detect_builtin_ta_external">已让位：检测到你装的 TA_enhanced 模块在位</string>
-    <string name="detect_builtin_ta_needs_tee">注意：现在没有可用的 TEE 引擎（内置 TEE 关着，也没装外部模块），TA 的密钥/名单维护此刻没有意义。</string>
-    <string name="detect_builtin_toggle_on">已开启，正在生效</string>
-    <string name="detect_builtin_toggle_off">已关闭，正在生效</string>
-    <string name="detect_builtin_toggle_failed">开关没有生效（看 /data/adb/.xudc_secure/engine.log）</string>
-    <string name="detect_builtin_restart_note">关掉内置 TEE 会顺手重启一次 keystore2，把已经注入进去的引擎代码丢掉；这一步之后如果检测方读到的还是模拟证明，重启一次设备即可完全恢复。</string>
-    <string name="detect_builtin_off_short">已关闭</string>
-    <string name="detect_tee_flash">刷入 TEE 模块</string>
-    <string name="detect_tee_flash_again">重新刷入 TEE 模块</string>
     <string name="hide_env_running">正在隐藏…</string>
     <string name="hide_env_tee_title">隐藏 TEE 与密钥</string>
     <string name="hide_env_tee_desc">停引擎，把 keybox、名单与日志移入隐藏目录（可恢复，不删模块）</string>
-    <string name="detect_tee_sc_disabled">内置 TEE 已由你关闭 —— 此刻不做拦截（在下面「内置模块」里可以打开）</string>
-    <string name="detect_tee_owner_builtin_disabled">内置 TEE 已被你关闭</string>
-    <string name="detect_tee_disabled_note">内置 TEE 已关闭：拦截按你的选择停用，所有应用拿到的都是真实 TEE 证明。要恢复拦截，在下面「内置模块」里打开「内置 TEE 引擎」。</string>
 
     <!-- v31129：把"引擎起不来 / 起来了但没注入"从一句"读不到状态"拆成可诊断的几种。
          开关读写走管理器自带的 ksud；注入是否成功看 keystore2 的 maps；启动诊断来自
          /data/adb/.xudc_secure/engine-start.txt。 -->
-    <string name="detect_builtin_cli_failed">内置模块的开关命令执行失败 —— 管理器自带的 ksud 没跑起来（看下面这行诊断）。</string>
-    <string name="detect_builtin_mount_state">本机是挂载态（Magisk 路线，内核低于 5.10）：内置模块在这条路线上不存在，开关不适用。请直接用 Magisk 模块（TrickyStore / TEESimulator / TA）来拦截密钥证明。</string>
-    <string name="detect_builtin_not_injected">引擎在跑，但**没有注入 keystore2** —— 此刻依然零拦截，点下面的「修复引擎」</string>
-    <string name="detect_builtin_diag">启动诊断</string>
-    <string name="detect_builtin_repair">修复引擎</string>
-    <string name="detect_builtin_repair_done">已重打注入权限并干净重启引擎</string>
-    <string name="detect_builtin_boot_ksud_old">内核侧（开机时真正执行内置模块的那份）ksud 还不支持开关：这次开关只在当前这次开机内有效，**重启后会失效** —— 请一并更新内核 / LKM。</string>
-    <string name="detect_builtin_boot_ksud_missing">没找到内核侧的 xudc/ksud：开机时没有进程会去解密内置模块（现在这次开机内的开关仍然有效）。</string>
-    <string name="detect_tee_inject">keystore 注入</string>
-    <string name="detect_tee_injected">已注入（keystore2 里跑着我们的库）</string>
-    <string name="detect_tee_not_injected">引擎在跑，但 keystore2 里没有我们的库 —— 零拦截</string>
-    <string name="detect_tee_inject_unknown">未注入（引擎没在跑）</string>
-    <string name="detect_tee_start_diag">启动诊断</string>
-    <string name="detect_tee_sc_not_injected">引擎在跑，但注入没成功（keystore2 没被接管）—— 已自动尝试重启注入链；仍不行就点「修复引擎」</string>
-    <string name="detect_tee_owner_builtin_noinject">内置引擎（未注入 keystore2）</string>
-    <string name="detect_tee_repair">修复引擎</string>
-    <string name="detect_builtin_spoof_mismatch">注意：属性伪装开着，但没有 TEE 引擎接管密钥证明 —— 两边会互相矛盾（属性说已回锁、证明说 deviceLocked=false），游戏/银行更容易判成「环境异常」。要么装上 TEE 引擎，要么把这里关掉。</string>
-    <string name="detect_tee_repair_failed">修复没成功（看 /data/adb/.xudc_secure/engine-start.txt 与 engine.log）</string>
-    <string name="detect_builtin_external_title">按需安装（推荐）</string>
-    <string name="detect_builtin_external_note">内置形态随内核/管理器一起分发，整条链路本身就是一个环境指纹。下面是外部分发的普通模块：不装的人设备上零痕迹，装的人在模块列表里能正常停用/卸载，装完重启生效。</string>
-    <string name="detect_builtin_install_tee">下载并刷入 TEE 引擎</string>
-    <string name="detect_builtin_install_tee_again">重新下载并刷入 TEE 引擎</string>
-    <string name="detect_builtin_install_ta">下载并刷入 TA 增强</string>
-    <string name="detect_builtin_installed_hint">已检测到外部的 TEE 模块（模块列表里能看到）。要停用或卸载，去「模块」页操作即可。</string>
-    <string name="detect_builtin_install_done">已下载并安装，重启后生效</string>
-    <string name="detect_builtin_install_failed">下载或安装失败（检查网络，或稍后重试）</string>
-    <string name="detect_builtin_spoof_title">开机环境伪装（回锁属性）</string>
-    <string name="detect_builtin_spoof_on">已开启 · 开机把 ro.boot.* 与 cmdline 改成"已回锁"视图</string>
-    <string name="detect_builtin_spoof_off">已关闭 · 属性与原始启动参数保持真实（与原版 KernelSU 一致）</string>
-    <string name="detect_builtin_spoof_done">已切换，重启后生效</string>
 
     <!-- 主题系统（商城 / 编辑器 / 发布）：键必须两边成对，见 check_strings_parity.py -->
     <string name="settings_themes">主题</string>
@@ -1078,26 +950,31 @@ XEC 项目组
     <string name="privilege_gen_none">无法为 %1$s 生成：%2$s</string>
 
     <!-- APatch 式超级密钥 -->
-    <string name="superkey_settings_title">超级密钥</string>
-    <string name="superkey_settings_summary">策略级操作的第二因素（借鉴 APatch）</string>
+    <string name="superkey_settings_title">安全锁</string>
+    <string name="superkey_settings_summary">开启后，改动任何应用的 Root 权限都要先输入锁密码，防止恶意软件偷改权限</string>
+    <!-- 工具箱：终端 / 安全锁 / 隐身入口 的统一菜单 -->
+    <string name="tools_title">工具箱</string>
+    <string name="tools_summary">终端、安全锁与隐身入口</string>
+    <string name="tools_terminal_title">终端</string>
+    <string name="tools_terminal_summary">带文件管理的命令行终端</string>
     <string name="stealth_title">隐身入口</string>
     <string name="stealth_summary">隐藏图标；设置 → 关于手机 → 连点版本号 10 下打开管理器（连点 5 下的开发者选项行为不受影响）</string>
     <string name="stealth_confirm_body">开启后将隐藏桌面图标。打开管理器的方式：设置 → 关于手机 → 连点版本号 10 下（连点 5 下解锁开发者选项的原生行为不受影响）。注意：开启后管理器会退回桌面一次——那是它在隐藏自己的图标，属预期。随时可用的兜底命令：
 %1$s</string>
-    <string name="superkey_auth_required">超级密钥守卫已武装：认证失败，请解锁后重试</string>
-    <string name="superkey_status">内核密钥：%1$s · 守卫：%2$s</string>
+    <string name="superkey_auth_required">安全锁已开启：验证失败，请先解锁屏幕再试</string>
+    <string name="superkey_status">锁密码：%1$s · 保护：%2$s</string>
     <string name="superkey_state_set">已设置</string>
     <string name="superkey_state_unset">未设置</string>
-    <string name="superkey_state_armed">已武装</string>
-    <string name="superkey_state_disarmed">关闭</string>
-    <string name="superkey_dialog_hint">内核只保存密钥哈希且重启即失（忘记密钥的恢复路径：重启后在此重新武装或更换）。武装期间，修改应用配置、受限白名单与功能开关都需要此密钥。</string>
-    <string name="superkey_old_key_label">当前密钥（更换/清除时必填）</string>
-    <string name="superkey_new_key_label">新密钥</string>
+    <string name="superkey_state_armed">保护中</string>
+    <string name="superkey_state_disarmed">未开启</string>
+    <string name="superkey_dialog_hint">锁密码只保存在这台手机里：本机加密存储，不上传；重启后保护自动解除（这也是忘记密码时的恢复办法——重启后在这里重新设置）。保护期间，修改应用权限、受限名单和功能开关都要先验证锁密码。</string>
+    <string name="superkey_old_key_label">当前锁密码（更换/清除时必填）</string>
+    <string name="superkey_new_key_label">新锁密码</string>
     <string name="superkey_generate">随机生成</string>
-    <string name="superkey_arm_guard">武装守卫</string>
-    <string name="superkey_apply">设置密钥</string>
+    <string name="superkey_arm_guard">开启保护</string>
+    <string name="superkey_apply">设置锁密码</string>
     <string name="superkey_clear">清除</string>
     <string name="superkey_applied">已生效</string>
-    <string name="superkey_apply_failed">被拒绝（密钥错误，或内核较旧）</string>
+    <string name="superkey_apply_failed">操作被拒绝（密码不对，或手机重启过还没重新设置）</string>
 
 </resources>

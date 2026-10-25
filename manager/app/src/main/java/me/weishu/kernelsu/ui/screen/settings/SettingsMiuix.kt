@@ -1,7 +1,6 @@
 package me.weishu.kernelsu.ui.screen.settings
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -12,9 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Article
@@ -22,12 +19,11 @@ import androidx.compose.material.icons.automirrored.rounded.Rule
 import androidx.compose.material.icons.rounded.Adb
 import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material.icons.rounded.BugReport
-import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DeveloperMode
 import androidx.compose.material.icons.rounded.FlashOn
+import androidx.compose.material.icons.rounded.Handyman
 import androidx.compose.material.icons.rounded.GetApp
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LayersClear
@@ -37,48 +33,34 @@ import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
-import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import me.weishu.kernelsu.R
-import me.weishu.kernelsu.privilege.SuperkeyStore
 import me.weishu.kernelsu.ui.component.KsuIsValid
 import me.weishu.kernelsu.ui.component.dialog.rememberLoadingDialog
 import me.weishu.kernelsu.ui.component.miuix.SendLogDialog
-import me.weishu.kernelsu.ui.component.dialog.XDialogTitle
-import me.weishu.kernelsu.ui.component.dialog.XDialog
 import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.component.uninstalldialog.UninstallDialog
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.island.IslandTopBar
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
-import me.weishu.kernelsu.ui.util.BlurredBar
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -106,26 +88,7 @@ fun SettingPagerMiuix(
     val loadingDialog = rememberLoadingDialog()
     val showUninstallDialog = rememberSaveable { mutableStateOf(false) }
     val showUnloadConfirm = rememberSaveable { mutableStateOf(false) }
-    val showSuperkeyDialog = rememberSaveable { mutableStateOf(false) }
     var unloading by rememberSaveable { mutableStateOf(false) }
-    val showStealthConfirm = rememberSaveable { mutableStateOf(false) }
-    val stealthContext = LocalContext.current
-    var stealthOn by rememberSaveable { mutableStateOf(false) }
-    var stealthBusy by rememberSaveable { mutableStateOf(false) }
-    // 进页读一次真实状态：图标是否已藏（守卫状态单独在 summary 里显示）。
-    LaunchedEffect(Unit) {
-        stealthOn = me.weishu.kernelsu.privilege.StealthEntrance.isIconHidden(stealthContext)
-    }
-    val stealthConfirm = rememberConfirmDialog(
-        onConfirm = {
-            stealthBusy = true
-            Thread {
-                val ok = me.weishu.kernelsu.privilege.StealthEntrance.enable(stealthContext)
-                stealthOn = ok
-                stealthBusy = false
-            }.start()
-        }
-    )
 
     // 零足迹卸载确认：跑 ksud unload（恢复钩子、停守护、删模块），随后 stop/start
     // 全部 Android 服务——界面会闪一下，属预期。
@@ -137,19 +100,6 @@ fun SettingPagerMiuix(
             ).submit { unloading = false }
         }
     )
-    if (showSuperkeyDialog.value) {
-        SuperkeyDialog(onDismiss = { showSuperkeyDialog.value = false })
-    }
-    if (showStealthConfirm.value) {
-        stealthConfirm.showConfirm(
-            title = stringResource(id = R.string.stealth_title),
-            content = stringResource(
-                id = R.string.stealth_confirm_body,
-                me.weishu.kernelsu.privilege.StealthEntrance.adbFallback(LocalContext.current),
-            ),
-        )
-        showStealthConfirm.value = false
-    }
     if (showUnloadConfirm.value) {
         unloadConfirm.showConfirm(
             title = stringResource(id = R.string.settings_unload_title),
@@ -567,60 +517,19 @@ fun SettingPagerMiuix(
                             .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
                         colors = CardDefaults.defaultColors(color = Color.Transparent),
                     ) {
-                        val terminal = stringResource(id = R.string.terminal)
+                        // 工具箱：终端 / 安全锁（超级密钥）/ 隐身入口 收进一个菜单（低频工具不再占设置一整屏）。
                         ArrowPreference(
-                            title = terminal,
-                            summary = stringResource(id = R.string.settings_terminal_subtitle),
+                            title = stringResource(id = R.string.tools_title),
+                            summary = stringResource(id = R.string.tools_summary),
                             startAction = {
                                 Icon(
-                                    Icons.Rounded.Code,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = terminal,
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            onClick = actions.onOpenTerminal,
-                        )
-                        // 零足迹卸载：ksud unload（钩子恢复/守护停止/模块删除）。
-                        // APatch 式超级密钥：策略级操作的第二因素。
-                        ArrowPreference(
-                            title = stringResource(id = R.string.superkey_settings_title),
-                            summary = stringResource(id = R.string.superkey_settings_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.Key,
+                                    Icons.Rounded.Handyman,
                                     modifier = Modifier.padding(end = 6.dp),
                                     contentDescription = null,
                                     tint = colorScheme.onBackground
                                 )
                             },
-                            onClick = { showSuperkeyDialog.value = true },
-                        )
-                        // 隐身入口：寄生在「激活开发者选项」原生手势上（版本号连点 10 下）。
-                        SwitchPreference(
-                            title = stringResource(id = R.string.stealth_title),
-                            summary = stringResource(id = R.string.stealth_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.VisibilityOff,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = null,
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            checked = stealthOn,
-                            onCheckedChange = { want ->
-                                if (want) {
-                                    showStealthConfirm.value = true
-                                } else if (!stealthBusy) {
-                                    stealthBusy = true
-                                    Thread {
-                                        me.weishu.kernelsu.privilege.StealthEntrance.disable(stealthContext)
-                                        stealthOn = false
-                                        stealthBusy = false
-                                    }.start()
-                                }
-                            }
+                            onClick = actions.onOpenTools,
                         )
                         ArrowPreference(
                             title = stringResource(id = R.string.settings_unload_title),
@@ -673,128 +582,3 @@ fun SettingPagerMiuix(
     }
 }
 
-/**
- * APatch 式超级密钥设置（借鉴 bmax121/APatch 的 superkey 模型）：
- * 设置/更换/清除内核密钥 + 守卫武装开关。内核只存 SHA-256、掉电即失——
- * 重启后需重新武装（这也是忘记密钥时的恢复路径）。
- */
-@Composable
-private fun SuperkeyDialog(onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    var status by remember { mutableStateOf<SuperkeyStore.KernelStatus?>(null) }
-    var newKey by rememberSaveable { mutableStateOf("") }
-    var oldKey by rememberSaveable { mutableStateOf("") }
-    var message by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { status = SuperkeyStore.kernelStatus() }
-
-    XDialog(show = true, onDismissRequest = onDismiss) {
-        Column(Modifier.padding(20.dp)) {
-            XDialogTitle(text = stringResource(R.string.superkey_settings_title))
-            Text(
-                text = stringResource(R.string.superkey_status,
-                    stringResource(if (status?.set == true) R.string.superkey_state_set else R.string.superkey_state_unset),
-                    stringResource(if (status?.guardArmed == true) R.string.superkey_state_armed else R.string.superkey_state_disarmed)),
-                fontSize = 13.sp,
-                color = colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(vertical = 8.dp),
-            )
-            Text(
-                text = stringResource(R.string.superkey_dialog_hint),
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
-                color = colorScheme.onSurfaceVariantSummary,
-            )
-            Spacer(Modifier.height(12.dp))
-            if (status?.set == true) {
-                TextField(
-                    value = oldKey,
-                    onValueChange = { oldKey = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = stringResource(R.string.superkey_old_key_label),
-                    maxLines = 1,
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-            TextField(
-                value = newKey,
-                onValueChange = { newKey = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = stringResource(R.string.superkey_new_key_label),
-                maxLines = 1,
-            )
-            Row(Modifier.padding(top = 4.dp)) {
-                TextButton(
-                    text = stringResource(R.string.superkey_generate),
-                    onClick = { newKey = SuperkeyStore.generateKey() },
-                )
-                Spacer(Modifier.weight(1f))
-            }
-            message?.let {
-                Text(it, fontSize = 12.sp, color = colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(vertical = 4.dp))
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = stringResource(R.string.superkey_arm_guard),
-                    fontSize = 14.sp,
-                    modifier = Modifier.weight(1f),
-                )
-                Switch(
-                    enabled = newKey.isNotBlank() || status?.set == true,
-                    checked = status?.guardArmed == true,
-                    onCheckedChange = { arm ->
-                        // SET_FEATURE 在武装态被内核守卫：解除必须先给本进程 fd
-                        // 认证（113），否则 EACCES——守卫"能开不能关"的实锤根因。
-                        // 首次武装时守卫尚未生效，无需认证。
-                        val ok = if (arm) {
-                            SuperkeyStore.armGuard(true)
-                        } else {
-                            SuperkeyStore.ensureAuthed(context) && SuperkeyStore.armGuard(false)
-                        }
-                        message = context.getString(
-                            if (ok) R.string.superkey_applied else R.string.superkey_apply_failed
-                        )
-                        status = SuperkeyStore.kernelStatus()
-                    },
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Row {
-                TextButton(
-                    text = stringResource(R.string.superkey_apply),
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        val old = oldKey.ifBlank { null }
-                        val ok = SuperkeyStore.setKernelKey(newKey, old)
-                        if (ok) {
-                            SuperkeyStore.saveLocal(context, newKey)
-                            newKey = ""
-                            oldKey = ""
-                        }
-                        message = context.getString(
-                            if (ok) R.string.superkey_applied else R.string.superkey_apply_failed
-                        )
-                        status = SuperkeyStore.kernelStatus()
-                    },
-                )
-                Spacer(Modifier.width(8.dp))
-                TextButton(
-                    text = stringResource(R.string.superkey_clear),
-                    modifier = Modifier.weight(1f),
-                    enabled = status?.set == true,
-                    onClick = {
-                        val ok = SuperkeyStore.clearKernelKey(oldKey)
-                        if (ok) {
-                            SuperkeyStore.clearLocal(context)
-                            oldKey = ""
-                        }
-                        message = context.getString(
-                            if (ok) R.string.superkey_applied else R.string.superkey_apply_failed
-                        )
-                        status = SuperkeyStore.kernelStatus()
-                    },
-                )
-            }
-        }
-    }
-}

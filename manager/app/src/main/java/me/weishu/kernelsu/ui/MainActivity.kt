@@ -94,12 +94,12 @@ import me.weishu.kernelsu.ui.screen.colorpalette.ColorPaletteScreen
 import me.weishu.kernelsu.ui.screen.executemoduleaction.ExecuteModuleActionScreen
 import me.weishu.kernelsu.ui.screen.flash.FlashScreen
 import me.weishu.kernelsu.ui.screen.home.HomePager
-import me.weishu.kernelsu.ui.screen.detect.DetectPager
 import me.weishu.kernelsu.ui.screen.hidepack.HideEnvListScreen
 import me.weishu.kernelsu.ui.screen.hidepack.OneTapHideScreen
 import me.weishu.kernelsu.ui.screen.kpm.KpmScreen
 import me.weishu.kernelsu.ui.screen.remote.RemoteAssistantScreen
 import me.weishu.kernelsu.ui.screen.terminal.TerminalScreen
+import me.weishu.kernelsu.ui.screen.tools.ToolsScreen
 import me.weishu.kernelsu.ui.screen.theme.ThemeScreen
 import me.weishu.kernelsu.ui.screen.install.InstallScreen
 import me.weishu.kernelsu.ui.screen.module.ModuleActionSheet
@@ -377,6 +377,7 @@ open class MainActivity : ComponentActivity() {
                                             entry<Route.RemoteAssistant> { RemoteAssistantScreen() }
                                             entry<Route.Kpm> { KpmScreen() }
                                             entry<Route.Terminal> { TerminalScreen() }
+                                            entry<Route.Tools> { ToolsScreen() }
                                             entry<Route.Privilege> { key -> PrivilegeScreen(key.updateMode) }
                                             entry<Route.Home> { mainScreenEntry() }
                                             entry<Route.SuperUser> { mainScreenEntry() }
@@ -636,8 +637,7 @@ fun MainScreen(
                         0 -> if (contentReady || isCurrentPage) HomePager(navController, bottomInnerPadding, isCurrentPage)
                         1 -> if (contentReady || isCurrentPage) SuperUserPager(navController, bottomInnerPadding, isCurrentPage)
                         2 -> if (contentReady || isCurrentPage) ModulePager(bottomInnerPadding, isCurrentPage)
-                        3 -> if (contentReady || isCurrentPage) DetectPager(bottomInnerPadding, isCurrentPage)
-                        4 -> if (contentReady || isCurrentPage) SettingPager(navController, bottomInnerPadding, isCurrentPage)
+                        3 -> if (contentReady || isCurrentPage) SettingPager(navController, bottomInnerPadding, isCurrentPage)
                     }
                 }
             }

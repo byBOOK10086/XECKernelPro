@@ -100,7 +100,7 @@ object MainPagerConfig {
      * 现为 Home / SuperUser / Module / Detect / Setting 五页。
      * 旧版本存过的 selected_main_page=5/6 由 [coercePage] 在读取侧夹回范围。
      */
-    const val PAGE_COUNT = 5
+    const val PAGE_COUNT = 4
     const val LAST_PAGE_INDEX = PAGE_COUNT - 1
     /** Home / SuperUser / Module / Detect / Settings. */
     const val DETECT_PAGE_INDEX = 3
