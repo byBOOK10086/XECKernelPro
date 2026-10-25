@@ -48,7 +48,7 @@ pub enum StealthCli {
         #[arg(long, default_value_t = 10)]
         count: u32,
         /// 连点时间窗（毫秒）
-        #[arg(long, default_value_t = 1600)]
+        #[arg(long, default_value_t = 1000)]
         window_ms: u64,
         /// 允许触发的前台包列表（逗号分隔）
         #[arg(long, default_value = "com.android.settings,com.xiaomi.misettings")]
@@ -82,7 +82,7 @@ fn read_config() -> Result<StealthConfig> {
     let text = fs::read_to_string(conf_path()).context("stealth.conf missing")?;
     let mut component = String::new();
     let mut count = 10u32;
-    let mut window_ms = 1600u64;
+    let mut window_ms = 1000u64;
     let mut focus_pkgs = vec!["com.android.settings".to_string()];
     for line in text.lines() {
         let line = line.trim();
@@ -91,7 +91,7 @@ fn read_config() -> Result<StealthConfig> {
         } else if let Some(v) = line.strip_prefix("count=") {
             count = v.trim().parse().unwrap_or(10);
         } else if let Some(v) = line.strip_prefix("window_ms=") {
-            window_ms = v.trim().parse().unwrap_or(1600);
+            window_ms = v.trim().parse().unwrap_or(1000);
         } else if let Some(v) = line.strip_prefix("focus_pkgs=") {
             focus_pkgs = v
                 .trim()
@@ -106,6 +106,11 @@ fn read_config() -> Result<StealthConfig> {
     }
     if focus_pkgs.is_empty() {
         focus_pkgs.push("com.android.settings".to_string());
+    }
+    // 历史默认 1600ms 太宽（设置内正常点按会连跳续计数，实测教训）；只可能
+    // 是我们自己写进去的值，收紧到 1000ms。
+    if window_ms > 1200 {
+        window_ms = 1000;
     }
     Ok(StealthConfig {
         component,
@@ -213,6 +218,8 @@ const EV_KEY: u16 = 0x01;
 const BTN_TOUCH: u16 = 0x14a;
 const INPUT_EVENT_SIZE: usize = 24; // arm64: timeval(16) + type(2) + code(2) + value(4)
 const POLL_TICK: Duration = Duration::from_millis(200);
+/// 同一物理点按的最小间隔：滤掉副输入节点重复上报与压力抖动（第一版教训）。
+const MIN_TAP_INTERVAL: Duration = Duration::from_millis(120);
 
 fn run_watcher() -> Result<()> {
     let cfg = read_config().context("watcher: no config")?;
@@ -257,6 +264,8 @@ fn run_watcher() -> Result<()> {
     let mut last_trigger = Instant::now()
         .checked_sub(cooldown)
         .unwrap_or_else(Instant::now);
+    // 每个输入节点各自的按下态（完整周期判定用）。
+    let mut touch_down = vec![false; devices.len()];
     let mut conf_seen = Instant::now();
     let mut buf = [0u8; INPUT_EVENT_SIZE * 32];
     let tick = Timespec::try_from(POLL_TICK)?;
@@ -299,10 +308,28 @@ fn run_watcher() -> Result<()> {
                     let typ = u16::from_ne_bytes([ev[16], ev[17]]);
                     let code = u16::from_ne_bytes([ev[18], ev[19]]);
                     let value = i32::from_ne_bytes([ev[20], ev[21], ev[22], ev[23]]);
-                    if typ != EV_KEY || code != BTN_TOUCH || value != 1 {
+                    if typ != EV_KEY || code != BTN_TOUCH {
                         continue;
                     }
+                    // 完整周期计数（第一版教训）：只认「抬起之后的按下」为一次新
+                    // 点按；压力抖动的 down/down 序列不重复计。
+                    if value == 1 {
+                        if touch_down[idx] {
+                            continue;
+                        }
+                        touch_down[idx] = true;
+                    } else if value == 0 {
+                        touch_down[idx] = false;
+                        continue;
+                    } else {
+                        continue;
+                    }
+                    // 全局最小点按间隔：同一物理点按被副输入节点/固件重复上报、
+                    // 或抖动产生的密集 down-up，在 120ms 内只计第一下。
                     if let Some(t) = last_tap {
+                        if now.duration_since(t) < MIN_TAP_INTERVAL {
+                            continue;
+                        }
                         if now.duration_since(t) > window {
                             count = 0;
                         }
