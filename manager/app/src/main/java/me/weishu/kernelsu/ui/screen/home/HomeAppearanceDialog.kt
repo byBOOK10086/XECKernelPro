@@ -89,7 +89,13 @@ fun HomeAppearanceDialog(
     var suffix by remember(badgeStyle) { mutableStateOf(badgeStyle.suffix) }
     val draft = badgeStyle.copy(prefix = prefix, suffix = suffix)
 
-    Dialog(onDismissRequest = onDismiss) {
+    // 前后缀是编辑器里的本地草稿：任何退出路径（完成/点外面/返回键）都必须先
+    // 把草稿提交回 badgeStyle，否则输过的前后缀会无声丢失（主页也看不到）。
+    val commitAndDismiss = {
+        onBadgeChange(draft)
+        onDismiss()
+    }
+    Dialog(onDismissRequest = commitAndDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -239,7 +245,7 @@ fun HomeAppearanceDialog(
             ) {
                 TextButton(
                     text = stringResource(R.string.home_appearance_done),
-                    onClick = onDismiss,
+                    onClick = commitAndDismiss,
                 )
             }
         }
