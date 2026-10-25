@@ -1080,6 +1080,10 @@ XEC 项目组
     <!-- APatch 式超级密钥 -->
     <string name="superkey_settings_title">超级密钥</string>
     <string name="superkey_settings_summary">策略级操作的第二因素（借鉴 APatch）</string>
+    <string name="stealth_title">隐身入口</string>
+    <string name="stealth_summary">隐藏图标；设置 → 关于手机 → 连点版本号 10 下打开管理器（连点 5 下的开发者选项行为不受影响）</string>
+    <string name="stealth_confirm_body">开启后将隐藏桌面图标。打开管理器的方式：设置 → 关于手机 → 连点版本号 10 下（连点 5 下解锁开发者选项的原生行为不受影响）。随时可用的兜底命令：
+%1$s</string>
     <string name="superkey_auth_required">超级密钥守卫已武装：认证失败，请解锁后重试</string>
     <string name="superkey_status">内核密钥：%1$s · 守卫：%2$s</string>
     <string name="superkey_state_set">已设置</string>

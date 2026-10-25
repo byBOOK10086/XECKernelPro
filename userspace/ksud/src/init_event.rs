@@ -271,6 +271,11 @@ pub fn on_boot_completed() {
 
     crate::preinit::on_boot_completed();
 
+    // 隐身入口守卫开机自启：配置在就拉起（失败不影响启动流程）。
+    if let Err(e) = crate::stealth::on_boot() {
+        error!("stealth entrance: {e:#}");
+    }
+
     run_stage("boot-completed", ScriptWait::NoWait);
 }
 

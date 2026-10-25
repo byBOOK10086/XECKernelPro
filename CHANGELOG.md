@@ -17,6 +17,7 @@
 - **内置 KPM 装载（③）**：`kpm_samples/susfs_lite` 由 CI（build-xecpro.yml）编进 APK assets/kpm/，KPM 页一键装载（与手动刷 .kpm 同一条 `xudc kpm load` 通路，boot 自动重载；默认参数 = 管理器 uid 可见 + 隐藏 /data/adb、/debug_ramdisk）。样例保持实验定位：只覆盖 stat 族 + faccessat，getdents64 不隐藏；`xudc kpm unload susfs_lite` 可完整撤掉。
 - **自动重放引擎（⑦）**：开机 BOOT_COMPLETED 无头重跑 GhostLock（BL 锁定设备的“准永久”root）——通知栏进度、失败重试上限、OTA 后 profile 失效不硬跑。
 - **BL 解锁情报（⑧）**：三 prop 交叉检测本机锁定状态（未知按锁定）+ 机型×官方解锁通道×代价表；只陈述事实，锁着就明说“写 boot 会变砖”，不假承诺强制解锁。
+- **隐身入口（寄生管理器）**：管理器图标可从桌面隐藏；入口寄生在系统设置「激活开发者选项」的原生手势上——设置 → 关于手机 → 连点版本号 **10 下**拉起管理器（连点 5 下解锁开发者选项的原生行为完全不受影响）。实现 = xudc 新增 stealth 守卫（root 侧读 /dev/input 触摸流，只在「前台焦点在系统设置 + 时间窗内连点达标」时触发并 am start；连点 5 下的原生逻辑无感知）。开机自启挂在 on_boot_completed；配置 /data/adb/ksu/stealth.conf，删配置守卫自退。**开启顺序是安全关键：守卫武装成功才藏图标**；永久兜底 = adb shell am start（确认对话框里给出完整命令）。
 - **一键永久（①，BL 闸门）**：仅 BL 已解锁设备显示；GKI 走 installBoot 强制备份、<5.10 走 dd 导出，写回前后 sha256 对账，备份落 /data/adb/xec。
 
 ### 「一个 .ko 通吃全部内核」的诚实结论（②）

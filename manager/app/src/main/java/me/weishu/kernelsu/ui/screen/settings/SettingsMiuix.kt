@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -107,6 +108,24 @@ fun SettingPagerMiuix(
     val showUnloadConfirm = rememberSaveable { mutableStateOf(false) }
     val showSuperkeyDialog = rememberSaveable { mutableStateOf(false) }
     var unloading by rememberSaveable { mutableStateOf(false) }
+    val showStealthConfirm = rememberSaveable { mutableStateOf(false) }
+    val stealthContext = LocalContext.current
+    var stealthOn by rememberSaveable { mutableStateOf(false) }
+    var stealthBusy by rememberSaveable { mutableStateOf(false) }
+    // 进页读一次真实状态：图标是否已藏（守卫状态单独在 summary 里显示）。
+    LaunchedEffect(Unit) {
+        stealthOn = me.weishu.kernelsu.privilege.StealthEntrance.isIconHidden(stealthContext)
+    }
+    val stealthConfirm = rememberConfirmDialog(
+        onConfirm = {
+            stealthBusy = true
+            Thread {
+                val ok = me.weishu.kernelsu.privilege.StealthEntrance.enable(stealthContext)
+                stealthOn = ok
+                stealthBusy = false
+            }.start()
+        }
+    )
 
     // 零足迹卸载确认：跑 ksud unload（恢复钩子、停守护、删模块），随后 stop/start
     // 全部 Android 服务——界面会闪一下，属预期。
@@ -120,6 +139,16 @@ fun SettingPagerMiuix(
     )
     if (showSuperkeyDialog.value) {
         SuperkeyDialog(onDismiss = { showSuperkeyDialog.value = false })
+    }
+    if (showStealthConfirm.value) {
+        stealthConfirm.showConfirm(
+            title = stringResource(id = R.string.stealth_title),
+            content = stringResource(
+                id = R.string.stealth_confirm_body,
+                me.weishu.kernelsu.privilege.StealthEntrance.adbFallback(LocalContext.current),
+            ),
+        )
+        showStealthConfirm.value = false
     }
     if (showUnloadConfirm.value) {
         unloadConfirm.showConfirm(
@@ -566,6 +595,32 @@ fun SettingPagerMiuix(
                                 )
                             },
                             onClick = { showSuperkeyDialog.value = true },
+                        )
+                        // 隐身入口：寄生在「激活开发者选项」原生手势上（版本号连点 10 下）。
+                        SwitchPreference(
+                            title = stringResource(id = R.string.stealth_title),
+                            summary = stringResource(id = R.string.stealth_summary),
+                            startAction = {
+                                Icon(
+                                    Icons.Rounded.VisibilityOff,
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    contentDescription = null,
+                                    tint = colorScheme.onBackground
+                                )
+                            },
+                            checked = stealthOn,
+                            onCheckedChange = { want ->
+                                if (want) {
+                                    showStealthConfirm.value = true
+                                } else if (!stealthBusy) {
+                                    stealthBusy = true
+                                    Thread {
+                                        me.weishu.kernelsu.privilege.StealthEntrance.disable(stealthContext)
+                                        stealthOn = false
+                                        stealthBusy = false
+                                    }.start()
+                                }
+                            }
                         )
                         ArrowPreference(
                             title = stringResource(id = R.string.settings_unload_title),

@@ -39,6 +39,8 @@ mod cli_non_android;
 mod debug;
 mod defs;
 #[cfg(target_os = "android")]
+mod stealth;
+#[cfg(target_os = "android")]
 mod feature;
 // Upstream's ksu_config support: `feature.rs` imports `crate::feature_id`, and
 // `cli.rs` reaches `crate::soft_reboot`, so both must be declared here even
