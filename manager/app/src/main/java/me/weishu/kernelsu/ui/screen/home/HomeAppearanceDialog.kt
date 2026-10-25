@@ -229,6 +229,7 @@ fun HomeAppearanceDialog(
                     onBadgeChange(badgeStyle.copy(bgUri = null))
                 },
                 onPickFont = { fontPicker.launch(arrayOf("*/*")) },
+                onClearFont = { onBadgeChange(draft.copy(fontPath = null)) },
                 onTextColor = { onBadgeChange(draft.copy(textColor = it)) },
             )
 
@@ -255,6 +256,7 @@ private fun ModeBadgeEditor(
     onPickBg: () -> Unit,
     onClearBg: () -> Unit,
     onPickFont: () -> Unit,
+    onClearFont: () -> Unit,
     onTextColor: (Int?) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -310,9 +312,7 @@ private fun ModeBadgeEditor(
                 } else {
                     stringResource(R.string.mode_badge_clear_font)
                 },
-                onClick = if (draft.fontPath == null) onPickFont else {
-                    { onBadgeChange(draft.copy(fontPath = null)) }
-                },
+                onClick = if (draft.fontPath == null) onPickFont else onClearFont,
             )
         }
         Text(
