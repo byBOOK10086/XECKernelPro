@@ -161,6 +161,7 @@ fun ThemeScreen() {
         onEditMeta = { name, id, author, version, summary, description ->
             viewModel.editMeta(name, id, author, version, summary, description)
         },
+        onEditBadge = viewModel::editBadge,
         onSetColor = viewModel::setColor,
         onResetColor = viewModel::resetColor,
         onSetShape = viewModel::setShape,
