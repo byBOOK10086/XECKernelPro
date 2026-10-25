@@ -957,6 +957,17 @@ XEC 项目组
     <string name="tools_summary">终端、安全锁与隐身入口</string>
     <string name="tools_terminal_title">终端</string>
     <string name="tools_terminal_summary">带文件管理的命令行终端</string>
+    <!-- 模式牌（root 方式显示）自定义：关键词系统生成不可改，可改前后缀/底图/字体/颜色 -->
+    <string name="mode_badge_section_title">模式牌（root 方式显示）</string>
+    <string name="mode_badge_section_hint">中间的 LKM / GKI 等模式词由系统生成，不能修改；可以自定义它前后的话、底图和字体，例如「无敌GKI环境」</string>
+    <string name="mode_badge_prefix">前缀词（如 无敌）</string>
+    <string name="mode_badge_suffix">后缀词（如 环境）</string>
+    <string name="mode_badge_pick_bg">选底图</string>
+    <string name="mode_badge_clear_bg">清底图</string>
+    <string name="mode_badge_pick_font">选字体</string>
+    <string name="mode_badge_clear_font">清字体</string>
+    <string name="mode_badge_text_color">文字颜色</string>
+    <string name="mode_badge_color_auto">跟随主题</string>
     <string name="stealth_title">隐身入口</string>
     <string name="stealth_summary">隐藏图标；设置 → 关于手机 → 连点版本号 10 下打开管理器（连点 5 下的开发者选项行为不受影响）</string>
     <string name="stealth_confirm_body">开启后将隐藏桌面图标。打开管理器的方式：设置 → 关于手机 → 连点版本号 10 下（连点 5 下解锁开发者选项的原生行为不受影响）。注意：开启后管理器会退回桌面一次——那是它在隐藏自己的图标，属预期。随时可用的兜底命令：

@@ -135,6 +135,7 @@ fun HomePagerMiuix(
     val backdrop = rememberBlurBackdrop(enableBlur)
     val context = LocalContext.current
     val cardAppearance = rememberHomeCardAppearance()
+    val modeBadgeStyle = rememberModeBadgeStyle()
     var showAppearance by rememberSaveable { mutableStateOf(false) }
     val score = remember(state) { XecScore.evaluate(state) }
     var revealed by remember { mutableStateOf(false) }
@@ -279,8 +280,14 @@ fun HomePagerMiuix(
                                 onAppearanceChange = {
                                     cardAppearance.value = it
                                 },
+                                keyword = workingMode,
+                                badgeStyle = modeBadgeStyle.value,
+                                onBadgeChange = {
+                                    modeBadgeStyle.value = it
+                                },
                                 onDismiss = {
                                     HomeCardAppearanceStore.save(context, cardAppearance.value)
+                                    ModeBadgeStyleStore.save(context, modeBadgeStyle.value)
                                     showAppearance = false
                                 },
                             )
@@ -527,11 +534,21 @@ private fun StatusCard(
                                         .padding(16.dp, 10.dp),
                                     contentAlignment = Alignment.BottomStart,
                                 ) {
-                                    Text(
-                                        text = workingMode,
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Medium,
-                                    )
+                                    if (modeBadgeStyle.value.isDefault()) {
+                                        // 默认态：与历史渲染逐字节一致。
+                                        Text(
+                                            text = workingMode,
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Medium,
+                                        )
+                                    } else {
+                                        // 模式牌自定义：prefix + 系统关键词 + suffix，底图/字体/颜色可换。
+                                        // 关键词（LKM/GKI/KernelPatch）永远由上面的 when 生成，不落库。
+                                        ModeBadge(
+                                            keyword = workingMode,
+                                            style = modeBadgeStyle.value,
+                                        )
+                                    }
                                 }
                             }
                             Box(

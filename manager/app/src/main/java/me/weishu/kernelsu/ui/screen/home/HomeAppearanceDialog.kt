@@ -4,6 +4,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +13,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.Composable
@@ -29,6 +33,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.design.token.Xc
@@ -36,20 +41,23 @@ import me.weishu.kernelsu.ui.screen.module.ModuleBackgrounds
 import me.weishu.kernelsu.ui.screen.module.rememberBackgroundBitmap
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.TextField
 
 /**
- * Visual editor for the home status card: image, blur and dim.
+ * 主页状态卡外观编辑器：卡底图（image/blur/dim）+ 模式牌（root 方式显示）自定义。
  *
- * The image itself remains in [ModuleBackgrounds] (the same slot / decoder /
- * LruCache as module cards); only the two render knobs live in
- * [HomeCardAppearanceStore]. That keeps the storage format the module cards
- * already understand and avoids a second image pipeline.
+ * 卡底图沿用 [ModuleBackgrounds] 的 slot/decoder/LruCache；模式牌是混搭生态的
+ * 第一个元素化编辑器：前后缀词 / 底图 / 字体 / 文字颜色各自可换，**模式关键词
+ * （LKM / GKI / KernelPatch）由系统生成，编辑器里根本不出现这个输入项**。
  */
 @Composable
 fun HomeAppearanceDialog(
     backgroundUri: String?,
     appearance: HomeCardAppearance,
     onAppearanceChange: (HomeCardAppearance) -> Unit,
+    keyword: String,
+    badgeStyle: ModeBadgeStyle,
+    onBadgeChange: (ModeBadgeStyle) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -60,8 +68,26 @@ fun HomeAppearanceDialog(
             onAppearanceChange(appearance)
         }
     }
+    val badgeBgPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            ModuleBackgrounds.set(context, ModeBadgeStyleStore.MODE_BADGE_BG_SLOT, uri)
+            onBadgeChange(badgeStyle.copy(bgUri = uri.toString()))
+        }
+    }
+    val fontPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            Thread {
+                val path = ModeBadgeStyleStore.copyFont(context, uri)
+                onBadgeChange(badgeStyle.copy(fontPath = path))
+            }.start()
+        }
+    }
     var blur by remember(appearance) { mutableStateOf(appearance.blur) }
     var dim by remember(appearance) { mutableStateOf(appearance.dim) }
+    // 编辑中的模式牌草稿：直接以传入值为初值，改动实时反映到预览与主页。
+    var prefix by remember(badgeStyle) { mutableStateOf(badgeStyle.prefix) }
+    var suffix by remember(badgeStyle) { mutableStateOf(badgeStyle.suffix) }
+    val draft = badgeStyle.copy(prefix = prefix, suffix = suffix)
 
     Dialog(onDismissRequest = onDismiss) {
         Column(
@@ -192,6 +218,20 @@ fun HomeAppearanceDialog(
                 ),
             )
 
+            ModeBadgeEditor(
+                keyword = keyword,
+                draft = draft,
+                onPrefixChange = { prefix = ModeBadgeStyle.sanitize(it) },
+                onSuffixChange = { suffix = ModeBadgeStyle.sanitize(it) },
+                onPickBg = { badgeBgPicker.launch(arrayOf("image/*")) },
+                onClearBg = {
+                    ModuleBackgrounds.clear(context, ModeBadgeStyleStore.MODE_BADGE_BG_SLOT)
+                    onBadgeChange(badgeStyle.copy(bgUri = null))
+                },
+                onPickFont = { fontPicker.launch(arrayOf("*/*")) },
+                onTextColor = { onBadgeChange(draft.copy(textColor = it)) },
+            )
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
@@ -201,6 +241,128 @@ fun HomeAppearanceDialog(
                     onClick = onDismiss,
                 )
             }
+        }
+    }
+}
+
+/** 模式牌编辑区：前后缀 / 底图 / 字体 / 文字颜色 + 实时预览。 */
+@Composable
+private fun ModeBadgeEditor(
+    keyword: String,
+    draft: ModeBadgeStyle,
+    onPrefixChange: (String) -> Unit,
+    onSuffixChange: (String) -> Unit,
+    onPickBg: () -> Unit,
+    onClearBg: () -> Unit,
+    onPickFont: () -> Unit,
+    onTextColor: (Int?) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(R.string.mode_badge_section_title),
+            color = Xc.colors.text,
+        )
+        Text(
+            text = stringResource(R.string.mode_badge_section_hint),
+            color = Xc.colors.textSecondary,
+        )
+        // 实时预览：与主页同一渲染组件（含底图/字体/颜色），所见即所得。
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .clip(Xc.shapes.md)
+                .background(
+                    Brush.linearGradient(listOf(Xc.colors.surfaceMuted, Xc.colors.accentSoft))
+                ),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            ModeBadge(keyword = keyword, style = draft, modifier = Modifier.padding(8.dp))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextField(
+                value = draft.prefix,
+                onValueChange = onPrefixChange,
+                modifier = Modifier.weight(1f),
+                label = stringResource(R.string.mode_badge_prefix),
+                maxLines = 1,
+            )
+            TextField(
+                value = draft.suffix,
+                onValueChange = onSuffixChange,
+                modifier = Modifier.weight(1f),
+                label = stringResource(R.string.mode_badge_suffix),
+                maxLines = 1,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(
+                text = if (draft.bgUri == null) {
+                    stringResource(R.string.mode_badge_pick_bg)
+                } else {
+                    stringResource(R.string.mode_badge_clear_bg)
+                },
+                onClick = if (draft.bgUri == null) onPickBg else onClearBg,
+            )
+            TextButton(
+                text = if (draft.fontPath == null) {
+                    stringResource(R.string.mode_badge_pick_font)
+                } else {
+                    stringResource(R.string.mode_badge_clear_font)
+                },
+                onClick = if (draft.fontPath == null) onPickFont else {
+                    { onBadgeChange(draft.copy(fontPath = null)) }
+                },
+            )
+        }
+        Text(
+            text = stringResource(R.string.mode_badge_text_color),
+            color = Xc.colors.textSecondary,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            val options = listOf(
+                null to stringResource(R.string.mode_badge_color_auto),
+                0xFFFFFFFF.toInt() to null,
+                0xFF000000.toInt() to null,
+                0xFFFFC94D.toInt() to null,
+            )
+            options.forEach { (value, label) ->
+                ColorChip(
+                    color = value?.let { Color(it) },
+                    label = label,
+                    selected = draft.textColor == value,
+                    onClick = { onTextColor(value) },
+                )
+            }
+        }
+    }
+}
+
+/** 色板圆点：null = 跟随主题（画一个斜线占位）。 */
+@Composable
+private fun ColorChip(color: Color?, label: String?, selected: Boolean, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(
+                    when (color) {
+                        null -> Brush.linearGradient(
+                            listOf(Xc.colors.surfaceMuted, Xc.colors.accentSoft)
+                        )
+                        else -> Brush.linearGradient(listOf(color, color))
+                    }
+                )
+                .border(
+                    width = if (selected) 2.dp else 1.dp,
+                    color = if (selected) Xc.colors.accent else Xc.colors.textSecondary.copy(alpha = 0.4f),
+                    shape = CircleShape,
+                )
+                .clickable(onClick = onClick),
+        )
+        if (label != null) {
+            Text(text = label, fontSize = 11.sp, color = Xc.colors.textSecondary)
         }
     }
 }
