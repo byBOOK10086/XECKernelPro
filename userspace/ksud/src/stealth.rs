@@ -132,9 +132,11 @@ fn write_config(component: &str, count: u32, window_ms: u64, focus_pkgs: &str) -
     fs::write(conf_path(), text).context("write stealth.conf")
 }
 
-/// 扫描 /proc 找出所有 stealth watcher 进程（exe 为 ksud 且 argv 是
+/// 扫描 /proc 找出所有 stealth watcher 进程（exe 为 ksud/xudc 且 argv 是
 /// "stealth watcher"）。比只信 pid 文件可靠：升级核心后旧进程仍在跑、
 /// pid 复用、多次 start 叠加，都会产生多份守卫各自计数。
+/// exe 有两个合法名：仓库产物叫 ksud，发到设备上的二进制叫 xudc
+///（同名坑：只认一个就会把活着的守卫误报成 dead）。
 fn watcher_pids() -> Vec<u32> {
     let mut pids = Vec::new();
     let Ok(rd) = fs::read_dir("/proc") else {
@@ -150,7 +152,7 @@ fn watcher_pids() -> Vec<u32> {
         };
         let args: Vec<&str> = cmd.split('\0').filter(|s| !s.is_empty()).collect();
         if args.len() >= 3
-            && args[0].ends_with("ksud")
+            && (args[0].ends_with("ksud") || args[0].ends_with("xudc"))
             && args[1] == "stealth"
             && args[2] == "watcher"
         {
