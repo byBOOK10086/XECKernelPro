@@ -70,6 +70,19 @@ long __nocfi ksu_hook_faccessat(int orig_nr, const struct pt_regs *regs)
     return ksu_handle_faccessat_sucompat(orig_nr, (struct pt_regs *)regs);
 }
 
+// statx 归一化：探测器（春秋 Abnormal Environment(k) 一族）统计
+// newfstatat:statx 的总耗时比（>1.2 判定存在 KernelSU）。LKM 模式下
+// newfstatat/faccessat 被 sys_enter 重定向进 dispatcher，statx 却直通，
+// 比值必然超阈。给 statx 挂与 newfstatat 完全相同的处理（pathname 同为
+// PARM2，su 路径重写语义一致），两类调用的额外开销同量级，比值回归 ~1。
+long __nocfi ksu_hook_statx(int orig_nr, const struct pt_regs *regs)
+{
+    if (!ksu_su_compat_enabled)
+        return ksu_syscall_table[orig_nr](regs);
+
+    return ksu_handle_stat_sucompat(orig_nr, (struct pt_regs *)regs);
+}
+
 #endif /* !CONFIG_KSU_SUSFS */
 
 // 两种模式共用：SUSFS 模式由 sucompat.c 的 ksu_handle_execveat() 链式调用

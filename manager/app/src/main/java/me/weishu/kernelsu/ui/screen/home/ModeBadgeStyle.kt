@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import me.weishu.kernelsu.data.theme.ThemeCodec
 import me.weishu.kernelsu.ui.screen.module.ModuleBackgrounds
 import me.weishu.kernelsu.ui.screen.module.rememberBackgroundBitmap
 import java.io.File
@@ -46,10 +47,16 @@ data class ModeBadgeStyle(
     val bgUri: String? = null,
     val fontPath: String? = null,
     val textColor: Int? = null,
+    /** 底图上的压暗纱（仅 bgUri 非空时生效），默认与主题包 schema 2 的缺省一致。 */
+    val dim: Float = 0.30f,
+    /** 底图模糊半径 dp。 */
+    val blur: Float = 0f,
 ) {
     fun normalized(): ModeBadgeStyle = copy(
-        prefix = sanitize(prefix),
-        suffix = sanitize(suffix),
+        prefix = ThemeCodec.sanitizeBadgeText(prefix),
+        suffix = ThemeCodec.sanitizeBadgeText(suffix),
+        dim = dim.coerceIn(0f, 0.75f),
+        blur = blur.coerceIn(0f, 16f),
     )
 
     /** 没有任何自定义 → 渲染走旧路径（逐字节一致）。 */
@@ -57,10 +64,11 @@ data class ModeBadgeStyle(
         prefix.isEmpty() && suffix.isEmpty() && bgUri == null && fontPath == null && textColor == null
 
     companion object {
-        const val MAX_TEXT_LEN = 12
+        /** 前后缀清洗唯一真源在 [ThemeCodec.sanitizeBadgeText]，这里只是别名。 */
+        fun sanitize(s: String): String = ThemeCodec.sanitizeBadgeText(s)
+
         /** 底图在 [ModuleBackgrounds] 里的存储槽位（复用其解码/LruCache 管线）。 */
         const val MODE_BADGE_BG_SLOT = "home_mode_badge"
-        fun sanitize(s: String) = s.take(MAX_TEXT_LEN).filter { !it.isISOControl() }
     }
 }
 
@@ -169,8 +177,8 @@ fun ModeBadge(
                         }
                     ),
             )
-            // 固定轻度压暗保证任意底图上的可读性；无底图时不加任何底色。
-            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.30f)))
+            // 压暗纱保证任意底图上的可读性（主题包可调）；无底图时不加任何底色。
+            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = style.dim)))
         }
         androidx.compose.material3.Text(
             text = "${style.prefix}$keyword${style.suffix}",

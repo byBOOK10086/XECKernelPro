@@ -35,11 +35,14 @@ import java.util.zip.ZipOutputStream
  */
 object ThemeCodec {
 
-    const val SCHEMA = 1
+    /** 本管理器支持的 schema 上限；读侧同时接受 1（旧包）与 2（带模式牌元素）。 */
+    const val SCHEMA = 2
+    const val SCHEMA_MIN = 1
     const val MANIFEST = "theme.json"
     /** 单包上限（与主题仓库脚本一致；解压后按条目名逐个限长，防 zip 炸弹）。 */
     const val MAX_PACKAGE_BYTES = 24 * 1024 * 1024
-    const val MAX_ENTRIES = 24
+    // 32：背景×2 + 区块图×N + 模式牌底图/字体 + 多张预览（schema 2 之后包内的合法条目变多了）。
+    const val MAX_ENTRIES = 32
     const val MAX_ASSET_BYTES = 12 * 1024 * 1024
 
     private val ID_RE = Regex("^[a-zA-Z][a-zA-Z0-9._-]{1,63}$")
@@ -83,6 +86,25 @@ object ThemeCodec {
         val mode: String = BLOCK_BOTH,
     )
 
+    /**
+     * 模式牌元素（schema 2，可选）：主页状态卡上 root 方式那一行的可换装件。
+     *
+     * **红线：模式关键词（LKM / GKI / KernelPatch）不在这个模型里，也永远不会进包**——
+     * 它由设备状态生成。主题只能定制它前后的字、底图、字体与文字颜色
+     * （"无敌GKI环境" = prefix"无敌" + 系统词"GKI" + suffix"环境"）。
+     *
+     * [image] / [font] 是包内条目名（安装后为主题目录里的文件路径）。
+     */
+    data class ModeBadgeSpec(
+        val prefix: String = "",
+        val suffix: String = "",
+        val textColor: String? = null,
+        val image: String? = null,
+        val font: String? = null,
+        val dim: Float = 0.30f,
+        val blur: Float = 0f,
+    )
+
     /** 一个主题：元数据 + 令牌覆盖 + 资源条目名（图片本体在 [ThemeAssets] 里）。 */
     data class Spec(
         val id: String,
@@ -113,6 +135,8 @@ object ThemeCodec {
          * 认不出的区块 id 一律保留但不渲染（前向兼容：新版本加区块，旧版本安静忽略）。
          */
         val blocks: Map<String, BlockSpec> = emptyMap(),
+        /** 模式牌元素（schema 2 可选）：null = 主题不动模式牌。 */
+        val modeBadge: ModeBadgeSpec? = null,
     ) {
         /** 商店卡片上的缩略色块用。 */
         val accentHex: String get() = dark["accent"] ?: light["accent"] ?: ""
@@ -155,6 +179,17 @@ object ThemeCodec {
 
     data class Package(val spec: Spec, val assets: Assets)
 
+    /** 模式牌底图在包内的字节（大小写不敏感；声明已由 [read] 强校验存在）。 */
+    fun Spec.modeBadgeImage(files: Map<String, ByteArray>): ByteArray? =
+        modeBadge?.image?.let { name -> byNameIn(files, name) }
+
+    /** 模式牌字体在包内的字节。 */
+    fun Spec.modeBadgeFont(files: Map<String, ByteArray>): ByteArray? =
+        modeBadge?.font?.let { name -> byNameIn(files, name) }
+
+    private fun byNameIn(files: Map<String, ByteArray>, name: String): ByteArray? =
+        files[name] ?: files.entries.firstOrNull { it.key.equals(name, true) }?.value
+
     // ---------------------------------------------------------------- 解析
 
     /** 解析一个 `.xectheme`。任何不合规都抛 [InvalidTheme]，`message` 直接能给人看。 */
@@ -189,7 +224,20 @@ object ThemeCodec {
             }
         }
         val text = manifest ?: throw InvalidTheme("主题包里没有 $MANIFEST")
-        return Package(parseSpec(text), Assets(files))
+        val spec = parseSpec(text)
+        // 声明的模式牌资产必须真的在包里：modeBadge 是 schema 2 的新格式，可以严格——
+        // "声明了却缺失"十有八九是作者打错了条目名，装上去只会得到静默半应用。
+        spec.modeBadge?.image?.let { name ->
+            if (spec.modeBadgeImage(files) == null) {
+                throw InvalidTheme("模式牌底图 \"$name\" 不在主题包里")
+            }
+        }
+        spec.modeBadge?.font?.let { name ->
+            if (spec.modeBadgeFont(files) == null) {
+                throw InvalidTheme("模式牌字体 \"$name\" 不在主题包里")
+            }
+        }
+        return Package(spec, Assets(files))
     }
 
     private fun ZipInputStream.readBytesCapped(limit: Int): ByteArray {
@@ -212,8 +260,8 @@ object ThemeCodec {
         } catch (e: Exception) {
             throw InvalidTheme("theme.json 不是合法 JSON：${e.message}")
         }
-        if (json.optInt("schema", 0) != SCHEMA) {
-            throw InvalidTheme("主题包的 schema 不是 $SCHEMA（这个包可能是更新版本的管理器导出的）")
+        if (json.optInt("schema", 0) !in SCHEMA_MIN..SCHEMA) {
+            throw InvalidTheme("主题包的 schema 不在 $SCHEMA_MIN..$SCHEMA 范围内（这个包可能是更新版本的管理器导出的）")
         }
         val id = json.optString("id", "").trim()
         if (!ID_RE.matches(id)) {
@@ -271,6 +319,7 @@ object ThemeCodec {
             backgroundDark = backgroundDark,
             backgroundLight = backgroundLight,
             blocks = blocks,
+            modeBadge = modeBadge(json.optJSONObject("modeBadge")),
         )
     }
 
@@ -307,6 +356,40 @@ object ThemeCodec {
         return out
     }
 
+    /**
+     * 解析 `modeBadge` 对象。宽容度与 blocks 一致：认不出的字段安静忽略，全空的
+     * modeBadge 视为不存在。**关键词不可配置是格式级的**——这里根本没有这个字段。
+     */
+    private fun modeBadge(obj: JSONObject?): ModeBadgeSpec? {
+        if (obj == null) return null
+        val prefix = sanitizeBadgeText(obj.optString("prefix", ""))
+        val suffix = sanitizeBadgeText(obj.optString("suffix", ""))
+        val textColor = normalizeHex(obj.optString("textColor", ""))
+        val image = obj.optString("image", "").trim().takeIf { it.isNotEmpty() }
+        val font = obj.optString("font", "").trim().takeIf { it.isNotEmpty() }
+        val dim = obj.optDouble("dim", 0.30).takeIf { it.isFinite() }?.toFloat()?.coerceIn(0f, 0.75f) ?: 0.30f
+        val blur = obj.optDouble("blur", 0.0).takeIf { it.isFinite() }?.toFloat()?.coerceIn(0f, 16f) ?: 0f
+        if (prefix.isEmpty() && suffix.isEmpty() && textColor == null && image == null && font == null) {
+            return null
+        }
+        return ModeBadgeSpec(
+            prefix = prefix,
+            suffix = suffix,
+            textColor = textColor,
+            image = image,
+            font = font,
+            dim = dim,
+            blur = blur,
+        )
+    }
+
+    /**
+     * 模式牌前后缀清洗：限长 + 去控制字符。
+     * **全项目唯一真源**——[me.weishu.kernelsu.ui.screen.home.ModeBadgeStyle] 的同名
+     * 逻辑委托到这里，UI 层与包解析层永远同一口径。
+     */
+    fun sanitizeBadgeText(s: String): String = s.take(12).filter { !it.isISOControl() }
+
     /** 单条颜色的归一：`#RRGGBB` / `#AARRGGBB` -> `#AARRGGBB`；不合格返回 null（不抛）。 */
     private fun normalizeHex(value: String): String? {
         val text = value.trim()
@@ -330,7 +413,8 @@ object ThemeCodec {
     // ---------------------------------------------------------------- 序列化
 
     fun toJson(spec: Spec): String = JSONObject().apply {
-        put("schema", SCHEMA)
+        // 带模式牌元素的包写 schema 2；纯配色包保持 1（对旧管理器零扰动）。
+        put("schema", if (spec.modeBadge != null) SCHEMA else 1)
         put("id", spec.id)
         put("name", spec.name)
         put("author", spec.author)
@@ -371,6 +455,17 @@ object ThemeCodec {
                         put("when", block.mode)
                     })
                 }
+            })
+        }
+        spec.modeBadge?.let { mb ->
+            put("modeBadge", JSONObject().apply {
+                if (mb.prefix.isNotEmpty()) put("prefix", mb.prefix)
+                if (mb.suffix.isNotEmpty()) put("suffix", mb.suffix)
+                mb.textColor?.let { put("textColor", it) }
+                mb.image?.let { put("image", it) }
+                mb.font?.let { put("font", it) }
+                put("dim", mb.dim.toDouble())
+                put("blur", mb.blur.toDouble())
             })
         }
     }.toString(2)

@@ -17,17 +17,25 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
@@ -40,6 +48,7 @@ import me.weishu.kernelsu.R
 import me.weishu.kernelsu.data.theme.StoreTheme
 import me.weishu.kernelsu.data.theme.ThemeCodec
 import me.weishu.kernelsu.data.theme.ThemeStoreSettings
+import me.weishu.kernelsu.ui.component.RemotePreview
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.token.Xc
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -79,6 +88,14 @@ fun ThemeStoreTab(
     val store = state.filteredStore
     // 先取出局部 val：when 分支里才能安全地做非空判断（不依赖跨模块属性的智能转换）。
     val storeError = state.storeError
+    // 分类是本组件的本地状态（搜索在 ViewModel，分类在这里过滤就够）。
+    var category by rememberSaveable { mutableStateOf("all") }
+    val visible = remember(store, category) {
+        if (category == "all") store else store.filter { it.category == category }
+    }
+    val featured = remember(store) {
+        store.filter { it.featured && (it.previews.isNotEmpty() || it.previewUrl.isNotEmpty()) }
+    }
 
     Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
         Column(
@@ -144,7 +161,19 @@ fun ThemeStoreTab(
                     ),
                     overscrollEffect = null,
                 ) {
-                    items(items = store, key = { it.themeId }, contentType = { "theme" }) { theme ->
+                    // 精选横幅（索引 v2 的 featured + 预览图）：小米主题商店式的门面。
+                    if (featured.isNotEmpty()) {
+                        item(key = "featured", contentType = "featured") {
+                            FeaturedRow(featured)
+                        }
+                    }
+                    item(key = "categories", contentType = "categories") {
+                        CategoryChips(
+                            selected = category,
+                            onSelect = { category = it },
+                        )
+                    }
+                    items(items = visible, key = { it.themeId }, contentType = { "theme" }) { theme ->
                         StoreThemeCard(
                             theme = theme,
                             state = state,
@@ -332,6 +361,18 @@ private fun StoreThemeCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                // 预览缩略图（索引带 previewUrl 时）：有图优先于色卡，更接近商店的"看图挑"。
+                if (theme.previewUrl.isNotEmpty()) {
+                    RemotePreview(
+                        url = theme.previewUrl,
+                        contentDescription = theme.name,
+                        modifier = Modifier
+                            .size(width = 64.dp, height = 64.dp)
+                            .clip(Xc.shapes.md),
+                        placeholder = Xc.colors.surfaceMuted,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
                 Text(
                     text = theme.name,
                     fontSize = 17.sp,
@@ -454,6 +495,116 @@ private fun StoreThemeCard(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** 精选横幅：一张带预览大图的玻璃卡，名字/作者压在底部渐变上（小米主题商店的门面位）。 */
+@Composable
+private fun FeaturedRow(themes: List<StoreTheme>) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        itemsIndexed(items = themes, key = { _, t -> t.themeId }) { _, theme ->
+            Box(
+                modifier = Modifier
+                    .width(248.dp)
+                    .height(148.dp)
+                    .clip(Xc.shapes.lg),
+            ) {
+                RemotePreview(
+                    url = theme.previews.firstOrNull() ?: theme.previewUrl,
+                    contentDescription = theme.name,
+                    modifier = Modifier.matchParentSize(),
+                    placeholder = Xc.colors.surfaceMuted,
+                )
+                // 底部渐变纱：保证白字在任何预览图上可读。
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0f to Color.Transparent,
+                                1f to Color.Black.copy(alpha = 0.62f),
+                            )
+                        ),
+                )
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(12.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = theme.name,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = stringResource(R.string.themes_featured),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White,
+                            modifier = Modifier
+                                .clip(Xc.shapes.pill)
+                                .background(Xc.colors.accent)
+                                .padding(horizontal = 6.dp, vertical = 1.dp),
+                        )
+                    }
+                    if (theme.author.isNotEmpty()) {
+                        Text(
+                            text = stringResource(R.string.themes_by, theme.author),
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.85f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 分类 chips：全部 / 配色 / 模式牌。 */
+@Composable
+private fun CategoryChips(selected: String, onSelect: (String) -> Unit) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(vertical = 8.dp),
+    ) {
+        itemsIndexed(
+            listOf(
+                Triple("all", R.string.themes_category_all, false),
+                Triple(StoreTheme.TYPE_COLORS, R.string.themes_category_colors, false),
+                Triple(StoreTheme.TYPE_MODE_BADGE, R.string.themes_category_mode_badge, true),
+            ),
+            key = { _, it -> it.first },
+        ) { _, item ->
+            val (id, labelRes, _) = item
+            val isSelected = selected == id
+            Row(
+                modifier = Modifier
+                    .clip(Xc.shapes.pill)
+                    .background(
+                        if (isSelected) Xc.colors.accentSoft else Xc.colors.surfaceMuted
+                    )
+                    .clickable { onSelect(id) }
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(labelRes),
+                    fontSize = 13.sp,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                    color = if (isSelected) Xc.colors.accent else Xc.colors.textSecondary,
+                )
             }
         }
     }
