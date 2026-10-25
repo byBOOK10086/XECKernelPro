@@ -142,7 +142,7 @@ fn watcher_pids() -> Vec<u32> {
     };
     for e in rd.filter_map(|e| e.ok()) {
         let name = e.file_name().to_string_lossy().to_string();
-        if !name.bytes().iter().all(|b| b.is_ascii_digit()) {
+        if !name.bytes().all(|b| b.is_ascii_digit()) {
             continue;
         }
         let Ok(cmd) = fs::read_to_string(format!("/proc/{name}/cmdline")) else {
