@@ -26,6 +26,11 @@
         android:theme="@style/Theme.XecPro"
         android:zygotePreloadName="com.xecpro.kernel.XecPreload">
         <activity
+            android:name="me.weishu.kernelsu.ui.StealthLaunchActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name="com.xecpro.kernel.XecMainActivity"
             android:exported="true"
             android:theme="@style/Theme.XecPro.Starting"

@@ -2,6 +2,7 @@ package me.weishu.kernelsu.privilege
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import com.topjohnwu.superuser.Shell
 import me.weishu.kernelsu.ui.util.getKsuDaemonPath
@@ -9,68 +10,112 @@ import me.weishu.kernelsu.ui.util.getKsuDaemonPath
 /**
  * 隐身入口（寄生在「激活开发者选项」原生手势上）的管理器侧开关。
  *
- * 语义（与 ksud stealth 守卫对齐）：
- *  - 开启顺序是安全关键：**先武装守卫、成功后才藏图标**——守卫没起来绝不藏，
- *    否则一次失败就把用户锁在 GUI 外面。
- *  - 关闭顺序相反：**先恢复图标**（无论守卫状态），再停守卫清配置。
- *  - 入口 = 设置 → 关于手机 → 连点版本号 10 下（5 下的原生开发者选项行为不受影响）。
- *  - 永久兜底：adb / root shell 的 am start 一句拉起（见 [adbFallback]）。
+ * 第一版的教训（用户实测）：launcher 组件是品牌壳 `XecMainActivity`
+ * （MainActivity 的子类），且**已停用的组件无法被 am start**——守卫指向被
+ * 停用的组件等于入口自杀；反之停用基础 `MainActivity` 又拦不住内部重启流程。
+ *
+ * 第二版的组件账：
+ *  - 图标组件 = 运行时发现（MAIN/LAUNCHER intent 查询本包），发现即记进
+ *    prefs；隐身后 queryIntentActivities 查不到停用组件，恢复全靠 prefs。
+ *  - 守卫落点 = [STEALTH_ENTRY]（StealthLaunchActivity，无 LAUNCHER filter、
+ *    永不停用、exported）——图标藏了它照样能被 am start。
+ *  - 开启顺序仍是安全关键：守卫武装成功才藏图标；关闭先恢复图标。
+ *  - 自愈：开启/关闭/管理器启动都会把基础 MainActivity 拉回 ENABLED，
+ *    修复第一版留下的坏状态。
  */
 object StealthEntrance {
 
-    // 品牌化只改包名（KSU_PACKAGE_NAME），入口 Activity 类名是稳定的。
-    private const val MAIN_ACTIVITY = "me.weishu.kernelsu.ui.MainActivity"
+    private const val BASE_MAIN = "me.weishu.kernelsu.ui.MainActivity"
+    private const val STEALTH_ENTRY = "me.weishu.kernelsu.ui.StealthLaunchActivity"
+    private const val PREFS = "stealth_entrance"
+    private const val KEY_ACTIVE = "active"
+    private const val KEY_LAUNCHERS = "launchers" // '\n' 分隔的 className 列表
 
-    fun launcherComponent(context: Context): ComponentName =
-        ComponentName(context.packageName, MAIN_ACTIVITY)
+    private fun prefs(context: Context) =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    fun isIconHidden(context: Context): Boolean {
-        // 本 compileSdk 的 getComponentEnabledSetting 返回 int。
-        return context.packageManager
-            .getComponentEnabledSetting(launcherComponent(context)) ==
-            PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+    private fun baseMain(context: Context) = ComponentName(context.packageName, BASE_MAIN)
+
+    /** 守卫 am start 的常开落点。 */
+    fun stealthComponent(context: Context) =
+        ComponentName(context.packageName, STEALTH_ENTRY)
+
+    /** 当前真正挂着桌面图标的组件（隐身后查不到，历史值在 prefs）。 */
+    private fun queryLauncherComponents(context: Context): List<ComponentName> {
+        val intent = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .setPackage(context.packageName)
+        return context.packageManager.queryIntentActivities(intent, 0)
+            .mapNotNull { info -> info.activityInfo?.let { ComponentName(it.packageName, it.name) } }
+            .distinct()
     }
 
-    private fun daemonCmd(sub: String): Shell.Result =
-        Shell.cmd("${getKsuDaemonPath()} stealth $sub").exec()
+    private fun savedLaunchers(context: Context): List<ComponentName> =
+        prefs(context).getString(KEY_LAUNCHERS, null)
+            ?.split('\n')
+            ?.mapNotNull { it.trim().takeIf { s -> s.isNotEmpty() } }
+            ?.map { ComponentName(context.packageName, it) }
+            .orEmpty()
 
-    /** 守卫是否在跑（root 查询；无 root / 老守护返回 false）。 */
-    fun watcherRunning(): Boolean = runCatching {
-        val result = daemonCmd("status")
-        result.isSuccess && result.out.any { it.contains("running (pid") }
-    }.getOrDefault(false)
+    private fun setEnabled(context: Context, comp: ComponentName, enabled: Boolean) {
+        runCatching {
+            context.packageManager.setComponentEnabledSetting(
+                comp,
+                if (enabled) {
+                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                } else {
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                },
+                PackageManager.DONT_KILL_APP,
+            )
+        }
+    }
 
-    /** @return 守卫已武装且图标已隐藏（两者都在才算隐身生效）。 */
+    private fun isEnabled(context: Context, comp: ComponentName): Boolean =
+        context.packageManager.getComponentEnabledSetting(comp) !=
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+
+    /** 管理器每次启动都调：修复第一版误停的基础 MainActivity。 */
+    fun repair(context: Context) {
+        if (!isEnabled(context, baseMain(context))) {
+            setEnabled(context, baseMain(context), true)
+        }
+    }
+
+    /** 隐身是否生效（prefs 是事实源；图标隐藏后组件查不到，不能现场查）。 */
+    fun isIconHidden(context: Context): Boolean = prefs(context).getBoolean(KEY_ACTIVE, false)
+
+    /** @return 守卫已武装且图标组件已全部停用。 */
     fun enable(context: Context): Boolean {
-        val comp = launcherComponent(context)
-        val arg = "${comp.packageName}/${comp.className}"
+        val target = stealthComponent(context)
+        val arg = "${target.packageName}/${target.className}"
         val result = Shell.cmd("${getKsuDaemonPath()} stealth start --component '$arg'").exec()
         if (!result.isSuccess) {
             return false
         }
-        // 守卫已武装：现在才藏图标。
-        context.packageManager.setComponentEnabledSetting(
-            comp,
-            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-            PackageManager.DONT_KILL_APP,
-        )
+        // 先把图标组件记下来再停用（停用后 queryIntentActivities 查不到）。
+        val launchers = queryLauncherComponents(context)
+        prefs(context).edit()
+            .putString(KEY_LAUNCHERS, launchers.joinToString("\n") { it.className })
+            .putBoolean(KEY_ACTIVE, true)
+            .apply()
+        repair(context)
+        launchers.forEach { setEnabled(context, it, false) }
         return true
     }
 
-    /** 先恢复图标再停守卫；返回值只代表图标恢复成功（停守护失败不阻塞）。 */
+    /** 先恢复图标与基础组件，再停守卫清配置。 */
     fun disable(context: Context): Boolean {
-        context.packageManager.setComponentEnabledSetting(
-            launcherComponent(context),
-            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-            PackageManager.DONT_KILL_APP,
-        )
+        savedLaunchers(context).forEach { setEnabled(context, it, true) }
+        setEnabled(context, baseMain(context), true)
+        prefs(context).edit().putBoolean(KEY_ACTIVE, false).apply()
         Shell.cmd("${getKsuDaemonPath()} stealth stop").submit()
         return true
     }
 
-    /** adb 兜底命令（确认对话框里展示给用户抄）。 */
+    /** adb 兜底命令（确认对话框里展示给用户抄；隐身态下也有效）。 */
     fun adbFallback(context: Context): String {
-        val comp = launcherComponent(context)
+        val comp = stealthComponent(context)
         return "adb shell am start -n ${comp.packageName}/${comp.className}"
     }
 }
