@@ -19,6 +19,16 @@ on:
         description: '创建 GitHub Release（发版）。只出内测包请保持关闭'
         type: boolean
         default: false
+      semver:
+        # 语义化版本（SemVer）：v主.次.修订[-alpha.N|-beta.N|-rc.N]。
+        # MAJOR=不向后兼容的 API/行为变更；MINOR=向后兼容的新功能；PATCH=向后兼容的修复。
+        # 含 alpha/beta/rc 预发布段的 tag 自动标记 GitHub Pre-Release；干净版本=正式 Release。
+        # 内部 versionCode（31000+提交数）与 APK 文件名尾部的 _<versionCode> 不受影响——
+        # 那仍是管理器"检查更新"的版本比较依据，SemVer 只作用于 tag 与发布通道。
+        description: 'SemVer 版本号（发版用，如 2.0.0 / 2.1.0-rc.1）。留空=沿用 v<版本号>-<短哈希>'
+        type: string
+        required: false
+        default: ''
   push:
     tags:
       - "v*"
@@ -634,9 +644,27 @@ jobs:
 
       - name: Resolve release tag
         id: tag
+        env:
+          SEMVER: ${{ inputs.semver }}
         run: |
+          ok_semver() {
+            printf '%s' "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)(\.[0-9]+)?)?$'
+          }
+          is_pre() {
+            printf '%s' "$1" | grep -Eq -- '-(alpha|beta|rc)(\.[0-9]+)?$'
+          }
           if [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "tag_name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            TAG="${{ github.ref_name }}"
+            echo "tag_name=$TAG" >> "$GITHUB_OUTPUT"
+            # 推 tag 发版：含 alpha/beta/rc 段即 Pre-Release（历史 v<码>-<哈希> 不含这些段，仍算正式版）
+            if is_pre "$TAG"; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; fi
+          elif [ -n "$SEMVER" ]; then
+            SEMVER="${SEMVER#v}"
+            if ! ok_semver "$SEMVER"; then
+              echo "::error::semver 非法: '$SEMVER'（须为 主.次.修订[-alpha|-beta|-rc[.N]]）"; exit 1
+            fi
+            echo "tag_name=v$SEMVER" >> "$GITHUB_OUTPUT"
+            if is_pre "$SEMVER"; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; fi
           else
             VCODE=$((31000 + $(git rev-list --count HEAD)))
             SHA=$(git rev-parse --short=8 HEAD)
@@ -648,6 +676,7 @@ jobs:
         with:
           tag_name: ${{ steps.tag.outputs.tag_name }}
           generate_release_notes: true
+          prerelease: ${{ steps.tag.outputs.prerelease == 'true' }}
           # 只上传 aarch64 的 xudc / ksuinit。
           # 此前同时列出 x86_64 目录，而两个目录里的文件名都是 xudc / ksuinit，
           # action-gh-release 上传第二个同名文件时要去 PATCH 已存在 asset 的元数据，
