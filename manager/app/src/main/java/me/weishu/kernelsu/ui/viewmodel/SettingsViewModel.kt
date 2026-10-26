@@ -16,6 +16,7 @@ import me.weishu.kernelsu.R
 import me.weishu.kernelsu.data.repository.SettingsRepository
 import me.weishu.kernelsu.data.repository.SettingsRepositoryImpl
 import me.weishu.kernelsu.ksuApp
+import me.weishu.kernelsu.privilege.SuperkeyStore
 import me.weishu.kernelsu.ui.screen.settings.SettingsUiState
 import me.weishu.kernelsu.ui.theme.ColorMode
 
@@ -25,6 +26,18 @@ class SettingsViewModel(
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+
+    /**
+     * 守卫武装后，SET_FEATURE 一律要 fd 级认证；没有这一步，开关只会拿到
+     * -EACCES，界面还会乐观地把开关翻过去（用户看到的「错误: -13」）。
+     */
+    private fun ensureSuperkey(): Boolean {
+        if (SuperkeyStore.ensureAuthed(ksuApp)) return true
+        viewModelScope.launch(Dispatchers.Main) {
+            Toast.makeText(ksuApp, R.string.superkey_auth_required, Toast.LENGTH_LONG).show()
+        }
+        return false
+    }
 
     init {
         refresh()
@@ -224,6 +237,7 @@ class SettingsViewModel(
     }
 
     fun setSuCompatMode(mode: Int) {
+        if (!ensureSuperkey()) return
         viewModelScope.launch(Dispatchers.IO) {
             when (mode) {
                 0 -> if (repo.setSuEnabled(true)) {
@@ -252,6 +266,7 @@ class SettingsViewModel(
     }
 
     fun setKernelUmountEnabled(enabled: Boolean) {
+        if (!ensureSuperkey()) return
         viewModelScope.launch(Dispatchers.IO) {
             if (repo.setKernelUmountEnabled(enabled)) {
                 repo.execKsudFeatureSave()
@@ -261,10 +276,14 @@ class SettingsViewModel(
     }
 
     fun setSelinuxHideEnabled(enabled: Boolean) {
+        if (!ensureSuperkey()) return
         viewModelScope.launch(Dispatchers.IO) {
             val status = repo.setSelinuxHideEnabled(enabled)
-            repo.execKsudFeatureSave()
-            _uiState.update { it.copy(isSelinuxHideEnabled = enabled) }
+            // 只有真的成功（或"重启后生效"）才翻 UI；-EACCES 等失败必须保持原状。
+            if (status == 0 || status == -OsConstants.EAGAIN) {
+                repo.execKsudFeatureSave()
+                _uiState.update { it.copy(isSelinuxHideEnabled = enabled) }
+            }
             when (status) {
                 0 -> {}
                 -OsConstants.EAGAIN -> {
@@ -294,6 +313,7 @@ class SettingsViewModel(
     }
 
     fun setSulogEnabled(enabled: Boolean) {
+        if (!ensureSuperkey()) return
         viewModelScope.launch(Dispatchers.IO) {
             if (repo.setSulogEnabled(enabled)) {
                 repo.execKsudFeatureSave()
@@ -303,6 +323,7 @@ class SettingsViewModel(
     }
 
     fun setAdbRootEnabled(enabled: Boolean) {
+        if (!ensureSuperkey()) return
         viewModelScope.launch(Dispatchers.IO) {
             if (repo.setAdbRootEnabled(enabled)) {
                 repo.execKsudFeatureSave()
