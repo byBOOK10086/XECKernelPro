@@ -1,35 +1,28 @@
-package me.weishu.kernelsu.data.theme
+﻿package me.weishu.kernelsu.data.theme
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.ksuApp
-import me.weishu.kernelsu.ui.util.isNetworkAvailable
+import me.weishu.kernelsu.ui.util.hasInternetTransport
 import me.weishu.kernelsu.ui.util.sha256Of
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 
 /**
- * 商城索引仓库：**网络（多镜像 + ETag）→ 解析 → 磁盘快照**。
- *
- * 三条硬约束：
- *  1. **首屏不许等网络**：[cached] / [load] 先给磁盘快照，商店 0ms 就能画出来；
- *     快照新鲜（[AUTO_REFRESH_MS] 内）时干脆不发请求。
- *  2. **快照必须原子落地**：先写 `themes.json.tmp` 再 `renameTo`，进程被杀也不会留下
- *     半截 JSON 把下次启动带沟里（模块仓库那边踩过一次）。
- *  3. **失败也尽量有内容**：网络全挂但磁盘有旧快照时返回旧快照（[Snapshot.fromCache]），
- *     只有连快照都没有才把失败抛给 UI。
- *
- * 缓存目录：`filesDir/theme-store/`（`themes.json` + `meta.json`），与主题包目录分开，
- * 卸载/清数据时一起走，不会留公共目录残留。
- */
+ * 鍟嗗煄绱㈠紩浠撳簱锛?*缃戠粶锛堝闀滃儚 + ETag锛夆啋 瑙ｆ瀽 鈫?纾佺洏蹇収**銆? *
+ * 涓夋潯纭害鏉燂細
+ *  1. **棣栧睆涓嶈绛夌綉缁?*锛歔cached] / [load] 鍏堢粰纾佺洏蹇収锛屽晢搴?0ms 灏辫兘鐢诲嚭鏉ワ紱
+ *     蹇収鏂伴矞锛圼AUTO_REFRESH_MS] 鍐咃級鏃跺共鑴嗕笉鍙戣姹傘€? *  2. **蹇収蹇呴』鍘熷瓙钀藉湴**锛氬厛鍐?`themes.json.tmp` 鍐?`renameTo`锛岃繘绋嬭鏉€涔熶笉浼氱暀涓? *     鍗婃埅 JSON 鎶婁笅娆″惎鍔ㄥ甫娌熼噷锛堟ā鍧椾粨搴撻偅杈硅俯杩囦竴娆★級銆? *  3. **澶辫触涔熷敖閲忔湁鍐呭**锛氱綉缁滃叏鎸備絾纾佺洏鏈夋棫蹇収鏃惰繑鍥炴棫蹇収锛圼Snapshot.fromCache]锛夛紝
+ *     鍙湁杩炲揩鐓ч兘娌℃湁鎵嶆妸澶辫触鎶涚粰 UI銆? *
+ * 缂撳瓨鐩綍锛歚filesDir/theme-store/`锛坄themes.json` + `meta.json`锛夛紝涓庝富棰樺寘鐩綍鍒嗗紑锛? * 鍗歌浇/娓呮暟鎹椂涓€璧疯蛋锛屼笉浼氱暀鍏叡鐩綍娈嬬暀銆? */
 object StoreCatalogRepository {
 
-    /** 快照超过这个年龄就主动联网刷新（用户点刷新无条件走网络）。 */
+    /** 蹇収瓒呰繃杩欎釜骞撮緞灏变富鍔ㄨ仈缃戝埛鏂帮紙鐢ㄦ埛鐐瑰埛鏂版棤鏉′欢璧扮綉缁滐級銆?*/
     const val AUTO_REFRESH_MS: Long = 30L * 60 * 1000
 
-    /** 索引体积上限：正常索引几十 KB，给到 4MB 已经很宽松。 */
+    /** 绱㈠紩浣撶Н涓婇檺锛氭甯哥储寮曞嚑鍗?KB锛岀粰鍒?4MB 宸茬粡寰堝鏉俱€?*/
     private const val MAX_INDEX_BYTES: Long = 4L * 1024 * 1024
 
     private const val DIR_NAME = "theme-store"
@@ -37,7 +30,7 @@ object StoreCatalogRepository {
     private const val FILE_META = "meta.json"
     private const val USER_AGENT = "XECKernelPro-Manager"
 
-    /** 一次成功加载的结果。[fromCache] = true 表示这次没有真的联网成功（用的是磁盘快照）。 */
+    /** 涓€娆℃垚鍔熷姞杞界殑缁撴灉銆俒fromCache] = true 琛ㄧず杩欐娌℃湁鐪熺殑鑱旂綉鎴愬姛锛堢敤鐨勬槸纾佺洏蹇収锛夈€?*/
     data class Snapshot(
         val catalog: StoreCatalog,
         val fetchedAt: Long,
@@ -54,9 +47,8 @@ object StoreCatalogRepository {
 
     private fun metaFile(context: Context) = File(dir(context), FILE_META)
 
-    // ------------------------------------------------------------------ 读缓存
-
-    /** 同步读磁盘快照（调用方负责放到 IO 线程）。坏快照直接删掉，别让它一直拖后腿。 */
+    // ------------------------------------------------------------------ 璇荤紦瀛?
+    /** 鍚屾璇荤鐩樺揩鐓э紙璋冪敤鏂硅礋璐ｆ斁鍒?IO 绾跨▼锛夈€傚潖蹇収鐩存帴鍒犳帀锛屽埆璁╁畠涓€鐩存嫋鍚庤吙銆?*/
     fun cached(context: Context): Snapshot? {
         val file = indexFile(context)
         if (!file.isFile || file.length() <= 0L) return null
@@ -77,7 +69,7 @@ object StoreCatalogRepository {
         }
     }
 
-    /** 缓存的年龄（毫秒）；没有缓存返回 [Long.MAX_VALUE]。 */
+    /** 缂撳瓨鐨勫勾榫勶紙姣锛夛紱娌℃湁缂撳瓨杩斿洖 [Long.MAX_VALUE]銆?*/
     fun cacheAge(context: Context): Long {
         val file = indexFile(context)
         if (!file.isFile) return Long.MAX_VALUE
@@ -97,8 +89,7 @@ object StoreCatalogRepository {
         runCatching {
             tmp.writeText(body)
             if (!tmp.renameTo(target)) {
-                // rename 在极少数文件系统上会失败（已有同名文件），退化成覆盖写。
-                target.writeText(body)
+                // rename 鍦ㄦ瀬灏戞暟鏂囦欢绯荤粺涓婁細澶辫触锛堝凡鏈夊悓鍚嶆枃浠讹級锛岄€€鍖栨垚瑕嗙洊鍐欍€?                target.writeText(body)
                 tmp.delete()
             }
             val oldEtag = runCatching { JSONObject(metaFile(context).readText()) }
@@ -115,20 +106,18 @@ object StoreCatalogRepository {
         }
     }
 
-    // ------------------------------------------------------------- 联网 + 解析
+    // ------------------------------------------------------------- 鑱旂綉 + 瑙ｆ瀽
 
     /**
-     * 加载索引。
-     *
-     * @param force true = 用户主动刷新：跳过新鲜度判断，直接联网（仍会在失败时退回旧快照）。
-     */
+     * 鍔犺浇绱㈠紩銆?     *
+     * @param force true = 鐢ㄦ埛涓诲姩鍒锋柊锛氳烦杩囨柊椴滃害鍒ゆ柇锛岀洿鎺ヨ仈缃戯紙浠嶄細鍦ㄥけ璐ユ椂閫€鍥炴棫蹇収锛夈€?     */
     suspend fun load(context: Context, force: Boolean = false): Result<Snapshot> = withContext(Dispatchers.IO) {
         val installed = installedMap(context)
         val snapshot = cached(context)
         if (!force && snapshot != null && snapshot.ageMs < AUTO_REFRESH_MS) {
             return@withContext Result.success(snapshot)
         }
-        if (!isNetworkAvailable(ksuApp)) {
+        if (!hasInternetTransport(ksuApp)) {
             return@withContext when {
                 snapshot != null -> Result.success(snapshot)
                 else -> Result.failure(StoreFailure.NoNetwork())
@@ -147,8 +136,7 @@ object StoreCatalogRepository {
                             touchMeta(context, current.fetchedAt)
                             return@withContext Result.success(current.copy(fromCache = true))
                         }
-                        // 没有本地快照却回了 304：换下一个源（这次不带 ETag）。
-                    }
+                        // 娌℃湁鏈湴蹇収鍗村洖浜?304锛氭崲涓嬩竴涓簮锛堣繖娆′笉甯?ETag锛夈€?                    }
 
                     is Fetch.Body -> {
                         val catalog = StoreIndexCodec.decode(outcome.text, installed)
@@ -165,8 +153,7 @@ object StoreCatalogRepository {
                 }
             } catch (failure: StoreFailure) {
                 if (failure is StoreFailure.Parse) {
-                    // 结构错是"这个源的内容不能用"，记下来继续试下一个（镜像可能还没同步）。
-                    lastCode = 0
+                    // 缁撴瀯閿欐槸"杩欎釜婧愮殑鍐呭涓嶈兘鐢?锛岃涓嬫潵缁х画璇曚笅涓€涓紙闀滃儚鍙兘杩樻病鍚屾锛夈€?                    lastCode = 0
                     continue
                 }
                 throw failure
@@ -182,16 +169,13 @@ object StoreCatalogRepository {
     }
 
     /**
-     * 本地已装：`themeId → versionCode`。
-     *
-     * 故意**不是** suspend：它会被 [cached] 这类同步读缓存的函数调用，而那两个函数的
-     * 契约就是"调用方已经在 IO 线程上"。里面再套一层 withContext 只会白加一次调度。
-     */
+     * 鏈湴宸茶锛歚themeId 鈫?versionCode`銆?     *
+     * 鏁呮剰**涓嶆槸** suspend锛氬畠浼氳 [cached] 杩欑被鍚屾璇荤紦瀛樼殑鍑芥暟璋冪敤锛岃€岄偅涓や釜鍑芥暟鐨?     * 濂戠害灏辨槸"璋冪敤鏂瑰凡缁忓湪 IO 绾跨▼涓?銆傞噷闈㈠啀濂椾竴灞?withContext 鍙細鐧藉姞涓€娆¤皟搴︺€?     */
     private fun installedMap(context: Context): Map<String, Int> = runCatching {
         ThemeRepository.list(context).associate { it.spec.id to it.spec.versionCode }
     }.getOrDefault(emptyMap())
 
-    /** 只更新快照时间戳（304 之后让 UI 的"上次更新"跟着走）。 */
+    /** 鍙洿鏂板揩鐓ф椂闂存埑锛?04 涔嬪悗璁?UI 鐨?涓婃鏇存柊"璺熺潃璧帮級銆?*/
     private fun touchMeta(context: Context, previous: Long) {
         val file = metaFile(context)
         runCatching {
@@ -238,7 +222,7 @@ object StoreCatalogRepository {
         }
     }
 
-    /** 下载 + 校验 + 装进本地主题仓库。失败一律是类型化 [StoreFailure]。 */
+    /** 涓嬭浇 + 鏍￠獙 + 瑁呰繘鏈湴涓婚浠撳簱銆傚け璐ヤ竴寰嬫槸绫诲瀷鍖?[StoreFailure]銆?*/
     suspend fun downloadAndInstall(
         context: Context,
         theme: StoreTheme,
@@ -282,7 +266,7 @@ object StoreCatalogRepository {
         }
     }
 
-    /** 取消信号（用异常打断阻塞下载，比轮询文件大小可靠）。 */
+    /** 鍙栨秷淇″彿锛堢敤寮傚父鎵撴柇闃诲涓嬭浇锛屾瘮杞鏂囦欢澶у皬鍙潬锛夈€?*/
     private class CancellationSignal : RuntimeException()
 
     private class HttpStatusException(val code: Int) : Exception("HTTP $code")
