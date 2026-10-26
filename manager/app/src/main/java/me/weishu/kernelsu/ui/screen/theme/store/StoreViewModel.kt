@@ -116,7 +116,8 @@ class StoreViewModel : ViewModel() {
                     is StoreFailure.Unreachable -> "${typed.attempts} tries, last HTTP ${typed.lastCode}"
                     is StoreFailure.Parse -> typed.detail
                     is StoreFailure.Unknown -> typed.detail
-                    else -> failure.message
+                    // NoNetwork / Cancelled / Cache 这些码本身就是给人看的，不再叠一行原始 code。
+                    else -> null
                 },
             )
         }
