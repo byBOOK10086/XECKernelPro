@@ -1082,4 +1082,13 @@ XEC 项目组
     <string name="store_detail_collapse">收起</string>
     <string name="store_detail_checksum">SHA-256 %1$s</string>
     <string name="store_preview_position">%1$d / %2$d</string>
+
+    <string name="store_source_title">数据源</string>
+    <string name="store_source_builtin">内置数据源</string>
+    <string name="store_source_hint">可以指向你自己的 themes.json；留空则使用内置数据源。</string>
+    <string name="store_source_input">https://example.com/themes.json</string>
+    <string name="store_source_save">保存</string>
+    <string name="store_source_reset">恢复内置</string>
+    <string name="store_notice_source_saved">数据源已保存</string>
+    <string name="store_notice_source_reset">已恢复内置数据源</string>
 </resources>

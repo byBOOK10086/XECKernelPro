@@ -259,4 +259,6 @@ private fun noticeText(notice: StoreNotice): String = when (notice) {
     StoreNotice.AlreadyInstalled -> stringResource(R.string.store_notice_already_installed)
     StoreNotice.HistoryCleared -> stringResource(R.string.store_notice_history_cleared)
     StoreNotice.DownloadFailed -> stringResource(R.string.store_download_failed)
+    StoreNotice.SourceSaved -> stringResource(R.string.store_notice_source_saved)
+    StoreNotice.SourceReset -> stringResource(R.string.store_notice_source_reset)
 }

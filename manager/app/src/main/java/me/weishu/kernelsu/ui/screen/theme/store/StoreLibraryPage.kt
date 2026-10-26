@@ -18,6 +18,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,11 +34,13 @@ import me.weishu.kernelsu.R
 import me.weishu.kernelsu.data.theme.StoreDownloadState
 import me.weishu.kernelsu.data.theme.StoreTheme
 import me.weishu.kernelsu.ui.component.RemotePreview
+import me.weishu.kernelsu.ui.component.dialog.XDialog
 import me.weishu.kernelsu.ui.design.token.Xc
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextField
 
 /**
  * 「我的」页：下载管理 + 收藏 + 发布入口。
@@ -47,6 +53,7 @@ import top.yukonga.miuix.kmp.basic.Text
 fun StoreLibraryPage(state: StoreState, actions: StoreActions) {
     Column(modifier = Modifier.fillMaxSize()) {
         PublishEntry(onClick = actions.openPublish)
+        SourceEntry(state = state, onClick = actions.openSourceDialog)
         StoreChipsRow(
             chips = listOf(
                 StoreChip(LibraryTab.DOWNLOADS.name, stringResource(R.string.store_library_downloads)),
@@ -60,6 +67,108 @@ fun StoreLibraryPage(state: StoreState, actions: StoreActions) {
         when (state.libraryTab) {
             LibraryTab.DOWNLOADS -> DownloadsSection(state = state, actions = actions)
             LibraryTab.FAVORITES -> FavoritesSection(state = state, actions = actions)
+        }
+    }
+    if (state.sourceDialogOpen) {
+        SourceDialog(state = state, actions = actions)
+    }
+}
+
+/**
+ * 数据源入口：显示"现在用的是哪个索引"。
+ *
+ * 为什么商店需要这个：自建/镜像源是真实需求（GitHub 在国内常年抽风，用户也可能想指向
+ * 自己的主题仓库）。入口放在「我的」而不是推荐页，避免普通用户误触。
+ */
+@Composable
+private fun SourceEntry(state: StoreState, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.defaultColors(color = Xc.colors.surfaceMuted),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.store_source_title),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Xc.colors.text,
+                )
+                Text(
+                    text = if (state.sourceUrl.isEmpty()) {
+                        stringResource(R.string.store_source_builtin)
+                    } else {
+                        state.sourceUrl
+                    },
+                    fontSize = 11.sp,
+                    color = Xc.colors.textMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(
+                imageVector = Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                tint = Xc.colors.textMuted,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+/** 数据源编辑对话框。 */
+@Composable
+private fun SourceDialog(state: StoreState, actions: StoreActions) {
+    var draft by rememberSaveable(state.sourceUrl) { mutableStateOf(state.sourceUrl) }
+    XDialog(
+        show = true,
+        onDismissRequest = actions.dismissSourceDialog,
+        maxWidth = 460.dp,
+    ) {
+        Text(
+            text = stringResource(R.string.store_source_title),
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Xc.colors.text,
+        )
+        Text(
+            text = stringResource(R.string.store_source_hint),
+            fontSize = 11.sp,
+            color = Xc.colors.textMuted,
+            modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
+        )
+        TextField(
+            value = draft,
+            onValueChange = { draft = it },
+            label = stringResource(R.string.store_source_input),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            StoreActionButton(
+                label = stringResource(R.string.store_source_save),
+                primary = true,
+                enabled = true,
+                onClick = { actions.saveSourceUrl(draft) },
+            )
+            StoreActionButton(
+                label = stringResource(R.string.store_source_reset),
+                primary = false,
+                enabled = state.sourceUrl.isNotEmpty(),
+                onClick = actions.resetSourceUrl,
+            )
         }
     }
 }
