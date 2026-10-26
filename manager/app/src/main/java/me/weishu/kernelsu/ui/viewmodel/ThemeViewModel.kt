@@ -11,13 +11,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import me.weishu.kernelsu.data.theme.StoreTheme
 import me.weishu.kernelsu.data.theme.ThemeApplier
 import me.weishu.kernelsu.data.theme.ThemeCodec
 import me.weishu.kernelsu.data.theme.ThemeRepository
 import me.weishu.kernelsu.data.theme.ThemeResolver
-import me.weishu.kernelsu.data.theme.ThemeStoreRepository
-import me.weishu.kernelsu.data.theme.ThemeStoreSettings
 import me.weishu.kernelsu.ksuApp
 import me.weishu.kernelsu.ui.design.token.XcBlocks
 import me.weishu.kernelsu.ui.screen.theme.ThemeEditorState
@@ -68,7 +65,6 @@ class ThemeViewModel : ViewModel() {
 
     init {
         refreshLocal()
-        loadStore()
     }
 
     // ------------------------------------------------------------------ 本地
@@ -85,66 +81,6 @@ class ThemeViewModel : ViewModel() {
 
     fun selectTab(tab: Int) = _ui.update { it.copy(tab = tab.coerceIn(0, 2)) }
 
-    fun search(text: String) = _ui.update { it.copy(query = text) }
-
-    // ------------------------------------------------------------------ 商城
-
-    fun loadStore() {
-        _ui.update { it.copy(storeLoading = true, storeError = null) }
-        viewModelScope.launch {
-            val result = ThemeStoreRepository.fetch(context)
-            _ui.update { state ->
-                result.fold(
-                    onSuccess = { list ->
-                        state.copy(
-                            store = list,
-                            storeLoading = false,
-                            storeError = null,
-                            sourceLabel = ThemeStoreSettings.labelOf(
-                                ThemeStoreRepository.lastSource ?: ThemeStoreSettings.primaryUrl
-                            ),
-                            fellBack = ThemeStoreRepository.lastSource != null &&
-                                ThemeStoreRepository.lastSource != ThemeStoreSettings.primaryUrl,
-                            mine = ThemeRepository.list(context),
-                            activeId = ThemeRepository.activeId(context),
-                        )
-                    },
-                    onFailure = { error ->
-                        state.copy(storeLoading = false, storeError = error.message ?: error.toString())
-                    },
-                )
-            }
-        }
-    }
-
-    /** 下载并安装；成功后刷新"我的"。 */
-    fun download(theme: StoreTheme) {
-        if (_ui.value.downloadingId != null) return
-        _ui.update { it.copy(downloadingId = theme.themeId, downloadProgress = 0) }
-        viewModelScope.launch {
-            val result = ThemeStoreRepository.downloadAndInstall(context, theme) { read, total ->
-                if (total > 0) {
-                    val percent = ((read * 100) / total).toInt().coerceIn(0, 100)
-                    _ui.update { state ->
-                        if (state.downloadingId == theme.themeId) {
-                            state.copy(downloadProgress = percent)
-                        } else {
-                            state
-                        }
-                    }
-                }
-            }
-            _ui.update { state ->
-                state.copy(
-                    downloadingId = null,
-                    downloadProgress = 0,
-                    storeError = result.exceptionOrNull()?.let { it.message ?: it.toString() },
-                    mine = ThemeRepository.list(context),
-                )
-            }
-        }
-    }
-
     fun apply(id: String, onDone: (Boolean, String?) -> Unit = { _, _ -> }) {
         _ui.update { it.copy(busy = true) }
         viewModelScope.launch {
@@ -154,7 +90,7 @@ class ThemeViewModel : ViewModel() {
                 state.copy(
                     busy = false,
                     activeId = ThemeRepository.activeId(context),
-                    storeError = result.exceptionOrNull()?.let { it.message ?: it.toString() },
+                    mine = ThemeRepository.list(context),
                 )
             }
             onDone(
@@ -231,7 +167,7 @@ class ThemeViewModel : ViewModel() {
                     }
                 }
             }
-            _ui.update { it.copy(busy = false, storeError = result.exceptionOrNull()?.message) }
+            _ui.update { it.copy(busy = false) }
             onDone(result.isSuccess, result.getOrNull() ?: result.exceptionOrNull()?.message)
         }
     }

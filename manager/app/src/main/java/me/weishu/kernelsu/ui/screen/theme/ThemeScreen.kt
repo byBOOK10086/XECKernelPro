@@ -130,9 +130,6 @@ fun ThemeScreen() {
     val actions = ThemeActions(
         onBack = { navigator.pop() },
         onSelectTab = viewModel::selectTab,
-        onRefreshStore = viewModel::loadStore,
-        onSearch = viewModel::search,
-        onDownload = viewModel::download,
         onApply = { id ->
             viewModel.apply(id) { ok, message ->
                 toast(
