@@ -129,7 +129,11 @@ object StoreCatalogRepository {
         withContext(Dispatchers.IO) {
             val installed = installedMap(context)
             val snapshot = cached(context)
-            if (!force && snapshot != null && snapshot.ageMs < AUTO_REFRESH_MS) {
+            // 缓存必须和"当前主源"对得上才算新鲜：换源（或改了内置地址里的缓存破冰版本号）
+            // 之后还拿旧源的快照，用户会以为"换了源没生效"。
+            val sameSource = snapshot != null &&
+                (snapshot.sourceUrl.isEmpty() || snapshot.sourceUrl == ThemeStoreSettings.primaryUrl)
+            if (!force && sameSource && snapshot != null && snapshot.ageMs < AUTO_REFRESH_MS) {
                 return@withContext Result.success(snapshot)
             }
             if (!hasInternetTransport(ksuApp)) {
