@@ -66,6 +66,9 @@ pub enum StealthCli {
     /// 内部：守卫循环（由 start/boot 派生，勿手动运行）
     #[command(name = "watcher", hide = true)]
     Watcher,
+    /// 内部：开机守护自检（配置在且守卫不在时重新拉起）
+    #[command(name = "ensure", hide = true)]
+    Ensure,
 }
 
 struct StealthConfig {
@@ -233,6 +236,14 @@ pub fn handle(cmd: StealthCli) -> Result<()> {
                 error!("stealth watcher: {e:#}");
             }
         }
+        StealthCli::Ensure => {
+            // 开机守护用：配置在但守卫不在就重新拉起（绝不覆盖已有实例，
+            // 否则双实例会各自计数、等于阈值减半）。
+            if conf_path().is_file() && watcher_pids().is_empty() {
+                info!("stealth: ensure respawns missing watcher");
+                spawn_watcher()?;
+            }
+        }
     }
     Ok(())
 }
@@ -244,8 +255,39 @@ pub fn on_boot() -> Result<()> {
         // 先清残留（核心升级后旧进程可能还活着，双实例会各自计数）。
         kill_watcher();
         spawn_watcher()?;
+        // boot-completed 阶段进程环境并不稳定（/dev/input 未就绪、init 清理
+        // 子进程、LMK 都可能让第一只守卫秒退）。留一个 60s 的 detached
+        // supervisor：每 5s 调一次 `stealth ensure`，配置在就补拉；不会与
+        // 已存活的守卫重复起实例。
+        spawn_boot_supervisor();
     }
     Ok(())
+}
+
+fn spawn_boot_supervisor() {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            warn!("stealth: cannot resolve current_exe for supervisor: {e}");
+            return;
+        }
+    };
+    let loop_cmd = format!(
+        "n=0; while [ $n -lt 12 ]; do sleep 5; '{}' stealth ensure >/dev/null 2>&1; n=$((n+1)); done",
+        exe.display()
+    );
+    match Command::new("sh")
+        .arg("-c")
+        .arg(loop_cmd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .process_group(0)
+        .spawn()
+    {
+        Ok(_) => info!("stealth: boot supervisor armed (60s)"),
+        Err(e) => warn!("stealth: boot supervisor spawn failed: {e}"),
+    }
 }
 
 const EV_KEY: u16 = 0x01;
@@ -331,29 +373,47 @@ fn run_watcher() -> Result<()> {
     let cfg = read_config().context("watcher: no config")?;
     fs::write(pid_path(), std::process::id().to_string()).ok();
 
-    // 只读 + 非阻塞；权限被 SELinux 拦的设备跳过，全部被拦才报错退出。
-    let mut entries: Vec<String> = fs::read_dir("/dev/input")
-        .with_context(|| "cannot open /dev/input (SELinux? see manager adb fallback)")?
-        .filter_map(std::result::Result::ok)
-        .map(|e| e.file_name().to_string_lossy().to_string())
-        .filter(|n| n.starts_with("event"))
-        .collect();
-    entries.sort();
-
+    // 只读 + 非阻塞；权限被 SELinux 拦的设备跳过。boot-completed 阶段可能
+    // 早于 /dev/input 就绪，这里最多等 30s（15 × 2s）再认输，否则开机第一次
+    // 拉起会因「暂时没有可读 node」直接退出（真机复验踩过）。
     let mut devices: Vec<(OwnedFd, String)> = Vec::new();
-    for name in &entries {
-        let path = format!("/dev/input/{name}");
-        match open(
-            path.as_str(),
-            OFlags::RDONLY | OFlags::NONBLOCK | OFlags::CLOEXEC,
-            Mode::empty(),
-        ) {
-            Ok(fd) => devices.push((fd, path)),
-            Err(e) => warn!("stealth watcher: skip {path}: {e}"),
+    for attempt in 0..15 {
+        devices.clear();
+        let mut entries: Vec<String> = match fs::read_dir("/dev/input") {
+            Ok(rd) => rd
+                .filter_map(std::result::Result::ok)
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .filter(|n| n.starts_with("event"))
+                .collect(),
+            Err(e) => {
+                warn!("stealth watcher: cannot open /dev/input: {e}");
+                Vec::new()
+            }
+        };
+        entries.sort();
+
+        for name in &entries {
+            let path = format!("/dev/input/{name}");
+            match open(
+                path.as_str(),
+                OFlags::RDONLY | OFlags::NONBLOCK | OFlags::CLOEXEC,
+                Mode::empty(),
+            ) {
+                Ok(fd) => devices.push((fd, path)),
+                Err(e) => warn!("stealth watcher: skip {path}: {e}"),
+            }
         }
-    }
-    if devices.is_empty() {
-        bail!("no readable /dev/input/event* devices");
+        if !devices.is_empty() {
+            break;
+        }
+        if attempt == 14 {
+            bail!("no readable /dev/input/event* devices after 30s");
+        }
+        warn!(
+            "stealth watcher: no readable input devices yet (attempt {}/15), retrying",
+            attempt + 1
+        );
+        std::thread::sleep(Duration::from_secs(2));
     }
     info!(
         "stealth watcher: {} device(s), trigger = {} taps in {}ms while focused on [{}]",
