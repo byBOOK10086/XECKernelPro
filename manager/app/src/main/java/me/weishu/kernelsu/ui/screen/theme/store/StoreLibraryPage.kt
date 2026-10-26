@@ -52,7 +52,7 @@ import top.yukonga.miuix.kmp.basic.TextField
 @Composable
 fun StoreLibraryPage(state: StoreState, actions: StoreActions) {
     Column(modifier = Modifier.fillMaxSize()) {
-        PublishEntry(onClick = actions.openPublish)
+        PublishEntry(themeCount = state.localThemeCount, onClick = actions.openPublish)
         SourceEntry(state = state, onClick = actions.openSourceDialog)
         StoreChipsRow(
             chips = listOf(
@@ -175,7 +175,7 @@ private fun SourceDialog(state: StoreState, actions: StoreActions) {
 
 /** 发布入口：入口必须长在商店里（用户原话是"根本没找到发布按钮"）。 */
 @Composable
-private fun PublishEntry(onClick: () -> Unit) {
+private fun PublishEntry(themeCount: Int, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -197,7 +197,7 @@ private fun PublishEntry(onClick: () -> Unit) {
                     color = Xc.colors.text,
                 )
                 Text(
-                    text = stringResource(R.string.themes_publish_entry_summary),
+                    text = stringResource(R.string.themes_publish_entry_summary, themeCount),
                     fontSize = 11.sp,
                     color = Xc.colors.textMuted,
                     maxLines = 2,

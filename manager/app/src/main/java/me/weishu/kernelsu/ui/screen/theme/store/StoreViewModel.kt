@@ -144,11 +144,15 @@ class StoreViewModel : ViewModel() {
         val active = withContext(Dispatchers.IO) {
             runCatching { ThemeRepository.activeId(context) }.getOrNull()
         }
+        val localCount = withContext(Dispatchers.IO) {
+            runCatching { ThemeRepository.list(context).size }.getOrDefault(0)
+        }
         _state.update {
             it.copy(
                 favorites = favorites,
                 searchHistory = history,
                 currentThemeId = active,
+                localThemeCount = localCount,
                 sourceUrl = ThemeStoreSettings.configuredUrl,
             )
         }
