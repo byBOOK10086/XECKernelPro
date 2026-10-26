@@ -1,7 +1,6 @@
 package me.weishu.kernelsu.ui.screen.theme
 
 import androidx.compose.runtime.Immutable
-import me.weishu.kernelsu.data.theme.StoreTheme
 import me.weishu.kernelsu.data.theme.ThemeCodec
 import me.weishu.kernelsu.data.theme.ThemeRepository
 
@@ -14,16 +13,6 @@ import me.weishu.kernelsu.data.theme.ThemeRepository
 data class ThemeUiState(
     /** 0 = 商城，1 = 我的，2 = 编辑器。 */
     val tab: Int = 0,
-    // ---- 商城 ----
-    val store: List<StoreTheme> = emptyList(),
-    val storeLoading: Boolean = false,
-    val storeError: String? = null,
-    val sourceLabel: String = "",
-    val fellBack: Boolean = false,
-    val query: String = "",
-    /** 正在下载的主题 id（同时只会有一个）。 */
-    val downloadingId: String? = null,
-    val downloadProgress: Int = 0,
     /** 正在应用/删除/导入导出时的忙碌标记（按钮禁用用）。 */
     val busy: Boolean = false,
     // ---- 我的 ----
@@ -32,19 +21,6 @@ data class ThemeUiState(
     // ---- 编辑器 ----
     val editor: ThemeEditorState = ThemeEditorState(),
 ) {
-    val filteredStore: List<StoreTheme>
-        get() = if (query.isBlank()) {
-            store
-        } else {
-            val q = query.trim().lowercase()
-            store.filter {
-                it.name.lowercase().contains(q) ||
-                    it.themeId.lowercase().contains(q) ||
-                    it.author.lowercase().contains(q) ||
-                    it.summary.lowercase().contains(q)
-            }
-        }
-
     val activeName: String?
         get() = activeId?.let { id -> mine.firstOrNull { it.spec.id == id }?.spec?.name }
 }
@@ -81,9 +57,6 @@ data class ThemeEditorState(
 data class ThemeActions(
     val onBack: () -> Unit,
     val onSelectTab: (Int) -> Unit,
-    val onRefreshStore: () -> Unit,
-    val onSearch: (String) -> Unit,
-    val onDownload: (StoreTheme) -> Unit,
     val onApply: (String) -> Unit,
     val onRestoreDefault: () -> Unit,
     val onDelete: (String) -> Unit,
