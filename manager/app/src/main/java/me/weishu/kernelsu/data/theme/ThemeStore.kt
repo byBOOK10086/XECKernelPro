@@ -97,10 +97,21 @@ object StoreMirrors {
  *    （主题包是用户提供的输入，不能想当然）。
  */
 object ThemeStoreSettings {
+    /**
+     * 索引地址带 `?v=3` 的**缓存破冰版本号**。
+     *
+     * 原因：jsDelivr / 校园网代理这类中间缓存会长期返回同一份旧索引（真机上撞到过：
+     * 仓库已经是 schema 3，客户端还拿到几个月前的数组形态）。加一个随索引格式走的常量
+     * 查询串，一次性绕开所有旧缓存；以后再改索引格式就把它 +1。
+     *
+     * 查询串对 jsDelivr 的文件解析没有影响，镜像推导（[StoreMirrors]）也会原样带上它。
+     */
+    private const val INDEX_CACHE_TAG = "?v=3"
+
     const val DEFAULT_URL =
-        "https://cdn.jsdelivr.net/gh/byBOOK10086/XECKernelPro-Themes@main/themes.json"
+        "https://cdn.jsdelivr.net/gh/byBOOK10086/XECKernelPro-Themes@main/themes.json$INDEX_CACHE_TAG"
     const val RAW_FALLBACK_URL =
-        "https://raw.githubusercontent.com/byBOOK10086/XECKernelPro-Themes/main/themes.json"
+        "https://raw.githubusercontent.com/byBOOK10086/XECKernelPro-Themes/main/themes.json$INDEX_CACHE_TAG"
 
     private const val PREFS = "settings"
     private const val KEY_URL = "theme_store_url"

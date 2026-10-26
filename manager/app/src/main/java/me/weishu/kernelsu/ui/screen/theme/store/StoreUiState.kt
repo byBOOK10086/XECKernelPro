@@ -89,6 +89,8 @@ data class StoreState(
     val favorites: List<String> = emptyList(),
     val downloads: Map<String, StoreDownloadState> = emptyMap(),
     val currentThemeId: String? = null,
+    /** 本机已装主题数（「发布我的主题」那张卡的副标题要用）。 */
+    val localThemeCount: Int = 0,
     val busy: Boolean = false,
     /** 数据源对话框是否打开。 */
     val sourceDialogOpen: Boolean = false,
