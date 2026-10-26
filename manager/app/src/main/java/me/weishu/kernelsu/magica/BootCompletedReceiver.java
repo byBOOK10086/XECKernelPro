@@ -24,6 +24,11 @@ public class BootCompletedReceiver extends BroadcastReceiver {
                 && !"me.weishu.kernelsu.magica.LAUNCH".equals(action)) {
             return;
         }
+        // receiver 常开（隐身入口也靠它补拉守卫），自动越狱路径仍按开关自门控。
+        boolean autoJailbreak = context
+                .getSharedPreferences("settings", Context.MODE_PRIVATE)
+                .getBoolean("auto_jailbreak", false);
+        if (!autoJailbreak) return;
         if (KsuCliKt.rootAvailable()) return;
         // 路径一：Magica（app-zygote 预载 exec ksud late-load）——内核已打
         // kpimg/KPM 的设备的快路。

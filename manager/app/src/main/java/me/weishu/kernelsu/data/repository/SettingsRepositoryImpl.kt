@@ -169,15 +169,9 @@ class SettingsRepositoryImpl : SettingsRepository {
     override var autoJailbreak: Boolean
         get() = prefs.getBoolean("auto_jailbreak", false)
         set(value) {
-            runCatching {
-                ksuApp.packageManager.setComponentEnabledSetting(
-                    ComponentName(ksuApp, XecBootReceiver::class.java),
-                    if (value) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                    PackageManager.DONT_KILL_APP
-                )
-            }.onFailure {
-                Log.e("Settings", "failed to change boot receiver state to $value", it)
-            }
+            // receiver 现在常开：既负责自动越狱（内部按本开关自门控），
+            // 也负责 USER_UNLOCKED 时补拉隐身守卫（ksud 的 boot-completed
+            // 子进程活不过 init 的 cgroup 清理）。因此不再按开关启停组件。
             prefs.edit {
                 putBoolean("auto_jailbreak", value)
             }
