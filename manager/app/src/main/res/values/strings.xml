@@ -1080,4 +1080,13 @@ See the log below for details.</string>
     <string name="store_detail_collapse">Show less</string>
     <string name="store_detail_checksum">SHA-256 %1$s</string>
     <string name="store_preview_position">%1$d / %2$d</string>
+
+    <string name="store_source_title">Catalog source</string>
+    <string name="store_source_builtin">Built-in catalog</string>
+    <string name="store_source_hint">Point the store at your own themes.json. Leave it empty to use the built-in catalog.</string>
+    <string name="store_source_input">https://example.com/themes.json</string>
+    <string name="store_source_save">Save</string>
+    <string name="store_source_reset">Use built-in</string>
+    <string name="store_notice_source_saved">Catalog source saved</string>
+    <string name="store_notice_source_reset">Back to the built-in catalog</string>
 </resources>

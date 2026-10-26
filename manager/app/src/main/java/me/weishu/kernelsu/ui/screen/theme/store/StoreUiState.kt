@@ -47,6 +47,8 @@ sealed interface StoreNotice {
     data object AlreadyInstalled : StoreNotice
     data object HistoryCleared : StoreNotice
     data object DownloadFailed : StoreNotice
+    data object SourceSaved : StoreNotice
+    data object SourceReset : StoreNotice
 }
 
 /** 排行榜的三种榜（都基于索引真实字段，没有的字段不出榜）。 */
@@ -88,6 +90,10 @@ data class StoreState(
     val downloads: Map<String, StoreDownloadState> = emptyMap(),
     val currentThemeId: String? = null,
     val busy: Boolean = false,
+    /** 数据源对话框是否打开。 */
+    val sourceDialogOpen: Boolean = false,
+    /** 当前生效的数据源地址（空 = 内置默认源）。 */
+    val sourceUrl: String = "",
     /** 一次性提示（界面消费后调 [StoreActions.consumeNotice] 置空）。 */
     val notice: StoreNotice? = null,
 ) {
@@ -190,5 +196,9 @@ data class StoreActions(
     val toggleFavorite: (String) -> Unit,
     val applyTheme: (String) -> Unit,
     val openPublish: () -> Unit,
+    val openSourceDialog: () -> Unit,
+    val dismissSourceDialog: () -> Unit,
+    val saveSourceUrl: (String) -> Unit,
+    val resetSourceUrl: () -> Unit,
     val consumeNotice: () -> Unit,
 )

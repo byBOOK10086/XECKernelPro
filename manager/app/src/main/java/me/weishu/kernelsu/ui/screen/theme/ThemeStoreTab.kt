@@ -53,6 +53,10 @@ fun ThemeStoreTab(
             toggleFavorite = storeViewModel::toggleFavorite,
             applyTheme = storeViewModel::applyTheme,
             openPublish = openPublish,
+            openSourceDialog = storeViewModel::openSourceDialog,
+            dismissSourceDialog = storeViewModel::dismissSourceDialog,
+            saveSourceUrl = storeViewModel::saveSourceUrl,
+            resetSourceUrl = storeViewModel::resetSourceUrl,
             consumeNotice = storeViewModel::consumeNotice,
         )
     }

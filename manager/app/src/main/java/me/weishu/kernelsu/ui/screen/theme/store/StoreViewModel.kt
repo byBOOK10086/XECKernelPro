@@ -145,7 +145,12 @@ class StoreViewModel : ViewModel() {
             runCatching { ThemeRepository.activeId(context) }.getOrNull()
         }
         _state.update {
-            it.copy(favorites = favorites, searchHistory = history, currentThemeId = active)
+            it.copy(
+                favorites = favorites,
+                searchHistory = history,
+                currentThemeId = active,
+                sourceUrl = ThemeStoreSettings.configuredUrl,
+            )
         }
     }
 
@@ -327,6 +332,47 @@ class StoreViewModel : ViewModel() {
     }
 
     fun consumeNotice() = _state.update { it.copy(notice = null) }
+
+    // ------------------------------------------------------------------ 数据源
+
+    fun openSourceDialog() = _state.update { it.copy(sourceDialogOpen = true) }
+
+    fun dismissSourceDialog() = _state.update { it.copy(sourceDialogOpen = false) }
+
+    /**
+     * 保存自定义数据源（空串 = 回到内置源）。
+     *
+     * 只接受 http(s)：索引解析走 OkHttp，`file://` / `content://` 之类既不被支持，
+     * 也不该在这里被顺手放行。换源后必须**清掉磁盘快照**再强制联网，否则界面会拿旧源的
+     * 缓存让人误以为"换了源还是那批主题"。
+     */
+    fun saveSourceUrl(url: String) {
+        val trimmed = url.trim()
+        if (trimmed.isNotEmpty() &&
+            !trimmed.startsWith("http://") &&
+            !trimmed.startsWith("https://")
+        ) {
+            return
+        }
+        ThemeStoreSettings.configuredUrl = trimmed
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { StoreCatalogRepository.clearCache(context) }
+            _state.update { current ->
+                current.copy(
+                    sourceDialogOpen = false,
+                    sourceUrl = trimmed,
+                    catalog = me.weishu.kernelsu.data.theme.StoreCatalog.EMPTY,
+                    loading = true,
+                    fromCache = false,
+                    fetchedAt = 0L,
+                    notice = if (trimmed.isEmpty()) StoreNotice.SourceReset else StoreNotice.SourceSaved,
+                )
+            }
+            load(force = true)
+        }
+    }
+
+    fun resetSourceUrl() = saveSourceUrl("")
 
     /** 搜索建议（搜索页输入时可以用，当前只暴露给"热词"以防白算）。 */
     fun suggestions(): List<String> = StoreQuery.suggestions(
