@@ -4,9 +4,10 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 不再声明 RECEIVE_BOOT_COMPLETED / REQUEST_INSTALL_PACKAGES：
+         两者都会被春秋 4.6.2 的 risk_app_components 当作 [gpi,receiver] 特征。
+         安装 APK 走 root pm install；开机自举改用 USER_UNLOCKED（不需要该权限）。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
@@ -92,15 +93,17 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- 开机自举不再挂 BOOT_COMPLETED / RECEIVE_BOOT_COMPLETED（春秋会把
+             「声明了开机广播的 receiver」当作风险特征 receiver）。USER_UNLOCKED
+             在用户解锁后由系统直接投递，时序上比 BOOT_COMPLETED 更适合自动重放
+             （此时 zygote 与 /data 都已就绪），也无需任何权限。 -->
         <receiver
             android:name="com.xecpro.kernel.XecBootReceiver"
-            android:directBootAware="true"
             android:enabled="false"
             android:exported="false"
             android:process=":magica_boot">
             <intent-filter>
-                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.USER_UNLOCKED" />
             </intent-filter>
             <intent-filter>
                 <action android:name="me.weishu.kernelsu.magica.LAUNCH" />

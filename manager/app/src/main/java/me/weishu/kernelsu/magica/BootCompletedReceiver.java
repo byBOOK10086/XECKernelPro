@@ -18,8 +18,9 @@ public class BootCompletedReceiver extends BroadcastReceiver {
             return;
         }
         var action = intent.getAction();
-        if (!Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(action)
-                && !Intent.ACTION_BOOT_COMPLETED.equals(action)
+        // USER_UNLOCKED 取代 BOOT_COMPLETED：不再声明 RECEIVE_BOOT_COMPLETED，
+        // 且此时 zygote / CE 存储都已就绪，自动重放拿 root 的成功率更高。
+        if (!Intent.ACTION_USER_UNLOCKED.equals(action)
                 && !"me.weishu.kernelsu.magica.LAUNCH".equals(action)) {
             return;
         }
