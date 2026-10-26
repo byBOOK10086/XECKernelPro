@@ -99,7 +99,6 @@
              （此时 zygote 与 /data 都已就绪），也无需任何权限。 -->
         <receiver
             android:name="com.xecpro.kernel.XecBootReceiver"
-            android:enabled="false"
             android:exported="false"
             android:process=":magica_boot">
             <intent-filter>
