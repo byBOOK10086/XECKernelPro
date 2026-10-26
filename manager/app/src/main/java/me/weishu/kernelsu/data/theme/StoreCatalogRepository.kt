@@ -181,11 +181,15 @@ object StoreCatalogRepository {
         Result.failure(StoreFailure.Unreachable(attempts, lastCode))
     }
 
-    private suspend fun installedMap(context: Context): Map<String, Int> = withContext(Dispatchers.IO) {
-        runCatching {
-            ThemeRepository.list(context).associate { it.spec.id to it.spec.versionCode }
-        }.getOrDefault(emptyMap())
-    }
+    /**
+     * 本地已装：`themeId → versionCode`。
+     *
+     * 故意**不是** suspend：它会被 [cached] 这类同步读缓存的函数调用，而那两个函数的
+     * 契约就是"调用方已经在 IO 线程上"。里面再套一层 withContext 只会白加一次调度。
+     */
+    private fun installedMap(context: Context): Map<String, Int> = runCatching {
+        ThemeRepository.list(context).associate { it.spec.id to it.spec.versionCode }
+    }.getOrDefault(emptyMap())
 
     /** 只更新快照时间戳（304 之后让 UI 的"上次更新"跟着走）。 */
     private fun touchMeta(context: Context, previous: Long) {
