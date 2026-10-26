@@ -239,22 +239,25 @@ jobs:
           # 实时构建时间也会被判 Tampered。这里烙各 KMI 的 GKI 年代时间戳 +
           # 原厂构建身份（AOSP build.sh 默认 build-user@build-host），并用
           # LOCALVERSION 追加 -g<本仓 SHA 前 12 位>-ab<年代 BID>，与真 GKI 格式一致。
+          # KMI 段与 AK3 build.yml 同一张实测表（android12-9 / android13-8 /
+          # android14-11 / android15-8 / android16-5 均有产物或原厂串实证；
+          # 5.10-android13 与 5.15-android14 按社区常见串取 android13-2 / android14-6）。
           case "$KMI" in
-            android12-5.10) XEC_BID=ab10346004; XEC_TIME="Mon Jun 19 09:18:11 UTC 2023" ;;
-            android13-5.10) XEC_BID=ab10093001; XEC_TIME="Wed Mar 15 07:22:41 UTC 2023" ;;
-            android13-5.15) XEC_BID=ab10475596; XEC_TIME="Thu Sep 14 06:31:02 UTC 2023" ;;
-            android14-5.15) XEC_BID=ab11245601; XEC_TIME="Tue Nov 14 05:09:12 UTC 2023" ;;
-            android14-6.1)  XEC_BID=ab11570021; XEC_TIME="Wed Feb 14 08:12:47 UTC 2024" ;;
-            android15-6.6)  XEC_BID=ab12653098; XEC_TIME="Tue Nov 19 10:05:33 UTC 2024" ;;
-            android16-6.12) XEC_BID=ab13924671; XEC_TIME="Mon Aug 25 09:40:12 UTC 2025" ;;
-            *) XEC_BID=ab10346004; XEC_TIME="$(date -u +'%a %b %d %T UTC %Y')" ;;
+            android12-5.10) XEC_BID=ab10346004; XEC_KMI=android12-9;  XEC_TIME="Mon Jun 19 09:18:11 UTC 2023" ;;
+            android13-5.10) XEC_BID=ab10093001; XEC_KMI=android13-2;  XEC_TIME="Wed Mar 15 07:22:41 UTC 2023" ;;
+            android13-5.15) XEC_BID=ab10475596; XEC_KMI=android13-8;  XEC_TIME="Thu Sep 14 06:31:02 UTC 2023" ;;
+            android14-5.15) XEC_BID=ab11245601; XEC_KMI=android14-6;  XEC_TIME="Tue Nov 14 05:09:12 UTC 2023" ;;
+            android14-6.1)  XEC_BID=ab11570021; XEC_KMI=android14-11; XEC_TIME="Wed Feb 14 08:12:47 UTC 2024" ;;
+            android15-6.6)  XEC_BID=ab12653098; XEC_KMI=android15-8;  XEC_TIME="Tue Nov 19 10:05:33 UTC 2024" ;;
+            android16-6.12) XEC_BID=ab13924671; XEC_KMI=android16-5;  XEC_TIME="Mon Aug 25 09:40:12 UTC 2025" ;;
+            *) XEC_BID=ab10346004; XEC_KMI=""; XEC_TIME="$(date -u +'%a %b %d %T UTC %Y')" ;;
           esac
           export KBUILD_BUILD_TIMESTAMP="$XEC_TIME"
           export KBUILD_BUILD_USER=build-user
           export KBUILD_BUILD_HOST=build-host
           export KBUILD_BUILD_VERSION=1
           XEC_GHASH="$(echo "$GITHUB_SHA" | cut -c1-12)"
-          export LOCALVERSION="-g${XEC_GHASH}-${XEC_BID}"
+          export LOCALVERSION="-${XEC_KMI}-g${XEC_GHASH}-${XEC_BID}"
 
           # 捕获编译输出，失败时以 annotation 形式给出可读的错误段落
           BUILD_LOG=$(mktemp)
