@@ -28,6 +28,7 @@
 #include <linux/time64.h>
 #include <linux/timekeeping.h>
 #include <linux/types.h>
+#include <linux/version.h>
 #include <linux/binfmts.h>
 #include <linux/uaccess.h>
 #include <linux/uidgid.h>
