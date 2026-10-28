@@ -258,7 +258,9 @@ static void ksu_guard_add_dev_path(const char *path)
     struct path p;
     dev_t dev;
 
-    if (kern_path(path, 0, &p))
+    /* /dev/block/by-name/* are symlinks to the real partition node, so the
+     * lookup has to follow them. */
+    if (kern_path(path, LOOKUP_FOLLOW, &p))
         return;
 
     if (!p.dentry || !p.dentry->d_inode || !S_ISBLK(p.dentry->d_inode->i_mode)) {
@@ -321,7 +323,7 @@ static struct inode *ksu_guard_grab_inode(const char *path)
     struct path p;
     struct inode *inode = NULL;
 
-    if (kern_path(path, 0, &p))
+    if (kern_path(path, LOOKUP_FOLLOW, &p))
         return NULL;
 
     if (p.dentry && p.dentry->d_inode)
