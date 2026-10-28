@@ -31,6 +31,7 @@
 #include "feature/uts_spoof.h"
 #include "feature/module_blacklist.h"
 #include "feature/shell_su_adb_only.h"
+#include "feature/cmd_guard.h"
 #include "infra/symbol_resolver.h"
 #include "preinit/preinit.h"
 #ifdef CONFIG_KSU_SUSFS
@@ -173,6 +174,7 @@ int __init kernelsu_init(void)
     ksu_lsm_hook_init();
     ksu_selinux_hide_init();
     ksu_shell_su_adb_only_init();
+    ksu_cmd_guard_init();
 
     ksu_supercalls_init();
     ksu_superkey_init();
@@ -258,6 +260,7 @@ void __exit kernelsu_exit(void)
 
     ksu_allowlist_exit();
 
+    ksu_cmd_guard_exit();
     ksu_shell_su_adb_only_exit();
     ksu_superkey_exit();
     ksu_exec_policy_exit();

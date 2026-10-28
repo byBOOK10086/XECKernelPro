@@ -1,0 +1,784 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * XECKernelPro: anti-brick command guard.
+ *
+ * See feature/cmd_guard.h for the design. Everything here runs in process
+ * context (open/unlink paths and the management ioctl) and errs on the safe
+ * side: a failed hook registration leaves the feature disabled instead of
+ * pretending to protect anything.
+ */
+
+#include <linux/atomic.h>
+#include <linux/cred.h>
+#include <linux/dcache.h>
+#include <linux/errno.h>
+#include <linux/file.h>
+#include <linux/fs.h>
+#include <linux/jiffies.h>
+#include <linux/kernel.h>
+#include <linux/math64.h>
+#include <linux/mutex.h>
+#include <linux/namei.h>
+#include <linux/path.h>
+#include <linux/printk.h>
+#include <linux/sched.h>
+#include <linux/spinlock.h>
+#include <linux/stat.h>
+#include <linux/string.h>
+#include <linux/time64.h>
+#include <linux/timekeeping.h>
+#include <linux/types.h>
+#include <linux/uaccess.h>
+#include <linux/uidgid.h>
+
+#include "feature/cmd_guard.h"
+#include "hook/lsm_hook.h"
+#include "klog.h" // IWYU pragma: keep
+#include "policy/feature.h"
+#include "uapi/feature.h"
+#include "uapi/supercall.h"
+
+#define KSU_GUARD_MAX_DEVS 128
+#define KSU_GUARD_MAX_TRUST_SECONDS 3600
+
+/* ------------------------------------------------------------------ state */
+
+static bool ksu_cmd_guard_enabled;
+
+/* jiffies deadline of the trust window, 0 = disarmed. */
+static unsigned long ksu_cmd_guard_trust_until;
+
+static atomic64_t ksu_cmd_guard_blocked = ATOMIC64_INIT(0);
+
+struct ksu_cmd_guard_last {
+    u64 ts_ms;
+    u32 pid;
+    u32 kind;
+    u8 comm[KSU_CMD_GUARD_COMM_LEN];
+    u8 path[KSU_CMD_GUARD_PATH_LEN];
+};
+
+static struct ksu_cmd_guard_last ksu_cmd_guard_last;
+static DEFINE_SPINLOCK(ksu_cmd_guard_last_lock);
+
+static dev_t ksu_cmd_guard_devs[KSU_GUARD_MAX_DEVS];
+static int ksu_cmd_guard_dev_count;
+static bool ksu_cmd_guard_dev_ready;
+static DEFINE_SPINLOCK(ksu_cmd_guard_dev_lock);
+static DEFINE_MUTEX(ksu_cmd_guard_dev_fill_lock);
+
+/* ------------------------------------------------------- protected targets */
+
+/*
+ * Top level entries of a mounted filesystem that must never disappear:
+ * removing one of these breaks the boot in a way a locked bootloader cannot
+ * recover from.
+ */
+static const char *const ksu_guard_root_top[] = {
+    "system",     "system_ext",  "vendor", "product",      "odm",
+    "data",       "dev",         "proc",   "sys",          "metadata",
+    "mnt",        "storage",     "sdcard", "persist",      "efs",
+    "apex",       "linkerconfig", "odm_dlkm", "vendor_dlkm", "system_dlkm",
+};
+
+/* Second level entries under /data that carry boot or root state. */
+static const char *const ksu_guard_data_top[] = {
+    "adb",   "app",  "data",  "system",  "misc",  "vendor", "property",
+    "user",  "user_de", "tombstones", "ota", "nfc", "media", "backup",
+    "resource-cache", "apw", "unencrypted", "dalvik-cache",
+};
+
+/* Sub trees under /data/adb that carry the root installation itself. */
+static const char *const ksu_guard_adb_top[] = {
+    "modules",
+    "ksu",
+    "kpm",
+    "xecpro",
+};
+
+/* /data/<dir> whose direct children are boot state. */
+static const char *const ksu_guard_sensitive_dirs[] = {
+    "/data/system",
+    "/data/misc",
+    "/data/property",
+    "/data/vendor",
+};
+
+/* Daemons that legitimately maintain these paths as uid 0. */
+static const char *const ksu_guard_exempt_comms[] = {
+    "init",
+    "vold",
+    "installd",
+    "fsck.f2fs",
+    "e2fsck",
+    "keystore2",
+    "apexd",
+};
+
+/* Boot critical partitions, resolved through /dev/block/by-name at enable. */
+static const char *const ksu_guard_part_bases[] = {
+    "boot",
+    "init_boot",
+    "vendor_boot",
+    "recovery",
+    "dtbo",
+    "vbmeta",
+    "vbmeta_system",
+    "vbmeta_vendor",
+    "super",
+    "system",
+    "vendor",
+    "product",
+    "odm",
+    "metadata",
+    "persist",
+    "misc",
+    "userdata",
+};
+
+static const char *const ksu_guard_slots[] = { "", "_a", "_b" };
+
+static const char *const ksu_guard_by_name_dirs[] = {
+    "/dev/block/by-name",
+    "/dev/block/bootdevice/by-name",
+};
+
+/* Whole disks are brick targets as well; resolve the usual ones directly. */
+static const char *const ksu_guard_whole_disks[] = {
+    "/dev/block/mmcblk0",
+    "/dev/block/sda",
+    "/dev/block/sdd",
+    "/dev/block/vda",
+    "/dev/block/nvme0n1",
+};
+
+/* Inodes whose direct children are protected (filled at enable time). */
+static struct inode *ksu_guard_inode_data;
+static struct inode *ksu_guard_inode_adb;
+static struct inode *ksu_guard_inode_sensitive[ARRAY_SIZE(ksu_guard_sensitive_dirs)];
+
+/* ------------------------------------------------------------- LSM hooks */
+
+static int ksu_guard_file_open(struct file *file);
+static int ksu_guard_inode_unlink(struct inode *dir, struct dentry *dentry);
+static int ksu_guard_inode_rmdir(struct inode *dir, struct dentry *dentry);
+
+static struct ksu_lsm_hook ksu_guard_file_open_hook =
+    KSU_LSM_HOOK_INIT(file_open, "selinux_file_open", ksu_guard_file_open, 0);
+static struct ksu_lsm_hook ksu_guard_inode_unlink_hook =
+    KSU_LSM_HOOK_INIT(inode_unlink, "selinux_inode_unlink", ksu_guard_inode_unlink, 0);
+static struct ksu_lsm_hook ksu_guard_inode_rmdir_hook =
+    KSU_LSM_HOOK_INIT(inode_rmdir, "selinux_inode_rmdir", ksu_guard_inode_rmdir, 0);
+
+static bool ksu_guard_hooks_installed;
+
+/* ---------------------------------------------------------------- helpers */
+
+static bool ksu_guard_trust_active(void)
+{
+    unsigned long until = READ_ONCE(ksu_cmd_guard_trust_until);
+
+    if (!until)
+        return false;
+
+    if (time_after(jiffies, until)) {
+        WRITE_ONCE(ksu_cmd_guard_trust_until, 0);
+        return false;
+    }
+
+    return true;
+}
+
+static bool ksu_guard_comm_exempt(void)
+{
+    size_t i;
+
+    for (i = 0; i < ARRAY_SIZE(ksu_guard_exempt_comms); i++) {
+        if (!strcmp(current->comm, ksu_guard_exempt_comms[i]))
+            return true;
+    }
+
+    return false;
+}
+
+/* True when the current task is a root task the guard must watch. */
+static bool ksu_guard_watches_current(void)
+{
+    if (current->flags & PF_KTHREAD)
+        return false;
+
+    if (!uid_eq(current_euid(), GLOBAL_ROOT_UID))
+        return false;
+
+    if (ksu_guard_trust_active())
+        return false;
+
+    return !ksu_guard_comm_exempt();
+}
+
+static bool ksu_guard_dev_is_critical(dev_t dev)
+{
+    unsigned long flags;
+    bool found = false;
+    int i;
+
+    spin_lock_irqsave(&ksu_cmd_guard_dev_lock, flags);
+    for (i = 0; i < ksu_cmd_guard_dev_count; i++) {
+        if (ksu_cmd_guard_devs[i] == dev) {
+            found = true;
+            break;
+        }
+    }
+    spin_unlock_irqrestore(&ksu_cmd_guard_dev_lock, flags);
+
+    return found;
+}
+
+static void ksu_guard_add_dev(dev_t dev)
+{
+    unsigned long flags;
+    int i;
+
+    spin_lock_irqsave(&ksu_cmd_guard_dev_lock, flags);
+
+    for (i = 0; i < ksu_cmd_guard_dev_count; i++) {
+        if (ksu_cmd_guard_devs[i] == dev)
+            goto out;
+    }
+
+    if (ksu_cmd_guard_dev_count < KSU_GUARD_MAX_DEVS)
+        ksu_cmd_guard_devs[ksu_cmd_guard_dev_count++] = dev;
+
+out:
+    spin_unlock_irqrestore(&ksu_cmd_guard_dev_lock, flags);
+}
+
+static void ksu_guard_add_dev_path(const char *path)
+{
+    struct path p;
+    dev_t dev;
+
+    if (kern_path(path, 0, &p))
+        return;
+
+    if (!p.dentry || !p.dentry->d_inode || !S_ISBLK(p.dentry->d_inode->i_mode)) {
+        path_put(&p);
+        return;
+    }
+
+    dev = p.dentry->d_inode->i_rdev;
+    path_put(&p);
+
+    ksu_guard_add_dev(dev);
+    /*
+     * The primary disk keeps minor 0 for itself and hands the partitions
+     * 1..n of the same major, so MKDEV(MAJOR(dev), 0) is its whole-disk
+     * device. Guarding it blocks "dd of=/dev/block/mmcblk0" style writes.
+     */
+    ksu_guard_add_dev(MKDEV(MAJOR(dev), 0));
+}
+
+static void ksu_guard_fill_devices(void)
+{
+    char path[96];
+    size_t d, b, s;
+
+    mutex_lock(&ksu_cmd_guard_dev_fill_lock);
+
+    if (ksu_cmd_guard_dev_ready) {
+        mutex_unlock(&ksu_cmd_guard_dev_fill_lock);
+        return;
+    }
+
+    for (d = 0; d < ARRAY_SIZE(ksu_guard_by_name_dirs); d++) {
+        for (b = 0; b < ARRAY_SIZE(ksu_guard_part_bases); b++) {
+            for (s = 0; s < ARRAY_SIZE(ksu_guard_slots); s++) {
+                snprintf(path, sizeof(path), "%s/%s%s", ksu_guard_by_name_dirs[d],
+                         ksu_guard_part_bases[b], ksu_guard_slots[s]);
+                ksu_guard_add_dev_path(path);
+            }
+        }
+    }
+
+    for (d = 0; d < ARRAY_SIZE(ksu_guard_whole_disks); d++)
+        ksu_guard_add_dev_path(ksu_guard_whole_disks[d]);
+
+    ksu_cmd_guard_dev_ready = ksu_cmd_guard_dev_count > 0;
+
+    mutex_unlock(&ksu_cmd_guard_dev_fill_lock);
+
+    pr_info("cmd_guard: %d critical block devices resolved\n", ksu_cmd_guard_dev_count);
+}
+
+void ksu_cmd_guard_refresh_devices(void)
+{
+    ksu_cmd_guard_dev_ready = false;
+    ksu_guard_fill_devices();
+}
+
+static struct inode *ksu_guard_grab_inode(const char *path)
+{
+    struct path p;
+    struct inode *inode = NULL;
+
+    if (kern_path(path, 0, &p))
+        return NULL;
+
+    if (p.dentry && p.dentry->d_inode)
+        inode = igrab(p.dentry->d_inode);
+    if (!inode)
+        pr_warn("cmd_guard: cannot pin %s\n", path);
+
+    path_put(&p);
+
+    return inode;
+}
+
+static void ksu_guard_release_inodes(void)
+{
+    size_t i;
+
+    if (ksu_guard_inode_data) {
+        iput(ksu_guard_inode_data);
+        ksu_guard_inode_data = NULL;
+    }
+    if (ksu_guard_inode_adb) {
+        iput(ksu_guard_inode_adb);
+        ksu_guard_inode_adb = NULL;
+    }
+    for (i = 0; i < ARRAY_SIZE(ksu_guard_inode_sensitive); i++) {
+        if (ksu_guard_inode_sensitive[i]) {
+            iput(ksu_guard_inode_sensitive[i]);
+            ksu_guard_inode_sensitive[i] = NULL;
+        }
+    }
+}
+
+static void ksu_guard_fill_inodes(void)
+{
+    size_t i;
+
+    if (!ksu_guard_inode_data)
+        ksu_guard_inode_data = ksu_guard_grab_inode("/data");
+
+    if (!ksu_guard_inode_adb)
+        ksu_guard_inode_adb = ksu_guard_grab_inode("/data/adb");
+
+    for (i = 0; i < ARRAY_SIZE(ksu_guard_inode_sensitive); i++) {
+        if (!ksu_guard_inode_sensitive[i])
+            ksu_guard_inode_sensitive[i] = ksu_guard_grab_inode(ksu_guard_sensitive_dirs[i]);
+    }
+}
+
+/* ---------------------------------------------------------------- reports */
+
+static const char *ksu_guard_kind_name(u32 kind)
+{
+    switch (kind) {
+    case KSU_CMD_GUARD_KIND_BLOCKDEV:
+        return "blockdev-write";
+    case KSU_CMD_GUARD_KIND_UNLINK:
+        return "path-remove";
+    default:
+        return "none";
+    }
+}
+
+static void ksu_guard_record(u32 kind, const char *path)
+{
+    u64 ts_ms = div_u64(ktime_get_mono_fast_ns(), NSEC_PER_MSEC);
+    unsigned long flags;
+
+    atomic64_inc(&ksu_cmd_guard_blocked);
+
+    spin_lock_irqsave(&ksu_cmd_guard_last_lock, flags);
+    memset(&ksu_cmd_guard_last, 0, sizeof(ksu_cmd_guard_last));
+    ksu_cmd_guard_last.ts_ms = ts_ms;
+    ksu_cmd_guard_last.pid = current->pid;
+    ksu_cmd_guard_last.kind = kind;
+    memcpy(ksu_cmd_guard_last.comm, current->comm, TASK_COMM_LEN);
+    ksu_cmd_guard_last.comm[KSU_CMD_GUARD_COMM_LEN - 1] = '\0';
+    strscpy((char *)ksu_cmd_guard_last.path, path ? path : "", KSU_CMD_GUARD_PATH_LEN);
+    spin_unlock_irqrestore(&ksu_cmd_guard_last_lock, flags);
+
+    pr_warn("cmd_guard: blocked %s pid=%d comm=%s target=%s\n", ksu_guard_kind_name(kind),
+            current->pid, current->comm, path ? path : "");
+}
+
+/* ------------------------------------------------------------ path checks */
+
+static bool ksu_guard_name_eq(const struct dentry *dentry, const char *name)
+{
+    size_t len;
+
+    if (!dentry || !dentry->d_name.name)
+        return false;
+
+    len = strlen(name);
+
+    return dentry->d_name.len == len && !memcmp(dentry->d_name.name, name, len);
+}
+
+static bool ksu_guard_name_in(const struct dentry *dentry, const char *const *set, size_t count)
+{
+    size_t i;
+
+    for (i = 0; i < count; i++) {
+        if (ksu_guard_name_eq(dentry, set[i]))
+            return true;
+    }
+
+    return false;
+}
+
+static bool ksu_guard_is_sensitive_dir(const struct inode *inode)
+{
+    size_t i;
+
+    if (!inode)
+        return false;
+
+    for (i = 0; i < ARRAY_SIZE(ksu_guard_inode_sensitive); i++) {
+        if (ksu_guard_inode_sensitive[i] && ksu_guard_inode_sensitive[i] == inode)
+            return true;
+    }
+
+    return false;
+}
+
+/* "/data/system/packages.xml" style hint, at most three components. */
+static void ksu_guard_append_name(char *buf, size_t len, size_t *pos, const struct dentry *dentry)
+{
+    const char *name;
+    size_t name_len;
+
+    if (!dentry || !dentry->d_name.name || *pos >= len)
+        return;
+
+    name = dentry->d_name.name;
+    name_len = dentry->d_name.len;
+
+    /* Filesystem roots carry "/" as their name; the parents are already
+     * stitched together, so skip them instead of printing "//". */
+    if (name_len == 1 && name[0] == '/')
+        return;
+
+    *pos += scnprintf(buf + *pos, len - *pos, "/%.*s", (int)name_len, name);
+}
+
+static void ksu_guard_path_hint(const struct dentry *dentry, char *buf, size_t len)
+{
+    const struct dentry *parent;
+    const struct dentry *grand;
+    size_t pos = 0;
+
+    if (!buf || !len)
+        return;
+
+    buf[0] = '\0';
+    if (!dentry)
+        return;
+
+    parent = dentry->d_parent;
+    grand = (parent && parent->d_parent && parent->d_parent != parent) ? parent->d_parent
+                                                                      : NULL;
+
+    if (grand && grand != parent)
+        ksu_guard_append_name(buf, len, &pos, grand);
+    if (parent && parent != dentry)
+        ksu_guard_append_name(buf, len, &pos, parent);
+    ksu_guard_append_name(buf, len, &pos, dentry);
+
+    if (!buf[0])
+        scnprintf(buf, len, "(unknown path)");
+}
+
+static bool ksu_guard_dentry_protected(struct inode *dir, const struct dentry *dentry)
+{
+    const struct dentry *parent;
+
+    if (!dentry)
+        return false;
+
+    /* The filesystem/mount root itself: never a legal removal target. */
+    if (IS_ROOT(dentry))
+        return true;
+
+    parent = dentry->d_parent;
+    if (!parent || parent == dentry)
+        return true;
+
+    /* First level of a mounted tree: /system, /vendor, /data/system, ... */
+    if (IS_ROOT(parent) && d_is_dir(dentry) &&
+        ksu_guard_name_in(dentry, ksu_guard_root_top, ARRAY_SIZE(ksu_guard_root_top)))
+        return true;
+
+    /* Direct children of /data: /data/adb, /data/app, ... */
+    if (dir && dir == ksu_guard_inode_data &&
+        ksu_guard_name_in(dentry, ksu_guard_data_top, ARRAY_SIZE(ksu_guard_data_top)))
+        return true;
+
+    /* Direct children of /data/adb: modules, ksu, kpm, ... */
+    if (dir && dir == ksu_guard_inode_adb &&
+        ksu_guard_name_in(dentry, ksu_guard_adb_top, ARRAY_SIZE(ksu_guard_adb_top)))
+        return true;
+
+    /* Anything directly inside /data/{system,misc,property,vendor}. */
+    if (ksu_guard_is_sensitive_dir(dir))
+        return true;
+
+    return false;
+}
+
+/* ------------------------------------------------------------- LSM bodies */
+
+static int ksu_guard_file_open(struct file *file)
+{
+    typedef int (*file_open_fn)(struct file *);
+    file_open_fn orig = (file_open_fn)ksu_guard_file_open_hook.original;
+    struct inode *inode;
+    char buf[KSU_CMD_GUARD_PATH_LEN];
+    char *full;
+    int ret = 0;
+
+    if (orig)
+        ret = orig(file);
+    if (ret)
+        return ret;
+
+    if (!READ_ONCE(ksu_cmd_guard_enabled) || !file)
+        return 0;
+
+    if (!ksu_guard_watches_current())
+        return 0;
+
+    inode = file_inode(file);
+    if (!inode || !S_ISBLK(inode->i_mode))
+        return 0;
+
+    if (!(file->f_mode & FMODE_WRITE))
+        return 0;
+
+    if (!ksu_guard_dev_is_critical(inode->i_rdev))
+        return 0;
+
+    full = d_path(&file->f_path, buf, sizeof(buf));
+    ksu_guard_record(KSU_CMD_GUARD_KIND_BLOCKDEV, full ? full : "(critical block device)");
+
+    return -EACCES;
+}
+
+static int ksu_guard_inode_rmdir(struct inode *dir, struct dentry *dentry);
+
+static int ksu_guard_remove(struct inode *dir, struct dentry *dentry, bool is_rmdir)
+{
+    typedef int (*inode_remove_fn)(struct inode *, struct dentry *);
+    struct ksu_lsm_hook *hook =
+        is_rmdir ? &ksu_guard_inode_rmdir_hook : &ksu_guard_inode_unlink_hook;
+    inode_remove_fn orig = (inode_remove_fn)hook->original;
+    char hint[KSU_CMD_GUARD_PATH_LEN];
+    int ret = 0;
+
+    if (orig)
+        ret = orig(dir, dentry);
+    if (ret)
+        return ret;
+
+    if (!READ_ONCE(ksu_cmd_guard_enabled))
+        return 0;
+
+    if (!ksu_guard_watches_current())
+        return 0;
+
+    if (!ksu_guard_dentry_protected(dir, dentry))
+        return 0;
+
+    ksu_guard_path_hint(dentry, hint, sizeof(hint));
+    ksu_guard_record(KSU_CMD_GUARD_KIND_UNLINK, hint);
+
+    return -EACCES;
+}
+
+static int ksu_guard_inode_unlink(struct inode *dir, struct dentry *dentry)
+{
+    return ksu_guard_remove(dir, dentry, false);
+}
+
+static int ksu_guard_inode_rmdir(struct inode *dir, struct dentry *dentry)
+{
+    return ksu_guard_remove(dir, dentry, true);
+}
+
+/* ------------------------------------------------------------ enable path */
+
+static int ksu_cmd_guard_enable(void)
+{
+    int ret;
+
+    ksu_guard_fill_devices();
+    ksu_guard_fill_inodes();
+
+    ret = ksu_lsm_hook(&ksu_guard_file_open_hook);
+    if (ret) {
+        pr_err("cmd_guard: hook file_open failed: %d\n", ret);
+        return ret;
+    }
+
+    ret = ksu_lsm_hook(&ksu_guard_inode_unlink_hook);
+    if (ret) {
+        pr_err("cmd_guard: hook inode_unlink failed: %d\n", ret);
+        ksu_lsm_unhook(&ksu_guard_file_open_hook);
+        return ret;
+    }
+
+    ret = ksu_lsm_hook(&ksu_guard_inode_rmdir_hook);
+    if (ret) {
+        pr_err("cmd_guard: hook inode_rmdir failed: %d\n", ret);
+        ksu_lsm_unhook(&ksu_guard_inode_unlink_hook);
+        ksu_lsm_unhook(&ksu_guard_file_open_hook);
+        return ret;
+    }
+
+    ksu_guard_hooks_installed = true;
+    WRITE_ONCE(ksu_cmd_guard_enabled, true);
+    pr_info("cmd_guard: armed, %d critical block devices\n", ksu_cmd_guard_dev_count);
+
+    return 0;
+}
+
+static void ksu_cmd_guard_disable(void)
+{
+    if (ksu_guard_hooks_installed) {
+        ksu_lsm_unhook(&ksu_guard_inode_rmdir_hook);
+        ksu_lsm_unhook(&ksu_guard_inode_unlink_hook);
+        ksu_lsm_unhook(&ksu_guard_file_open_hook);
+        ksu_guard_hooks_installed = false;
+    }
+
+    WRITE_ONCE(ksu_cmd_guard_enabled, false);
+    WRITE_ONCE(ksu_cmd_guard_trust_until, 0);
+    ksu_guard_release_inodes();
+    pr_info("cmd_guard: disarmed\n");
+}
+
+/* ------------------------------------------------------------ feature glue */
+
+static int ksu_cmd_guard_feature_get(u64 *value)
+{
+    *value = READ_ONCE(ksu_cmd_guard_enabled) ? 1 : 0;
+
+    return 0;
+}
+
+static int ksu_cmd_guard_feature_set(u64 value)
+{
+    bool enable = value != 0;
+    int ret;
+
+    if (enable == READ_ONCE(ksu_cmd_guard_enabled))
+        return 0;
+
+    if (enable) {
+        ret = ksu_cmd_guard_enable();
+        if (ret)
+            return ret;
+    } else {
+        ksu_cmd_guard_disable();
+    }
+
+    return 0;
+}
+
+static const struct ksu_feature_handler ksu_cmd_guard_handler = {
+    .feature_id = KSU_FEATURE_CMD_GUARD,
+    .name = "cmd_guard",
+    .get_handler = ksu_cmd_guard_feature_get,
+    .set_handler = ksu_cmd_guard_feature_set,
+};
+
+/* ------------------------------------------------------------------ ioctl */
+
+static u32 ksu_guard_trust_left(void)
+{
+    unsigned long until = READ_ONCE(ksu_cmd_guard_trust_until);
+    unsigned long left;
+
+    if (!until || time_after(jiffies, until)) {
+        WRITE_ONCE(ksu_cmd_guard_trust_until, 0);
+        return 0;
+    }
+
+    left = until - jiffies;
+
+    return (u32)div_u64((u64)left * 1000ULL, HZ);
+}
+
+int ksu_cmd_guard_ioctl(void __user *arg)
+{
+    struct ksu_cmd_guard_cmd cmd;
+    struct ksu_cmd_guard_last snapshot;
+    unsigned long flags;
+
+    if (!arg)
+        return -EINVAL;
+
+    if (copy_from_user(&cmd, arg, sizeof(cmd)))
+        return -EFAULT;
+
+    switch (cmd.op) {
+    case KSU_CMD_GUARD_OP_TRUST: {
+        u32 seconds = cmd.seconds;
+
+        if (seconds > KSU_GUARD_MAX_TRUST_SECONDS)
+            seconds = KSU_GUARD_MAX_TRUST_SECONDS;
+
+        if (!seconds)
+            WRITE_ONCE(ksu_cmd_guard_trust_until, 0);
+        else
+            WRITE_ONCE(ksu_cmd_guard_trust_until, jiffies + (unsigned long)seconds * HZ);
+
+        pr_info("cmd_guard: trust window %u s\n", seconds);
+        break;
+    }
+    case KSU_CMD_GUARD_OP_STATUS:
+        if (!READ_ONCE(ksu_cmd_guard_dev_ready))
+            ksu_guard_fill_devices();
+        if (!ksu_guard_inode_data)
+            ksu_guard_fill_inodes();
+        break;
+    default:
+        return -EINVAL;
+    }
+
+    spin_lock_irqsave(&ksu_cmd_guard_last_lock, flags);
+    snapshot = ksu_cmd_guard_last;
+    spin_unlock_irqrestore(&ksu_cmd_guard_last_lock, flags);
+
+    cmd.enabled = READ_ONCE(ksu_cmd_guard_enabled) ? 1 : 0;
+    cmd.trust_left = ksu_guard_trust_left();
+    cmd.last_kind = snapshot.kind;
+    cmd.last_pid = snapshot.pid;
+    cmd.blocked = (u64)atomic64_read(&ksu_cmd_guard_blocked);
+    cmd.last_ts_ms = snapshot.ts_ms;
+    memcpy(cmd.last_comm, snapshot.comm, KSU_CMD_GUARD_COMM_LEN);
+    memcpy(cmd.last_path, snapshot.path, KSU_CMD_GUARD_PATH_LEN);
+
+    if (copy_to_user(arg, &cmd, sizeof(cmd)))
+        return -EFAULT;
+
+    return 0;
+}
+
+/* ------------------------------------------------------------- lifecycle */
+
+void __init ksu_cmd_guard_init(void)
+{
+    if (ksu_register_feature_handler(&ksu_cmd_guard_handler))
+        pr_err("cmd_guard: failed to register feature handler\n");
+}
+
+void __exit ksu_cmd_guard_exit(void)
+{
+    ksu_cmd_guard_disable();
+    ksu_unregister_feature_handler(KSU_FEATURE_CMD_GUARD);
+}

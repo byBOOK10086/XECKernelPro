@@ -14,6 +14,11 @@ enum ksu_feature_id {
     // policy-mutating ioctls (requires a superkey to be set first).
     KSU_FEATURE_SUPERKEY_GUARD = 7,
 
+    // XECKernelPro extension: anti-brick command guard. While on, the kernel
+    // vetoes writes to boot-critical block devices and removal of
+    // boot-critical paths performed by root (see feature/cmd_guard.c).
+    KSU_FEATURE_CMD_GUARD = 8,
+
     KSU_FEATURE_MAX
 };
 
