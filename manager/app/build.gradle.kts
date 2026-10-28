@@ -244,6 +244,8 @@ dependencies {
 
     implementation(libs.commons.compress)
     implementation(libs.xz)
+    // proto 代码是 generateReleaseProto 现生成的（APEX/OTA 元数据解析），不能删。
+    implementation(libs.protobuf.kotlin.lite)
 
     // GhostLock profile pipeline (vendored under com.ghostlock.app.*): HOCON
     // parsing for the bundled kernel_profiles assets.
