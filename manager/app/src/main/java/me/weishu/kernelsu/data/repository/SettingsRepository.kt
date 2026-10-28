@@ -74,5 +74,13 @@ interface SettingsRepository {
 
     fun isLkmMode(): Boolean
 
+    // 拦截高危指令（XECKernelPro 扩展）：内核在 open/unlink 处直接掐断可能变砖
+    // 的 root 操作，管理器只负责开关、状态展示和为自家刷机流程开临时放行窗口。
+    suspend fun getCmdGuardStatus(): String
+    fun cmdGuardKernelState(): LongArray?
+    fun cmdGuardLastEvent(): Array<String>?
+    fun setCmdGuardEnabled(enabled: Boolean): Boolean
+    fun cmdGuardTrust(seconds: Int): Boolean
+
     fun execKsudFeatureSave()
 }

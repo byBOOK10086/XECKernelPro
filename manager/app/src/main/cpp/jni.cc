@@ -524,3 +524,53 @@ Java_me_weishu_kernelsu_magica_AppZygotePreload_forkDontCareAndExecKsud(JNIEnv *
     env->ReleaseStringUTFChars(ksud_path, path);
     env->ReleaseStringUTFChars(pkg_name, pkg);
 }
+
+
+extern "C"
+JNIEXPORT jlongArray JNICALL
+Java_me_weishu_kernelsu_Natives_cmdGuardStatus(JNIEnv *env, jobject) {
+    cmd_guard_state state{};
+    if (cmd_guard_state_query(state) != 0) {
+        return nullptr;
+    }
+    jlong values[6] = {
+            (jlong) (state.enabled ? 1 : 0),
+            (jlong) state.blocked,
+            (jlong) state.trust_left,
+            (jlong) state.last_kind,
+            (jlong) state.last_pid,
+            (jlong) state.last_ts_ms,
+    };
+    jlongArray array = env->NewLongArray(6);
+    if (array == nullptr) {
+        return nullptr;
+    }
+    env->SetLongArrayRegion(array, 0, 6, values);
+    return array;
+}
+
+extern "C"
+JNIEXPORT jobjectArray JNICALL
+Java_me_weishu_kernelsu_Natives_cmdGuardLast(JNIEnv *env, jobject) {
+    cmd_guard_state state{};
+    if (cmd_guard_state_query(state) != 0) {
+        return nullptr;
+    }
+    jclass string_cls = env->FindClass("java/lang/String");
+    if (string_cls == nullptr) {
+        return nullptr;
+    }
+    jobjectArray array = env->NewObjectArray(2, string_cls, nullptr);
+    if (array == nullptr) {
+        return nullptr;
+    }
+    env->SetObjectArrayElement(array, 0, env->NewStringUTF(state.last_comm.c_str()));
+    env->SetObjectArrayElement(array, 1, env->NewStringUTF(state.last_path.c_str()));
+    return array;
+}
+
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_me_weishu_kernelsu_Natives_cmdGuardTrust(JNIEnv *env, jobject, jint seconds) {
+    return cmd_guard_trust(seconds > 0 ? (uint32_t) seconds : 0) == 0;
+}

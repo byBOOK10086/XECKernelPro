@@ -321,6 +321,14 @@ XEC Project Team
     <string name="settings_selinux_hide_failed">Error: %d</string>
     <string name="settings_sulog">SU Log</string>
     <string name="settings_sulog_summary">Record Root-related events into XECKernel Pro sulog files</string>
+    <string name="settings_cmd_guard">Block dangerous commands</string>
+    <string name="settings_cmd_guard_summary">Stops the root operations that brick a locked device before they run: raw writes to boot/vbmeta and other critical partitions, and removal of critical root paths. Whether a script is encrypted makes no difference - the check sits at the syscall.</string>
+    <string name="settings_cmd_guard_summary_blocked">Blocked %1$d times · last %2$s → %3$s</string>
+    <string name="settings_cmd_guard_trust">Temporary allow</string>
+    <string name="settings_cmd_guard_trust_summary">Allow your own flashing for 10 minutes; it revokes itself when the window expires</string>
+    <string name="settings_cmd_guard_trust_active">Allowed, about %1$d min left; tap to revoke now</string>
+    <string name="settings_cmd_guard_failed">Failed to enable: the kernel rejected the feature (old kernel or hooks unavailable)</string>
+    <string name="settings_cmd_guard_trust_failed">Temporary allow failed: unsupported or rejected by the kernel</string>
     <string name="feature_status_unsupported_summary">Kernel does not support this feature</string>
     <string name="feature_status_managed_summary">This feature is managed by a module</string>
     <string name="settings_mode_enable_by_default">Enable (Default)</string>
