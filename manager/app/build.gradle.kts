@@ -151,6 +151,10 @@ android {
         buildConfigField("boolean", "IS_PR_BUILD", isPrBuild.toString())
         resValue("string", "app_name", managerName)
 
+        // 应用本身只有 en / zh-rCN 两套文案；依赖库自带的四十多种语言表纯占体积，
+        // 裁到实际用得到的语言（arsc 900KB 里大半是它们）。
+        resourceConfigurations += listOf("en", "zh-rCN")
+
         externalNativeBuild {
             cmake {
                 arguments += "-DANDROID_STL=none"
