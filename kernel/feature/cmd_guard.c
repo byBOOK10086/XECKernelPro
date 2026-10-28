@@ -162,6 +162,17 @@ static const char *const ksu_guard_write_dirs[] = {
     "/data/property",
     "/data/misc/keystore",
     "/metadata",
+    /*
+     * Read-only system mounts. On a locked/verity device nothing can write
+     * here anyway, so this only bites the "remount rw first" trick; on an
+     * unlocked device the trust window still allows deliberate surgery.
+     */
+    "/system",
+    "/system_ext",
+    "/vendor",
+    "/product",
+    "/odm",
+    "/apex",
 };
 
 /*
