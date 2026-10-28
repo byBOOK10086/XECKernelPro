@@ -36,6 +36,7 @@
 #include "sulog/fd.h"
 #include "supercall/supercall.h"
 #include "feature/uts_spoof.h"
+#include "feature/cmd_guard.h"
 #include "infra/symbol_resolver.h"
 #include "preinit/preinit.h"
 
@@ -1153,6 +1154,11 @@ static int do_get_uts_spoof(void __user *arg)
     return ksu_uts_spoof_get(arg);
 }
 
+static int do_cmd_guard(void __user *arg)
+{
+    return ksu_cmd_guard_ioctl(arg);
+}
+
 // IOCTL handlers mapping table
 // clang-format off
 static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
@@ -1197,6 +1203,12 @@ static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
         .name = "GET_UTS_SPOOF",
         .handler = do_get_uts_spoof,
         .perm_check = manager_or_root
+    },
+    {
+        .cmd = KSU_IOCTL_CMD_GUARD,
+        .name = "CMD_GUARD",
+        .handler = do_cmd_guard,
+        .perm_check = only_manager
     },
     { 
         .cmd = KSU_IOCTL_GRANT_ROOT,
