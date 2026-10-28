@@ -11,8 +11,7 @@
 // 4: add KSU_GET_INFO_FLAG_BUNDLED
 // 5: add EVENT_SERVICES with a start/skip result
 // 6: add KSU_IOCTL_LOOKUP_SYMBOLS and KSU_GET_INFO_FLAG_PREINIT; modules.rc and preinit may live under /metadata/vold/ksu
-// 7: add KSU_IOCTL_CMD_GUARD (anti-brick command guard)
-static const __u32 KERNEL_SU_UAPI_VERSION = 7;
+static const __u32 KERNEL_SU_UAPI_VERSION = 6;
 
 /*
  * Version reported to *non-manager* callers through the root-detection
@@ -369,47 +368,5 @@ struct ksu_uts_spoof_cmd {
 
 static const __u32 KSU_IOCTL_SET_UTS_SPOOF = _IOW('K', 115, struct ksu_uts_spoof_cmd);
 static const __u32 KSU_IOCTL_GET_UTS_SPOOF = _IOWR('K', 116, struct ksu_uts_spoof_cmd);
-
-/*
- * XECKernelPro extension (ioctl 117): anti-brick command guard. While the
- * feature KSU_FEATURE_CMD_GUARD is on, the kernel vetoes the operations that
- * brick a locked device: write access to boot-critical block devices (and to
- * whole disks), and removal of boot-critical paths performed by uid 0. The
- * decision happens at the operation itself (open/unlink), so shell scripts,
- * decrypted payloads, busybox applets, absolute paths and direct syscalls all
- * meet the same check - the command text never matters.
- *
- * The manager arms a bounded trust window (op = OP_TRUST) around its own
- * flashing flows; the window shrinks by itself and the kernel never trusts a
- * path because of a name alone.
- */
-#define KSU_CMD_GUARD_OP_STATUS 0
-#define KSU_CMD_GUARD_OP_TRUST 1
-
-#define KSU_CMD_GUARD_KIND_NONE 0
-#define KSU_CMD_GUARD_KIND_BLOCKDEV 1
-#define KSU_CMD_GUARD_KIND_UNLINK 2
-#define KSU_CMD_GUARD_KIND_WRITE 3
-#define KSU_CMD_GUARD_KIND_RENAME 4
-#define KSU_CMD_GUARD_KIND_TRUNCATE 5
-#define KSU_CMD_GUARD_KIND_EXEC 6
-
-#define KSU_CMD_GUARD_COMM_LEN 16
-#define KSU_CMD_GUARD_PATH_LEN 160
-
-struct ksu_cmd_guard_cmd {
-    __u32 op; /* Input: KSU_CMD_GUARD_OP_* */
-    __u32 seconds; /* Input for OP_TRUST: window length, 0 = drop it */
-    __u32 enabled; /* Output: feature on */
-    __u32 trust_left; /* Output: seconds left in the trust window */
-    __u32 last_kind; /* Output: KSU_CMD_GUARD_KIND_* */
-    __u32 last_pid; /* Output: pid of the last blocked operation */
-    __u64 blocked; /* Output: total blocked operations since boot */
-    __u64 last_ts_ms; /* Output: CLOCK_MONOTONIC ms of the last block */
-    __u8 last_comm[KSU_CMD_GUARD_COMM_LEN]; /* Output: last blocked process */
-    __u8 last_path[KSU_CMD_GUARD_PATH_LEN]; /* Output: last blocked target */
-};
-
-static const __u32 KSU_IOCTL_CMD_GUARD = _IOWR('K', 117, struct ksu_cmd_guard_cmd);
 
 #endif // __KSU_H_SUPERCALL_UAPI

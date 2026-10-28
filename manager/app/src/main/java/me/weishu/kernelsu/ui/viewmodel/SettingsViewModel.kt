@@ -83,9 +83,6 @@ class SettingsViewModel(
             val autoJailbreak = repo.autoJailbreak
             val useSoftReboot = repo.useSoftReboot
             val isLateLoadMode = Natives.isLateLoadMode
-            val cmdGuardStatus = repo.getCmdGuardStatus()
-            val cmdGuardState = repo.cmdGuardKernelState()
-            val cmdGuardLast = repo.cmdGuardLastEvent()
 
             _uiState.update {
                 it.copy(
@@ -122,13 +119,6 @@ class SettingsViewModel(
                     autoJailbreak = autoJailbreak,
                     useSoftReboot = useSoftReboot,
                     isLateLoadMode = isLateLoadMode,
-                    cmdGuardStatus = cmdGuardStatus,
-                    isCmdGuardEnabled = (cmdGuardState?.getOrNull(0) ?: 0L) == 1L,
-                    cmdGuardBlocked = cmdGuardState?.getOrNull(1) ?: 0L,
-                    cmdGuardTrustLeft = (cmdGuardState?.getOrNull(2) ?: 0L).toInt(),
-                    cmdGuardLastKind = (cmdGuardState?.getOrNull(3) ?: 0L).toInt(),
-                    cmdGuardLastComm = cmdGuardLast?.getOrNull(0).orEmpty(),
-                    cmdGuardLastPath = cmdGuardLast?.getOrNull(1).orEmpty(),
                 )
             }
         }
@@ -347,59 +337,6 @@ class SettingsViewModel(
             if (repo.setDefaultUmountModules(enabled)) {
                 _uiState.update { it.copy(isDefaultUmountModules = enabled) }
             }
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // 拦截高危指令（XECKernelPro 扩展，ioctl 117）
-    // ------------------------------------------------------------------
-
-    /** 开关走 feature 通道（ksud 会同时落盘，重启依然生效）。 */
-    fun setCmdGuardEnabled(enabled: Boolean) {
-        if (!ensureSuperkey()) return
-        viewModelScope.launch(Dispatchers.IO) {
-            if (repo.setCmdGuardEnabled(enabled)) {
-                repo.execKsudFeatureSave()
-                _uiState.update { it.copy(isCmdGuardEnabled = enabled) }
-                refreshCmdGuardState()
-            } else {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(ksuApp, R.string.settings_cmd_guard_failed, Toast.LENGTH_LONG)
-                        .show()
-                }
-                // 内核拒绝（老内核 / 钩子注册失败）时以真实状态为准。
-                refreshCmdGuardState()
-            }
-        }
-    }
-
-    /** 为刷机等操作开一个临时放行窗口；0 = 立即结束。 */
-    fun setCmdGuardTrust(seconds: Int) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val ok = repo.cmdGuardTrust(seconds)
-            if (!ok) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(ksuApp, R.string.settings_cmd_guard_trust_failed, Toast.LENGTH_SHORT)
-                        .show()
-                }
-            }
-            refreshCmdGuardState()
-        }
-    }
-
-    /** 只刷新内核侧的拦截状态，不重跑整页的 ksud 往返。 */
-    private suspend fun refreshCmdGuardState() {
-        val state = repo.cmdGuardKernelState()
-        val last = repo.cmdGuardLastEvent()
-        _uiState.update {
-            it.copy(
-                isCmdGuardEnabled = (state?.getOrNull(0) ?: 0L) == 1L,
-                cmdGuardBlocked = state?.getOrNull(1) ?: 0L,
-                cmdGuardTrustLeft = (state?.getOrNull(2) ?: 0L).toInt(),
-                cmdGuardLastKind = (state?.getOrNull(3) ?: 0L).toInt(),
-                cmdGuardLastComm = last?.getOrNull(0).orEmpty(),
-                cmdGuardLastPath = last?.getOrNull(1).orEmpty(),
-            )
         }
     }
 }
