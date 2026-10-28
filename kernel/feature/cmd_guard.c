@@ -39,6 +39,8 @@
 #include "uapi/supercall.h"
 
 #define KSU_GUARD_MAX_DEVS 128
+/* How many dentry levels to walk when looking for a protected ancestor. */
+#define KSU_GUARD_MAX_WALK 32
 #define KSU_GUARD_MAX_TRUST_SECONDS 3600
 
 /* ------------------------------------------------------------------ state */
@@ -96,12 +98,42 @@ static const char *const ksu_guard_adb_top[] = {
     "xecpro",
 };
 
-/* /data/<dir> whose direct children are boot state. */
-static const char *const ksu_guard_sensitive_dirs[] = {
-    "/data/system",
-    "/data/misc",
-    "/data/property",
-    "/data/vendor",
+/*
+ * /data sub trees that carry user data or boot-critical state. Nothing below
+ * them may be removed by uid 0 at any depth: this is what makes "rm -rf /data"
+ * and "rm -rf /data/data" harmless instead of a wipe. /data/local and
+ * /data/tmp stay writable on purpose (module scripts and temporary work).
+ */
+static const char *const ksu_guard_deep_dirs[] = {
+    "/data/data",         "/data/app",          "/data/app-lib",
+    "/data/user",         "/data/user_de",      "/data/user_ce",
+    "/data/system",       "/data/system_ce",    "/data/system_de",
+    "/data/misc",         "/data/misc_ce",      "/data/misc_de",
+    "/data/vendor",       "/data/vendor_ce",    "/data/vendor_de",
+    "/data/property",     "/data/media",        "/data/dalvik-cache",
+    "/data/tombstones",   "/data/resource-cache", "/data/backup",
+    "/data/ota",          "/data/nfc",          "/data/apw",
+    "/data/unencrypted",  "/data/ssh",          "/data/drm",
+    "/data/anr",          "/data/log",          "/data/bootchart",
+    "/data/gsm",          "/data/dpm",          "/data/mediadrm",
+    "/data/secure",
+};
+
+/*
+ * Internal storage. A root script that wipes this destroys every photo and
+ * document on the phone, so nothing below these roots may be unlinked by
+ * uid 0 either. Apps delete their own files with their own uid and never
+ * reach this check.
+ */
+static const char *const ksu_guard_storage_dirs[] = {
+    "/storage/emulated",
+    "/storage/emulated/0",
+    "/storage/self/primary",
+    "/mnt/user/0/primary",
+    "/mnt/media_rw",
+    "/sdcard",
+    "/storage/sdcard",
+    "/storage/sdcard0",
 };
 
 /* Daemons that legitimately maintain these paths as uid 0. */
@@ -152,10 +184,11 @@ static const char *const ksu_guard_whole_disks[] = {
     "/dev/block/nvme0n1",
 };
 
-/* Inodes whose direct children are protected (filled at enable time). */
+/* Inodes pinned at enable time. */
 static struct inode *ksu_guard_inode_data;
 static struct inode *ksu_guard_inode_adb;
-static struct inode *ksu_guard_inode_sensitive[ARRAY_SIZE(ksu_guard_sensitive_dirs)];
+static struct inode *ksu_guard_inode_deep[ARRAY_SIZE(ksu_guard_deep_dirs)];
+static struct inode *ksu_guard_inode_storage[ARRAY_SIZE(ksu_guard_storage_dirs)];
 
 /* ------------------------------------------------------------- LSM hooks */
 
@@ -348,10 +381,16 @@ static void ksu_guard_release_inodes(void)
         iput(ksu_guard_inode_adb);
         ksu_guard_inode_adb = NULL;
     }
-    for (i = 0; i < ARRAY_SIZE(ksu_guard_inode_sensitive); i++) {
-        if (ksu_guard_inode_sensitive[i]) {
-            iput(ksu_guard_inode_sensitive[i]);
-            ksu_guard_inode_sensitive[i] = NULL;
+    for (i = 0; i < ARRAY_SIZE(ksu_guard_inode_deep); i++) {
+        if (ksu_guard_inode_deep[i]) {
+            iput(ksu_guard_inode_deep[i]);
+            ksu_guard_inode_deep[i] = NULL;
+        }
+    }
+    for (i = 0; i < ARRAY_SIZE(ksu_guard_inode_storage); i++) {
+        if (ksu_guard_inode_storage[i]) {
+            iput(ksu_guard_inode_storage[i]);
+            ksu_guard_inode_storage[i] = NULL;
         }
     }
 }
@@ -366,9 +405,13 @@ static void ksu_guard_fill_inodes(void)
     if (!ksu_guard_inode_adb)
         ksu_guard_inode_adb = ksu_guard_grab_inode("/data/adb");
 
-    for (i = 0; i < ARRAY_SIZE(ksu_guard_inode_sensitive); i++) {
-        if (!ksu_guard_inode_sensitive[i])
-            ksu_guard_inode_sensitive[i] = ksu_guard_grab_inode(ksu_guard_sensitive_dirs[i]);
+    for (i = 0; i < ARRAY_SIZE(ksu_guard_inode_deep); i++) {
+        if (!ksu_guard_inode_deep[i])
+            ksu_guard_inode_deep[i] = ksu_guard_grab_inode(ksu_guard_deep_dirs[i]);
+    }
+    for (i = 0; i < ARRAY_SIZE(ksu_guard_inode_storage); i++) {
+        if (!ksu_guard_inode_storage[i])
+            ksu_guard_inode_storage[i] = ksu_guard_grab_inode(ksu_guard_storage_dirs[i]);
     }
 }
 
@@ -433,16 +476,33 @@ static bool ksu_guard_name_in(const struct dentry *dentry, const char *const *se
     return false;
 }
 
-static bool ksu_guard_is_sensitive_dir(const struct inode *inode)
+/*
+ * True when the target dentry or one of its ancestors within
+ * KSU_GUARD_MAX_WALK levels is one of the pinned inodes. Walking up instead of
+ * comparing the parent is what makes the check depth-independent: an encrypted
+ * script nesting ten directories deep still hits the same ancestor.
+ */
+static bool ksu_guard_ancestor_matches(const struct dentry *dentry, struct inode *const *set,
+                                       size_t count, int max_depth)
 {
-    size_t i;
+    const struct dentry *cur = dentry;
+    int depth = 0;
 
-    if (!inode)
-        return false;
+    while (cur && depth++ < max_depth) {
+        struct inode *inode = cur->d_inode;
+        size_t i;
 
-    for (i = 0; i < ARRAY_SIZE(ksu_guard_inode_sensitive); i++) {
-        if (ksu_guard_inode_sensitive[i] && ksu_guard_inode_sensitive[i] == inode)
-            return true;
+        if (inode) {
+            for (i = 0; i < count; i++) {
+                if (set[i] && set[i] == inode)
+                    return true;
+            }
+        }
+
+        if (IS_ROOT(cur))
+            break;
+
+        cur = cur->d_parent;
     }
 
     return false;
@@ -525,8 +585,18 @@ static bool ksu_guard_dentry_protected(struct inode *dir, const struct dentry *d
         ksu_guard_name_in(dentry, ksu_guard_adb_top, ARRAY_SIZE(ksu_guard_adb_top)))
         return true;
 
-    /* Anything directly inside /data/{system,misc,property,vendor}. */
-    if (ksu_guard_is_sensitive_dir(dir))
+    /*
+     * Anything at any depth below the pinned /data sub trees (app data, user
+     * storage, framework state, vendor state, ...) or below internal storage.
+     * This is what turns "rm -rf /data" and "rm -rf /storage/emulated/0" into
+     * a no-op instead of a wipe.
+     */
+    if (ksu_guard_ancestor_matches(dentry, ksu_guard_inode_deep,
+                                   ARRAY_SIZE(ksu_guard_inode_deep), KSU_GUARD_MAX_WALK))
+        return true;
+
+    if (ksu_guard_ancestor_matches(dentry, ksu_guard_inode_storage,
+                                   ARRAY_SIZE(ksu_guard_inode_storage), KSU_GUARD_MAX_WALK))
         return true;
 
     return false;
