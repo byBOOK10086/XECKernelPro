@@ -561,10 +561,23 @@ static int ksu_guard_file_open(struct file *file)
     if (!(file->f_mode & FMODE_WRITE))
         return 0;
 
-    if (!ksu_guard_dev_is_critical(inode->i_rdev))
-        return 0;
-
     full = d_path(&file->f_path, buf, sizeof(buf));
+
+    if (!ksu_guard_dev_is_critical(inode->i_rdev)) {
+        /*
+         * Safety net: when the by-name table could not be resolved (very early
+         * boot, odd mount namespace), a raw write under /dev/block is still a
+         * brick candidate. Partition nodes live there, so deny the write
+         * instead of pretending to be armed with an empty device table.
+         */
+        if (READ_ONCE(ksu_cmd_guard_dev_count) > 0)
+            return 0;
+        if (!full || strncmp(full, "/dev/block/", 11))
+            return 0;
+        ksu_guard_record(KSU_CMD_GUARD_KIND_BLOCKDEV, full);
+        return -EACCES;
+    }
+
     ksu_guard_record(KSU_CMD_GUARD_KIND_BLOCKDEV, full ? full : "(critical block device)");
 
     return -EACCES;
@@ -743,10 +756,11 @@ int ksu_cmd_guard_ioctl(void __user *arg)
         break;
     }
     case KSU_CMD_GUARD_OP_STATUS:
-        if (!READ_ONCE(ksu_cmd_guard_dev_ready))
-            ksu_guard_fill_devices();
-        if (!ksu_guard_inode_data)
-            ksu_guard_fill_inodes();
+        /*
+         * Read only. The tables are resolved from the enable path (ksud, init
+         * mount namespace); re-resolving them here would run with the manager
+         * app's namespace and could leave a partial table behind.
+         */
         break;
     default:
         return -EINVAL;
