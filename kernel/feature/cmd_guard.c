@@ -582,34 +582,54 @@ static bool ksu_guard_name_in(const struct dentry *dentry, const char *const *se
  * comparing the parent is what makes the check depth-independent: an encrypted
  * script nesting ten directories deep still hits the same ancestor.
  */
-static bool ksu_guard_ancestor_matches(const struct dentry *dentry, struct inode *const *set,
+static bool ksu_guard_ancestor_matches(struct dentry *dentry, struct inode *const *set,
                                        size_t count, int max_depth)
 {
-    const struct dentry *cur = dentry;
+    struct dentry *cur;
+    bool matched = false;
     int depth = 0;
 
+    if (!dentry)
+        return false;
+
+    /*
+     * Every step takes a reference: the VFS may reclaim or rename a dentry
+     * concurrently, and reading d_parent/d_inode without a pin is a
+     * use-after-free (that is what rebooted devices a few seconds after the
+     * launcher came up).
+     */
+    cur = dget(dentry);
+
     while (cur && depth++ < max_depth) {
-        struct inode *inode = cur->d_inode;
+        struct inode *inode = d_inode(cur);
         size_t i;
 
         if (inode) {
             for (i = 0; i < count; i++) {
-                if (set[i] && set[i] == inode)
-                    return true;
+                if (set[i] && set[i] == inode) {
+                    matched = true;
+                    goto out;
+                }
             }
         }
 
         if (IS_ROOT(cur))
             break;
 
-        cur = cur->d_parent;
+        {
+            struct dentry *parent = dget_parent(cur);
+            dput(cur);
+            cur = parent;
+        }
     }
 
-    return false;
+out:
+    dput(cur);
+    return matched;
 }
 
 /* True when the dentry sits below one of the write-protected trees. */
-static bool ksu_guard_write_protected(const struct dentry *dentry)
+static bool ksu_guard_write_protected(struct dentry *dentry)
 {
     return ksu_guard_ancestor_matches(dentry, ksu_guard_inode_write,
                                       ARRAY_SIZE(ksu_guard_inode_write), KSU_GUARD_MAX_WALK);
@@ -655,10 +675,10 @@ static void ksu_guard_append_name(char *buf, size_t len, size_t *pos, const stru
     *pos += scnprintf(buf + *pos, len - *pos, "/%.*s", (int)name_len, name);
 }
 
-static void ksu_guard_path_hint(const struct dentry *dentry, char *buf, size_t len)
+static void ksu_guard_path_hint(struct dentry *dentry, char *buf, size_t len)
 {
-    const struct dentry *parent;
-    const struct dentry *grand;
+    struct dentry *self;
+    struct dentry *parent;
     size_t pos = 0;
 
     if (!buf || !len)
@@ -668,49 +688,66 @@ static void ksu_guard_path_hint(const struct dentry *dentry, char *buf, size_t l
     if (!dentry)
         return;
 
-    parent = dentry->d_parent;
-    grand = (parent && parent->d_parent && parent->d_parent != parent) ? parent->d_parent
-                                                                      : NULL;
+    /* Same rule as the walk above: pin before touching d_parent. */
+    self = dget(dentry);
+    parent = dget_parent(self);
 
-    if (grand && grand != parent)
-        ksu_guard_append_name(buf, len, &pos, grand);
-    if (parent && parent != dentry)
+    if (parent && parent != self) {
+        struct dentry *grand = dget_parent(parent);
+        if (grand && grand != parent)
+            ksu_guard_append_name(buf, len, &pos, grand);
+        if (grand)
+            dput(grand);
         ksu_guard_append_name(buf, len, &pos, parent);
-    ksu_guard_append_name(buf, len, &pos, dentry);
+    }
+    ksu_guard_append_name(buf, len, &pos, self);
+
+    dput(parent);
+    dput(self);
 
     if (!buf[0])
         scnprintf(buf, len, "(unknown path)");
 }
 
-static bool ksu_guard_dentry_protected(struct inode *dir, const struct dentry *dentry)
+static bool ksu_guard_dentry_protected(struct inode *dir, struct dentry *dentry)
 {
-    const struct dentry *parent;
+    struct dentry *self;
+    struct dentry *parent;
+    bool protected = false;
 
     if (!dentry)
         return false;
 
-    /* The filesystem/mount root itself: never a legal removal target. */
-    if (IS_ROOT(dentry))
-        return true;
+    /* Pin the whole chain we are going to read. */
+    self = dget(dentry);
+    parent = dget_parent(self);
 
-    parent = dentry->d_parent;
-    if (!parent || parent == dentry)
-        return true;
+    /* The filesystem/mount root itself: never a legal removal target. */
+    if (IS_ROOT(self) || !parent || parent == self) {
+        protected = true;
+        goto out;
+    }
 
     /* First level of a mounted tree: /system, /vendor, /data/system, ... */
-    if (IS_ROOT(parent) && d_is_dir(dentry) &&
-        ksu_guard_name_in(dentry, ksu_guard_root_top, ARRAY_SIZE(ksu_guard_root_top)))
-        return true;
+    if (IS_ROOT(parent) && d_is_dir(self) &&
+        ksu_guard_name_in(self, ksu_guard_root_top, ARRAY_SIZE(ksu_guard_root_top))) {
+        protected = true;
+        goto out;
+    }
 
     /* Direct children of /data: /data/adb, /data/app, ... */
     if (dir && dir == ksu_guard_inode_data &&
-        ksu_guard_name_in(dentry, ksu_guard_data_top, ARRAY_SIZE(ksu_guard_data_top)))
-        return true;
+        ksu_guard_name_in(self, ksu_guard_data_top, ARRAY_SIZE(ksu_guard_data_top))) {
+        protected = true;
+        goto out;
+    }
 
     /* Direct children of /data/adb: modules, ksu, kpm, ... */
     if (dir && dir == ksu_guard_inode_adb &&
-        ksu_guard_name_in(dentry, ksu_guard_adb_top, ARRAY_SIZE(ksu_guard_adb_top)))
-        return true;
+        ksu_guard_name_in(self, ksu_guard_adb_top, ARRAY_SIZE(ksu_guard_adb_top))) {
+        protected = true;
+        goto out;
+    }
 
     /*
      * Anything at any depth below the pinned /data sub trees (app data, user
@@ -718,15 +755,18 @@ static bool ksu_guard_dentry_protected(struct inode *dir, const struct dentry *d
      * This is what turns "rm -rf /data" and "rm -rf /storage/emulated/0" into
      * a no-op instead of a wipe.
      */
-    if (ksu_guard_ancestor_matches(dentry, ksu_guard_inode_deep,
-                                   ARRAY_SIZE(ksu_guard_inode_deep), KSU_GUARD_MAX_WALK))
-        return true;
+    if (ksu_guard_ancestor_matches(self, ksu_guard_inode_deep,
+                                   ARRAY_SIZE(ksu_guard_inode_deep), KSU_GUARD_MAX_WALK) ||
+        ksu_guard_ancestor_matches(self, ksu_guard_inode_storage,
+                                   ARRAY_SIZE(ksu_guard_inode_storage), KSU_GUARD_MAX_WALK)) {
+        protected = true;
+        goto out;
+    }
 
-    if (ksu_guard_ancestor_matches(dentry, ksu_guard_inode_storage,
-                                   ARRAY_SIZE(ksu_guard_inode_storage), KSU_GUARD_MAX_WALK))
-        return true;
-
-    return false;
+out:
+    dput(parent);
+    dput(self);
+    return protected;
 }
 
 /* ------------------------------------------------------------- LSM bodies */
