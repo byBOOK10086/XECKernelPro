@@ -63,3 +63,10 @@ prop-rs-android = { git = "https://github.com/KernelSU2/ksu_props", rev = "ddb6e
 
 [build-dependencies]
 bindgen = "0.73"
+
+# 管理器把 ksud 打进 APK 里，体积优先：z 优化 + thin LTO + 单 codegen unit。
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

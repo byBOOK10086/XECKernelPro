@@ -440,7 +440,6 @@ jobs:
             -b release \
             -t release \
             -a arm64-v8a \
-            -a x86_64 \
             -K xecpro-key.jks \
             -A xecpro-key \
             -P "$KEYSTORE_PASSWORD" \
@@ -498,14 +497,8 @@ jobs:
           verify lib/arm64-v8a/libbusybox.so 4d60ab3f5a59ebb2ca863f2f514e6924401b581e9b64f602665c008177626651
           verify lib/arm64-v8a/libmagiskpolicy.so 9837db9db475eb74b6715f081768cb6a1f2fb5a2b2ac15755686062501bace27
 
-          verify lib/x86_64/libmagiskboot.so a18ecbd7981179494b7d281453d6c4e25b5c719e7d2ef7f6eba3c6be3043c58e
-          verify lib/x86_64/libmagiskinit.so 24557786f59662376cc9bf204a025d8beb505b9a86cc50a4d1227b34ef2464b6
-          verify lib/x86_64/libmagisk.so a1cc6bea9e8618f8e3dea95a9068b161a256c9e19985fb7dc33c15a50a73e0cb
-          verify lib/x86_64/libinit-ld.so 54c9f44f160d822c0d0ee9b5f816dfc8be5210f5a3e45b2cebf7404108a74759
-          verify lib/x86_64/libbusybox.so 060844b0769f7a50262854af027c4d6076a212d160a51309b53057cfb7122900
-          verify lib/x86_64/libmagiskpolicy.so 0021aaefac5f5a49dfa5996df44a8a67cd6ec014ade72c2358802bd2cc82650f
 
-          echo "all 15 Magisk payload entries survived repack + sign"
+          echo "all 9 arm64 Magisk payload entries survived repack + sign"
 
       - name: Upload branded APK
         uses: actions/upload-artifact@v7

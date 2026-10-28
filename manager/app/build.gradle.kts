@@ -160,7 +160,8 @@ android {
         }
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            // 手机端只有 arm64；x86_64 只为模拟器服务，去掉后安装包直接少 ~6MB。
+            abiFilters += listOf("arm64-v8a")
         }
     }
 
@@ -243,7 +244,6 @@ dependencies {
 
     implementation(libs.commons.compress)
     implementation(libs.xz)
-    implementation(libs.protobuf.kotlin.lite)
 
     // GhostLock profile pipeline (vendored under com.ghostlock.app.*): HOCON
     // parsing for the bundled kernel_profiles assets.
