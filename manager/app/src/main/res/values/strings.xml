@@ -322,7 +322,7 @@ XEC Project Team
     <string name="settings_sulog">SU Log</string>
     <string name="settings_sulog_summary">Record Root-related events into XECKernel Pro sulog files</string>
     <string name="settings_cmd_guard">Block dangerous commands</string>
-    <string name="settings_cmd_guard_summary">Stops the root operations that brick a phone or destroy its data before they run: raw writes to boot/vbmeta and other critical partitions, plus bulk removal of system directories, app data or internal storage. Encrypted scripts, renamed tools and absolute paths all meet the same check - it sits at the syscall.</string>
+    <string name="settings_cmd_guard_summary">Stops the root operations that brick a phone or destroy its data before they run: raw writes to boot/vbmeta and other critical partitions; bulk removal of system directories, app data or internal storage; rewrites of /data/system, /metadata and other critical state; renames, truncation, and disk-destroying tools such as mke2fs or fastboot. Encrypted scripts make no difference - the check sits at the syscall.</string>
     <string name="settings_cmd_guard_summary_blocked">Blocked %1$d times · last %2$s → %3$s</string>
     <string name="settings_cmd_guard_trust">Temporary allow</string>
     <string name="settings_cmd_guard_trust_summary">Allow your own flashing for 10 minutes; it revokes itself when the window expires</string>
