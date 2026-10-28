@@ -28,8 +28,12 @@
 #include <linux/time64.h>
 #include <linux/timekeeping.h>
 #include <linux/types.h>
+#include <linux/binfmts.h>
 #include <linux/uaccess.h>
 #include <linux/uidgid.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+#include <linux/mnt_idmapping.h>
+#endif
 
 #include "feature/cmd_guard.h"
 #include "hook/lsm_hook.h"
@@ -117,6 +121,13 @@ static const char *const ksu_guard_deep_dirs[] = {
     "/data/anr",          "/data/log",          "/data/bootchart",
     "/data/gsm",          "/data/dpm",          "/data/mediadrm",
     "/data/secure",
+    /*
+     * Read-only system mounts. Their contents cannot normally be removed,
+     * but this also closes the "remount rw, then rm -rf /system" corner.
+     */
+    "/system",          "/system_ext",   "/vendor",
+    "/product",         "/odm",          "/apex",
+    "/system_dlkm",     "/vendor_dlkm",  "/odm_dlkm",
 };
 
 /*
@@ -134,6 +145,35 @@ static const char *const ksu_guard_storage_dirs[] = {
     "/sdcard",
     "/storage/sdcard",
     "/storage/sdcard0",
+};
+
+/*
+ * Critical files: a root process that opens anything below these for
+ * writing can arrange a boot loop (framework state), a lost lock (keystore)
+ * or a broken property without deleting a single file. system_server,
+ * installd, vold and keystore2 are either not uid 0 or explicitly exempt,
+ * so the running system never meets this check.
+ */
+static const char *const ksu_guard_write_dirs[] = {
+    "/data/system",
+    "/data/system_ce",
+    "/data/system_de",
+    "/data/property",
+    "/data/misc/keystore",
+    "/metadata",
+};
+
+/*
+ * Tools whose only purpose on a phone is to destroy a filesystem.
+ * Executing them from a root shell is refused unless a trust window is
+ * open (the manager opens one around its own flashing flows).
+ */
+static const char *const ksu_guard_blocked_bins[] = {
+    "fastboot",
+    "flash_image",
+    "flash_erase",
+    "flash_eraseall",
+    "nandwrite",
 };
 
 /* Daemons that legitimately maintain these paths as uid 0. */
@@ -189,6 +229,7 @@ static struct inode *ksu_guard_inode_data;
 static struct inode *ksu_guard_inode_adb;
 static struct inode *ksu_guard_inode_deep[ARRAY_SIZE(ksu_guard_deep_dirs)];
 static struct inode *ksu_guard_inode_storage[ARRAY_SIZE(ksu_guard_storage_dirs)];
+static struct inode *ksu_guard_inode_write[ARRAY_SIZE(ksu_guard_write_dirs)];
 
 /* ------------------------------------------------------------- LSM hooks */
 
@@ -202,6 +243,35 @@ static struct ksu_lsm_hook ksu_guard_inode_unlink_hook =
     KSU_LSM_HOOK_INIT(inode_unlink, "selinux_inode_unlink", ksu_guard_inode_unlink, 0);
 static struct ksu_lsm_hook ksu_guard_inode_rmdir_hook =
     KSU_LSM_HOOK_INIT(inode_rmdir, "selinux_inode_rmdir", ksu_guard_inode_rmdir, 0);
+
+static int ksu_guard_inode_rename(struct inode *old_dir, struct dentry *old_dentry,
+                                  struct inode *new_dir, struct dentry *new_dentry);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+static int ksu_guard_inode_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
+                                   struct iattr *attr);
+#else
+static int ksu_guard_inode_setattr(struct dentry *dentry, struct iattr *attr);
+#endif
+static int ksu_guard_bprm_check(struct linux_binprm *bprm);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+static int ksu_guard_file_truncate(struct file *file);
+#endif
+
+/*
+ * The extra hooks are best effort: when a kernel variant does not register
+ * the LSM symbol we expect, the guard keeps its core coverage (block device
+ * writes and path removal) instead of refusing to arm at all.
+ */
+static struct ksu_lsm_hook ksu_guard_inode_rename_hook =
+    KSU_LSM_HOOK_INIT(inode_rename, "selinux_inode_rename", ksu_guard_inode_rename, 0);
+static struct ksu_lsm_hook ksu_guard_inode_setattr_hook =
+    KSU_LSM_HOOK_INIT(inode_setattr, "selinux_inode_setattr", ksu_guard_inode_setattr, 0);
+static struct ksu_lsm_hook ksu_guard_bprm_check_hook =
+    KSU_LSM_HOOK_INIT(bprm_check_security, "selinux_bprm_check_security", ksu_guard_bprm_check, 0);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+static struct ksu_lsm_hook ksu_guard_file_truncate_hook =
+    KSU_LSM_HOOK_INIT(file_truncate, "selinux_file_truncate", ksu_guard_file_truncate, 0);
+#endif
 
 static bool ksu_guard_hooks_installed;
 
@@ -393,6 +463,12 @@ static void ksu_guard_release_inodes(void)
             ksu_guard_inode_storage[i] = NULL;
         }
     }
+    for (i = 0; i < ARRAY_SIZE(ksu_guard_inode_write); i++) {
+        if (ksu_guard_inode_write[i]) {
+            iput(ksu_guard_inode_write[i]);
+            ksu_guard_inode_write[i] = NULL;
+        }
+    }
 }
 
 static void ksu_guard_fill_inodes(void)
@@ -413,6 +489,10 @@ static void ksu_guard_fill_inodes(void)
         if (!ksu_guard_inode_storage[i])
             ksu_guard_inode_storage[i] = ksu_guard_grab_inode(ksu_guard_storage_dirs[i]);
     }
+    for (i = 0; i < ARRAY_SIZE(ksu_guard_inode_write); i++) {
+        if (!ksu_guard_inode_write[i])
+            ksu_guard_inode_write[i] = ksu_guard_grab_inode(ksu_guard_write_dirs[i]);
+    }
 }
 
 /* ---------------------------------------------------------------- reports */
@@ -424,6 +504,14 @@ static const char *ksu_guard_kind_name(u32 kind)
         return "blockdev-write";
     case KSU_CMD_GUARD_KIND_UNLINK:
         return "path-remove";
+    case KSU_CMD_GUARD_KIND_WRITE:
+        return "critical-file-write";
+    case KSU_CMD_GUARD_KIND_RENAME:
+        return "path-rename";
+    case KSU_CMD_GUARD_KIND_TRUNCATE:
+        return "file-truncate";
+    case KSU_CMD_GUARD_KIND_EXEC:
+        return "dangerous-exec";
     default:
         return "none";
     }
@@ -503,6 +591,33 @@ static bool ksu_guard_ancestor_matches(const struct dentry *dentry, struct inode
             break;
 
         cur = cur->d_parent;
+    }
+
+    return false;
+}
+
+/* True when the dentry sits below one of the write-protected trees. */
+static bool ksu_guard_write_protected(const struct dentry *dentry)
+{
+    return ksu_guard_ancestor_matches(dentry, ksu_guard_inode_write,
+                                      ARRAY_SIZE(ksu_guard_inode_write), KSU_GUARD_MAX_WALK);
+}
+
+/*
+ * Basename of a hardware flashing tool? Formatting tools (mke2fs, mkfs.*) are
+ * deliberately NOT listed: they are legitimately used on image files, and
+ * their dangerous use - a real partition - is already denied at open().
+ */
+static bool ksu_guard_bin_blocked(const char *base)
+{
+    size_t i;
+
+    if (!base || !base[0])
+        return false;
+
+    for (i = 0; i < ARRAY_SIZE(ksu_guard_blocked_bins); i++) {
+        if (!strcmp(base, ksu_guard_blocked_bins[i]))
+            return true;
     }
 
     return false;
@@ -609,6 +724,7 @@ static int ksu_guard_file_open(struct file *file)
     typedef int (*file_open_fn)(struct file *);
     file_open_fn orig = (file_open_fn)ksu_guard_file_open_hook.original;
     struct inode *inode;
+    const char *base;
     char buf[KSU_CMD_GUARD_PATH_LEN];
     char *full;
     int ret = 0;
@@ -624,31 +740,47 @@ static int ksu_guard_file_open(struct file *file)
     if (!ksu_guard_watches_current())
         return 0;
 
-    inode = file_inode(file);
-    if (!inode || !S_ISBLK(inode->i_mode))
-        return 0;
-
     if (!(file->f_mode & FMODE_WRITE))
         return 0;
 
     full = d_path(&file->f_path, buf, sizeof(buf));
+    if (IS_ERR(full))
+        full = NULL;
 
-    if (!ksu_guard_dev_is_critical(inode->i_rdev)) {
-        /*
-         * Safety net: when the by-name table could not be resolved (very early
-         * boot, odd mount namespace), a raw write under /dev/block is still a
-         * brick candidate. Partition nodes live there, so deny the write
-         * instead of pretending to be armed with an empty device table.
-         */
-        if (READ_ONCE(ksu_cmd_guard_dev_count) > 0)
-            return 0;
-        if (!full || strncmp(full, "/dev/block/", 11))
-            return 0;
-        ksu_guard_record(KSU_CMD_GUARD_KIND_BLOCKDEV, full);
+    /*
+     * Critical files: opening /data/system, /data/property, keystore state,
+     * /data/system_ce|de or /metadata for writing is enough to arrange a
+     * boot loop or a lost credential without deleting anything.
+     */
+    if (ksu_guard_write_protected(file->f_path.dentry)) {
+        ksu_guard_record(KSU_CMD_GUARD_KIND_WRITE, full ? full : "(critical file)");
         return -EACCES;
     }
 
-    ksu_guard_record(KSU_CMD_GUARD_KIND_BLOCKDEV, full ? full : "(critical block device)");
+    inode = file_inode(file);
+    if (!inode || !S_ISBLK(inode->i_mode))
+        return 0;
+
+    /*
+     * Loop images and zram are how module images and swap work. They are not
+     * brick targets (their backing file or the RAM is), so they stay open.
+     */
+    base = full ? strrchr(full, 0x2f) : NULL;
+    base = base ? base + 1 : full;
+    if (base && (!strncmp(base, "loop", 4) || !strncmp(base, "zram", 4)))
+        return 0;
+
+    /*
+     * Every raw partition write is a brick candidate. The by-name table is
+     * the precise list; the /dev/block prefix is the safety net that also
+     * catches unnamed partitions (xbl/abl/tz/... have no friendly name) and
+     * the case where the table could not be resolved at all.
+     */
+    if (!ksu_guard_dev_is_critical(inode->i_rdev) &&
+        (!full || strncmp(full, "/dev/block/", 11)))
+        return 0;
+
+    ksu_guard_record(KSU_CMD_GUARD_KIND_BLOCKDEV, full ? full : "(raw block device)");
 
     return -EACCES;
 }
@@ -694,6 +826,150 @@ static int ksu_guard_inode_rmdir(struct inode *dir, struct dentry *dentry)
     return ksu_guard_remove(dir, dentry, true);
 }
 
+static int ksu_guard_setattr_check(struct dentry *dentry, struct iattr *attr)
+{
+    char hint[KSU_CMD_GUARD_PATH_LEN];
+
+    if (!attr)
+        return 0;
+
+    if (!(attr->ia_valid & (ATTR_SIZE | ATTR_MODE | ATTR_UID | ATTR_GID)))
+        return 0;
+
+    if (!READ_ONCE(ksu_cmd_guard_enabled))
+        return 0;
+
+    if (!ksu_guard_watches_current())
+        return 0;
+
+    if (!ksu_guard_write_protected(dentry))
+        return 0;
+
+    ksu_guard_path_hint(dentry, hint, sizeof(hint));
+    ksu_guard_record(KSU_CMD_GUARD_KIND_TRUNCATE, hint);
+
+    return -EACCES;
+}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+static int ksu_guard_inode_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
+                                   struct iattr *attr)
+{
+    typedef int (*inode_setattr_fn)(struct mnt_idmap *, struct dentry *, struct iattr *);
+    inode_setattr_fn orig = (inode_setattr_fn)ksu_guard_inode_setattr_hook.original;
+    int ret = orig ? orig(idmap, dentry, attr) : 0;
+
+    if (ret)
+        return ret;
+
+    return ksu_guard_setattr_check(dentry, attr);
+}
+#else
+static int ksu_guard_inode_setattr(struct dentry *dentry, struct iattr *attr)
+{
+    typedef int (*inode_setattr_fn)(struct dentry *, struct iattr *);
+    inode_setattr_fn orig = (inode_setattr_fn)ksu_guard_inode_setattr_hook.original;
+    int ret = orig ? orig(dentry, attr) : 0;
+
+    if (ret)
+        return ret;
+
+    return ksu_guard_setattr_check(dentry, attr);
+}
+#endif
+
+static int ksu_guard_inode_rename(struct inode *old_dir, struct dentry *old_dentry,
+                                  struct inode *new_dir, struct dentry *new_dentry)
+{
+    typedef int (*inode_rename_fn)(struct inode *, struct dentry *, struct inode *,
+                                   struct dentry *);
+    inode_rename_fn orig = (inode_rename_fn)ksu_guard_inode_rename_hook.original;
+    char hint[KSU_CMD_GUARD_PATH_LEN];
+    int ret = orig ? orig(old_dir, old_dentry, new_dir, new_dentry) : 0;
+
+    if (ret)
+        return ret;
+
+    if (!READ_ONCE(ksu_cmd_guard_enabled))
+        return 0;
+
+    if (!ksu_guard_watches_current())
+        return 0;
+
+    if (!ksu_guard_dentry_protected(old_dir, old_dentry) &&
+        !ksu_guard_dentry_protected(new_dir, new_dentry) &&
+        !ksu_guard_write_protected(old_dentry) &&
+        !ksu_guard_write_protected(new_dentry))
+        return 0;
+
+    ksu_guard_path_hint(new_dentry ? new_dentry : old_dentry, hint, sizeof(hint));
+    ksu_guard_record(KSU_CMD_GUARD_KIND_RENAME, hint);
+
+    return -EACCES;
+}
+
+static int ksu_guard_bprm_check(struct linux_binprm *bprm)
+{
+    typedef int (*bprm_check_fn)(struct linux_binprm *);
+    bprm_check_fn orig = (bprm_check_fn)ksu_guard_bprm_check_hook.original;
+    const char *name;
+    const char *base;
+    int ret = orig ? orig(bprm) : 0;
+
+    if (ret)
+        return ret;
+
+    if (!READ_ONCE(ksu_cmd_guard_enabled) || !bprm)
+        return 0;
+
+    if (!ksu_guard_watches_current())
+        return 0;
+
+    name = bprm->filename;
+    if (!name)
+        return 0;
+
+    base = strrchr(name, 0x2f);
+    base = base ? base + 1 : name;
+
+    if (!ksu_guard_bin_blocked(base))
+        return 0;
+
+    ksu_guard_record(KSU_CMD_GUARD_KIND_EXEC, name);
+
+    return -EACCES;
+}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+static int ksu_guard_file_truncate(struct file *file)
+{
+    typedef int (*file_truncate_fn)(struct file *);
+    file_truncate_fn orig = (file_truncate_fn)ksu_guard_file_truncate_hook.original;
+    char buf[KSU_CMD_GUARD_PATH_LEN];
+    char *full;
+    int ret = orig ? orig(file) : 0;
+
+    if (ret)
+        return ret;
+
+    if (!READ_ONCE(ksu_cmd_guard_enabled) || !file)
+        return 0;
+
+    if (!ksu_guard_watches_current())
+        return 0;
+
+    if (!ksu_guard_write_protected(file->f_path.dentry))
+        return 0;
+
+    full = d_path(&file->f_path, buf, sizeof(buf));
+    if (IS_ERR(full))
+        full = NULL;
+    ksu_guard_record(KSU_CMD_GUARD_KIND_TRUNCATE, full ? full : "(critical file)");
+
+    return -EACCES;
+}
+#endif
+
 /* ------------------------------------------------------------ enable path */
 
 static int ksu_cmd_guard_enable(void)
@@ -724,6 +1000,18 @@ static int ksu_cmd_guard_enable(void)
         return ret;
     }
 
+    /* Best effort extras: degrade gracefully, never block the core. */
+    if (ksu_lsm_hook(&ksu_guard_inode_rename_hook))
+        pr_warn("cmd_guard: rename hook unavailable\n");
+    if (ksu_lsm_hook(&ksu_guard_inode_setattr_hook))
+        pr_warn("cmd_guard: setattr hook unavailable\n");
+    if (ksu_lsm_hook(&ksu_guard_bprm_check_hook))
+        pr_warn("cmd_guard: exec hook unavailable\n");
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+    if (ksu_lsm_hook(&ksu_guard_file_truncate_hook))
+        pr_warn("cmd_guard: truncate hook unavailable\n");
+#endif
+
     ksu_guard_hooks_installed = true;
     WRITE_ONCE(ksu_cmd_guard_enabled, true);
     pr_info("cmd_guard: armed, %d critical block devices\n", ksu_cmd_guard_dev_count);
@@ -734,6 +1022,12 @@ static int ksu_cmd_guard_enable(void)
 static void ksu_cmd_guard_disable(void)
 {
     if (ksu_guard_hooks_installed) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+        ksu_lsm_unhook(&ksu_guard_file_truncate_hook);
+#endif
+        ksu_lsm_unhook(&ksu_guard_bprm_check_hook);
+        ksu_lsm_unhook(&ksu_guard_inode_setattr_hook);
+        ksu_lsm_unhook(&ksu_guard_inode_rename_hook);
         ksu_lsm_unhook(&ksu_guard_inode_rmdir_hook);
         ksu_lsm_unhook(&ksu_guard_inode_unlink_hook);
         ksu_lsm_unhook(&ksu_guard_file_open_hook);
