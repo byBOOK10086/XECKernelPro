@@ -59,7 +59,17 @@ data class SettingsUiState(
     val autoJailbreak: Boolean = false,
 
     // Soft Reboot
-    val useSoftReboot: Boolean = false
+    val useSoftReboot: Boolean = false,
+
+    // 拦截高危指令（XECKernelPro 扩展，ioctl 117）：内核在 open/unlink 处直接
+    // 掐断可能变砖的 root 操作，这里只放状态。
+    val cmdGuardStatus: String = "",
+    val isCmdGuardEnabled: Boolean = false,
+    val cmdGuardBlocked: Long = 0L,
+    val cmdGuardTrustLeft: Int = 0,
+    val cmdGuardLastKind: Int = 0,
+    val cmdGuardLastComm: String = "",
+    val cmdGuardLastPath: String = "",
 )
 
 @Immutable
@@ -82,5 +92,8 @@ data class SettingsScreenActions(
     val onSetEnableWebDebugging: (Boolean) -> Unit,
     val onSetAutoJailbreak: (Boolean) -> Unit,
     val onSetUseSoftReboot: (Boolean) -> Unit,
+    val onSetCmdGuardEnabled: (Boolean) -> Unit,
+    /** 临时放行窗口秒数；0 = 立即结束放行。 */
+    val onCmdGuardTrust: (Int) -> Unit,
     val onOpenAbout: () -> Unit,
 )

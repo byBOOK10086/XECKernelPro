@@ -102,6 +102,22 @@ object Natives {
     external fun setSuperkeyGuard(armed: Boolean): Boolean
 
     /**
+     * 拦截高危指令（XECKernelPro 扩展，ioctl 117）：内核在真正动手之前拦下
+     * 「往 boot/vbmeta/super 等关键块设备裸写」和「删除根目录关键路径」这类
+     * 会变砖的操作。脚本加密与否无关紧要——判定发生在 open/unlink 本身。
+     *
+     * @return [已开启(0/1), 累计拦截次数, 临时放行剩余秒数, 上次类型, 上次 pid,
+     *         上次时间(单调时钟 ms)]；内核没有该 ioctl 时返回 null。
+     */
+    external fun cmdGuardStatus(): LongArray?
+
+    /** @return [进程名, 目标路径]；无记录或内核不支持返回 null。 */
+    external fun cmdGuardLast(): Array<String>?
+
+    /** 临时放行窗口（秒），0 = 立即结束；@return 内核是否接受。 */
+    external fun cmdGuardTrust(seconds: Int): Boolean
+
+    /**
      * `su` compat mode can be disabled temporarily.
      *  0: disabled
      *  1: enabled

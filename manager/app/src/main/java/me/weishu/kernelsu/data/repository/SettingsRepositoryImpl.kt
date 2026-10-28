@@ -239,6 +239,21 @@ class SettingsRepositoryImpl : SettingsRepository {
 
     override fun isLkmMode(): Boolean = Natives.isLkmMode
 
+    // ------------------------------------------------------------------
+    // 拦截高危指令（XECKernelPro 扩展，ioctl 117）
+    // ------------------------------------------------------------------
+
+    override suspend fun getCmdGuardStatus(): String = getFeatureStatus("cmd_guard")
+
+    override fun cmdGuardKernelState(): LongArray? = Natives.cmdGuardStatus()
+
+    override fun cmdGuardLastEvent(): Array<String>? = Natives.cmdGuardLast()
+
+    override fun setCmdGuardEnabled(enabled: Boolean): Boolean =
+        execKsud("feature set cmd_guard ${if (enabled) 1 else 0}", true)
+
+    override fun cmdGuardTrust(seconds: Int): Boolean = Natives.cmdGuardTrust(seconds)
+
     override fun execKsudFeatureSave() {
         execKsud("feature save", true)
     }

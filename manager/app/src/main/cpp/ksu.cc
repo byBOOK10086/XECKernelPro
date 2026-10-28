@@ -326,3 +326,28 @@ bool is_selinux_hide_enabled() {
     }
     return value != 0;
 }
+
+int cmd_guard_state_query(cmd_guard_state &out) {
+    struct ksu_cmd_guard_cmd cmd = {};
+    cmd.op = KSU_CMD_GUARD_OP_STATUS;
+    int ret = ksuctl(KSU_IOCTL_CMD_GUARD, &cmd);
+    if (ret != 0) {
+        return ret;
+    }
+    out.enabled = cmd.enabled != 0;
+    out.blocked = cmd.blocked;
+    out.trust_left = cmd.trust_left;
+    out.last_kind = cmd.last_kind;
+    out.last_pid = cmd.last_pid;
+    out.last_ts_ms = cmd.last_ts_ms;
+    out.last_comm = reinterpret_cast<const char *>(cmd.last_comm);
+    out.last_path = reinterpret_cast<const char *>(cmd.last_path);
+    return 0;
+}
+
+int cmd_guard_trust(uint32_t seconds) {
+    struct ksu_cmd_guard_cmd cmd = {};
+    cmd.op = KSU_CMD_GUARD_OP_TRUST;
+    cmd.seconds = seconds;
+    return ksuctl(KSU_IOCTL_CMD_GUARD, &cmd);
+}

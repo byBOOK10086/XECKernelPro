@@ -62,6 +62,25 @@ bool set_uts_spoof(uid_t uid, bool enabled, const std::string &release, const st
 // -1 when the kernel rejected the ioctl (older kernel).
 int get_uts_spoof(uid_t uid, std::string &release, std::string &version);
 
+// Anti-brick command guard (XECKernelPro extension, ioctl 117). The kernel
+// reports what it already blocked; the manager only arms a bounded trust
+// window around its own flashing flows.
+struct cmd_guard_state {
+    bool enabled;
+    uint64_t blocked;
+    uint32_t trust_left;
+    uint32_t last_kind;
+    uint32_t last_pid;
+    uint64_t last_ts_ms;
+    std::string last_comm;
+    std::string last_path;
+};
+
+// 0 on success, negative errno when the kernel predates cmd_guard or refused.
+int cmd_guard_state_query(cmd_guard_state &out);
+
+int cmd_guard_trust(uint32_t seconds);
+
 int get_app_profile(app_profile *profile);
 
 // Su compat

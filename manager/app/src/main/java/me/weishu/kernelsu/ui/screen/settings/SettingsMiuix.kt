@@ -25,8 +25,10 @@ import androidx.compose.material.icons.rounded.DeveloperMode
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Handyman
 import androidx.compose.material.icons.rounded.GetApp
+import androidx.compose.material.icons.rounded.GppGood
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LayersClear
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Security
@@ -325,6 +327,67 @@ fun SettingPagerMiuix(
                                 enabled = uiState.suCompatStatus == "supported",
                                 selectedIndex = uiState.suCompatMode,
                                 onSelectedIndexChange = actions.onSetSuCompatMode
+                            )
+
+                            // 拦截高危指令：判定发生在 open/unlink 本身，加密脚本、
+                            // busybox applet、绝对路径、直接 syscall 全都走同一条检查。
+                            val cmdGuardSummary = when {
+                                uiState.cmdGuardStatus == "unsupported" ->
+                                    stringResource(id = R.string.feature_status_unsupported_summary)
+
+                                uiState.cmdGuardStatus == "managed" ->
+                                    stringResource(id = R.string.feature_status_managed_summary)
+
+                                uiState.cmdGuardBlocked > 0L && uiState.cmdGuardLastPath.isNotEmpty() ->
+                                    stringResource(
+                                        id = R.string.settings_cmd_guard_summary_blocked,
+                                        uiState.cmdGuardBlocked,
+                                        uiState.cmdGuardLastComm.ifEmpty { "root" },
+                                        uiState.cmdGuardLastPath,
+                                    )
+
+                                else -> stringResource(id = R.string.settings_cmd_guard_summary)
+                            }
+                            SwitchPreference(
+                                title = stringResource(id = R.string.settings_cmd_guard),
+                                summary = cmdGuardSummary,
+                                startAction = {
+                                    Icon(
+                                        Icons.Rounded.GppGood,
+                                        modifier = Modifier.padding(end = 6.dp),
+                                        contentDescription = stringResource(id = R.string.settings_cmd_guard),
+                                        tint = if (uiState.cmdGuardStatus == "supported") colorScheme.onBackground
+                                        else colorScheme.disabledOnSecondaryVariant
+                                    )
+                                },
+                                enabled = uiState.cmdGuardStatus == "supported",
+                                checked = uiState.isCmdGuardEnabled,
+                                onCheckedChange = actions.onSetCmdGuardEnabled
+                            )
+
+                            val trustLeftMinutes = (uiState.cmdGuardTrustLeft + 59) / 60
+                            ArrowPreference(
+                                title = stringResource(id = R.string.settings_cmd_guard_trust),
+                                summary = if (uiState.cmdGuardTrustLeft > 0) {
+                                    stringResource(
+                                        id = R.string.settings_cmd_guard_trust_active,
+                                        trustLeftMinutes,
+                                    )
+                                } else {
+                                    stringResource(id = R.string.settings_cmd_guard_trust_summary)
+                                },
+                                startAction = {
+                                    Icon(
+                                        Icons.Rounded.LockOpen,
+                                        modifier = Modifier.padding(end = 6.dp),
+                                        contentDescription = stringResource(id = R.string.settings_cmd_guard_trust),
+                                        tint = colorScheme.onBackground
+                                    )
+                                },
+                                enabled = uiState.cmdGuardStatus == "supported" && uiState.isCmdGuardEnabled,
+                                onClick = {
+                                    actions.onCmdGuardTrust(if (uiState.cmdGuardTrustLeft > 0) 0 else 600)
+                                }
                             )
 
                             val umountSummary = when (uiState.kernelUmountStatus) {

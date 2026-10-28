@@ -412,6 +412,14 @@ XEC 项目组
     <string name="install_force_backup_summary">请确保你选择的 boot 镜像是原厂镜像</string>
     <string name="settings_sulog">SU 日志</string>
     <string name="settings_sulog_summary">将 Root 相关事件记录到 XECKernel Pro 的 SU 日志文件中</string>
+    <string name="settings_cmd_guard">拦截高危指令</string>
+    <string name="settings_cmd_guard_summary">在真正动手之前掐断会变砖的 root 操作：裸写 boot/vbmeta 等关键分区、删除根目录关键路径。脚本加密与否都一样——判定发生在系统调用处。</string>
+    <string name="settings_cmd_guard_summary_blocked">已拦截 %1$d 次 · 上次 %2$s → %3$s</string>
+    <string name="settings_cmd_guard_trust">临时放行</string>
+    <string name="settings_cmd_guard_trust_summary">为刷机等自主动作放行 10 分钟，到期自动收回</string>
+    <string name="settings_cmd_guard_trust_active">放行中，约剩 %1$d 分钟，点按立即收回</string>
+    <string name="settings_cmd_guard_failed">开启失败：内核拒绝了该功能（旧内核或钩子不可用）</string>
+    <string name="settings_cmd_guard_trust_failed">临时放行失败：内核不支持或已拒绝</string>
     <string name="sulog_log_files">日志文件</string>
     <string name="sulog_failed_to_load">加载 SU 日志失败</string>
     <string name="sulog_disabled_title">SU 日志未启用</string>
