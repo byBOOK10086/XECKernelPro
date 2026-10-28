@@ -212,26 +212,10 @@ private fun flashWithIO(
         }
     }
 
-    // 拦截高危指令开启时，管理器自己的刷写（boot-patch/AK3/恢复镜像）会被内核
-    // 拦下——它本来就是"往关键分区裸写"。这里只为这几条用户主动发起的命令开
-    // 一个短窗口，命令结束立刻收回；第三方脚本拿不到这个窗口（ioctl 只认管理器
-    // 自己的 uid）。
-    val trusted = runCatching { Natives.cmdGuardTrust(CMD_GUARD_FLASH_TRUST_SECONDS) }
-        .getOrDefault(false)
-
-    return try {
-        withNewRootShell {
-            newJob().add(cmd).to(stdoutCallback, stderrCallback).exec()
-        }
-    } finally {
-        if (trusted) {
-            runCatching { Natives.cmdGuardTrust(0) }
-        }
+    return withNewRootShell {
+        newJob().add(cmd).to(stdoutCallback, stderrCallback).exec()
     }
 }
-
-/** 管理器自发刷写时给内核的临时放行窗口（秒）；结束后立刻收回，正常走不满。 */
-private const val CMD_GUARD_FLASH_TRUST_SECONDS = 600
 
 fun flashModule(
     uri: Uri,

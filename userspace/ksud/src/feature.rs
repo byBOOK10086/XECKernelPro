@@ -10,10 +10,6 @@ use crate::defs;
 use crate::feature_id::{FeatureId, parse_feature_id};
 
 const FEATURE_CONFIG_PATH: &str = concatcp!(defs::WORKING_DIR, ".feature_config");
-
-// 一次性迁移标记：cmd_guard（拦截高危指令）在 v31200 内核里会引发部分机型重启循环，
-// 升级到本版时强制关闭一次，用户之后可以自己在设置里重新打开。
-const CMD_GUARD_RESET_MARKER: &str = concatcp!(defs::WORKING_DIR, ".cmd_guard_default_off");
 #[allow(clippy::unreadable_literal)]
 const FEATURE_MAGIC: u32 = 0x7f4b5355;
 const FEATURE_VERSION: u32 = 1;
@@ -416,23 +412,6 @@ pub fn init_features() -> Result<()> {
     log::info!("Initializing features from config...");
 
     let mut features = load_binary_config()?;
-
-    // 一次性迁移：把旧版本遗留的 cmd_guard=1 强制关掉（默认关闭）。
-    // 只做一次，标记文件存在后不再干预用户自己的选择。
-    if !Path::new(CMD_GUARD_RESET_MARKER).exists() {
-        let guard_id = FeatureId::CmdGuard as u32;
-        if features.get(&guard_id).copied().unwrap_or(0) != 0 {
-            features.insert(guard_id, 0);
-            save_binary_config(&features)?;
-            log::warn!("cmd_guard forced off once (migration from the buggy build)");
-        }
-        if let Some(parent) = Path::new(CMD_GUARD_RESET_MARKER).parent() {
-            let _ = crate::utils::ensure_dir_exists(parent);
-        }
-        if let Err(e) = File::create(CMD_GUARD_RESET_MARKER) {
-            log::warn!("cannot write cmd_guard migration marker: {e}");
-        }
-    }
 
     // Get managed features from active modules and skip them during init
     if let Ok(managed_features_map) = crate::module::get_managed_features() {
