@@ -258,8 +258,8 @@ static void ksu_guard_add_dev_path(const char *path)
     struct path p;
     dev_t dev;
 
-    /* /dev/block/by-name/* are symlinks to the real partition node, so the
-     * lookup has to follow them. */
+    /* Every by-name entry is a symlink to the real partition node, so the
+     * lookup has to follow it (flags = 0 would hand back the symlink inode). */
     if (kern_path(path, LOOKUP_FOLLOW, &p))
         return;
 
