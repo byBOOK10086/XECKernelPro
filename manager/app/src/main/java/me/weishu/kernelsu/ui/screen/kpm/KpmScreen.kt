@@ -21,7 +21,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.GppGood
 import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -109,6 +111,8 @@ fun KpmScreen(
         onFlash = { pickKpmLauncher.launch("*/*") },
         onEmbed = onEmbed,
         onFlashBuiltin = { viewModel.flashBuiltin() },
+        onLoadAntiwipe = { viewModel.loadAntiwipe() },
+        onUnloadAntiwipe = { viewModel.unloadAntiwipe() },
         onBack = { navigator.pop() },
     )
 }
@@ -120,6 +124,8 @@ private fun KpmScreenMiuix(
     onFlash: () -> Unit,
     onEmbed: () -> Unit,
     onFlashBuiltin: () -> Unit,
+    onLoadAntiwipe: () -> Unit,
+    onUnloadAntiwipe: () -> Unit,
     onBack: () -> Unit,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
@@ -229,6 +235,34 @@ private fun KpmScreenMiuix(
                                 startAction = {
                                     MiuixIcon(
                                         imageVector = Icons.Rounded.Memory,
+                                        contentDescription = null,
+                                        tint = colorScheme.primary,
+                                    )
+                                },
+                            )
+                        }
+                    }
+                    // 防格模块：守卫逻辑在内核里（XEC 内核专有），这个 KPM 只负责
+                    // arm/disarm；不加载 = 完全没有拦截，卸载 = 立刻解除全部 hook。
+                    if (uiState.active) {
+                        Card(
+                            modifier = Modifier.xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
+                            colors = CardDefaults.defaultColors(color = Color.Transparent),
+                            onClick = if (uiState.antiwipeLoaded) onUnloadAntiwipe else onLoadAntiwipe,
+                        ) {
+                            BasicComponent(
+                                title = stringResource(
+                                    if (uiState.antiwipeLoaded) R.string.kpm_antiwipe_unload
+                                    else R.string.kpm_antiwipe_load
+                                ),
+                                summary = stringResource(R.string.kpm_antiwipe_summary),
+                                startAction = {
+                                    MiuixIcon(
+                                        imageVector = if (uiState.antiwipeLoaded) {
+                                            Icons.Rounded.VerifiedUser
+                                        } else {
+                                            Icons.Rounded.GppGood
+                                        },
                                         contentDescription = null,
                                         tint = colorScheme.primary,
                                     )

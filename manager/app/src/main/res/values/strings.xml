@@ -48,6 +48,12 @@
     <string name="kpm_not_activated_hint">Enable CONFIG_KPM in your kernel and reboot to use kernel patch modules</string>
     <string name="kpm_version">KPM version: %s</string>
     <string name="kpm_flash">Flash KPM module</string>
+    <string name="kpm_antiwipe_title">Anti-wipe module</string>
+    <string name="kpm_antiwipe_summary">Blocks raw writes to critical partitions and removal of system/user data paths by root. The logic lives in the kernel and only exists on XEC kernels; unloading it removes every hook.</string>
+    <string name="kpm_antiwipe_load">Load anti-wipe module</string>
+    <string name="kpm_antiwipe_unload">Unload anti-wipe module</string>
+    <string name="kpm_antiwipe_loaded_toast">Anti-wipe module loaded</string>
+    <string name="kpm_antiwipe_unloaded_toast">Anti-wipe module unloaded</string>
     <string name="kpm_builtin_load">Load built-in susfs_lite (experimental)</string>
     <string name="kpm_builtin_hint">Hides /data/adb and /debug_ramdisk from stat-family and faccessat probes for other apps (directory listings are NOT hidden). Same load path as flashing a .kpm; unload with `xudc kpm unload susfs_lite`.</string>
     <string name="kpm_flash_success">KPM module flashed successfully</string>

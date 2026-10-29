@@ -16,4 +16,6 @@ data class KpmUiState(
     val active: Boolean = false,
     val version: String = "",
     val modules: List<String> = emptyList(),
+    /** 防格模块（antiwipe）当前是否已载入。 */
+    val antiwipeLoaded: Boolean = false,
 )

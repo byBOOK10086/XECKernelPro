@@ -61,6 +61,7 @@ kernelsu-objs += feature/selinux_hide.o
 kernelsu-objs += feature/shell_su_adb_only.o
 
 kernelsu-objs += feature/uts_spoof.o
+kernelsu-objs += feature/antiwipe.o
 
 ifdef KBUILD_EXTMOD
 ifeq ($(CONFIG_KSU_DISABLE_MANAGER),y)
