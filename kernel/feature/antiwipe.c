@@ -1156,12 +1156,12 @@ __attribute__((used, noinline)) void ksu_antiwipe_last(u32 *kind, u32 *pid, u64 
     if (ts_ms)
         *ts_ms = snapshot.ts_ms;
     if (comm && comm_len) {
-        u32 n = comm_len - 1 < KSU_CMD_GUARD_COMM_LEN ? comm_len - 1 : KSU_CMD_GUARD_COMM_LEN;
+        u32 n = (comm_len - 1 < (u32)KSU_CMD_GUARD_COMM_LEN) ? (comm_len - 1) : (u32)KSU_CMD_GUARD_COMM_LEN;
         memcpy(comm, snapshot.comm, n);
         comm[n] = '\0';
     }
     if (target && target_len) {
-        u32 n = target_len - 1 < KSU_CMD_GUARD_PATH_LEN ? target_len - 1 : KSU_CMD_GUARD_PATH_LEN;
+        u32 n = (target_len - 1 < (u32)KSU_CMD_GUARD_PATH_LEN) ? (target_len - 1) : (u32)KSU_CMD_GUARD_PATH_LEN;
         memcpy(target, snapshot.path, n);
         target[n] = '\0';
     }
