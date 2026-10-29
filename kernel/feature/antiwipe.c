@@ -1105,23 +1105,23 @@ static void ksu_cmd_guard_disable(void)
  * reboot loop — unloading the module (or not loading it) is enough.
  */
 
-__attribute__((used, noinline)) int ksu_antiwipe_arm(void)
+__attribute__((used)) int ksu_antiwipe_arm(void)
 {
     return ksu_cmd_guard_enable();
 }
 
-__attribute__((used, noinline)) void ksu_antiwipe_disarm(void)
+__attribute__((used)) void ksu_antiwipe_disarm(void)
 {
     ksu_cmd_guard_disable();
 }
 
-__attribute__((used, noinline)) int ksu_antiwipe_active(void)
+__attribute__((used)) int ksu_antiwipe_active(void)
 {
     return READ_ONCE(ksu_cmd_guard_enabled) ? 1 : 0;
 }
 
 /* Trust window for the manager's own flashing flow (seconds, 0 = drop now). */
-__attribute__((used, noinline)) void ksu_antiwipe_trust(u32 seconds)
+__attribute__((used)) void ksu_antiwipe_trust(u32 seconds)
 {
     if (!seconds)
         WRITE_ONCE(ksu_cmd_guard_trust_until, 0);
@@ -1129,7 +1129,7 @@ __attribute__((used, noinline)) void ksu_antiwipe_trust(u32 seconds)
         WRITE_ONCE(ksu_cmd_guard_trust_until, jiffies + (unsigned long)seconds * HZ);
 }
 
-__attribute__((used, noinline)) u64 ksu_antiwipe_blocked(void)
+__attribute__((used)) u64 ksu_antiwipe_blocked(void)
 {
     return (u64)atomic64_read(&ksu_cmd_guard_blocked);
 }
@@ -1138,7 +1138,7 @@ __attribute__((used, noinline)) u64 ksu_antiwipe_blocked(void)
  * Copy the last blocked event: kind / pid / ts_ms / comm / target.
  * Any output pointer may be NULL; strings are always NUL-terminated.
  */
-__attribute__((used, noinline)) void ksu_antiwipe_last(u32 *kind, u32 *pid, u64 *ts_ms,
+__attribute__((used)) void ksu_antiwipe_last(u32 *kind, u32 *pid, u64 *ts_ms,
                                                        char *comm, u32 comm_len,
                                                        char *target, u32 target_len)
 {
