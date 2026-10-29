@@ -212,10 +212,57 @@ private fun flashWithIO(
         }
     }
 
-    return withNewRootShell {
-        newJob().add(cmd).to(stdoutCallback, stderrCallback).exec()
+    // 防格 KPM（antiwipe）已加载时，管理器自己的刷写必须放行；没加载时这条
+    // control 会报错，忽略即可。结束立刻收回窗口，别给第三方脚本留时间。
+    runCatching { execKsud("kpm control $ANTIWIPE_MODULE trust 600", true) }
+
+    return try {
+        withNewRootShell {
+            newJob().add(cmd).to(stdoutCallback, stderrCallback).exec()
+        }
+    } finally {
+        runCatching { execKsud("kpm control $ANTIWIPE_MODULE trust 0", true) }
     }
 }
+
+/** 防格 KPM 的模块名（antiwipe.kpm 里的 KPM_NAME），也用于 control/unload。 */
+const val ANTIWIPE_MODULE: String = "antiwipe"
+
+/**
+ * 载入内置防格模块：assets/kpm/antiwipe.kpm → /data/adb/kpm/ → xudc kpm load。
+ *
+ * 防格逻辑本身在内核里（XEC 内核专有），这个模块只负责 arm/disarm；不加载它就
+ * 等于完全没有拦截，这也是"不会再因为守卫把机器卡进重启循环"的保证。
+ */
+fun loadAntiwipeKpm(
+    onStdout: (String) -> Unit,
+    onStderr: (String) -> Unit
+): FlashResult {
+    val asset = "antiwipe.kpm"
+    val present = runCatching { ksuApp.assets.list("kpm") }.getOrNull()?.contains(asset) == true
+    if (!present) {
+        return FlashResult(-1, "antiwipe.kpm missing from assets", false)
+    }
+
+    val file = File(ksuApp.cacheDir, asset)
+    ksuApp.assets.open("kpm/$asset").use { input ->
+        file.outputStream().use { output -> input.copyTo(output) }
+    }
+
+    val dest = "/data/adb/kpm/$asset"
+    val cmd = "mkdir -p /data/adb/kpm && cp ${file.absolutePath} $dest && chmod 0644 $dest && " +
+        "${getKsuDaemonPath()} kpm load $dest"
+    val result = flashWithIO(cmd, onStdout, onStderr)
+    file.delete()
+    return FlashResult(result)
+}
+
+/** 卸载防格模块（同时解除所有 hook）。 */
+fun unloadAntiwipeKpm(): Boolean = execKsud("kpm unload $ANTIWIPE_MODULE", true)
+
+/** 给防格模块开/收放行窗口（秒，0 = 立即收回）。 */
+fun antiwipeTrust(seconds: Int): Boolean =
+    execKsud("kpm control $ANTIWIPE_MODULE trust $seconds", true)
 
 fun flashModule(
     uri: Uri,

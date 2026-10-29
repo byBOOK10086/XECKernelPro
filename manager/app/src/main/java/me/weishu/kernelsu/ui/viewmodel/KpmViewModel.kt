@@ -19,6 +19,8 @@ import me.weishu.kernelsu.ksuApp
 import me.weishu.kernelsu.ui.screen.kpm.KpmEffect
 import me.weishu.kernelsu.ui.screen.kpm.KpmUiState
 import me.weishu.kernelsu.ui.util.flashBuiltinSusfsLite
+import me.weishu.kernelsu.ui.util.loadAntiwipeKpm
+import me.weishu.kernelsu.ui.util.unloadAntiwipeKpm
 import me.weishu.kernelsu.ui.util.flashKpmModule
 import me.weishu.kernelsu.ui.util.kpmList
 import me.weishu.kernelsu.ui.util.kpmVersion
@@ -49,6 +51,7 @@ class KpmViewModel : ViewModel() {
                         active = version.isNotEmpty(),
                         version = version,
                         modules = modules,
+                        antiwipeLoaded = modules.any { m -> m.startsWith("antiwipe") },
                         hasLoaded = true,
                     )
                 }
@@ -99,6 +102,48 @@ class KpmViewModel : ViewModel() {
                 if (result.code == 0) {
                     load()
                 }
+            } finally {
+                _uiState.update { it.copy(isFlashing = false) }
+            }
+        }
+    }
+
+    /** 载入内置防格模块（antiwipe.kpm，XEC 内核专有）。 */
+    fun loadAntiwipe() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isFlashing = true) }
+            try {
+                val result = withContext(Dispatchers.IO) { loadAntiwipeKpm({}, {}) }
+                val res = ksuApp.resources
+                val message = if (result.code == 0) {
+                    R.string.kpm_antiwipe_loaded_toast
+                } else {
+                    R.string.kpm_flash_failed
+                }
+                emitEffect(KpmEffect.SnackBar(res.getString(message)))
+                if (result.code == 0) {
+                    load()
+                }
+            } finally {
+                _uiState.update { it.copy(isFlashing = false) }
+            }
+        }
+    }
+
+    /** 卸载防格模块，同时解除内核里的所有 hook。 */
+    fun unloadAntiwipe() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isFlashing = true) }
+            try {
+                val ok = withContext(Dispatchers.IO) { unloadAntiwipeKpm() }
+                val res = ksuApp.resources
+                val message = if (ok) {
+                    R.string.kpm_antiwipe_unloaded_toast
+                } else {
+                    R.string.kpm_flash_failed
+                }
+                emitEffect(KpmEffect.SnackBar(res.getString(message)))
+                load()
             } finally {
                 _uiState.update { it.copy(isFlashing = false) }
             }

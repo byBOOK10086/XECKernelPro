@@ -37,6 +37,12 @@
     <string name="kpm_not_activated_hint">请在内核中启用 CONFIG_KPM 并重启以使用内核补丁模块</string>
     <string name="kpm_version">KPM 版本：%s</string>
     <string name="kpm_flash">刷入 KPM 模块</string>
+    <string name="kpm_antiwipe_title">防格模块</string>
+    <string name="kpm_antiwipe_summary">拦截 root 裸写关键分区、删除系统/用户数据路径。逻辑在内核里，只有 XEC 内核可用；卸载即完全解除。</string>
+    <string name="kpm_antiwipe_load">载入防格模块</string>
+    <string name="kpm_antiwipe_unload">卸载防格模块</string>
+    <string name="kpm_antiwipe_loaded_toast">防格模块已载入</string>
+    <string name="kpm_antiwipe_unloaded_toast">防格模块已卸载</string>
     <string name="kpm_builtin_load">加载内置 susfs_lite（实验性）</string>
     <string name="kpm_builtin_hint">对其它应用隐藏 /data/adb 与 /debug_ramdisk 的 stat 族与 faccessat 探测（列目录不隐藏）。与手动刷 .kpm 同一条装载通路；卸载用 `xudc kpm unload susfs_lite`。</string>
     <string name="kpm_flash_success">KPM 模块刷入成功</string>
