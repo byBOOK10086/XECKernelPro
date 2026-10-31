@@ -313,6 +313,10 @@ ccflags-y += -DEXPECTED_HASH=\"$(KSU_EXPECTED_HASH)\"
 ccflags-y += -DKSU_IS_PR_BUILD=$(KSU_IS_PR_BUILD)
 
 ccflags-y += -DKSU_NEW_DCACHE_FLUSH=$(KSU_NEW_DCACHE_FLUSH)
+# This module only ever builds against Android common kernels; scdefs.h
+# gates the Magisk scontext strings behind #ifdef ANDROID, which the DDK
+# external-module builds do not inherit from the kernel's own flags.
+ccflags-y += -DANDROID
 
 ccflags-y += -Wno-strict-prototypes -Wno-int-conversion -Wno-gcc-compat -Wno-missing-prototypes
 ccflags-y += -Wno-declaration-after-statement -Wno-unused-function
