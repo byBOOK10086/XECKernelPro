@@ -30,6 +30,11 @@
 #endif
 #include "supercall.h"
 #include "module.h"
+/* SukiSU bridge install/uninstall: kpmsuki owns the header, core.c owns the
+ * lifecycle. IS_ENABLED() keeps the calls compiled even when the Kconfig is
+ * off, so the prototypes must be visible unconditionally (the LKM builds
+ * -Werror on implicit declarations; the built-in chain only warned). */
+#include "../kpmsuki/supercall.h"
 
 #if IS_ENABLED(CONFIG_KSU_KPM_AP_MANAGER)
 static void kp_manager_deferred(struct work_struct *w);
