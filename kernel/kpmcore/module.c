@@ -32,7 +32,7 @@
 #include <asm/tlbflush.h>
 
 #include "include/kp_lkm.h"
-#include "../../infra/symbol_resolver.h"
+#include "../infra/symbol_resolver.h"
 
 #define SZ_128M 0x08000000
 

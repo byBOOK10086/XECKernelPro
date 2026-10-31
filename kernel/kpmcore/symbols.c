@@ -37,14 +37,14 @@
 
 #include <asm/thread_info.h>
 #include "include/hook.h"
-#include "../../infra/symbol_resolver.h"
+#include "../infra/symbol_resolver.h"
 
 /* SukiSU compact-table forwarders (extension/kpm/compact.c parity). KPMs
  * written for SukiSU call these helper names; they map onto the host tree's
  * manager identity / umount policy / legacy compact resolver. */
-#include "../../kpm/compact.h"
-#include "../../manager/manager_identity.h"
-#include "../../policy/allowlist.h"
+#include "../kpm/compact.h"
+#include "../manager/manager_identity.h"
+#include "../policy/allowlist.h"
 
 static int ksu_uid_should_umount_fwd(uid_t uid)
 {

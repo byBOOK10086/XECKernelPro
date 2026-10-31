@@ -22,8 +22,8 @@
 
 #include "../kpmcore/include/kp_lkm.h"
 #include "../kpmcore/include/hook.h" /* hook() for the kpmd brk channel */
-#include "../../include/uapi/supercall.h"
-#include "../../infra/symbol_resolver.h"
+#include "../include/uapi/supercall.h"
+#include "../infra/symbol_resolver.h"
 
 #define KPM_NAME_LEN 32
 #define KPM_ARGS_LEN 1024
