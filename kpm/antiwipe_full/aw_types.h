@@ -34,6 +34,14 @@ typedef _Bool bool;
 #define true 1
 #define false 0
 
+/* kernel address-space annotations: no-ops in freestanding KPM builds */
+#ifndef __user
+#define __user
+#endif
+#ifndef __kernel
+#define __kernel
+#endif
+
 #define AW_ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
 /* KERN_* printk facility prefixes: SOH digit */
