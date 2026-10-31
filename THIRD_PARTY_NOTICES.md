@@ -248,6 +248,13 @@ vendored 源码树（`third_party/`）始终**零修改**：上述修复全部�
   （控制面与内核间桥）移植自 SukiSU-Ultra `kernel/extension/kpm/kpm.c` 与
   `bridge.h` 协议。本地适配：符号解析走本树解析器、装载入口对齐 kpmcore 的
   `kp_*` API。上游 https://github.com/SukiSU-Ultra/SukiSU-Ultra 。
+- **满血防格 KPM 模块**（`kpm/antiwipe_full/`，模块逻辑 **GPL-2.0-only**，
+  XECKernelPro 原创）：拦截逻辑全部驻留模块（`hook_wrap` 挂 LSM 分发函数 +
+  `hook_syscalln` 挂 sys_reboot + BTF 偏移自举）。其中 `aw_types.h` 内的 KPM
+  ABI 宏与 hook 链参数结构**派生自 KernelPatch** `kernel/include/kpmodule.h`/
+  `hook.h`（**GPL-2.0-or-later**，上述上游），随模块以 ET_REL ELF 分发时整体
+  按 GPL-2.0 兼容许可提供；派生部分已在文件头标注。原薄开关模块
+  `kpm/antiwipe/` 保留作为 legacy 引擎回退。
 
 ## Magisk 路线（5.10 以下挂载态 root，方案甲）
 

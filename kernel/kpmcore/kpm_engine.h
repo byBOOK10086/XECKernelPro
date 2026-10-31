@@ -11,6 +11,15 @@
 #define _KSU_KPMCORE_ENGINE_H_
 
 #include <linux/types.h>
+#include <linux/compiler.h>
+
+/* Module-registry surface used by the legacy kpm/kpm.c bridge when it routes
+ * into this engine (load path prototypes already live in module.h; these
+ * three were missing there-from and broke the LKM builds with implicit
+ * declarations). Defined in module.c. */
+long kp_module_control0(const char *name, const char *ctl_args, char __user *out_msg, int outlen);
+int kp_list_modules(char *out_names, int size);
+int kp_get_module_info(const char *name, char *out_info, int size);
 
 /* Bring up / tear down the engine. Called from core/init.c (and the exit
  * path) when CONFIG_KSU_KPM_AP is on. Idempotent; safe to call when the
