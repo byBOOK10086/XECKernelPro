@@ -38,12 +38,26 @@ static inline long kp_kver(void)
 }
 
 #define KPLKM_TAG "kernelpatch-lkm"
+#ifndef logki
 #define logki(fmt, ...) pr_info(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
+#endif
+#ifndef logke
 #define logke(fmt, ...) pr_err(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
+#endif
+#ifndef logkw
 #define logkw(fmt, ...) pr_warn(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
+#endif
+#ifndef logkd
 #define logkd(fmt, ...) pr_debug(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
+#endif
+#ifndef logkfi
 #define logkfi(fmt, ...) logki(fmt, ##__VA_ARGS__)
+#endif
+#ifndef logkfe
 #define logkfe(fmt, ...) logke(fmt, ##__VA_ARGS__)
+#endif
+#ifndef logkfd
 #define logkfd(fmt, ...) logkd(fmt, ##__VA_ARGS__)
+#endif
 
 #endif /* _KP_LKM_H_ */
