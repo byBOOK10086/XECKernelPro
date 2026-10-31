@@ -14,9 +14,13 @@
 #include <linux/compiler.h>
 
 /* Module-registry surface used by the legacy kpm/kpm.c bridge when it routes
- * into this engine (load path prototypes already live in module.h; these
- * three were missing there-from and broke the LKM builds with implicit
- * declarations). Defined in module.c. */
+ * into this engine. All defined in module.c (which keeps the canonical
+ * prototypes in module.h); they are repeated here so external translation
+ * units need no kpmcore-internal headers — the LKM builds (CONFIG_KPM=y)
+ * failed on every one of the 9 bridge call sites without them. */
+long kp_load_module_path(const char *path, const char *args, void __user *reserved);
+long kp_unload_module(const char *name, void __user *reserved);
+int kp_get_module_nums(void);
 long kp_module_control0(const char *name, const char *ctl_args, char __user *out_msg, int outlen);
 int kp_list_modules(char *out_names, int size);
 int kp_get_module_info(const char *name, char *out_info, int size);
