@@ -136,6 +136,7 @@ ifeq ($(CONFIG_ARM64),y)
 kernelsu-objs += kpmcore/core.o
 kernelsu-objs += kpmcore/hook_engine.o
 kernelsu-objs += kpmcore/hook_runtime.o
+kernelsu-objs += kpmcore/fphook.o
 kernelsu-objs += kpmcore/insn.o
 kernelsu-objs += kpmcore/relo.o
 kernelsu-objs += kpmcore/module.o
@@ -152,11 +153,25 @@ kernelsu-objs += kpmcore/su_sc.o
 kernelsu-objs += kpmcore/suallow.o
 kernelsu-objs += kpmsuki/bridge.o
 kernelsu-objs += kpmsuki/supercall.o
+# APatch 管理器扫描栈（apk_sign/manager/sha256）：默认不编。开启
+# CONFIG_KSU_KPM_AP_MANAGER 后，me.bmax.apatch 的 APK 证书扫描结果会作为
+# AP 方言超管身份（kp_manager_appid）参与 kpmcore 分发的鉴权——单一管理器
+# 身份是默认立场，这是给"完整 APatch 行为"的显式出口。
+ifeq ($(CONFIG_KSU_KPM_AP_MANAGER),y)
+kernelsu-objs += kpmcore/manager/apk_sign.o
+kernelsu-objs += kpmcore/manager/manager.o
+kernelsu-objs += kpmcore/sha256.o
+ccflags-y += -DCONFIG_KSU_KPM_AP_MANAGER=1
+endif
 else
 kernelsu-objs += kpmcore/stub.o
 endif
 
 # vendored 代码不带本树的警告纪律：单独降级，不污染其余对象。
+# manager 扫描栈（vendor 自 AP lkm/manager）同样豁免。
+$(eval CFLAGS_kpmcore/manager/apk_sign.o += -Wno-error -Wno-declaration-after-statement)
+$(eval CFLAGS_kpmcore/manager/manager.o += -Wno-error -Wno-declaration-after-statement)
+$(eval CFLAGS_kpmcore/sha256.o += -Wno-error)
 $(foreach o, core hook_engine hook_runtime insn relo module symbols kpm_sc\
              kstorage symbol_resolver patch_memory syscall_table supercall\
              secpass accctl su_sc suallow,\
@@ -172,6 +187,14 @@ CFLAGS_kpmcore/hook_engine.o += -fno-asynchronous-unwind-tables -fno-lto
 CFLAGS_kpmcore/hook_engine.o += -fno-sanitize=shadow-call-stack
 CFLAGS_kpmcore/hook_engine.o += -mbranch-protection=bti -std=gnu11
 CFLAGS_kpmcore/hook_engine.o += -Wno-strict-prototypes
+# fphook 的 _fp_transitN 与 hook_engine 的 _transitN 同一运行环境。
+CFLAGS_kpmcore/fphook.o += -Wno-error -Wno-declaration-after-statement
+CFLAGS_kpmcore/fphook.o += -fno-sanitize=cfi -fno-stack-protector
+CFLAGS_kpmcore/fphook.o += -fno-jump-tables -fno-unwind-tables
+CFLAGS_kpmcore/fphook.o += -fno-asynchronous-unwind-tables -fno-lto
+CFLAGS_kpmcore/fphook.o += -fno-sanitize=shadow-call-stack
+CFLAGS_kpmcore/fphook.o += -mbranch-protection=bti -std=gnu11
+CFLAGS_kpmcore/fphook.o += -Wno-strict-prototypes
 # secpass 经 backup 变量调内核函数指针，豁免 CFI 慢路径递归（上游同款）。
 CFLAGS_kpmcore/secpass.o += -fno-sanitize=cfi
 

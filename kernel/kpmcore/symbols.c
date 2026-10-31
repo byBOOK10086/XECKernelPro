@@ -39,6 +39,40 @@
 #include "include/hook.h"
 #include "../../infra/symbol_resolver.h"
 
+/* SukiSU compact-table forwarders (extension/kpm/compact.c parity). KPMs
+ * written for SukiSU call these helper names; they map onto the host tree's
+ * manager identity / umount policy / legacy compact resolver. */
+#include "../../kpm/compact.h"
+#include "../../manager/manager_identity.h"
+#include "../../policy/allowlist.h"
+
+static int ksu_uid_should_umount_fwd(uid_t uid)
+{
+	return ksu_uid_should_umount(uid) ? 1 : 0;
+}
+
+static int ksu_is_current_manager_fwd(void)
+{
+#ifndef CONFIG_KSU_DISABLE_MANAGER
+	return is_manager() ? 1 : 0;
+#else
+	return 0;
+#endif
+}
+
+static uid_t ksu_get_manager_uid_fwd(void)
+{
+	return ksu_manager_appid;
+}
+
+static void ksu_set_manager_uid_fwd(uid_t uid, int force)
+{
+#ifndef CONFIG_KSU_DISABLE_MANAGER
+	if (force || ksu_manager_appid == -1)
+		ksu_manager_appid = uid;
+#endif
+}
+
 static u32 kp_kpm_kver = LINUX_VERSION_CODE;
 static u32 kp_kpm_kpver = KP_LKM_VERSION_CODE;
 static int kp_kpm_thread_size = THREAD_SIZE;
@@ -242,7 +276,7 @@ static uintptr_t kp_kpm_syscalln_addr(int nr, int is_compat)
 static int kp_kpm_hook_syscalln(int nr, int narg, void *before, void *after, void *udata)
 {
 	/* Inline-hook the syscall function itself (kpimg's inline_wrap_syscalln).
-	 * fp_hook_wrap lives in fphook.c which the LKM does not compile. */
+	 * (The fp path is also vendored: fphook.c + fp_hook* in the table.) */
 	uintptr_t addr = kp_kpm_syscalln_addr(nr, 0);
 	if (!addr)
 		return -ENOENT;
@@ -333,6 +367,15 @@ static struct kp_kpm_symbol kp_kpm_symbols[] = {
 	KP_KPM_KFUNC_ENTRY(strcat),
 	{ "mm_struct_offset", (unsigned long)&kp_kpm_mm_struct_offset },
 	{ "has_config_compat", (unsigned long)&kp_kpm_has_config_compat },
+	/* SukiSU Ultra compact-table parity (extension/kpm/compact.c): KPMs
+	 * written against SukiSU resolve these helpers; forward them to the
+	 * host tree's implementations. */
+	{ "compact_find_symbol", (unsigned long)sukisu_compact_find_symbol },
+	{ "is_run_in_sukisu_ultra", (void *)1 },
+	{ "is_uid_should_umount", (unsigned long)ksu_uid_should_umount_fwd },
+	{ "is_current_uid_manager", (unsigned long)ksu_is_current_manager_fwd },
+	{ "get_manager_uid", (unsigned long)ksu_get_manager_uid_fwd },
+	{ "sukisu_set_manager_uid", (unsigned long)ksu_set_manager_uid_fwd },
 	{ "has_syscall_wrapper", (unsigned long)&kp_kpm_has_syscall_wrapper },
 	{ "stack_in_task_offset", (unsigned long)&kp_kpm_stack_in_task_offset },
 	{ "stack_end_offset", (unsigned long)&kp_kpm_stack_end_offset },
@@ -356,6 +399,12 @@ static struct kp_kpm_symbol kp_kpm_symbols[] = {
 	{ "hook_uninstall", (unsigned long)hook_uninstall },
 	{ "hook", (unsigned long)hook },
 	{ "unhook", (unsigned long)unhook },
+	/* fp-hook family (fphook.c, vendored): hook a function-pointer slot
+	 * (e.g. sys_call_table entries) instead of the code. */
+	{ "fp_hook", (unsigned long)fp_hook },
+	{ "fp_unhook", (unsigned long)fp_unhook },
+	{ "fp_hook_wrap", (unsigned long)fp_hook_wrap },
+	{ "fp_hook_unwrap", (unsigned long)fp_hook_unwrap },
 };
 
 int kp_kpm_symbols_init(void)
