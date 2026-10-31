@@ -30,6 +30,7 @@
 #endif
 #include "supercall.h"
 #include "module.h"
+#include "include/kstorage.h" /* kp_kstorage_init */
 /* SukiSU bridge install/uninstall: kpmsuki owns the header, core.c owns the
  * lifecycle. IS_ENABLED() keeps the calls compiled even when the Kconfig is
  * off, so the prototypes must be visible unconditionally (the LKM builds
