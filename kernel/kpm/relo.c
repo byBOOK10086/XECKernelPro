@@ -138,7 +138,7 @@ static int kp_reloc_insn_imm(enum kp_aarch64_reloc_op op, void *place, u64 val, 
 
 #endif /* CONFIG_ARM64 */
 
-int kp_apply_relocate(Elf64_Shdr *sechdrs, const char *strtab, unsigned int symindex, unsigned int relsec,
+__weak int kp_apply_relocate(Elf64_Shdr *sechdrs, const char *strtab, unsigned int symindex, unsigned int relsec,
                       struct kp_module *me)
 {
     (void)sechdrs;
@@ -149,7 +149,7 @@ int kp_apply_relocate(Elf64_Shdr *sechdrs, const char *strtab, unsigned int symi
     return 0;
 }
 
-int kp_apply_relocate_add(Elf64_Shdr *sechdrs, const char *strtab, unsigned int symindex, unsigned int relsec,
+__weak int kp_apply_relocate_add(Elf64_Shdr *sechdrs, const char *strtab, unsigned int symindex, unsigned int relsec,
                           struct kp_module *me)
 {
 #ifdef CONFIG_ARM64
