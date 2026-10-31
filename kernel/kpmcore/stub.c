@@ -14,6 +14,8 @@
 #include <linux/types.h>
 
 #include "kpm_engine.h"
+#include "module.h" /* kp_load_module_path_event — stubbed below */
+#include "../kpmsuki/supercall.h" /* SukiSU bridge stubs below */
 
 bool kp_engine_active(void)
 {

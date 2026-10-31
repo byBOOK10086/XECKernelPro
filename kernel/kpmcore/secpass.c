@@ -16,6 +16,7 @@
 #include "include/kp_lkm.h"
 #include "../../infra/symbol_resolver.h"
 #include "../kpm/module.h"
+#include "module.h" /* kp_kpm_cfi_allowed_addr */
 #include "include/hook.h"
 
 struct pt_regs;
