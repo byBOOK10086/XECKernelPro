@@ -21,6 +21,7 @@
 #include "supercall.h"
 
 #include "../kpmcore/include/kp_lkm.h"
+#include "../kpmcore/include/hook.h" /* hook() for the kpmd brk channel */
 #include "../../include/uapi/supercall.h"
 #include "../../infra/symbol_resolver.h"
 
