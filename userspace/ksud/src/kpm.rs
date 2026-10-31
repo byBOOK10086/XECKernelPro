@@ -180,6 +180,73 @@ fn driver_control(name: &str, args: &str) -> Result<i32> {
     Ok(ret)
 }
 
+// ------------------------------------------------- suki (SukiSU bridge) ---
+// Second transport onto the same engine: the SukiSU GKI control plane
+// (KSU_IOCTL_KPM_SUKI, kernel/kpmsuki/bridge.c). Framing differs from the
+// driver plane: control_code IS the command number (no pointer indirection),
+// LIST/VERSION take the capacity in arg2, and op 8 adds event-aware loading.
+// The engine behind it is the same registry the driver plane reaches, so the
+// two transports never disagree about which modules are loaded.
+
+fn suki_ctl(control: u32, arg1: u64, arg2: u64) -> Result<i32> {
+    let mut ret: i32 = -1;
+    let mut cmd = ksu_uapi::ksu_kpm_cmd {
+        control_code: control as u64,
+        arg1,
+        arg2,
+        result_code: &raw mut ret as u64,
+    };
+    ksuctl(ksu_uapi::KSU_IOCTL_KPM_SUKI, &raw mut cmd)
+        .context("KPM: SukiSU plane not reachable (CONFIG_KSU_KPM_SUKI?)")?;
+    Ok(ret)
+}
+
+fn suki_version() -> Result<String> {
+    let mut buf = vec![0u8; KPM_STR_BUF];
+    let ret = suki_ctl(
+        ksu_uapi::SUKISU_KPM_VERSION,
+        buf.as_mut_ptr() as u64,
+        buf.len() as u64,
+    )?;
+    if ret != 0 {
+        bail!("KPM: SukiSU version query failed: {}", io_err(ret));
+    }
+    let ver = buf_str(&buf);
+    if ver.is_empty() {
+        bail!("KPM: SukiSU plane returned an empty version");
+    }
+    Ok(ver)
+}
+
+/// Boot-stage load through the SukiSU event-aware op; falls back to the
+/// driver plane's plain load when the kernel answers -EOPNOTSUPP (upstream
+/// contract: op 8 is optional and older engines refuse it).
+fn suki_load_event(path: &str, args: Option<&str>, event: &str) -> Result<()> {
+    let path_c = CString::new(path)?;
+    let args_c = args
+        .map(|a| CString::new(a))
+        .transpose()?
+        .unwrap_or_else(|| CString::new(String::new()))?;
+    let event_c = CString::new(event)?;
+    let payload = ksu_uapi::ksu_kpm_load_event_cmd {
+        args: args_c.as_ptr() as u64,
+        event: event_c.as_ptr() as u64,
+    };
+    let ret = suki_ctl(
+        ksu_uapi::SUKISU_KPM_LOAD_EVENT,
+        path_c.as_ptr() as u64,
+        &payload as *const _ as u64,
+    )?;
+    if ret == -libc::EOPNOTSUPP {
+        log::info!("KPM: bridge has no event-aware load; falling back to plain load");
+        return driver_load(path, args);
+    }
+    if ret < 0 {
+        bail!("KPM: event load failed: {}", io_err(ret));
+    }
+    Ok(())
+}
+
 // ------------------------------------------------------------- embedded ---
 
 /// Run the embedded-engine client and return its stdout. The client must exit
@@ -414,10 +481,22 @@ fn load_all_modules() -> Result<()> {
 
     // One broken .kpm must not block the rest: previously the first failure
     // propagated and every later module silently never loaded after a reboot.
+    // When the SukiSU plane is reachable, modules get the upstream
+    // "post-fs-data" event at boot (op 8); otherwise they load without one.
+    let suki_boot = suki_version().is_ok();
+    if !suki_boot {
+        log::info!("KPM: SukiSU plane absent, boot load without event");
+    }
     let mut loaded = 0usize;
     let mut failed = 0usize;
     for path in modules {
-        match load_module(&path, None) {
+        let path_str = path.to_string_lossy().into_owned();
+        let result = if suki_boot {
+            suki_load_event(&path_str, None, "post-fs-data")
+        } else {
+            load_module(&path, None)
+        };
+        match result {
             Ok(()) => loaded += 1,
             Err(e) => {
                 failed += 1;

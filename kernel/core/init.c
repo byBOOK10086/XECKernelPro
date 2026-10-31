@@ -27,6 +27,7 @@
 #include "hook/syscall_hook.h"
 #include "feature/adb_root.h"
 #include "apatch/compat.h"
+#include "kpmcore/kpm_engine.h"
 #include "feature/selinux_hide.h"
 #include "feature/uts_spoof.h"
 #include "feature/module_blacklist.h"
@@ -179,6 +180,13 @@ int __init kernelsu_init(void)
     // APatch/KernelPatch 兼容层：必须在 ksu_syscall_hook_init()（决定
     // ksu_syscall_table 是否可用）之后。没开 CONFIG_KSU_APATCH_COMPAT 时是空实现。
     ksu_apatch_compat_init();
+
+    // KPM core 引擎（KernelPatch 全量移植）：同样要求 syscall 表 hook 就绪。
+    // 与 apatch 兼容层共存时 syscall 45 由兼容层独占，引擎不抢表项；
+    // CONFIG_KSU_KPM_AP 关闭时是空实现，legacy kpm/ 装载器保持唯一引擎。
+    if (kp_engine_init())
+        pr_info("kpmcore engine not available; legacy KPM loader stays active
+");
     ksu_app_profile_init();
 
     if (ksu_late_loaded) {
@@ -240,6 +248,9 @@ void __exit kernelsu_exit(void)
     ksu_syscall_hook_manager_exit();
     // syscall 45 的表项 hook 也属于 Phase 1：先还原表项，再拆其它结构
     ksu_apatch_compat_exit();
+    // KPM 引擎卸载：先跑完所有已加载 KPM 的 exit 回调，再拆 inline hook 与
+    // CFI 盾（CONFIG_KSU_KPM_AP 关闭时是空实现）。
+    kp_engine_exit();
 
     ksu_supercalls_exit();
 

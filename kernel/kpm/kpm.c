@@ -33,6 +33,15 @@
 #include <asm/barrier.h>
 #include "kpm.h"
 #include "compact.h"
+#include "kpmcore/kpm_engine.h"
+
+/*
+ * CONFIG_KSU_KPM_AP（KernelPatch 全量引擎，kpmcore/）活跃时，下面所有桥接
+ * 函数整体路由到新引擎：外部符号名、签名、ioctl 面完全不变（CI 符号断言与
+ * 既有用户态不感知），注册表唯一 —— 不会出现两个引擎各持一份模块列表的脑裂。
+ * VERSION 例外：它报告宿主 KSU 版本串，ksud 的 Driver 探测与管理器状态卡
+ * 依赖这个格式，新引擎版本走 kpmsuki 的 SukiSU VERSION 命令。
+ */
 #include "relo.h"
 #include <kpmodule.h>
 
@@ -854,6 +863,12 @@ noinline NO_OPTIMIZE void sukisu_kpm_load_module_path(const char *path, const ch
 {
     long rc;
 
+    if (kp_engine_active()) {
+        if (result)
+            *result = (int)kp_load_module_path(path, args, NULL);
+        return;
+    }
+
     (void)ptr;
 
     rc = kpm_load_module_path(path, args);
@@ -865,6 +880,12 @@ EXPORT_SYMBOL(sukisu_kpm_load_module_path);
 noinline NO_OPTIMIZE void sukisu_kpm_unload_module(const char *name, void *ptr, int *result)
 {
     long rc;
+
+    if (kp_engine_active()) {
+        if (result)
+            *result = (int)kp_unload_module(name, NULL);
+        return;
+    }
 
     (void)ptr;
 
@@ -878,6 +899,12 @@ noinline NO_OPTIMIZE void sukisu_kpm_num(int *result)
 {
     int n = 0;
     struct kp_module *pos;
+
+    if (kp_engine_active()) {
+        if (result)
+            *result = kp_get_module_nums();
+        return;
+    }
 
     mutex_lock(&kpm_lock);
     list_for_each_entry (pos, &kpm_modules, list) {
@@ -898,6 +925,15 @@ noinline NO_OPTIMIZE void sukisu_kpm_info(const char *name, char *buf, int buffe
         *size = 0;
     if (!name || !buf || bufferSize <= 0)
         return;
+
+    if (kp_engine_active()) {
+        int rc = kp_get_module_info(name, buf, bufferSize);
+        if (rc >= bufferSize)
+            rc = bufferSize - 1;
+        if (size)
+            *size = rc > 0 ? rc : 0;
+        return;
+    }
 
     mutex_lock(&kpm_lock);
     struct kp_module *mod = kpm_find_module(name);
@@ -925,6 +961,12 @@ noinline NO_OPTIMIZE void sukisu_kpm_list(void *out, int bufferSize, int *result
 {
     int rc;
 
+    if (kp_engine_active()) {
+        if (result)
+            *result = kp_list_modules((char *)out, bufferSize);
+        return;
+    }
+
     mutex_lock(&kpm_lock);
     rc = kpm_build_list((char *)out, bufferSize);
     mutex_unlock(&kpm_lock);
@@ -937,6 +979,12 @@ EXPORT_SYMBOL(sukisu_kpm_list);
 noinline NO_OPTIMIZE void sukisu_kpm_control(const char *name, const char *args, long arg_len, int *result)
 {
     long rc = -EINVAL;
+
+    if (kp_engine_active()) {
+        if (result)
+            *result = (int)kp_module_control0(name, args, NULL, 0);
+        return;
+    }
 
     if (name && args && arg_len > 0) {
         mutex_lock(&kpm_lock);
@@ -1008,6 +1056,12 @@ noinline NO_OPTIMIZE void sukisu_kpm_list_apatch(void *out, int bufferSize, int 
 {
     int rc;
 
+    if (kp_engine_active()) {
+        if (result)
+            *result = kp_list_modules((char *)out, bufferSize);
+        return;
+    }
+
     mutex_lock(&kpm_lock);
     rc = kpm_build_list_nl((char *)out, bufferSize);
     mutex_unlock(&kpm_lock);
@@ -1026,6 +1080,15 @@ noinline NO_OPTIMIZE void sukisu_kpm_info_apatch(const char *name, char *buf, in
         *size = 0;
     if (!name || !buf || bufferSize <= 0)
         return;
+
+    if (kp_engine_active()) {
+        int rc = kp_get_module_info(name, buf, bufferSize);
+        if (rc >= bufferSize)
+            rc = bufferSize - 1;
+        if (size)
+            *size = rc > 0 ? rc : 0;
+        return;
+    }
 
     mutex_lock(&kpm_lock);
     struct kp_module *mod = kpm_find_module(name);
@@ -1057,6 +1120,12 @@ noinline NO_OPTIMIZE void sukisu_kpm_control_out(const char *name, const char *a
                                                 int outlen, int *result)
 {
     long rc = -EINVAL;
+
+    if (kp_engine_active()) {
+        if (result)
+            *result = (int)kp_module_control0(name, args, out, outlen);
+        return;
+    }
 
     if (name && args && arg_len > 0) {
         mutex_lock(&kpm_lock);

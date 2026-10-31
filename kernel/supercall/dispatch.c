@@ -42,6 +42,9 @@
 #ifdef CONFIG_KPM
 #include "kpm/kpm.h"
 #endif
+#ifdef CONFIG_KSU_KPM_SUKI
+#include "kpmsuki/bridge.h"
+#endif
 
 static int do_grant_root(void __user *arg)
 {
@@ -1379,6 +1382,14 @@ static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
         .cmd = KSU_IOCTL_KPM,
         .name = "KPM_OPERATION",
         .handler = do_kpm,
+        .perm_check = manager_or_root
+    },
+#endif
+#ifdef CONFIG_KSU_KPM_SUKI
+    {
+        .cmd = KSU_IOCTL_KPM_SUKI,
+        .name = "KPM_SUKI_OPERATION",
+        .handler = do_kpm_suki,
         .perm_check = manager_or_root
     },
 #endif
