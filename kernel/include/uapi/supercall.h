@@ -275,12 +275,21 @@ static const __u32 SUKISU_KPM_LIST = 4;
 static const __u32 SUKISU_KPM_INFO = 5;
 static const __u32 SUKISU_KPM_CONTROL = 6;
 static const __u32 SUKISU_KPM_VERSION = 7;
+/* SukiSU ABI v2 op 8: event-aware load (boot-stage modules). Older kernels
+ * answer -EOPNOTSUPP and callers fall back to plain LOAD. */
+static const __u32 SUKISU_KPM_LOAD_EVENT = 8;
 
 struct ksu_kpm_cmd {
     __aligned_u64 control_code;
     __aligned_u64 arg1;
     __aligned_u64 arg2;
     __aligned_u64 result_code;
+};
+
+/* arg2 payload for SUKISU_KPM_LOAD_EVENT. Both fields are user pointers. */
+struct ksu_kpm_load_event_cmd {
+    __aligned_u64 args;
+    __aligned_u64 event;
 };
 
 // Other IOCTL command definitions
@@ -292,6 +301,10 @@ static const __u32 KSU_IOCTL_ENABLE_KPM = _IOC(_IOC_READ, 'K', 102, 0);
 static const __u32 KSU_IOCTL_LIST_TRY_UMOUNT = _IOC(_IOC_READ | _IOC_WRITE, 'K', 103, 0);
 static const __u32 KSU_IOCTL_SET_SPOOF_VERSION = _IOC(_IOC_WRITE, 'K', 104, 0);
 static const __u32 KSU_IOCTL_KPM = _IOC(_IOC_READ | _IOC_WRITE, 'K', 200, 0);
+/* SukiSU GKI 模式控制面（kernel/kpmsuki/bridge.c）：与 KSU_IOCTL_KPM 相同的
+ * ksu_kpm_cmd 四字段框架，但 control_code 直接是命令号（SukiSU 语义，不再是
+ * 指向 int 的指针），支持 1..8 全部操作；LIST/VERSION 容量上限 4096。 */
+static const __u32 KSU_IOCTL_KPM_SUKI = _IOC(_IOC_READ | _IOC_WRITE, 'K', 201, 0);
 
 /*
  * XECKernelPro extension (ioctl 110/111, outside the upstream numbering

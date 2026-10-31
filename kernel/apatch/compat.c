@@ -30,6 +30,7 @@
 #include "apatch/auth.h"
 #include "apatch/compat.h"
 #include "apatch/scdefs.h"
+#include "kpmcore/kpm_engine.h"
 
 #if !defined(__aarch64__)
 /*
@@ -57,9 +58,16 @@ extern void sukisu_kpm_control_out(const char *name, const char *args, long arg_
 
 static syscall_fn_t sc_orig_syscall45;
 
-/* 只把这些命令当成 supercall；其它一律放行原 syscall */
+/* 只把这些命令当成 supercall；其它一律放行原 syscall。
+ *
+ * kpmcore 引擎（CONFIG_KSU_KPM_AP）活跃时放宽到整个 scdefs 命令窗：SU 族 /
+ * kstorage / 特性控制交给 kp_handle_supercall 分发（未实现命令回 -ENOSYS，
+ * 不会落到原 truncate —— 与 KernelPatch 原生内核的 truncate 通道行为一致）；
+ * PANIC/TEST 在引擎分发里同样回 -ENOSYS，不实现任何 panic 面。 */
 static bool sc_cmd_supported(u16 cmd)
 {
+    if (kp_engine_active() && cmd >= SC_CMD_HELLO && cmd <= SC_CMD_MAX)
+        return true;
     switch (cmd) {
     case SC_CMD_HELLO:
     case SC_CMD_BUILD_TIME:
@@ -319,6 +327,13 @@ static bool sc_dispatch(u16 magic, u64 key, u16 cmd, u64 a1, u64 a2, u64 a3, u64
         *out = sc_auth_set_key((const char __user *)a1);
         return true;
     default:
+        /* 引擎活跃：scdefs 其余命令（KPM 族已在上方经桥接函数路由、SU 族、
+         * kstorage、CONTROL_FEATURE）走 kpmcore 分发表；SKEY_* 由本层持有
+         * （超键存储在 policy/superkey.c），永远不进引擎。 */
+        if (kp_engine_active()) {
+            *out = kp_handle_supercall(cmd, a1, a2, a3, a4);
+            return true;
+        }
         return false;
     }
 }

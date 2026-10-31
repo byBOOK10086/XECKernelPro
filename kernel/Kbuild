@@ -122,6 +122,69 @@ ifeq ($(CONFIG_KSU_APATCH_COMPAT),y)
 ccflags-y += -DCONFIG_KSU_APATCH_COMPAT=1
 endif
 
+# KernelPatch 全量 KPM 引擎（kpmcore/，vendor 自 KernelPatch lkm/，GPL-2.0-or-later）
+# 与 SukiSU Ultra GKI 桥接（kpmsuki/，vendor 自 SukiSU_KernelPatch_patch +
+# SukiSU-Ultra extension/kpm，GPL-2.0）。与 kpm/、apatch/ 同一约定：对象无条件
+# 编入（外置模块构建不处理本模块 Kconfig），行为由 CONFIG_KSU_KPM_AP /
+# CONFIG_KSU_KPM_SUKI 决定 —— 内置构建走 autoconf.h，外置构建由 workflow 传
+# 同名 make 变量走到下面的 ccflags。关闭时 kp_engine_init() 直接返回，legacy
+# kpm/ 装载器保持唯一引擎。
+# 引擎本体是 AArch64-only（hook/patch_memory/insn 都是 arm64 实现）：非 arm64
+# 构建改链 kpmcore/stub.o —— 同一套符号面全部回 -EOPNOTSUPP/false，legacy kpm/
+# 装载器照旧是唯一引擎（与 apatch/compat.c 的 per-arch stub 同一模式）。
+ifeq ($(CONFIG_ARM64),y)
+kernelsu-objs += kpmcore/core.o
+kernelsu-objs += kpmcore/hook_engine.o
+kernelsu-objs += kpmcore/hook_runtime.o
+kernelsu-objs += kpmcore/insn.o
+kernelsu-objs += kpmcore/relo.o
+kernelsu-objs += kpmcore/module.o
+kernelsu-objs += kpmcore/symbols.o
+kernelsu-objs += kpmcore/kpm_sc.o
+kernelsu-objs += kpmcore/kstorage.o
+kernelsu-objs += kpmcore/symbol_resolver.o
+kernelsu-objs += kpmcore/patch_memory.o
+kernelsu-objs += kpmcore/syscall_table.o
+kernelsu-objs += kpmcore/supercall.o
+kernelsu-objs += kpmcore/secpass.o
+kernelsu-objs += kpmcore/accctl.o
+kernelsu-objs += kpmcore/su_sc.o
+kernelsu-objs += kpmcore/suallow.o
+kernelsu-objs += kpmsuki/bridge.o
+kernelsu-objs += kpmsuki/supercall.o
+else
+kernelsu-objs += kpmcore/stub.o
+endif
+
+# vendored 代码不带本树的警告纪律：单独降级，不污染其余对象。
+$(foreach o, core hook_engine hook_runtime insn relo module symbols kpm_sc\
+             kstorage symbol_resolver patch_memory syscall_table supercall\
+             secpass accctl su_sc suallow,\
+    $(eval CFLAGS_kpmcore/$(o).o += -Wno-error -Wno-declaration-after-statement\
+        -Wno-unused-function -Wno-unused-variable -Wno-int-conversion))
+
+# hook 引擎内的 _transitN 从内核文本 inline hook 里运行：x18 不是本模块的
+# shadow-call-stack、返回地址不经过 PAC 签验，且裸 KPM 回调不在 CFI 跳表内
+# （与上游 lkm/Kbuild 完全一致的豁免面）。
+CFLAGS_kpmcore/hook_engine.o += -fno-sanitize=cfi -fno-stack-protector
+CFLAGS_kpmcore/hook_engine.o += -fno-jump-tables -fno-unwind-tables
+CFLAGS_kpmcore/hook_engine.o += -fno-asynchronous-unwind-tables -fno-lto
+CFLAGS_kpmcore/hook_engine.o += -fno-sanitize=shadow-call-stack
+CFLAGS_kpmcore/hook_engine.o += -mbranch-protection=bti -std=gnu11
+CFLAGS_kpmcore/hook_engine.o += -Wno-strict-prototypes
+# secpass 经 backup 变量调内核函数指针，豁免 CFI 慢路径递归（上游同款）。
+CFLAGS_kpmcore/secpass.o += -fno-sanitize=cfi
+
+ifeq ($(CONFIG_KSU_KPM_AP),y)
+ccflags-y += -DCONFIG_KSU_KPM_AP=1
+endif
+ifeq ($(CONFIG_KSU_KPM_SUKI),y)
+ccflags-y += -DCONFIG_KSU_KPM_SUKI=1
+endif
+ifeq ($(CONFIG_KSU_APATCH_COMPAT),y)
+ccflags-y += -DCONFIG_KSU_APATCH_COMPAT=1
+endif
+
 # preinit runner: a static nolibc binary embedded into kernelsu, see preinit/.
 # It is built against the installed UAPI headers of the target kernel
 # (CONFIG_HEADERS_INSTALL, enabled by gki_defconfig).

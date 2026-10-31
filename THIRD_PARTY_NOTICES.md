@@ -212,8 +212,36 @@ vendored 源码树（`third_party/`）始终**零修改**：上述修复全部�
   为其 CLI 的调用封装。上游 https://github.com/KernelSU-Next/KPatch-Next 。
 - **KernelPatch / APatch 生态调研引用**（`bmax121/KernelPatch` GPL-2.0、
   `bmax121/APatch` GPL-3.0、`topjohnwu/Magisk` GPL-3.0、
-  `5ec1cff/MagicMountStandalone` GPL-3.0）— 仅作 5.10 以下兼容方案的架构调研
-  依据（kpatch 补丁流程、magic mount 挂载模型），未复制其源码或二进制。
+  `5ec1cff/MagicMountStandalone` GPL-3.0）— 5.10 以下兼容方案的架构调研
+  依据（kpatch 补丁流程、magic mount 挂载模型）；其中 KernelPatch 的内核侧
+  引擎现按下一节整体 vendored（GPL-2.0，与本树内核同许可）。
+
+## KPM 双引擎（vendored，`kernel/kpmcore/` 与 `kernel/kpmsuki/`，GPL-2.0-or-later）
+
+2026-10-31 起随内核模块分发的两套 KPM 引擎，均为内核侧 GPL-2.0 兼容引入，
+文件头保留原始版权与 SPDX：
+
+- **KernelPatch LKM 引擎**（`bmax121/KernelPatch`，**GPL-2.0-or-later**，作者
+  bmax121 与 KernelPatch 贡献者，修订 main 分支 2026-10 快照，版本 0.13.9）—
+  `kernel/kpmcore/`：hook 引擎（`hook.c`/`hook_engine.c`/`hook_runtime.c`，
+  含 `_transitN` 链与 fp-hook）、KPM ELF 加载器（`module.c`/`relo.c`/`insn.c`/
+  `symbols.c`，含 CFI/BTI 盾与 kallsyms 回调跳板）、`kstorage.c` KV 存储、
+  `patch_memory.c`/`syscall_table.c`/`symbol_resolver.c`/`secpass.c` 基础设施、
+  su 允许列表栈（`suallow.c`/`accctl.c`/`su_sc.c`）与 `include/` 下的
+  `hook.h`/`scdefs.h`/`kpmodule_ap.h` 等。本地适配（均为移植必需，非功能改动）：
+  符号解析改走本树 `find_kernel_symbol_exact()`（GKI 6.1+ 未导出
+  kallsyms_lookup_name）、可执行内存经 module_alloc/execmem/vmalloc 回退链、
+  新增 `kp_load_module_path_event()`（对齐 kpimg 的 op 8 事件装载）、
+  include 路径本地化、AP 管理器 APK 扫描由本树 manager 身份体系替代。
+  上游 https://github.com/bmax121/KernelPatch 。
+- **SukiSU Ultra GKI 桥接**（`SukiSU-Ultra/SukiSU-Ultra` 与
+  `SukiSU-Ultra/SukiSU_KernelPatch_patch`，内核侧 **GPL-2.0**，作者 SukiSU
+  Ultra 贡献者，修订 main 分支 2026-10 快照）— `kernel/kpmsuki/`：
+  `supercall.c`（truncate 魔数应答端，ops 1..8）移植自
+  SukiSU_KernelPatch_patch `kernel/patch/sukisu/sukisu.c`；`bridge.c`
+  （控制面与内核间桥）移植自 SukiSU-Ultra `kernel/extension/kpm/kpm.c` 与
+  `bridge.h` 协议。本地适配：符号解析走本树解析器、装载入口对齐 kpmcore 的
+  `kp_*` API。上游 https://github.com/SukiSU-Ultra/SukiSU-Ultra 。
 
 ## Magisk 路线（5.10 以下挂载态 root，方案甲）
 

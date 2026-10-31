@@ -181,6 +181,35 @@ config KPM
 	select KALLSYMS
 	select KALLSYMS_ALL
 
+config KSU_KPM_AP
+	bool "KPM engine: KernelPatch full engine (hooks, loader, kstorage, su dialect)"
+	depends on KSU && ARM64
+	default n
+	select KALLSYMS
+	select KALLSYMS_ALL
+	help
+	  Full KernelPatch engine vendored from KernelPatch lkm/ (GPL-2.0-or-later):
+	  ARM64 inline-hook framework (hook/hook_chain/fp_hook), the complete KPM
+	  ELF loader with CFI/BTI shielding, kstorage KV store, and the whole
+	  scdefs supercall command set (KPM 0x1020-0x1032, kstorage 0x1040-0x1045,
+	  su family 0x1010-0x1111). While active, the legacy kpm/ loader bridge
+	  functions route here, so every existing entry path (KSU_IOCTL_KPM, the
+	  apatch syscall-45 dialects, the SukiSU bridge) drives ONE registry.
+	  KPM modules gain real hooking ability (hook_wrap/hook_syscalln/kf_*).
+	  The legacy kpm/ loader stays as fallback when this is off.
+
+config KSU_KPM_SUKI
+	bool "KPM control plane: SukiSU Ultra GKI bridge (truncate magic, ops 1..8)"
+	depends on KSU_KPM_AP
+	default n
+	help
+	  SukiSU Ultra's kernel-to-kernel KPM bridge (GPL-2.0): an inline hook on
+	  __arm64_sys_truncate answers the magic-register EL1h protocol (probe +
+	  LOAD/UNLOAD/NUM/LIST/INFO/CONTROL/VERSION/LOAD_EVENT) by dispatching
+	  into the KSU_KPM_AP engine, and a KSU_IOCTL_KPM_SUKI ('K' 201) control
+	  plane with the upstream ksu_kpm_cmd framing lets SukiSU-style userspace
+	  drive the engine exactly like a SukiSU GKI kernel. Requires KSU_KPM_AP.
+
 menu "XECKernel Pro - APatch/KernelPatch compatibility"
 
 config KSU_APATCH_COMPAT

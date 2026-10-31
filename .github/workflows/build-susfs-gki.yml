@@ -137,7 +137,8 @@ jobs:
           PATCH_FILE="$PATCH_DIR/50_add_susfs_in_gki-$KMI.patch"
           if [ ! -f "$PATCH_FILE" ]; then
             CAND=$(find "$PATCH_DIR" -maxdepth 1 -name "50_add_susfs_in_gki-$KMI*.patch" | sort)
-            N=$(printf '%s\n' "$CAND" | grep -c . || true)
+            N=$(printf '%s
+' "$CAND" | grep -c . || true)
             if [ "$N" != "1" ]; then
               echo "::error::expected exactly one 50_add_susfs patch for $KMI, found $N"
               ls -la "$PATCH_DIR" || true
@@ -209,7 +210,7 @@ jobs:
             -e KSU_SUSFS_OPEN_REDIRECT \
             -e KSU_SUSFS_SUS_MAP \
             -d KSU_DEBUG -d KSU_DISABLE_MANAGER -d KSU_DISABLE_POLICY -e KPM \
-            -e KSU_APATCH_COMPAT \
+            -e KSU_APATCH_COMPAT -e KSU_KPM_AP -e KSU_KPM_SUKI \
             -d LTO_CLANG -e LTO_NONE -d LTO_CLANG_THIN -d LTO_CLANG_FULL -d THINLTO
           make O="$ODIR" ARCH=arm64 olddefconfig
 
@@ -217,7 +218,7 @@ jobs:
           for CFG in KSU KSU_SUSFS KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_KSTAT \
                      KSU_SUSFS_SPOOF_UNAME KSU_SUSFS_ENABLE_LOG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
                      KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG KSU_SUSFS_OPEN_REDIRECT KSU_SUSFS_SUS_MAP KPM \
-                     KSU_APATCH_COMPAT; do
+                     KSU_APATCH_COMPAT KSU_KPM_AP KSU_KPM_SUKI; do
             grep -q "^CONFIG_${CFG}=y" "$ODIR/.config" || {
               echo "::error::CONFIG_${CFG} did not land in .config"
               exit 1
@@ -285,7 +286,10 @@ jobs:
                      susfs_set_cmdline_or_bootconfig susfs_add_open_redirect \
                      susfs_add_sus_map \
                      ksu_apatch_compat_init sukisu_kpm_list_apatch \
-                     sukisu_kpm_info_apatch sukisu_kpm_control_out; do
+                     sukisu_kpm_info_apatch sukisu_kpm_control_out \
+                     kp_engine_init kp_engine_active sukisu_kpm_bridge \
+                     sukisu_kpm_supercall_install kp_load_module_path \
+                     kp_kstorage_init kp_hook_wrap; do
             "$NM" "$ODIR/vmlinux" | grep -q " $SYM$" || {
               echo "::error::symbol $SYM missing from vmlinux (KSU/SUSFS integration broken)"
               exit 1
