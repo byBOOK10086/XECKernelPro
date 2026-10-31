@@ -11,6 +11,7 @@
  * vendored verbatim.
  */
 #include <linux/module.h>
+#include <linux/workqueue.h>
 #include <linux/slab.h>
 #include <linux/version.h>
 
@@ -24,8 +25,21 @@
 #include "secpass.h"
 #include "accctl.h"
 #include "suallow.h"
+#if IS_ENABLED(CONFIG_KSU_KPM_AP_MANAGER)
+#include "manager/manager.h"
+#endif
 #include "supercall.h"
 #include "module.h"
+
+#if IS_ENABLED(CONFIG_KSU_KPM_AP_MANAGER)
+static void kp_manager_deferred(struct work_struct *w);
+static DECLARE_DELAYED_WORK(kp_manager_dw, kp_manager_deferred);
+static void kp_manager_deferred(struct work_struct *w)
+{
+	(void)w;
+	kp_manager_init();
+}
+#endif
 
 int kp_engine_init(void)
 {
@@ -104,8 +118,14 @@ int kp_engine_init(void)
 ", rc);
 	}
 
+#if IS_ENABLED(CONFIG_KSU_KPM_AP_MANAGER)
+	/* The APatch manager scan walks /data/app; in built-in GKI builds that
+	 * filesystem is not mounted yet at engine-init time, so defer it. */
+	schedule_delayed_work(&kp_manager_dw, msecs_to_jiffies(20000));
+#endif
+
 	WRITE_ONCE(kp_engine_active_state, true);
-	logki("KPM core engine ready\n");
+	logki("KPM core engine ready' + BS + 'n");
 	return 0;
 }
 
@@ -146,6 +166,9 @@ void kp_engine_exit(void)
 	if (!READ_ONCE(kp_engine_active_state))
 		return;
 	WRITE_ONCE(kp_engine_active_state, false);
+#if IS_ENABLED(CONFIG_KSU_KPM_AP_MANAGER)
+	cancel_delayed_work_sync(&kp_manager_dw);
+#endif
 
 	kp_engine_unload_all();
 	if (IS_ENABLED(CONFIG_KSU_KPM_SUKI))

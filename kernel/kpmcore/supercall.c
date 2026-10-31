@@ -60,6 +60,21 @@ long kp_handle_supercall(long cmd, long a1, long a2, long a3, long a4)
 		return kp_kver();
 	case SUPERCALL_BUILD_TIME:
 		return kp_su_unsupported_buildtime((char __user *)a1, (int)a2);
+	case SUPERCALL_KLOG: {
+		/* kpimg parity: echo a user message into the kernel log so KPM
+		 * ctl/debug flows can leave boot-visible traces. */
+		char msg[192];
+
+		if (!a1)
+			return -EINVAL;
+		long n = strncpy_from_user(msg, (const char __user *)a1, sizeof(msg) - 1);
+		if (n <= 0)
+			return -EINVAL;
+		msg[n] = '\0';
+		logki("klog: %s
+", msg);
+		return n;
+	}
 
 	case SUPERCALL_SU:
 		return kp_su_sc((struct su_profile __user *)a1);
@@ -131,6 +146,18 @@ long kp_handle_supercall(long cmd, long a1, long a2, long a3, long a4)
 			}
 		} while (n == ARRAY_SIZE(ids));
 		return 0;
+	}
+
+	case SUPERCALL_CONTROL_FEATURE: {
+		/* Upstream LKM stub: no runtime-togglable engine features yet;
+		 * unknown feature names answer -ENOENT exactly like upstream. */
+		char name[64];
+
+		long len = strncpy_from_user(name, (const char __user *)a1, sizeof(name));
+		if (len <= 0)
+			return -EINVAL;
+		(void)a2;
+		return -ENOENT;
 	}
 
 	case SUPERCALL_SKEY_GET:

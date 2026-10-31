@@ -223,16 +223,22 @@ vendored 源码树（`third_party/`）始终**零修改**：上述修复全部�
 
 - **KernelPatch LKM 引擎**（`bmax121/KernelPatch`，**GPL-2.0-or-later**，作者
   bmax121 与 KernelPatch 贡献者，修订 main 分支 2026-10 快照，版本 0.13.9）—
-  `kernel/kpmcore/`：hook 引擎（`hook.c`/`hook_engine.c`/`hook_runtime.c`，
-  含 `_transitN` 链与 fp-hook）、KPM ELF 加载器（`module.c`/`relo.c`/`insn.c`/
+  `kernel/kpmcore/`：hook 引擎（`hook.c`/`hook_engine.c`/`hook_runtime.c`/
+  `fphook.c`，inline hook + fp 函数指针 hook 双路，`_transitN`/`_fp_transitN`
+  链均为 LKM 外链适配）、KPM ELF 加载器（`module.c`/`relo.c`/`insn.c`/
   `symbols.c`，含 CFI/BTI 盾与 kallsyms 回调跳板）、`kstorage.c` KV 存储、
   `patch_memory.c`/`syscall_table.c`/`symbol_resolver.c`/`secpass.c` 基础设施、
-  su 允许列表栈（`suallow.c`/`accctl.c`/`su_sc.c`）与 `include/` 下的
-  `hook.h`/`scdefs.h`/`kpmodule_ap.h` 等。本地适配（均为移植必需，非功能改动）：
+  su 允许列表栈（`suallow.c`/`accctl.c`/`su_sc.c`）、APatch 管理器扫描栈
+  （`manager/apk_sign.c`/`manager/manager.c` + `sha256.c`（Brad Conte 参考实现，
+  经 KernelPatch 引入），默认不编、`CONFIG_KSU_KPM_AP_MANAGER` 显式开启）与
+  `include/` 下的 `hook.h`/`scdefs.h`/`kpmodule_ap.h` 等。supercall 分发表覆盖
+  scdefs 全集（KPM 0x1020-0x32、kstorage 0x1040-0x45、SU 族、KLOG、
+  CONTROL_FEATURE stub）。本地适配（均为移植必需，非功能改动）：
   符号解析改走本树 `find_kernel_symbol_exact()`（GKI 6.1+ 未导出
   kallsyms_lookup_name）、可执行内存经 module_alloc/execmem/vmalloc 回退链、
   新增 `kp_load_module_path_event()`（对齐 kpimg 的 op 8 事件装载）、
-  include 路径本地化、AP 管理器 APK 扫描由本树 manager 身份体系替代。
+  include 路径本地化、KPM 符号表并入 SukiSU compact 表助手与 fp_hook 族、
+  AP 管理器 APK 扫描保留但默认关闭（`CONFIG_KSU_KPM_AP_MANAGER`，见上）。
   上游 https://github.com/bmax121/KernelPatch 。
 - **SukiSU Ultra GKI 桥接**（`SukiSU-Ultra/SukiSU-Ultra` 与
   `SukiSU-Ultra/SukiSU_KernelPatch_patch`，内核侧 **GPL-2.0**，作者 SukiSU

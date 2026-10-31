@@ -198,6 +198,20 @@ config KSU_KPM_AP
 	  KPM modules gain real hooking ability (hook_wrap/hook_syscalln/kf_*).
 	  The legacy kpm/ loader stays as fallback when this is off.
 
+config KSU_KPM_AP_MANAGER
+	bool "KPM engine: trust the APatch manager APK (me.bmax.apatch) scan"
+	depends on KSU_KPM_AP
+	default n
+	help
+	  Vendors KernelPatch's manager scanner (apk_sign certificate check over
+	  /data/app + packages.list, rename LSM refresh). When on, the APatch
+	  app's uid becomes a trusted supercaller for the AP dialect dispatch
+	  (kp_manager_appid), mirroring upstream APatch LKM behaviour. The
+	  default keeps a single manager identity (this kernel's own manager
+	  app); only enable if you specifically want APatch-app compatibility.
+	  The first scan runs deferred (20s) so /data is mounted in built-in
+	  GKI builds too.
+
 config KSU_KPM_SUKI
 	bool "KPM control plane: SukiSU Ultra GKI bridge (truncate magic, ops 1..8)"
 	depends on KSU_KPM_AP
