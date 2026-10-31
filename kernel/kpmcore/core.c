@@ -114,8 +114,7 @@ int kp_engine_init(void)
 	if (IS_ENABLED(CONFIG_KSU_KPM_SUKI)) {
 		rc = sukisu_kpm_supercall_install();
 		if (rc)
-			logkw("SukiSU bridge install failed: %d (bridge answers -EOPNOTSUPP)
-", rc);
+			logkw("SukiSU bridge install failed: %d (bridge answers -EOPNOTSUPP)\n", rc);
 	}
 
 #if IS_ENABLED(CONFIG_KSU_KPM_AP_MANAGER)

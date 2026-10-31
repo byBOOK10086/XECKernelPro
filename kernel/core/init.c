@@ -185,8 +185,7 @@ int __init kernelsu_init(void)
     // 与 apatch 兼容层共存时 syscall 45 由兼容层独占，引擎不抢表项；
     // CONFIG_KSU_KPM_AP 关闭时是空实现，legacy kpm/ 装载器保持唯一引擎。
     if (kp_engine_init())
-        pr_info("kpmcore engine not available; legacy KPM loader stays active
-");
+        pr_info("kpmcore engine not available; legacy KPM loader stays active\n");
     ksu_app_profile_init();
 
     if (ksu_late_loaded) {
