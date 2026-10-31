@@ -26,11 +26,11 @@
 #include "include/kp_lkm.h"
 
 /* Detect the dcache flush API: android13-5.10 backported dcache_clean_inval_poc,
- * android12-5.10 still has __flush_dcache_area. Kbuild sets KP_NEW_DCACHE_FLUSH. */
-#ifndef KP_NEW_DCACHE_FLUSH
-#define KP_NEW_DCACHE_FLUSH 0
+ * android12-5.10 still has __flush_dcache_area. Kbuild sets KSU_NEW_DCACHE_FLUSH. */
+#ifndef KSU_NEW_DCACHE_FLUSH
+#define KSU_NEW_DCACHE_FLUSH 0
 #endif
-#if KP_NEW_DCACHE_FLUSH
+#if KSU_NEW_DCACHE_FLUSH
 #define kp_flush_dcache(start, sz)                                                    \
 	({                                                                               \
 		unsigned long __start = (start);                                         \
