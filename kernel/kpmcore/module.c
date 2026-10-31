@@ -945,8 +945,7 @@ long kp_load_module_path_event(const char *path, const char *args, const char *e
 			       void __user *reserved)
 {
 	long rc = 0;
-	logkfd("%s event=%s
-", path, event ? event : "");
+	logkfd("%s event=%s\n", path, event ? event : "");
 	if (!path || !event) {
 		rc = -EINVAL;
 		set_kpm_load_result(reserved, rc, "module path or event is null");
@@ -955,8 +954,7 @@ long kp_load_module_path_event(const char *path, const char *args, const char *e
 
 	struct file *filp = filp_open(path, O_RDONLY, 0);
 	if (unlikely(!filp || IS_ERR(filp))) {
-		logkfe("open module: %s error
-", path);
+		logkfe("open module: %s error\n", path);
 		rc = PTR_ERR(filp);
 		set_kpm_load_result(reserved, rc, "open module file failed");
 		goto out;
@@ -978,8 +976,7 @@ long kp_load_module_path_event(const char *path, const char *args, const char *e
 	filp = 0;
 
 	if (pos != len) {
-		logkfe("read module: %s error
-", path);
+		logkfe("read module: %s error\n", path);
 		rc = -EIO;
 		set_kpm_load_result(reserved, rc, "read module file failed");
 		goto free;

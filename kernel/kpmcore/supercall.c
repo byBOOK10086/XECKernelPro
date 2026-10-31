@@ -71,8 +71,7 @@ long kp_handle_supercall(long cmd, long a1, long a2, long a3, long a4)
 		if (n <= 0)
 			return -EINVAL;
 		msg[n] = '\0';
-		logki("klog: %s
-", msg);
+		logki("klog: %s\n", msg);
 		return n;
 	}
 

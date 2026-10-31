@@ -53,8 +53,7 @@ int kp_accctl_init(void)
 	kp_selinux_blob_sizes = (struct kp_lsm_blob_sizes *)kp_resolve_symbol("selinux_blob_sizes");
 	kp_secctx_to_secid_fn = (int (*)(const char *, u32, u32 *))kp_resolve_symbol("security_secctx_to_secid");
 	if (!kp_secctx_to_secid_fn)
-		logkw("security_secctx_to_secid not found; selinux translabel disabled
-");
+		logkw("security_secctx_to_secid not found; selinux translabel disabled\n");
 	if (!kp_selinux_blob_sizes) {
 		logke("failed to resolve selinux_blob_sizes; selinux translabel disabled\n");
 		return 0;
