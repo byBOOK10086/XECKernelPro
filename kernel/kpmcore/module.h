@@ -13,6 +13,7 @@
 /* <asm-generic/module.h> dropped: its struct mod_arch_specific can
  * collide with the arm64 one pulled in via <linux/module.h>; the ELF
  * types this header needs come from <linux/elf.h>. */
+#include <linux/module.h>
 #include <linux/elf.h>
 #include <linux/list.h>
 #include <linux/types.h>

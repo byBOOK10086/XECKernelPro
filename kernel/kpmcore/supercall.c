@@ -34,9 +34,9 @@
 #include "syscall_table.h"
 
 #ifndef CONFIG_KSU_DISABLE_MANAGER
-#include "../../manager/manager_identity.h"
+#include "../manager/manager_identity.h"
 #endif
-#include "../../policy/allowlist.h"
+#include "../policy/allowlist.h"
 
 #define KP_SUPERCALL_NR 45 /* __NR3264_truncate */
 

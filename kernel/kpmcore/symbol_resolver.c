@@ -18,7 +18,7 @@
 #include <linux/version.h>
 
 #include "include/kp_lkm.h"
-#include "../../infra/symbol_resolver.h"
+#include "../infra/symbol_resolver.h"
 
 /* kallsyms_on_each_symbol() dropped the struct module * param from its
  * callback in 6.4; the callback and this fn-pointer type must match the
