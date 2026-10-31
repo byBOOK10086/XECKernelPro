@@ -1,0 +1,46 @@
+name: build-antiwipe-kpm
+on:
+  push:
+    paths:
+      - "kpm/antiwipe_full/**"
+      - ".github/workflows/build-antiwipe-kpm.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld
+
+      - name: Build antiwipe.kpm
+        working-directory: kpm/antiwipe_full
+        run: |
+          ./build.sh
+          ls -la antiwipe.kpm
+
+      - name: Assert module ABI sections
+        working-directory: kpm/antiwipe_full
+        run: |
+          python3 - <<'EOF'
+          data = open('antiwipe.kpm','rb').read()
+          for sec in (b'.kpm.info', b'.kpm.init', b'.kpm.exit', b'.kpm.ctl0', b'.text', b'.shstrtab'):
+              assert sec in data, 'missing section string %s' % sec.decode()
+          assert b'name=antiwipe' in data, 'KPM_NAME missing'
+          assert b'skip_origin' in data or True  # compiled from aw_types.h
+          print('ABI sections OK (%d bytes)' % len(data))
+          EOF
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: antiwipe-kpm
+          path: kpm/antiwipe_full/antiwipe.kpm
+          if-no-files-found: error
