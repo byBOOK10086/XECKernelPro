@@ -30,7 +30,7 @@ builtin/
 - 内置模块只执行、不枚举：不会出现在管理器「模块」面板，也不会出现在 `/data/adb/modules/` 下，ADB `ls /data/adb/modules/` 看不到。
 - **用户可选（2026-10-15 起）**：两个模块各自有一个开关，落在
   `/data/adb/.xudc_secure/builtin.conf`（一行一个 `key=1|0`，键是 `tee` / `ta`），
-  **默认关闭**。关闭时 ksud 既不解密进 tmpfs，也不执行任何阶段脚本，运行目录会被清掉。
+  **默认开启**（缺少配置文件时开启）；只有明确写入 `tee=0` 或 `ta=0` 才关闭。关闭时 ksud 既不解密进 tmpfs，也不执行任何阶段脚本，运行目录会被清掉。
   开关由管理器「检测」页的「内置模块」卡片维护，也可以直接用
   `ksud builtin status|enable|disable <tee|ta>`（`enable/disable` 会立刻生效，不必重启）。
 - 内置模块**永远不许**删除或标记 `/data/adb/modules/` 下的任何东西：那里的模块是用户的，
