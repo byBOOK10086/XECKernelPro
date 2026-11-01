@@ -45,12 +45,13 @@ object StoreDownloadManager {
 
     private val queue = Channel<StoreTheme>(Channel.UNLIMITED)
     private val workerLock = Any()
+    private val stateLock = Any()
 
     @Volatile
     private var worker: Job? = null
 
-    @Volatile
-    private var cancelled: Set<String> = emptySet()
+    /** Protects cancellation check-and-update together with the state transition. */
+    private val cancelled = mutableSetOf<String>()
 
     /**
      * 装好一个主题之后回调（在 IO 线程）。
@@ -63,28 +64,38 @@ object StoreDownloadManager {
     /** 排队下载；已在排队/下载中返回 false（防重复点击）。 */
     fun enqueue(context: Context, theme: StoreTheme): Boolean {
         if (theme.downloadUrl.isEmpty()) return false
-        val current = _states.value[theme.themeId]
-        if (current is StoreDownloadState.Queued || current is StoreDownloadState.Running) return false
-        val appContext = context.applicationContext
-        _states.update { it + (theme.themeId to StoreDownloadState.Queued) }
-        queue.trySend(theme)
-        ensureWorker(appContext)
+        val accepted = synchronized(stateLock) {
+            val current = _states.value[theme.themeId]
+            if (current is StoreDownloadState.Queued || current is StoreDownloadState.Running) {
+                false
+            } else {
+                cancelled.remove(theme.themeId)
+                _states.update { it + (theme.themeId to StoreDownloadState.Queued) }
+                queue.trySend(theme).isSuccess
+            }
+        }
+        if (!accepted) return false
+        ensureWorker(context.applicationContext)
         return true
     }
 
     /** 取消：排队中的直接作废，下载中的在下一次进度回调里中止。 */
     fun cancel(themeId: String) {
-        cancelled = cancelled + themeId
-        val current = _states.value[themeId]
-        if (current is StoreDownloadState.Queued) {
-            _states.update { it + (themeId to StoreDownloadState.Cancelled) }
+        synchronized(stateLock) {
+            cancelled += themeId
+            val current = _states.value[themeId]
+            if (current is StoreDownloadState.Queued) {
+                _states.update { it + (themeId to StoreDownloadState.Cancelled) }
+            }
         }
     }
 
     /** 重试：清掉失败态再排一次。 */
     fun retry(context: Context, theme: StoreTheme): Boolean {
-        _states.update { it - theme.themeId }
-        cancelled = cancelled - theme.themeId
+        synchronized(stateLock) {
+            _states.update { it - theme.themeId }
+            cancelled.remove(theme.themeId)
+        }
         return enqueue(context, theme)
     }
 
@@ -116,11 +127,16 @@ object StoreDownloadManager {
     private suspend fun loop(context: Context) {
         while (currentCoroutineContext().isActive) {
             val theme = queue.receiveCatching().getOrNull() ?: break
-            if (theme.themeId in cancelled) {
-                cancelled = cancelled - theme.themeId
-                _states.update { it + (theme.themeId to StoreDownloadState.Cancelled) }
-                continue
+            val skipped = synchronized(stateLock) {
+                if (theme.themeId in cancelled) {
+                    cancelled.remove(theme.themeId)
+                    _states.update { it + (theme.themeId to StoreDownloadState.Cancelled) }
+                    true
+                } else {
+                    false
+                }
             }
+            if (skipped) continue
             setState(theme.themeId, StoreDownloadState.Running(0, 0L, theme.size))
             var lastPercent = -1
             val result = runCatching {
@@ -143,8 +159,11 @@ object StoreDownloadManager {
             }.getOrElse { failure ->
                 Result.failure(failure as? StoreFailure ?: StoreFailure.Unknown(failure.message ?: "unknown"))
             }
-            val wasCancelled = theme.themeId in cancelled
-            cancelled = cancelled - theme.themeId
+            val wasCancelled = synchronized(stateLock) {
+                val value = theme.themeId in cancelled
+                cancelled.remove(theme.themeId)
+                value
+            }
             result.fold(
                 onSuccess = { entry ->
                     setState(theme.themeId, StoreDownloadState.Installed(entry.spec.versionCode))
