@@ -618,6 +618,7 @@ static int elf_header_check(struct kp_load_info *info)
 
 struct kp_module modules = { 0 };
 static spinlock_t module_lock;
+#define KP_MAX_MODULE_IMAGE (64 * 1024 * 1024)
 /* Serialize registry mutation and arbitrary KPM callbacks. Unload must not
  * free an image while control/event code can still execute it. */
 static DEFINE_MUTEX(module_op_lock);
@@ -914,10 +915,14 @@ long kp_load_module_path(const char *path, const char *args, void __user *reserv
 		goto out;
 	}
 	loff_t len = vfs_llseek(filp, 0, SEEK_END);
+	if (len <= 0 || len > KP_MAX_MODULE_IMAGE || vfs_llseek(filp, 0, SEEK_SET) < 0) {
+		rc = -EINVAL;
+		set_kpm_load_result(reserved, rc, "module file size or seek is invalid");
+		goto close;
+	}
 	logkfd("module size: %llx\n", len);
-	vfs_llseek(filp, 0, SEEK_SET);
 
-	void *data = vmalloc(len);
+	void *data = vmalloc((size_t)len);
 	if (!data) {
 		rc = -ENOMEM;
 		set_kpm_load_result(reserved, rc, "allocate module file buffer failed");
@@ -969,9 +974,13 @@ long kp_load_module_path_event(const char *path, const char *args, const char *e
 		goto out;
 	}
 	loff_t len = vfs_llseek(filp, 0, SEEK_END);
-	vfs_llseek(filp, 0, SEEK_SET);
+	if (len <= 0 || len > KP_MAX_MODULE_IMAGE || vfs_llseek(filp, 0, SEEK_SET) < 0) {
+		rc = -EINVAL;
+		set_kpm_load_result(reserved, rc, "module file size or seek is invalid");
+		goto close;
+	}
 
-	void *data = vmalloc(len);
+	void *data = vmalloc((size_t)len);
 	if (!data) {
 		rc = -ENOMEM;
 		set_kpm_load_result(reserved, rc, "allocate module file buffer failed");
