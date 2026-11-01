@@ -21,6 +21,7 @@
 #include <linux/list.h>
 #include <linux/mm.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/rculist.h>
 #include <linux/rcupdate.h>
 #include <linux/slab.h>
@@ -617,6 +618,9 @@ static int elf_header_check(struct kp_load_info *info)
 
 struct kp_module modules = { 0 };
 static spinlock_t module_lock;
+/* Serialize registry mutation and arbitrary KPM callbacks. Unload must not
+ * free an image while control/event code can still execute it. */
+static DEFINE_MUTEX(module_op_lock);
 
 /* Set while a KPM's init runs: during that window the module is not yet on
  * modules.list, but its image must already be shielded from the Qualcomm
@@ -739,6 +743,7 @@ static struct kp_module *kp_find_module(const char *name)
 long kp_load_module(const void *data, int len, const char *args, const char *event,
 		    void __user *reserved)
 {
+	mutex_lock(&module_op_lock);
 	struct kp_load_info load_info = { .len = len, .hdr = data };
 	struct kp_load_info *info = &load_info;
 	long rc = 0;
@@ -829,7 +834,7 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 
 	if (!rc) {
 		logkfi("[%s] succeed with [%s]\n", mod->info.name, args ? args : "");
-		list_add_tail(&mod->list, &modules.list);
+		list_add_tail_rcu(&mod->list, &modules.list);
 		goto out;
 	} else {
 		set_load_error(info, "module init failed");
@@ -848,25 +853,27 @@ free1:
 	kfree(mod);
 out:
 	set_kpm_load_result(reserved, rc, rc ? load_error(info, "load module failed") : "module loaded");
+	mutex_unlock(&module_op_lock);
 	return rc;
 }
 
 long kp_unload_module(const char *name, void __user *reserved)
 {
+	long rc;
+
 	if (!name)
 		return -EINVAL;
 	logkfe("name: %s\n", name);
 
-	rcu_read_lock();
-	long rc = 0;
-
+	mutex_lock(&module_op_lock);
 	struct kp_module *mod = kp_find_module(name);
 	if (!mod) {
 		rc = -ENOENT;
 		goto out;
 	}
-	list_del(&mod->list);
-	rc = kp_call_exit(mod->exit, reserved);
+	list_del_rcu(&mod->list);
+	synchronize_rcu();
+	rc = mod->exit ? kp_call_exit(mod->exit, reserved) : 0;
 
 	if (mod->args)
 		kvfree(mod->args);
@@ -885,7 +892,7 @@ long kp_unload_module(const char *name, void __user *reserved)
 	logkfi("name: %s, rc: %ld\n", name, rc);
 
 out:
-	rcu_read_unlock();
+	mutex_unlock(&module_op_lock);
 	return rc;
 }
 
@@ -1005,7 +1012,7 @@ long kp_module_control0(const char *name, const char *ctl_args, char __user *out
 	logkfi("name %s, args: %s\n", name, ctl_args);
 
 	long rc = 0;
-	rcu_read_lock();
+	mutex_lock(&module_op_lock);
 
 	struct kp_module *mod = kp_find_module(name);
 	if (!mod) {
@@ -1032,7 +1039,7 @@ long kp_module_control0(const char *name, const char *ctl_args, char __user *out
 
 	logkfi("name: %s, rc: %ld\n", name, rc);
 out:
-	rcu_read_unlock();
+	mutex_unlock(&module_op_lock);
 	return rc;
 }
 
@@ -1040,7 +1047,7 @@ long kp_module_control1(const char *name, void *a1, void *a2, void *a3)
 {
 	logkfi("name %s, a1: %px, a2: %px, a3: %px\n", name, a1, a2, a3);
 	long rc = 0;
-	rcu_read_lock();
+	mutex_lock(&module_op_lock);
 
 	struct kp_module *mod = kp_find_module(name);
 	if (!mod) {
@@ -1058,7 +1065,7 @@ long kp_module_control1(const char *name, void *a1, void *a2, void *a3)
 
 	logkfi("name: %s, rc: %ld\n", name, rc);
 out:
-	rcu_read_unlock();
+	mutex_unlock(&module_op_lock);
 	return rc;
 }
 
@@ -1069,7 +1076,7 @@ long kp_notify_modules_event(const char *event, const char *args, void __user *r
 
 	long result = 0;
 	int count = 0;
-	rcu_read_lock();
+	mutex_lock(&module_op_lock);
 
 	struct kp_module *pos;
 	list_for_each_entry(pos, &modules.list, list)
@@ -1084,13 +1091,13 @@ long kp_notify_modules_event(const char *event, const char *args, void __user *r
 		count++;
 	}
 
-	rcu_read_unlock();
+	mutex_unlock(&module_op_lock);
 	return result ?: count;
 }
 
 int kp_get_module_nums(void)
 {
-	rcu_read_lock();
+	mutex_lock(&module_op_lock);
 
 	struct kp_module *pos;
 	int n = 0;
@@ -1098,7 +1105,7 @@ int kp_get_module_nums(void)
 	{
 		n++;
 	}
-	rcu_read_unlock();
+	mutex_unlock(&module_op_lock);
 
 	logkfd("%d\n", n);
 	return n;
@@ -1110,32 +1117,38 @@ int kp_list_modules(char *out_names, int size)
 		return -EINVAL;
 	out_names[0] = '\0';
 
-	rcu_read_lock();
+	mutex_lock(&module_op_lock);
 
 	struct kp_module *pos;
 	int off = 0;
 	list_for_each_entry(pos, &modules.list, list)
 	{
-		off += snprintf(out_names + off, size - 1 - off, "%s\n", pos->info.name);
+		int written;
+		if (off >= size - 1)
+			break;
+		written = scnprintf(out_names + off, size - off, "%s\n", pos->info.name);
+		off += written;
 	}
-	if (off > 0)
+	if (off > 0 && out_names[off - 1] == '\n')
 		out_names[off - 1] = '\0';
 
-	rcu_read_unlock();
+	mutex_unlock(&module_op_lock);
 	return off;
 }
 
 int kp_get_module_info(const char *name, char *out_info, int size)
 {
-	if (size <= 0)
-		return 0;
-	rcu_read_lock();
+	if (!name || !out_info || size <= 0)
+		return -EINVAL;
+	mutex_lock(&module_op_lock);
 
 	struct kp_module *mod = kp_find_module(name);
-	if (!mod)
+	if (!mod) {
+		mutex_unlock(&module_op_lock);
 		return -ENOENT;
+	}
 
-	int sz = snprintf(out_info, size - 1,
+	int sz = scnprintf(out_info, size,
 			  "name=%s\n"
 			  "version=%s\n"
 			  "license=%s\n"
@@ -1145,11 +1158,9 @@ int kp_get_module_info(const char *name, char *out_info, int size)
 			  mod->info.name, mod->info.version, mod->info.license, mod->info.author,
 			  mod->info.description, mod->args ? mod->args : "");
 
-	if (sz > 0)
-		out_info[sz - 1] = '\0';
 	logkfd("%s", out_info);
 
-	rcu_read_unlock();
+	mutex_unlock(&module_op_lock);
 	return sz;
 }
 
