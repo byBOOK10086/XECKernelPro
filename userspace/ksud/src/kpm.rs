@@ -4,7 +4,7 @@ use std::io;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use anyhow::{Context, Result, bail};
 
@@ -37,6 +37,7 @@ enum Engine {
 }
 
 static ENGINE: OnceLock<Engine> = OnceLock::new();
+static CORE_STAGE_LOCK: Mutex<()> = Mutex::new(());
 
 fn detect_engine() -> Engine {
     if driver_version().is_ok() {
@@ -279,6 +280,9 @@ fn decode_core(data: &[u8]) -> Vec<u8> {
 
 /// Stage the bundled core into tmpfs if it is not already there.
 fn ensure_kpm_core() -> Result<()> {
+    let _guard = CORE_STAGE_LOCK
+        .lock()
+        .map_err(|_| anyhow::anyhow!("KPM core staging lock poisoned"))?;
     let bin = Path::new(KPM_CORE_BIN);
     if bin.exists() {
         return Ok(());
@@ -292,7 +296,13 @@ fn ensure_kpm_core() -> Result<()> {
 
 /// Remove the staged core so nothing lingers after use.
 fn drop_kpm_core() {
-    let _ = fs::remove_file(KPM_CORE_BIN);
+    if let Ok(_guard) = CORE_STAGE_LOCK.lock() {
+        if let Err(error) = fs::remove_file(KPM_CORE_BIN)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            log::warn!("KPM: failed to remove staged core: {error}");
+        }
+    }
 }
 
 fn check_embedded_core() -> Result<String> {
