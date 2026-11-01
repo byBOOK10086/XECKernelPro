@@ -6,7 +6,9 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use log::{error, info, warn};
-use std::{path::Path, time::Instant};
+use std::{path::Path, sync::Mutex, time::Instant};
+
+static STAGE_LOCK: Mutex<()> = Mutex::new(());
 
 pub fn on_post_fs_data() -> Result<()> {
     // 挂载态（<5.10）没有内核驱动：凡是"跟驱动说话"的步骤都得跳过，否则整条
@@ -201,6 +203,10 @@ fn mount_modules_magic_fallback() -> Result<()> {
 }
 
 pub fn run_stage(stage: &str, wait: ScriptWait) {
+    let Ok(_guard) = STAGE_LOCK.lock() else {
+        error!("Failed to acquire stage lock for {stage}");
+        return;
+    };
     utils::umask(0);
 
     if crate::utils::is_safe_mode() {
