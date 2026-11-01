@@ -78,6 +78,8 @@ fun Uri.getFileName(context: Context): String? {
     return fileName
 }
 
+private fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+
 fun createRootShell(globalMnt: Boolean = false): Shell {
     Shell.enableVerboseLogging = BuildConfig.DEBUG
     val builder = Shell.Builder.create()
@@ -92,7 +94,7 @@ fun createRootShell(globalMnt: Boolean = false): Shell {
             if (globalMnt) builder.build("su", "-mm") else builder.build("su")
         } catch (e: Throwable) {
             Log.w(TAG, "magisk su failed: ", e)
-            builder.build("sh")
+            throw IllegalStateException("Unable to create privileged Magisk shell", e)
         }
     }
     return try {
@@ -111,7 +113,7 @@ fun createRootShell(globalMnt: Boolean = false): Shell {
             }
         } catch (e: Throwable) {
             Log.e(TAG, "su failed: ", e)
-            builder.build("sh")
+            throw IllegalStateException("Unable to create privileged shell", e)
         }
     }
 }
@@ -481,7 +483,7 @@ fun runModuleAction(
     }
 
     val result = withNewRootShell(true) {
-        newJob().add("${getKsuDaemonPath()} module action $moduleId")
+        newJob().add("${shellQuote(getKsuDaemonPath())} module action ${shellQuote(moduleId)}")
             .to(stdoutCallback, stderrCallback).exec()
     }
 

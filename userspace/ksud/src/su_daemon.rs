@@ -25,6 +25,7 @@ use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
+use std::sync::Mutex;
 
 use anyhow::{Context, Result, bail};
 use log::{info, warn};
@@ -40,6 +41,7 @@ const MAX_ARG_LEN: usize = 4096;
 const MAX_CWD_LEN: usize = 1024;
 /// Android 的 per-user uid 步长：`uid % PER_USER_RANGE` 就是 app id。
 const PER_USER_RANGE: u32 = 100_000;
+static ALLOW_LOCK: Mutex<()> = Mutex::new(());
 
 fn allow_path() -> String {
     format!("{}/allow.txt", defs::XECPRO_DIR)
@@ -96,6 +98,9 @@ pub fn su_list() {
 }
 
 pub fn su_grant(uid: u32) -> Result<()> {
+    let _guard = ALLOW_LOCK
+        .lock()
+        .map_err(|_| anyhow::anyhow!("allowlist lock poisoned"))?;
     ensure_dirs()?;
     let mut uids = read_allow();
     if uids.contains(&uid) {
@@ -109,6 +114,9 @@ pub fn su_grant(uid: u32) -> Result<()> {
 }
 
 pub fn su_revoke(uid: u32) -> Result<()> {
+    let _guard = ALLOW_LOCK
+        .lock()
+        .map_err(|_| anyhow::anyhow!("allowlist lock poisoned"))?;
     ensure_dirs()?;
     let mut uids = read_allow();
     let before = uids.len();
@@ -128,8 +136,10 @@ fn write_allow(uids: &[u32]) -> Result<()> {
         let _ = writeln!(text, "{uid}");
     }
     let path = allow_path();
-    fs::write(&path, text).with_context(|| format!("写 {path}"))?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).ok();
+    let tmp = format!("{path}.tmp-{}", std::process::id());
+    fs::write(&tmp, text).with_context(|| format!("写 {tmp}"))?;
+    fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600)).ok();
+    fs::rename(&tmp, &path).with_context(|| format!("替换 {path}"))?;
     Ok(())
 }
 
@@ -174,6 +184,9 @@ fn is_manager_uid(uid: u32) -> bool {
 /// （用户撤销必须算数）。
 fn bootstrap_manager(uid: u32) -> bool {
     let marker = bootstrap_marker_path();
+    let Ok(_guard) = ALLOW_LOCK.lock() else {
+        return false;
+    };
     if Path::new(&marker).exists() {
         return false;
     }
@@ -189,7 +202,10 @@ fn bootstrap_manager(uid: u32) -> bool {
             return false;
         }
     }
-    let _ = fs::write(&marker, b"1\n");
+    if let Err(error) = fs::write(&marker, b"1\n") {
+        warn!("xecpro daemon: 首授权标记写入失败：{error}");
+        return false;
+    }
     info!(
         "xecpro daemon: 首授权管理器 uid {uid}（包名 {}）",
         defs::DEFAULT_PACKAGE_NAME
@@ -307,12 +323,22 @@ fn peer_uid(stream: &UnixStream) -> Result<u32> {
 }
 
 fn handle_client(mut stream: UnixStream) -> Result<()> {
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .context("set request read timeout")?;
     let uid = peer_uid(&stream)?;
     let (payload, fds) = recv_request(&stream)?;
-    let request = parse_request(&payload)?;
+    let request = match parse_request(&payload) {
+        Ok(request) => request,
+        Err(error) => {
+            close_fds(&fds);
+            return Err(error);
+        }
+    };
 
     // 名单之外还有一次机会：首授权（管理器自己的 uid）。
     if !is_allowed(uid) && !bootstrap_manager(uid) {
+        close_fds(&fds);
         warn!("xecpro daemon: 拒绝 uid {uid}（不在允许列表里）");
         return reply(&mut stream, DENIED);
     }
@@ -321,8 +347,15 @@ fn handle_client(mut stream: UnixStream) -> Result<()> {
         "xecpro daemon: uid {uid} 请求 root：{:?}（cwd={:?}）",
         request.args, request.cwd
     );
-    let status = spawn_root(&request, &fds)?;
-    reply(&mut stream, status)
+    let status = spawn_root(&request, &fds);
+    close_fds(&fds);
+    reply(&mut stream, status?)
+}
+
+fn close_fds(fds: &[RawFd; 3]) {
+    for fd in fds.iter().copied().filter(|fd| *fd >= 0) {
+        unsafe { libc::close(fd) };
+    }
 }
 
 fn reply(stream: &mut UnixStream, status: i32) -> Result<()> {
@@ -356,6 +389,9 @@ fn recv_request(stream: &UnixStream) -> Result<(Vec<u8>, [RawFd; 3])> {
     if received < 0 {
         bail!("recvmsg 失败：{}", std::io::Error::last_os_error());
     }
+    if received == 0 || msg.msg_flags & libc::MSG_TRUNC != 0 {
+        bail!("请求负载为空或过大");
+    }
     buf.truncate(received as usize);
 
     let mut fds = [-1 as RawFd; 3];
@@ -366,14 +402,25 @@ fn recv_request(stream: &UnixStream) -> Result<(Vec<u8>, [RawFd; 3])> {
             if (*cmsg).cmsg_level == libc::SOL_SOCKET && (*cmsg).cmsg_type == libc::SCM_RIGHTS {
                 let data = libc::CMSG_DATA(cmsg).cast::<RawFd>();
                 let bytes = (*cmsg).cmsg_len - libc::CMSG_LEN(0) as usize;
-                let n = (bytes / std::mem::size_of::<RawFd>()).min(3 - count);
-                for i in 0..n {
+                let available = bytes / std::mem::size_of::<RawFd>();
+                if available > 3 - count {
+                    for i in 0..available {
+                        libc::close(*data.add(i));
+                    }
+                    close_fds(&fds);
+                    bail!("请求携带过多文件描述符");
+                }
+                for i in 0..available {
                     fds[count + i] = *data.add(i);
                 }
-                count += n;
+                count += available;
             }
             cmsg = libc::CMSG_NXTHDR(&raw const msg, cmsg);
         }
+    }
+    if msg.msg_flags & libc::MSG_CTRUNC != 0 {
+        close_fds(&fds);
+        bail!("请求控制消息被截断");
     }
     if count != 3 {
         // 缺 fd 就没法把 stdio 接过去：关掉已收到的，明确报错
@@ -398,17 +445,21 @@ fn parse_request(payload: &[u8]) -> Result<Request> {
     let mut request_args = Vec::with_capacity(arg_count);
     for _ in 0..arg_count {
         let len = take_u32(payload, &mut cursor)? as usize;
-        if len > MAX_ARG_LEN || cursor + len > payload.len() {
+        if len > MAX_ARG_LEN || len > payload.len().saturating_sub(cursor) {
             bail!("参数长度不合法：{len}");
         }
         request_args.push(String::from_utf8_lossy(&payload[cursor..cursor + len]).into_owned());
         cursor += len;
     }
     let cwd_len = take_u32(payload, &mut cursor)? as usize;
-    if cwd_len > MAX_CWD_LEN || cursor + cwd_len > payload.len() {
+    if cwd_len > MAX_CWD_LEN || cwd_len > payload.len().saturating_sub(cursor) {
         bail!("cwd 长度不合法：{cwd_len}");
     }
     let cwd = String::from_utf8_lossy(&payload[cursor..cursor + cwd_len]).into_owned();
+    cursor += cwd_len;
+    if cursor != payload.len() {
+        bail!("请求包含尾随数据");
+    }
     Ok(Request {
         args: request_args,
         cwd,
@@ -416,7 +467,7 @@ fn parse_request(payload: &[u8]) -> Result<Request> {
 }
 
 fn take_u32(payload: &[u8], cursor: &mut usize) -> Result<u32> {
-    if *cursor + 4 > payload.len() {
+    if *cursor > payload.len().saturating_sub(4) {
         bail!("请求被截断");
     }
     let value = u32::from_le_bytes([
@@ -490,11 +541,16 @@ fn spawn_root(request: &Request, fds: &[RawFd; 3]) -> Result<i32> {
                 libc::chdir(cwd.as_ptr());
             }
             let env = build_env();
-            let program_c = CString::new(program.clone()).unwrap_or_default();
+            let Ok(program_c) = CString::new(program.clone()) else {
+                libc::_exit(126);
+            };
             let mut exec_argv: Vec<CString> = Vec::with_capacity(args.len() + 2);
-            exec_argv.push(CString::new(program.as_str()).unwrap_or_default());
+            exec_argv.push(program_c.clone());
             for arg in &args {
-                exec_argv.push(CString::new(arg.as_str()).unwrap_or_default());
+                let Ok(arg) = CString::new(arg.as_str()) else {
+                    libc::_exit(126);
+                };
+                exec_argv.push(arg);
             }
             let mut argv_ptrs: Vec<*const libc::c_char> =
                 exec_argv.iter().map(|a| a.as_ptr()).collect();
