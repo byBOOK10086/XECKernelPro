@@ -11,6 +11,7 @@
 #include <linux/hashtable.h>
 #include <linux/list.h>
 #include <linux/mm.h>
+#include <linux/overflow.h>
 #include <linux/rculist.h>
 #include <linux/rcupdate.h>
 #include <linux/slab.h>
@@ -70,16 +71,20 @@ int kp_kstorage_write(int gid, long did, void *data, int offset, int len, bool d
 	spinlock_t *lock;
 	struct kp_kstorage *pos, *old = NULL;
 	struct kp_kstorage *new;
+	size_t alloc_size;
 
 	if (gid < 0 || gid >= KP_KSTORAGE_MAX_GROUP_NUM)
 		return rc;
+	if (offset < 0 || len < 0 || !data ||
+	    check_add_overflow(sizeof(*new), (size_t)len, &alloc_size))
+		return -EINVAL;
 
 	bucket = kstorage_bucket(gid, did);
 	lock = &kstorage_glocks[gid];
 
 	/* Do the potentially-sleeping allocation/copy before the RCU critical
 	 * section (vmalloc()/memdup_user() may sleep). */
-	new = vmalloc(sizeof(*new) + len);
+	new = vmalloc(alloc_size);
 	if (!new)
 		return -ENOMEM;
 	new->gid = gid;
@@ -98,16 +103,14 @@ int kp_kstorage_write(int gid, long did, void *data, int offset, int len, bool d
 	}
 	new->dlen = len;
 
-	rcu_read_lock();
-
-	hlist_for_each_entry_rcu(pos, bucket, hnode) {
+	spin_lock(lock);
+	old = NULL;
+	hlist_for_each_entry(pos, bucket, hnode) {
 		if (pos->did == did) {
 			old = pos;
 			break;
 		}
 	}
-
-	spin_lock(lock);
 	if (old) {
 		hlist_replace_rcu(&old->hnode, &new->hnode);
 	} else {
@@ -115,8 +118,6 @@ int kp_kstorage_write(int gid, long did, void *data, int offset, int len, bool d
 		group_sizes[gid]++;
 	}
 	spin_unlock(lock);
-
-	rcu_read_unlock();
 
 	if (old)
 		call_rcu(&old->rcu, reclaim_callback);
@@ -147,6 +148,9 @@ int kp_kstorage_read(int gid, long did, void *data, int offset, int len, bool da
 	int min_len;
 	int rc = 0;
 
+	if (gid < 0 || gid >= KP_KSTORAGE_MAX_GROUP_NUM || offset < 0 || len < 0 || !data)
+		return -EINVAL;
+
 	rcu_read_lock();
 
 	pos = kp_kstorage_get(gid, did);
@@ -155,9 +159,11 @@ int kp_kstorage_read(int gid, long did, void *data, int offset, int len, bool da
 		return PTR_ERR(pos);
 	}
 
-	min_len = pos->dlen - offset > len ? len : pos->dlen - offset;
-	if (min_len < 0)
-		min_len = 0;
+	if (offset >= pos->dlen) {
+		rcu_read_unlock();
+		return 0;
+	}
+	min_len = min_t(int, len, pos->dlen - offset);
 
 	if (data_is_user) {
 		if (copy_to_user(data, pos->data + offset, min_len))
@@ -176,8 +182,9 @@ int kp_kstorage_list_ids(int gid, long *ids, int idslen, bool data_is_user)
 	int cnt = 0;
 	int rc = 0;
 
-	if (gid < 0 || gid >= KP_KSTORAGE_MAX_GROUP_NUM)
-		return -ENOENT;
+	if (gid < 0 || gid >= KP_KSTORAGE_MAX_GROUP_NUM || idslen < 0 ||
+	    (idslen > 0 && !ids))
+		return -EINVAL;
 
 	rcu_read_lock();
 
@@ -219,8 +226,9 @@ int kp_kstorage_remove(int gid, long did)
 	hlist_for_each_entry_rcu(pos, bucket, hnode) {
 		if (pos->did == did) {
 			hlist_del_rcu(&pos->hnode);
+			if (group_sizes[gid] > 0)
+				group_sizes[gid]--;
 			spin_unlock(lock);
-			group_sizes[gid]--;
 			call_rcu(&pos->rcu, reclaim_callback);
 			return 0;
 		}
