@@ -24,6 +24,7 @@
 
 #define KSTORAGE_HASH_BITS 8
 #define KSTORAGE_NBUCKETS (1 << KSTORAGE_HASH_BITS)
+#define KSTORAGE_MAX_DATA_LEN (16 * 1024 * 1024)
 
 static int used_max_group = -1;
 static struct hlist_head kstorage_groups[KP_KSTORAGE_MAX_GROUP_NUM][KSTORAGE_NBUCKETS];
@@ -75,7 +76,7 @@ int kp_kstorage_write(int gid, long did, void *data, int offset, int len, bool d
 
 	if (gid < 0 || gid >= KP_KSTORAGE_MAX_GROUP_NUM)
 		return rc;
-	if (offset < 0 || len < 0 || !data ||
+	if (offset < 0 || len < 0 || len > KSTORAGE_MAX_DATA_LEN || !data ||
 	    check_add_overflow(sizeof(*new), (size_t)len, &alloc_size))
 		return -EINVAL;
 
@@ -223,7 +224,7 @@ int kp_kstorage_remove(int gid, long did)
 
 	spin_lock(lock);
 
-	hlist_for_each_entry_rcu(pos, bucket, hnode) {
+	hlist_for_each_entry(pos, bucket, hnode) {
 		if (pos->did == did) {
 			hlist_del_rcu(&pos->hnode);
 			if (group_sizes[gid] > 0)
