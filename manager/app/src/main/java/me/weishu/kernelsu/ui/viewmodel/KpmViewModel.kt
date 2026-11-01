@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -34,9 +35,12 @@ class KpmViewModel : ViewModel() {
     val kpmEvent: Flow<KpmEffect> = _kpmEvent.receiveAsFlow()
 
     private var fetchJob: Job? = null
+    private var loadGeneration = 0L
+    private val kpmOperationMutex = Mutex()
 
     fun load() {
         fetchJob?.cancel()
+        val generation = ++loadGeneration
         _uiState.update { it.copy(isLoading = true) }
         fetchJob = viewModelScope.launch {
             try {
@@ -46,23 +50,31 @@ class KpmViewModel : ViewModel() {
                     .map { it.trim() }
                     .filter { it.isNotEmpty() }
                     .toList()
-                _uiState.update {
-                    it.copy(
-                        active = version.isNotEmpty(),
-                        version = version,
-                        modules = modules,
-                        antiwipeLoaded = modules.any { m -> m.startsWith("antiwipe") },
-                        hasLoaded = true,
-                    )
+                if (generation == loadGeneration) {
+                    _uiState.update {
+                        it.copy(
+                            active = version.isNotEmpty(),
+                            version = version,
+                            modules = modules,
+                            antiwipeLoaded = modules.any { m -> m.startsWith("antiwipe") },
+                            hasLoaded = true,
+                        )
+                    }
                 }
             } finally {
-                _uiState.update { it.copy(isLoading = false) }
+                if (generation == loadGeneration) {
+                    _uiState.update { it.copy(isLoading = false) }
+                }
             }
         }
     }
 
     fun flash(uri: Uri) {
         viewModelScope.launch {
+            if (!kpmOperationMutex.tryLock()) {
+                emitEffect(KpmEffect.SnackBar(ksuApp.resources.getString(R.string.kpm_operation_in_progress)))
+                return@launch
+            }
             _uiState.update { it.copy(isFlashing = true) }
             try {
                 val result = withContext(Dispatchers.IO) {
@@ -80,6 +92,7 @@ class KpmViewModel : ViewModel() {
                 }
             } finally {
                 _uiState.update { it.copy(isFlashing = false) }
+                kpmOperationMutex.unlock()
             }
         }
     }
@@ -87,6 +100,10 @@ class KpmViewModel : ViewModel() {
     /** 内置 susfs_lite.kpm（③）：从 APK assets 提取装载，参数默认管理器可见。 */
     fun flashBuiltin() {
         viewModelScope.launch {
+            if (!kpmOperationMutex.tryLock()) {
+                emitEffect(KpmEffect.SnackBar(ksuApp.resources.getString(R.string.kpm_operation_in_progress)))
+                return@launch
+            }
             _uiState.update { it.copy(isFlashing = true) }
             try {
                 val result = withContext(Dispatchers.IO) {
@@ -104,6 +121,7 @@ class KpmViewModel : ViewModel() {
                 }
             } finally {
                 _uiState.update { it.copy(isFlashing = false) }
+                kpmOperationMutex.unlock()
             }
         }
     }
@@ -111,6 +129,10 @@ class KpmViewModel : ViewModel() {
     /** 载入内置防格模块（antiwipe.kpm，XEC 内核专有）。 */
     fun loadAntiwipe() {
         viewModelScope.launch {
+            if (!kpmOperationMutex.tryLock()) {
+                emitEffect(KpmEffect.SnackBar(ksuApp.resources.getString(R.string.kpm_operation_in_progress)))
+                return@launch
+            }
             _uiState.update { it.copy(isFlashing = true) }
             try {
                 val result = withContext(Dispatchers.IO) { loadAntiwipeKpm({}, {}) }
@@ -126,6 +148,7 @@ class KpmViewModel : ViewModel() {
                 }
             } finally {
                 _uiState.update { it.copy(isFlashing = false) }
+                kpmOperationMutex.unlock()
             }
         }
     }
@@ -133,6 +156,10 @@ class KpmViewModel : ViewModel() {
     /** 卸载防格模块，同时解除内核里的所有 hook。 */
     fun unloadAntiwipe() {
         viewModelScope.launch {
+            if (!kpmOperationMutex.tryLock()) {
+                emitEffect(KpmEffect.SnackBar(ksuApp.resources.getString(R.string.kpm_operation_in_progress)))
+                return@launch
+            }
             _uiState.update { it.copy(isFlashing = true) }
             try {
                 val ok = withContext(Dispatchers.IO) { unloadAntiwipeKpm() }
@@ -146,6 +173,7 @@ class KpmViewModel : ViewModel() {
                 load()
             } finally {
                 _uiState.update { it.copy(isFlashing = false) }
+                kpmOperationMutex.unlock()
             }
         }
     }

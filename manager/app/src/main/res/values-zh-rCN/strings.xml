@@ -47,6 +47,7 @@
     <string name="kpm_builtin_hint">对其它应用隐藏 /data/adb 与 /debug_ramdisk 的 stat 族与 faccessat 探测（列目录不隐藏）。与手动刷 .kpm 同一条装载通路；卸载用 `xudc kpm unload susfs_lite`。</string>
     <string name="kpm_flash_success">KPM 模块刷入成功</string>
     <string name="kpm_flash_failed">KPM 模块刷入失败</string>
+    <string name="kpm_operation_in_progress">已有 KPM 操作正在进行</string>
     <string name="kpm_embed">嵌入 KPM 引擎</string>
     <!-- One-Tap Hide (Violet Toolbox pack) -->
     <string name="hide_env_title">隐藏环境</string>

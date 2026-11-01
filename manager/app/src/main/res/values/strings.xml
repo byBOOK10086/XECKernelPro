@@ -58,6 +58,7 @@
     <string name="kpm_builtin_hint">Hides /data/adb and /debug_ramdisk from stat-family and faccessat probes for other apps (directory listings are NOT hidden). Same load path as flashing a .kpm; unload with `xudc kpm unload susfs_lite`.</string>
     <string name="kpm_flash_success">KPM module flashed successfully</string>
     <string name="kpm_flash_failed">Failed to flash KPM module</string>
+    <string name="kpm_operation_in_progress">Another KPM operation is already in progress</string>
     <string name="kpm_embed">Embed KPM engine</string>
     <!-- One-Tap Hide (Violet Toolbox pack) -->
     <string name="hide_env_title">Hide environments</string>
