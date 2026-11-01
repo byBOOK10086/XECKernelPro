@@ -589,8 +589,20 @@ pub fn builtin_apply(target: &str, on: bool) -> Result<()> {
     set_builtin_flag(key, on)?;
 
     if on {
+        ensure!(
+            !external_module_present(module_id),
+            "cannot enable built-in {module_id}: an external module owns the same id"
+        );
         store_builtin_blob(module_id, token)?;
         materialize_builtin_module(module_id, token)?;
+        #[cfg(target_os = "android")]
+        {
+            let rule_file = builtin_runtime_dir(module_id).join("sepolicy.rule");
+            if rule_file.exists() {
+                sepolicy::apply_file(&rule_file)
+                    .with_context(|| format!("load {}", rule_file.display()))?;
+            }
+        }
         start_builtin_runtime(module_id)?;
     } else {
         stop_builtin_runtime(module_id);
