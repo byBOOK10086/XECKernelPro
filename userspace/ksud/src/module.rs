@@ -331,7 +331,6 @@ fn store_builtin_blob(module_id: &str, token: &str) -> Result<()> {
             "module.prop",
             "service.sh",
             "post-fs-data.sh",
-            "sepolicy.rule",
             "common/common.sh",
             "bin/arm64-v8a/ta-enhanced",
             "bin/arm64-v8a/resetprop-rs",
