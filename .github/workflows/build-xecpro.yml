@@ -9,6 +9,11 @@ name: Build XECKernelPro
 # SIGN_KEY_PASS），密钥内容与原仓库内 xecpro-key.jks 完全相同，签名结果不变。
 
 on:
+  # Build the integration branch automatically after each pushed fix so the
+  # overnight GitHub build does not depend on a manual dispatch.
+  push:
+    branches:
+      - debug/stability-20261102
   workflow_dispatch:
     inputs:
       publish:
