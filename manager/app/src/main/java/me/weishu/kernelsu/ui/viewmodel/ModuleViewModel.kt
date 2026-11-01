@@ -83,6 +83,8 @@ class ModuleViewModel(
     private val searchQuery = MutableStateFlow("")
 
     private var fetchJob: Job? = null
+    private var moduleListGeneration = 0L
+    private val moduleOperationMutex = Mutex()
 
     var isNeedRefresh = false
         private set
@@ -192,6 +194,7 @@ class ModuleViewModel(
     }
 
     private fun updateModuleList(resort: Boolean = true) {
+        val generation = moduleListGeneration
         viewModelScope.launch(Dispatchers.IO) {
             val state = _uiState.value
             val searchText = state.searchStatus.searchText
@@ -205,6 +208,7 @@ class ModuleViewModel(
             }
             val searchResults = filterModules(shorted, searchText)
 
+            if (generation != moduleListGeneration) return@launch
             _uiState.update {
                 it.copy(
                     moduleList = shorted,
@@ -262,6 +266,7 @@ class ModuleViewModel(
 
     fun fetchModuleList(checkUpdate: Boolean = false, resort: Boolean = true) {
         fetchJob?.cancel()
+        val generation = ++moduleListGeneration
         _uiState.update { it.copy(isRefreshing = true) }
         fetchJob = viewModelScope.launch {
             try {
@@ -273,7 +278,9 @@ class ModuleViewModel(
 
                 Log.i(TAG, "load cost: ${SystemClock.elapsedRealtime() - start}, modules: ${_uiState.value.modules}")
             } finally {
-                _uiState.update { it.copy(isRefreshing = false, hasLoaded = true) }
+                if (generation == moduleListGeneration) {
+                    _uiState.update { it.copy(isRefreshing = false, hasLoaded = true) }
+                }
             }
         }
     }
@@ -384,7 +391,12 @@ class ModuleViewModel(
 
     fun toggleModule(module: Module) {
         viewModelScope.launch {
+            if (!moduleOperationMutex.tryLock()) {
+                emitEffect(ModuleEffect.SnackBar(ksuApp.resources.getString(R.string.module_operation_in_progress)))
+                return@launch
+            }
             val res = ksuApp.resources
+            try {
             val success = withContext(Dispatchers.IO) {
                 runCatching { toggleModuleUtil(module.id, !module.enabled) }.getOrDefault(false)
             }
@@ -395,12 +407,20 @@ class ModuleViewModel(
                 val message = if (module.enabled) R.string.module_failed_to_disable else R.string.module_failed_to_enable
                 emitEffect(ModuleEffect.SnackBar(res.getString(message).format(module.name)))
             }
+            } finally {
+                moduleOperationMutex.unlock()
+            }
         }
     }
 
     fun uninstallModule(module: Module) {
         viewModelScope.launch {
+            if (!moduleOperationMutex.tryLock()) {
+                emitEffect(ModuleEffect.SnackBar(ksuApp.resources.getString(R.string.module_operation_in_progress)))
+                return@launch
+            }
             val res = ksuApp.resources
+            try {
             val success = withContext(Dispatchers.IO) {
                 runCatching { uninstallModuleUtil(module.id) }.getOrDefault(false)
             }
@@ -415,12 +435,20 @@ class ModuleViewModel(
                     ).format(module.name)
                 )
             )
+            } finally {
+                moduleOperationMutex.unlock()
+            }
         }
     }
 
     fun undoUninstallModule(module: Module) {
         viewModelScope.launch {
+            if (!moduleOperationMutex.tryLock()) {
+                emitEffect(ModuleEffect.SnackBar(ksuApp.resources.getString(R.string.module_operation_in_progress)))
+                return@launch
+            }
             val res = ksuApp.resources
+            try {
             val success = withContext(Dispatchers.IO) {
                 runCatching { undoUninstallModuleUtil(module.id) }.getOrDefault(false)
             }
@@ -434,6 +462,9 @@ class ModuleViewModel(
                     ).format(module.name)
                 )
             )
+            } finally {
+                moduleOperationMutex.unlock()
+            }
         }
     }
 

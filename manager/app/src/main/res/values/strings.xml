@@ -38,6 +38,7 @@
     <string name="sulog_filter_ioctl_grant_root">Grant Root</string>
     <string name="sulog_filter_daemon_restart">Daemon restart</string>
     <string name="module_failed_to_enable">Failed to enable module: %s</string>
+    <string name="module_operation_in_progress">Another module operation is already in progress</string>
     <string name="module_failed_to_disable">Failed to disable module: %s</string>
     <string name="module_empty">No module installed</string>
     <string name="module">Module</string>
