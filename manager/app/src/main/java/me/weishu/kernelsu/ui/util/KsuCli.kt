@@ -49,8 +49,13 @@ data class FlashResult(val code: Int, val err: String, val showReboot: Boolean) 
 }
 
 object KsuCli {
-    val SHELL: Shell = createRootShell()
-    val GLOBAL_MNT_SHELL: Shell = createRootShell(true)
+    // 不要在 object 初始化阶段创建 shell：任何 native/root 环境异常都会把
+    // ExceptionInInitializerError 传播到 Application，表现为点击图标即闪退。
+    // 延迟到真正使用时创建，启动阶段至少能进入诊断/安装页面。
+    val SHELL: Shell by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { createRootShell() }
+    val GLOBAL_MNT_SHELL: Shell by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        createRootShell(true)
+    }
 }
 
 fun getRootShell(globalMnt: Boolean = false): Shell {
@@ -94,7 +99,8 @@ fun createRootShell(globalMnt: Boolean = false): Shell {
             if (globalMnt) builder.build("su", "-mm") else builder.build("su")
         } catch (e: Throwable) {
             Log.w(TAG, "magisk su failed: ", e)
-            throw IllegalStateException("Unable to create privileged Magisk shell", e)
+            markUnprivileged(e)
+            builder.build("sh")
         }
     }
     return try {
@@ -113,12 +119,37 @@ fun createRootShell(globalMnt: Boolean = false): Shell {
             }
         } catch (e: Throwable) {
             Log.e(TAG, "su failed: ", e)
-            throw IllegalStateException("Unable to create privileged shell", e)
+            // 不许在这里抛：KsuCli 是 object 的静态初始化，抛出去会变成
+            // ExceptionInInitializerError，整个管理器一起崩且不可恢复。
+            // 退回普通 sh，并把失败状态记下来，让需要 root 的操作显式失败。
+            markUnprivileged(e)
+            builder.build("sh")
         }
     }
 }
 
+/** 非 root 兜底状态：为真时所有需要 root 的操作必须显式失败，不许静默当成功。 */
+@Volatile
+var isUnprivilegedFallback: Boolean = false
+    private set
+
+@Volatile
+private var unprivilegedReason: String? = null
+
+private fun markUnprivileged(error: Throwable) {
+    isUnprivilegedFallback = true
+    unprivilegedReason = error.message ?: error::class.java.simpleName
+    Log.e(TAG, "root shell unavailable, falling back to unprivileged sh: $unprivilegedReason")
+}
+
+/** 最近一次建 root shell 失败的原因，供诊断页显示。 */
+fun unprivilegedFallbackReason(): String? = unprivilegedReason
+
 fun execKsud(args: String, newShell: Boolean = false, globalMnt: Boolean = false): Boolean {
+    if (isUnprivilegedFallback) {
+        Log.e(TAG, "refuse to exec ksud without a privileged shell: $args")
+        return false
+    }
     return if (newShell) {
         withNewRootShell(globalMnt = globalMnt) {
             ShellUtils.fastCmdResult(this, "${getKsuDaemonPath()} $args")
