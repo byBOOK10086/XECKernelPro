@@ -213,6 +213,10 @@ fun FloatingBottomBar(
     isBlurEnabled: Boolean = true,
     content: @Composable RowScope.((Int) -> Unit) -> Unit
 ) {
+    // Callers may have no tabs while navigation state is being rebuilt. Keep the
+    // bar inert instead of allowing coerceIn(0, -1) or division by zero below.
+    if (tabsCount <= 0) return
+
     val isInDark = isInDarkTheme()
     val pillShape = remember { CircleShape }
     val accentColor = MiuixTheme.colorScheme.primary
