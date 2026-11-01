@@ -250,9 +250,29 @@ static char *kpm_next_string(char *string, unsigned long *secsize)
 
 static long kpm_get_offset(struct kp_module *mod, unsigned int *size, Elf64_Shdr *sechdr)
 {
-    long ret = ALIGN(*size, sechdr->sh_addralign ?: 1);
-    *size = ret + sechdr->sh_size;
-    return ret;
+    u64 align = sechdr->sh_addralign ?: 1;
+    u64 start = *size;
+    u64 ret;
+
+    (void)mod;
+    if (align > UINT_MAX || (align & (align - 1)) || sechdr->sh_size > UINT_MAX)
+        return -EFBIG;
+    ret = (start + align - 1) & ~(align - 1);
+    if (ret > UINT_MAX || sechdr->sh_size > UINT_MAX - ret)
+        return -EFBIG;
+    *size = (unsigned int)(ret + sechdr->sh_size);
+    return (long)ret;
+}
+
+static bool kpm_cstr_ok(const struct kp_load_info *info, u64 off)
+{
+    const Elf64_Shdr *strsec = &info->sechdrs[info->index.str];
+    size_t remaining;
+
+    if (off >= strsec->sh_size)
+        return false;
+    remaining = strsec->sh_size - off;
+    return memchr(info->strtab + off, '\0', remaining) != NULL;
 }
 
 static char *kpm_get_next_modinfo(const struct kp_load_info *info, const char *tag, char *prev)
@@ -388,7 +408,7 @@ static int kpm_setup_load_info(struct kp_load_info *info)
     return 0;
 }
 
-static void kpm_layout_sections(struct kp_module *mod, struct kp_load_info *info)
+static int kpm_layout_sections(struct kp_module *mod, struct kp_load_info *info)
 {
     static const unsigned long masks[][2] = {
         /* executable code must be first; text_size finder relies on it */
@@ -406,7 +426,10 @@ static void kpm_layout_sections(struct kp_module *mod, struct kp_load_info *info
             Elf64_Shdr *s = &info->sechdrs[i];
             if ((s->sh_flags & masks[m][0]) != masks[m][0] || (s->sh_flags & masks[m][1]) || s->sh_entsize != ~0UL)
                 continue;
-            s->sh_entsize = kpm_get_offset(mod, &mod->size, s);
+            long offset = kpm_get_offset(mod, &mod->size, s);
+            if (offset < 0)
+                return (int)offset;
+            s->sh_entsize = offset;
         }
         switch (m) {
         case 0: /* executable */
@@ -424,6 +447,7 @@ static void kpm_layout_sections(struct kp_module *mod, struct kp_load_info *info
             break;
         }
     }
+    return 0;
 }
 
 static bool kpm_is_core_symbol(const Elf64_Sym *src, const Elf64_Shdr *sechdrs, unsigned int shnum)
@@ -505,7 +529,7 @@ static int kpm_apply_relocations(struct kp_module *mod, const struct kp_load_inf
     return rc;
 }
 
-static void kpm_layout_symtab(struct kp_module *mod, struct kp_load_info *info)
+static int kpm_layout_symtab(struct kp_module *mod, struct kp_load_info *info)
 {
     Elf64_Shdr *symsect = info->sechdrs + info->index.sym;
     Elf64_Shdr *strsect = info->sechdrs + info->index.str;
@@ -514,7 +538,10 @@ static void kpm_layout_symtab(struct kp_module *mod, struct kp_load_info *info)
 
     /* Put symbol section at end of module. */
     symsect->sh_flags |= SHF_ALLOC;
-    symsect->sh_entsize = kpm_get_offset(mod, &mod->size, symsect);
+    long sym_offset = kpm_get_offset(mod, &mod->size, symsect);
+    if (sym_offset < 0)
+        return (int)sym_offset;
+    symsect->sh_entsize = sym_offset;
 
     src = (void *)info->hdr + symsect->sh_offset;
     nsrc = symsect->sh_size / sizeof(*src);
@@ -523,19 +550,39 @@ static void kpm_layout_symtab(struct kp_module *mod, struct kp_load_info *info)
     strtab_size = 1;
     for (ndst = i = 0; i < nsrc; i++) {
         if (i == 0 || kpm_is_core_symbol(src + i, info->sechdrs, info->hdr->e_shnum)) {
-            strtab_size += strlen(&info->strtab[src[i].st_name]) + 1;
+            if (!kpm_cstr_ok(info, src[i].st_name))
+                return -ENOEXEC;
+            size_t name_len = strlen(&info->strtab[src[i].st_name]);
+            if (name_len > UINT_MAX - strtab_size - 1)
+                return -EFBIG;
+            strtab_size += (unsigned int)name_len + 1;
             ndst++;
         }
     }
 
     /* Append room for core symbols at end. */
-    mod->size = ALIGN(mod->size, symsect->sh_addralign ?: 1);
-    mod->size += ndst * sizeof(Elf64_Sym);
-    mod->size += strtab_size;
+    {
+        u64 align = symsect->sh_addralign ?: 1;
+        u64 aligned;
+        u64 symbols_size = (u64)ndst * sizeof(Elf64_Sym);
+        if (align & (align - 1))
+            return -EINVAL;
+        aligned = ((u64)mod->size + align - 1) & ~(align - 1);
+        if (aligned > UINT_MAX || symbols_size > UINT_MAX - aligned ||
+            strtab_size > UINT_MAX - aligned - symbols_size)
+            return -EFBIG;
+        mod->size = (unsigned int)(aligned + symbols_size + strtab_size);
+    }
 
     /* Put string table section at end of module. */
     strsect->sh_flags |= SHF_ALLOC;
-    strsect->sh_entsize = kpm_get_offset(mod, &mod->size, strsect);
+    {
+        long str_offset = kpm_get_offset(mod, &mod->size, strsect);
+        if (str_offset < 0)
+            return (int)str_offset;
+        strsect->sh_entsize = str_offset;
+    }
+    return 0;
 }
 
 static int kpm_move_module(struct kp_module *mod, struct kp_load_info *info)
@@ -633,8 +680,12 @@ static long kpm_load_module(const void *data, int len, const char *args, const c
     if (source && source[0])
         mod->load_source = kstrdup(source, GFP_KERNEL);
 
-    kpm_layout_sections(mod, info);
-    kpm_layout_symtab(mod, info);
+    rc = kpm_layout_sections(mod, info);
+    if (rc)
+        goto free_args;
+    rc = kpm_layout_symtab(mod, info);
+    if (rc)
+        goto free_args;
 
     rc = kpm_move_module(mod, info);
     if (rc) {

@@ -387,8 +387,12 @@ pub fn exec_script_with<T: AsRef<Path>>(
             Ok(())
         })
     };
+    let parent = path
+        .as_ref()
+        .parent()
+        .ok_or_else(|| anyhow!("Script path has no parent: {}", path.as_ref().display()))?;
     command
-        .current_dir(path.as_ref().parent().unwrap())
+        .current_dir(parent)
         .arg("sh")
         .arg(path.as_ref())
         .envs(get_common_script_envs(validated_module_id));
@@ -396,7 +400,16 @@ pub fn exec_script_with<T: AsRef<Path>>(
 
     let result = match wait {
         ScriptWait::NoWait => command.spawn().map(|_| ()),
-        ScriptWait::Forever => command.status().map(|_| ()),
+        ScriptWait::Forever => {
+            let status = command.status()?;
+            if status.success() {
+                Ok(())
+            } else {
+                Err(std::io::Error::other(format!(
+                    "script exited with {status}"
+                )))
+            }
+        }
         ScriptWait::Until(deadline) => command.spawn().and_then(|child| {
             // Once the shared deadline has passed, launch later scripts without waiting.
             if deadline > Instant::now()
