@@ -516,8 +516,10 @@ fn resolve_command(args: &[String]) -> (String, Vec<String>) {
         (shell, Vec::new())
     } else {
         // `su cmd arg...`：直接执行这个命令
-        let (head, tail) = rest.split_first().expect("rest 非空");
-        (head.clone(), tail.to_vec())
+        match rest.split_first() {
+            Some((head, tail)) => (head.clone(), tail.to_vec()),
+            None => (shell, Vec::new()),
+        }
     }
 }
 
