@@ -586,13 +586,15 @@ pub fn builtin_apply(target: &str, on: bool) -> Result<()> {
         assets::ensure_binaries(true).context("extract bin assets for built-in module")?;
     }
 
-    set_builtin_flag(key, on)?;
-
     if on {
         ensure!(
             !external_module_present(module_id),
             "cannot enable built-in {module_id}: an external module owns the same id"
         );
+    }
+    set_builtin_flag(key, on)?;
+
+    if on {
         store_builtin_blob(module_id, token)?;
         materialize_builtin_module(module_id, token)?;
         #[cfg(target_os = "android")]
