@@ -226,7 +226,7 @@ fn suki_load_event(path: &str, args: Option<&str>, event: &str) -> Result<()> {
     let args_c = args
         .map(|a| CString::new(a))
         .transpose()?
-        .unwrap_or_else(|| CString::new(String::new()));
+        .unwrap_or_default();
     let event_c = CString::new(event)?;
     let payload = ksu_uapi::ksu_kpm_load_event_cmd {
         args: args_c.as_ptr() as u64,
