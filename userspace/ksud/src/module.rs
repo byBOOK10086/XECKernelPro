@@ -15,7 +15,8 @@ use regex_lite::Regex;
 use std::{
     collections::{BTreeMap, HashMap},
     env::var as env_var,
-    fs::{File, Permissions, canonicalize, remove_dir_all, set_permissions},
+    fs::{File, OpenOptions, Permissions, canonicalize, remove_dir_all, set_permissions},
+    os::fd::AsRawFd,
     path::{Path, PathBuf},
     process::Command,
     str::FromStr,
@@ -96,6 +97,42 @@ const BUILTIN_MODULES: &[(&str, &str, &str)] = &[
 ];
 
 const BUILTIN_MAGIC: &[u8; 4] = b"BCFG";
+const BUILTIN_APPLY_LOCK: &str = "/data/adb/.xudc_secure/builtin.apply.lock";
+
+struct BuiltinApplyLock(File);
+
+impl BuiltinApplyLock {
+    fn acquire() -> Result<Self> {
+        let path = Path::new(BUILTIN_APPLY_LOCK);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create {}", parent.display()))?;
+        }
+        let file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(path)
+            .with_context(|| format!("Failed to open {}", path.display()))?;
+        let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        if rc != 0 {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() == Some(libc::EWOULDBLOCK)
+                || error.raw_os_error() == Some(libc::EAGAIN)
+            {
+                bail!("built-in module apply is already in progress");
+            }
+            return Err(error).with_context(|| format!("Failed to lock {}", path.display()));
+        }
+        Ok(Self(file))
+    }
+}
+
+impl Drop for BuiltinApplyLock {
+    fn drop(&mut self) {
+        let _ = unsafe { libc::flock(self.0.as_raw_fd(), libc::LOCK_UN) };
+    }
+}
 
 fn xor_builtin(data: &[u8]) -> Vec<u8> {
     data.iter()
@@ -523,6 +560,7 @@ pub fn builtin_print_status() -> Result<()> {
 /// Refresh persistent blobs and materialize all enabled built-ins for this boot.
 #[cfg(target_os = "android")]
 pub fn ensure_builtin_modules() -> Result<()> {
+    let _lock = BuiltinApplyLock::acquire()?;
     std::fs::create_dir_all(defs::BUILTIN_STORE_DIR)?;
     std::fs::create_dir_all(defs::BUILTIN_MODULE_DIR)?;
     for (module_id, token, key) in BUILTIN_MODULES {
@@ -538,13 +576,14 @@ pub fn ensure_builtin_modules() -> Result<()> {
 }
 
 pub fn builtin_apply(target: &str, on: bool) -> Result<()> {
+    let _lock = BuiltinApplyLock::acquire()?;
     let key = builtin_key(target)
         .with_context(|| format!("未知的内置模块：{target}（可用：tee / ta）"))?;
     let (module_id, token) = builtin_entry(key).context("内置模块表里没有这个键")?;
 
     // 模块脚本要跑 busybox；运行期这条路径不经过开机的资产提取，得自己补一次。
-    if let Err(e) = assets::ensure_binaries(true) {
-        warn!("extract bin assets failed: {e}");
+    if on {
+        assets::ensure_binaries(true).context("extract bin assets for built-in module")?;
     }
 
     set_builtin_flag(key, on)?;
