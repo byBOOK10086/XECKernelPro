@@ -60,9 +60,14 @@ int kp_kstorage_alloc_group(void)
 
 int kp_kstorage_group_size(int gid)
 {
+	int size;
+
 	if (gid < 0 || gid >= KP_KSTORAGE_MAX_GROUP_NUM)
 		return -ENOENT;
-	return READ_ONCE(group_sizes[gid]);
+	spin_lock(&kstorage_glocks[gid]);
+	size = group_sizes[gid];
+	spin_unlock(&kstorage_glocks[gid]);
+	return size;
 }
 
 int kp_kstorage_write(int gid, long did, void *data, int offset, int len, bool data_is_user)
@@ -88,6 +93,7 @@ int kp_kstorage_write(int gid, long did, void *data, int offset, int len, bool d
 	new = vmalloc(alloc_size);
 	if (!new)
 		return -ENOMEM;
+	INIT_HLIST_NODE(&new->hnode);
 	new->gid = gid;
 	new->did = did;
 	new->dlen = 0;
