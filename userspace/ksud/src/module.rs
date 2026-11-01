@@ -410,12 +410,14 @@ pub fn exec_script_with<T: AsRef<Path>>(
                 )))
             }
         }
-        ScriptWait::Until(deadline) => command.spawn().and_then(|child| {
+        ScriptWait::Until(deadline) => command.spawn().and_then(|mut child| {
             // Once the shared deadline has passed, launch later scripts without waiting.
             if deadline > Instant::now()
                 && !sigchld.wait_until(child.id() as libc::pid_t, deadline)?
             {
                 warn!("Timed out waiting for script: {}", path.as_ref().display());
+                let _ = child.kill();
+                let _ = child.wait();
             }
             Ok(())
         }),
