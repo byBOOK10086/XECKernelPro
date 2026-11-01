@@ -301,11 +301,6 @@ fn remove_builtin_runtime(module_id: &str) {
 ///
 /// 关掉的模块也照样刷新：这样用户下次打开开关时不必先等一次开机。
 fn store_builtin_blob(module_id: &str, token: &str) -> Result<()> {
-    let dest = Path::new(defs::BUILTIN_STORE_DIR).join(token);
-    if dest.exists() && builtin_store_is_current(token) {
-        return Ok(());
-    }
-
     let prefix = format!("{module_id}/");
     let mut entries = Vec::new();
     for file in assets::list_builtin_assets() {
@@ -320,6 +315,41 @@ fn store_builtin_blob(module_id: &str, token: &str) -> Result<()> {
         "no bundled assets for built-in module {module_id}"
     );
 
+    let required: &[&str] = match module_id {
+        "tricky_store" => &[
+            "daemon",
+            "service.sh",
+            "module.prop",
+            "sepolicy.rule",
+            "classes.dex",
+            "libTEESimulator.so",
+            "libcertgen.so",
+            "inject",
+            "supervisor",
+        ],
+        "TA_enhanced" => &[
+            "module.prop",
+            "service.sh",
+            "post-fs-data.sh",
+            "sepolicy.rule",
+            "common/common.sh",
+            "bin/arm64-v8a/ta-enhanced",
+            "bin/arm64-v8a/resetprop-rs",
+        ],
+        _ => &[],
+    };
+    for required_path in required {
+        ensure!(
+            entries.iter().any(|(path, _, data)| path == required_path && !data.is_empty()),
+            "required bundled asset missing or empty: {module_id}/{required_path}"
+        );
+    }
+
+    let dest = Path::new(defs::BUILTIN_STORE_DIR).join(token);
+    if dest.exists() && builtin_store_is_current(token) {
+        return Ok(());
+    }
+
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("Failed to create {}", parent.display()))?;
@@ -332,19 +362,20 @@ fn store_builtin_blob(module_id: &str, token: &str) -> Result<()> {
     Ok(())
 }
 
-/// 把存储里的 blob 解密进 tmpfs 运行目录（已存在的文件不覆盖）。
+/// 把存储里的 blob 解密进 tmpfs 运行目录；每次先清空，避免新旧资产混合。
 fn materialize_builtin_module(module_id: &str, token: &str) -> Result<()> {
     let store = Path::new(defs::BUILTIN_STORE_DIR).join(token);
     let blob =
         std::fs::read(&store).with_context(|| format!("Failed to read {}", store.display()))?;
     let entries = unpack_builtin_module(&blob)?;
     let base = builtin_runtime_dir(module_id);
+    if base.exists() {
+        remove_dir_all(&base)
+            .with_context(|| format!("Failed to clear built-in runtime {}", base.display()))?;
+    }
 
     for (rel, mode, data) in entries {
         let dest = base.join(&rel);
-        if dest.exists() {
-            continue;
-        }
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("Failed to create {}", parent.display()))?;
