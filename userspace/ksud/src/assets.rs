@@ -114,6 +114,28 @@ pub fn get_asset(name: &str) -> Result<Box<dyn AsRef<[u8]>>> {
     Ok(Box::new(asset.data))
 }
 
+/// Embedded source/config payloads for the built-in TEE/TA modules.
+///
+/// The executable payloads are produced by the CI build step from vendored
+/// sources before ksud is compiled; keeping this separate from `Asset` avoids
+/// accidentally mixing architecture-specific ksud binaries with module data.
+#[cfg(target_os = "android")]
+#[derive(RustEmbed)]
+#[folder = "builtin/"]
+pub struct BuiltinAsset;
+
+#[cfg(target_os = "android")]
+pub fn list_builtin_assets() -> Vec<String> {
+    BuiltinAsset::iter().map(|path| path.to_string()).collect()
+}
+
+#[cfg(target_os = "android")]
+pub fn get_builtin_asset(name: &str) -> Result<Vec<u8>> {
+    let asset = BuiltinAsset::get(name)
+        .ok_or_else(|| anyhow::anyhow!("builtin asset not found: {name}"))?;
+    Ok(asset.data.into_owned())
+}
+
 pub fn list_supported_kmi() -> std::vec::Vec<std::string::String> {
     let mut list = Vec::new();
     for file in Asset::iter() {

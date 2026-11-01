@@ -12,6 +12,12 @@ mod android {
 
     pub const ADB_DIR: &str = "/data/adb/";
     pub const WORKING_DIR: &str = concatcp!(ADB_DIR, "ksu/");
+    /// Persistent storage for embedded built-in module assets.
+    pub const BUILTIN_STORE_DIR: &str = concatcp!(WORKING_DIR, "cfg/");
+    /// tmpfs runtime root for built-in module execution.
+    pub const BUILTIN_MODULE_DIR: &str = "/dev/.xudc_hidden/";
+    /// User-controlled built-in engine flags (`tee=1`, `ta=1`).
+    pub const BUILTIN_FLAG_PATH: &str = "/data/adb/.xudc_secure/builtin.conf";
     pub const BINARY_DIR: &str = concatcp!(WORKING_DIR, "bin/");
     pub const LIBRARY_DIR: &str = concatcp!(WORKING_DIR, "lib/");
     pub const LOG_DIR: &str = concatcp!(WORKING_DIR, "log/");
