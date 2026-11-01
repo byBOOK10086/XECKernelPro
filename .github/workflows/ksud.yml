@@ -65,10 +65,13 @@ jobs:
         workspaces: userspace/ksud
         cache-targets: false
 
+    # Keep the workflow NDK aligned with TEESimulator-RS/Gradle and the
+    # cargo-ndk native build. Gradle pins 27.3.13750724; using r29 here can
+    # make the native and Gradle parts use different toolchains.
     - uses: nttld/setup-ndk@v1
       id: setup-ndk
       with:
-        ndk-version: r29
+        ndk-version: 27.3.13750724
 
     # Builtin modules (tricky_store / TA_enhanced) carry no committed GPL
     # binaries; they are compiled from the vendored upstream sources in
