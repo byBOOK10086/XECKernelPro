@@ -7,9 +7,9 @@
 
 struct kp_module;
 
-int kp_apply_relocate(Elf64_Shdr *sechdrs, const char *strtab, unsigned int symindex,
-		      unsigned int relsec, struct kp_module *me);
-int kp_apply_relocate_add(Elf64_Shdr *sechdrs, const char *strtab, unsigned int symindex,
-			  unsigned int relsec, struct kp_module *me);
+int kp_apply_relocate(Elf64_Shdr *sechdrs, unsigned int shnum, const char *strtab,
+		      unsigned int symindex, unsigned int relsec, struct kp_module *me);
+int kp_apply_relocate_add(Elf64_Shdr *sechdrs, unsigned int shnum, const char *strtab,
+			  unsigned int symindex, unsigned int relsec, struct kp_module *me);
 
 #endif /* _KP_LKM_KPM_RELO_H_ */

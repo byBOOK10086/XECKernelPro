@@ -423,9 +423,11 @@ static int apply_relocations(struct kp_module *mod, const struct kp_load_info *i
 		if (!(info->sechdrs[infosec].sh_flags & SHF_ALLOC))
 			continue;
 		if (info->sechdrs[i].sh_type == SHT_REL) {
-			rc = kp_apply_relocate(info->sechdrs, info->strtab, info->index.sym, i, mod);
+			rc = kp_apply_relocate(info->sechdrs, info->hdr->e_shnum, info->strtab,
+				       info->index.sym, i, mod);
 		} else if (info->sechdrs[i].sh_type == SHT_RELA) {
-			rc = kp_apply_relocate_add(info->sechdrs, info->strtab, info->index.sym, i, mod);
+			rc = kp_apply_relocate_add(info->sechdrs, info->hdr->e_shnum, info->strtab,
+					   info->index.sym, i, mod);
 		}
 		if (rc < 0)
 			break;

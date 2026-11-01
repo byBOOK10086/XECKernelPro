@@ -37,6 +37,24 @@ static u64 do_reloc(enum kp_aarch64_reloc_op reloc_op, void *place, u64 val)
 	return 0;
 }
 
+static unsigned int reloc_width(unsigned int type)
+{
+	switch (type) {
+	case R_AARCH64_NONE:
+		return 0;
+	case R_AARCH64_ABS16:
+	case R_AARCH64_PREL16:
+		return sizeof(u16);
+	case R_AARCH64_ABS32:
+	case R_AARCH64_PREL32:
+	case R_AARCH64_ABS64:
+	case R_AARCH64_PREL64:
+		return type == R_AARCH64_ABS64 || type == R_AARCH64_PREL64 ? sizeof(u64) : sizeof(u32);
+	default:
+		return sizeof(u32);
+	}
+}
+
 static int reloc_data(enum kp_aarch64_reloc_op op, void *place, u64 val, int len)
 {
 	u64 imm_mask = (1 << len) - 1;
@@ -132,14 +150,16 @@ static int reloc_insn_imm(enum kp_aarch64_reloc_op op, void *place, u64 val, int
 	return 0;
 }
 
-int kp_apply_relocate(Elf64_Shdr *sechdrs, const char *strtab, unsigned int symindex,
-		      unsigned int relsec, struct kp_module *me)
+int kp_apply_relocate(Elf64_Shdr *sechdrs, unsigned int shnum, const char *strtab,
+		      unsigned int symindex, unsigned int relsec, struct kp_module *me)
 {
-	return 0;
+	if (!sechdrs || !shnum || symindex >= shnum || relsec >= shnum)
+		return -EINVAL;
+	return -ENOEXEC;
 }
 
-int kp_apply_relocate_add(Elf64_Shdr *sechdrs, const char *strtab, unsigned int symindex,
-			  unsigned int relsec, struct kp_module *me)
+int kp_apply_relocate_add(Elf64_Shdr *sechdrs, unsigned int shnum, const char *strtab,
+			  unsigned int symindex, unsigned int relsec, struct kp_module *me)
 {
 	unsigned int i;
 	int ovf;
@@ -147,13 +167,41 @@ int kp_apply_relocate_add(Elf64_Shdr *sechdrs, const char *strtab, unsigned int 
 	Elf64_Sym *sym;
 	void *loc;
 	u64 val;
-	Elf64_Rela *rel = (void *)sechdrs[relsec].sh_addr;
+	Elf64_Shdr *relsec_hdr, *target_hdr, *sym_hdr;
+	Elf64_Rela *rel;
+	unsigned long sym_count, reloc_count;
 
-	for (i = 0; i < sechdrs[relsec].sh_size / sizeof(*rel); i++) {
+	if (!sechdrs || !shnum || symindex >= shnum || relsec >= shnum || !me)
+		return -EINVAL;
+	relsec_hdr = &sechdrs[relsec];
+	sym_hdr = &sechdrs[symindex];
+	if (relsec_hdr->sh_type != SHT_RELA || !relsec_hdr->sh_info ||
+	    relsec_hdr->sh_info >= shnum || sym_hdr->sh_type != SHT_SYMTAB ||
+	    relsec_hdr->sh_size % sizeof(Elf64_Rela) ||
+	    sym_hdr->sh_size % sizeof(Elf64_Sym) || !relsec_hdr->sh_addr || !sym_hdr->sh_addr)
+		return -ENOEXEC;
+	target_hdr = &sechdrs[relsec_hdr->sh_info];
+	if (!(target_hdr->sh_flags & SHF_ALLOC) || !target_hdr->sh_addr)
+		return -ENOEXEC;
+	sym_count = sym_hdr->sh_size / sizeof(Elf64_Sym);
+	if (!sym_count || !strtab)
+		return -ENOEXEC;
+	rel = (Elf64_Rela *)relsec_hdr->sh_addr;
+	reloc_count = relsec_hdr->sh_size / sizeof(Elf64_Rela);
+	if (reloc_count > UINT_MAX)
+		return -E2BIG;
+
+	for (i = 0; i < reloc_count; i++) {
 		/* loc corresponds to P in the AArch64 ELF document. */
-		loc = (void *)sechdrs[sechdrs[relsec].sh_info].sh_addr + rel[i].r_offset;
+		if (rel[i].r_offset > target_hdr->sh_size ||
+		    reloc_width(ELF64_R_TYPE(rel[i].r_info)) >
+			    target_hdr->sh_size - rel[i].r_offset)
+			return -ENOEXEC;
+		loc = (void *)target_hdr->sh_addr + rel[i].r_offset;
 		/* sym is the ELF symbol we're referring to. */
-		sym = (Elf64_Sym *)sechdrs[symindex].sh_addr + ELF64_R_SYM(rel[i].r_info);
+		if (ELF64_R_SYM(rel[i].r_info) >= sym_count)
+			return -ENOEXEC;
+		sym = (Elf64_Sym *)sym_hdr->sh_addr + ELF64_R_SYM(rel[i].r_info);
 		/* val corresponds to (S + A) in the AArch64 ELF document. */
 		val = sym->st_value + rel[i].r_addend;
 
@@ -161,7 +209,6 @@ int kp_apply_relocate_add(Elf64_Shdr *sechdrs, const char *strtab, unsigned int 
 
 		switch (ELF64_R_TYPE(rel[i].r_info)) {
 		/* Null relocations. */
-		case R_ARM_NONE:
 		case R_AARCH64_NONE:
 			ovf = 0;
 			break;
