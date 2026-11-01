@@ -84,8 +84,19 @@ jobs:
 
     - name: Install Android SDK components for builtin module build
       run: |
-        yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-        "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+        set -euo pipefail
+        SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+        if [ -z "${SDK_ROOT}" ] || [ ! -d "${SDK_ROOT}" ]; then
+          echo "::error::Android SDK root is not available"
+          exit 1
+        fi
+        SDKMGR="$(find "${SDK_ROOT}/cmdline-tools" -maxdepth 3 -type f -name sdkmanager 2>/dev/null | sort | tail -n 1)"
+        if [ -z "${SDKMGR}" ]; then
+          echo "::error::sdkmanager not found under ${SDK_ROOT}/cmdline-tools"
+          exit 1
+        fi
+        yes | "${SDKMGR}" --sdk_root="${SDK_ROOT}" --licenses >/dev/null || true
+        "${SDKMGR}" --sdk_root="${SDK_ROOT}" --install \
           "platforms;android-36" \
           "build-tools;36.0.0" \
           "ndk;27.3.13750724" \
