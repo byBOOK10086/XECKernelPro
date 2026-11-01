@@ -27,6 +27,35 @@ ABI="arm64-v8a"
 
 log() { printf '\n==> %s\n' "$*"; }
 
+require_nonempty_file() {
+    local path="$1"
+    [ -s "$path" ] || {
+        echo "required build output missing or empty: $path" >&2
+        exit 1
+    }
+}
+
+# Fail before copying anything when an output is the wrong architecture.  A
+# successful Gradle/Cargo invocation is not sufficient: RustEmbed would pack a
+# partial or host-architecture tree and the device would only fail at boot.
+require_aarch64_elf() {
+    local path="$1" readelf_bin
+    require_nonempty_file "$path"
+    readelf_bin="$(command -v llvm-readelf || command -v readelf || true)"
+    [ -n "$readelf_bin" ] || {
+        echo "cannot validate ELF output (llvm-readelf/readelf not found): $path" >&2
+        exit 1
+    }
+    "$readelf_bin" -h "$path" 2>/dev/null | grep -qE 'Class:[[:space:]]+ELF64' || {
+        echo "output is not ELF64: $path" >&2
+        exit 1
+    }
+    "$readelf_bin" -h "$path" 2>/dev/null | grep -qE 'Machine:[[:space:]]+AArch64' || {
+        echo "output is not AArch64: $path" >&2
+        exit 1
+    }
+}
+
 ndk_llvm_bin() {
     local ndk="${ANDROID_NDK_HOME:-}"
     if [ -z "$ndk" ]; then
@@ -66,18 +95,22 @@ build_ta_enhanced() {
 
     (cd "$TA_SRC/rust" && cargo build --release --target "$TARGET")
     local ta_bin="$TA_SRC/rust/target/$TARGET/release/ta-enhanced"
-    [ -f "$ta_bin" ] || { echo "ta-enhanced binary missing" >&2; exit 1; }
+    require_aarch64_elf "$ta_bin"
     "$llvm_bin/llvm-strip" "$ta_bin" 2>/dev/null || strip "$ta_bin" || true
+    require_aarch64_elf "$ta_bin"
     mkdir -p "$BUILTIN/TA_enhanced/bin/$ABI"
     cp -f "$ta_bin" "$BUILTIN/TA_enhanced/bin/$ABI/ta-enhanced"
+    require_aarch64_elf "$BUILTIN/TA_enhanced/bin/$ABI/ta-enhanced"
 
     # Standalone CLI: crate binary is named `resetprop`; the module scripts
     # stage and invoke it as `resetprop-rs`, so keep that file name.
     (cd "$TA_SRC/external/resetprop-rs" && cargo build --release -p resetprop-cli --target "$TARGET")
     local rp_bin="$TA_SRC/external/resetprop-rs/target/$TARGET/release/resetprop"
-    [ -f "$rp_bin" ] || { echo "resetprop binary missing" >&2; exit 1; }
+    require_aarch64_elf "$rp_bin"
     "$llvm_bin/llvm-strip" "$rp_bin" 2>/dev/null || strip "$rp_bin" || true
+    require_aarch64_elf "$rp_bin"
     cp -f "$rp_bin" "$BUILTIN/TA_enhanced/bin/$ABI/resetprop-rs"
+    require_aarch64_elf "$BUILTIN/TA_enhanced/bin/$ABI/resetprop-rs"
 }
 
 # ---------------------------------------------------------------------------
@@ -100,6 +133,11 @@ build_tricky_store() {
     unzip -q "$zip" -d "$stage"
 
     local libdir="$stage/lib/$ABI"
+    require_nonempty_file "$stage/classes.dex"
+    require_aarch64_elf "$libdir/libTEESimulator.so"
+    require_aarch64_elf "$libdir/libcertgen.so"
+    require_aarch64_elf "$libdir/libinject.so"
+    require_aarch64_elf "$libdir/libsupervisor.so"
     install -m 644 "$stage/classes.dex" "$BUILTIN/tricky_store/classes.dex"
     install -m 644 "$libdir/libTEESimulator.so" "$BUILTIN/tricky_store/libTEESimulator.so"
     install -m 644 "$libdir/libcertgen.so" "$BUILTIN/tricky_store/libcertgen.so"
@@ -113,7 +151,26 @@ build_tricky_store() {
 build_ta_enhanced
 build_tricky_store
 
-log "Built-in module artifacts:"
+log "Validating final built-in module manifest"
+for path in \
+    "$BUILTIN/tricky_store/classes.dex" \
+    "$BUILTIN/tricky_store/libTEESimulator.so" \
+    "$BUILTIN/tricky_store/libcertgen.so" \
+    "$BUILTIN/tricky_store/inject" \
+    "$BUILTIN/tricky_store/supervisor" \
+    "$BUILTIN/TA_enhanced/bin/$ABI/ta-enhanced" \
+    "$BUILTIN/TA_enhanced/bin/$ABI/resetprop-rs"; do
+    require_nonempty_file "$path"
+done
+for path in \
+    "$BUILTIN/tricky_store/libTEESimulator.so" \
+    "$BUILTIN/tricky_store/libcertgen.so" \
+    "$BUILTIN/tricky_store/inject" \
+    "$BUILTIN/tricky_store/supervisor" \
+    "$BUILTIN/TA_enhanced/bin/$ABI/ta-enhanced" \
+    "$BUILTIN/TA_enhanced/bin/$ABI/resetprop-rs"; do
+    require_aarch64_elf "$path"
+done
 ls -l "$BUILTIN/tricky_store/classes.dex" \
       "$BUILTIN/tricky_store/libTEESimulator.so" \
       "$BUILTIN/tricky_store/libcertgen.so" \
