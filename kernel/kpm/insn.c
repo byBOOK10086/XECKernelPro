@@ -10,7 +10,7 @@
 #include <linux/bits.h>
 #include <linux/printk.h>
 
-u32 kp_aarch64_insn_encode_immediate(enum kp_aarch64_insn_imm_type type, u32 insn, u64 imm)
+__weak u32 kp_aarch64_insn_encode_immediate(enum kp_aarch64_insn_imm_type type, u32 insn, u64 imm)
 {
     u32 immlo, immhi, lomask, himask, mask;
     int shift;
