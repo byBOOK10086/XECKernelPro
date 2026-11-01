@@ -85,6 +85,11 @@ pub fn on_post_fs_data() -> Result<()> {
 
     assets::ensure_binaries(true).with_context(|| "Failed to extract bin assets")?;
 
+    #[cfg(target_os = "android")]
+    if let Err(e) = crate::module::ensure_builtin_modules() {
+        warn!("built-in module provisioning failed: {e:#}");
+    }
+
     crate::hot_install::clean_trash();
 
     // if we are in safe mode, we should disable all modules

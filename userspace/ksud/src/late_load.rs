@@ -105,6 +105,11 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
         warn!("Failed to extract bin assets: {e}");
     }
 
+    #[cfg(target_os = "android")]
+    if let Err(e) = crate::module::ensure_builtin_modules() {
+        warn!("built-in module provisioning failed: {e:#}");
+    }
+
     // Drop Zygisk Next's failure leftovers before its stage scripts run, so a
     // previously failed daemon start cannot keep Zygisk disabled this boot.
     crate::module::clear_zygisk_failure_markers();

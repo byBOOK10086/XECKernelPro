@@ -428,8 +428,20 @@ enum Module {
 /// 位置：管理器「检测」页的开关调的就是它。`status` 输出 JSON，管理器直接解析。
 #[derive(clap::Subcommand, Debug)]
 enum BuiltinCmd {
-    /// Print the boot-state spoofing state as JSON
+    /// Print built-in engine and boot-state spoofing state as JSON
     Status,
+
+    /// Enable a built-in engine immediately
+    Enable {
+        /// tee or ta
+        target: String,
+    },
+
+    /// Disable a built-in engine immediately
+    Disable {
+        /// tee or ta
+        target: String,
+    },
 
     /// Turn the boot-state spoofing (locked-view props + cmdline) on or off
     Spoof {
@@ -903,14 +915,25 @@ pub fn run() -> Result<()> {
 
         Commands::Builtin { command } => match command {
             BuiltinCmd::Status => {
-                let spoof = if module::builtin_spoof_enabled() {
-                    "on"
-                } else {
-                    "off"
-                };
-                println!("{}", serde_json::json!({ "spoof": spoof }));
+                let mut status = module::builtin_status();
+                if let serde_json::Value::Object(ref mut map) = status {
+                    map.insert(
+                        "spoof".to_string(),
+                        serde_json::Value::String(
+                            if module::builtin_spoof_enabled() {
+                                "on"
+                            } else {
+                                "off"
+                            }
+                            .to_string(),
+                        ),
+                    );
+                }
+                println!("{}", serde_json::to_string_pretty(&status)?);
                 Ok(())
             }
+            BuiltinCmd::Enable { target } => module::builtin_apply(&target, true),
+            BuiltinCmd::Disable { target } => module::builtin_apply(&target, false),
             BuiltinCmd::Spoof { value } => {
                 let state = module::builtin_set_spoof(&value)?;
                 println!("spoof={state}");
@@ -1254,9 +1277,7 @@ pub fn run() -> Result<()> {
         Commands::Kpm { command } => {
             use crate::cli::kpm_cmd::Kpm;
             match command {
-                Kpm::Load { path, args } => {
-                    crate::kpm::load_module(&path, args.as_deref())
-                }
+                Kpm::Load { path, args } => crate::kpm::load_module(&path, args.as_deref()),
                 Kpm::Unload { name } => crate::kpm::unload_module(&name),
                 Kpm::Num => crate::kpm::num().map(|_| ()),
                 Kpm::List => crate::kpm::list(),
