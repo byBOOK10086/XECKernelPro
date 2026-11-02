@@ -508,7 +508,9 @@ fn load_all_modules() -> Result<()> {
             } else {
                 Some(text.trim_end_matches(['\r', '\n']).to_owned())
             }
-        } else { None };
+        } else {
+            None
+        };
         let result = if suki_boot {
             suki_load_event(&path_str, args.as_deref(), "post-fs-data")
         } else {
