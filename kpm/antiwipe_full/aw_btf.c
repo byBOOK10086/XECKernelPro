@@ -54,7 +54,9 @@ struct btf_type_rec {
     u32 name_off;
     u32 info;
     u32 size_type;
-}; /* vlen = info & 0xffff, kind = (info >> 24) & 0x1f, kflag = (info >> 29) & 1 */
+};
+_Static_assert(sizeof(struct btf_type_rec) == 12, "BTF type header ABI");
+/* vlen = info & 0xffff, kind = (info >> 24) & 0x1f, kflag = (info >> 31) & 1 */
 
 struct btf_member_rec {
     u32 name_off;
@@ -202,6 +204,12 @@ static u32 btf_width(u32 id, int depth)
     return 0;
 }
 
+static bool btf_int_width(u32 id, u32 width)
+{
+    const struct btf_type_rec *t = btf_unqual(id);
+    return t && ((t->info >> 24) & 31) == BTF_KIND_INT && t->size_type == width;
+}
+
 static bool btf_ptr_to(u32 id, const char *name, const char *str, u32 len)
 {
     const struct btf_type_rec *t = btf_unqual(id);
@@ -260,6 +268,9 @@ static int btf_parse(void)
         h->str_off > btf_size - base || h->str_len > btf_size - base - h->str_off ||
         ((base + h->type_off) & 3) || (h->type_len & 3) || !h->str_len)
         return -EBADSLT;
+    if (h->type_len && h->type_off < h->str_off + (size_t)h->str_len &&
+        h->str_off < h->type_off + (size_t)h->type_len)
+        return -EBADSLT;
     types = (const char *)btf_buf + base + h->type_off;
     types_len = h->type_len;
     str = (const char *)btf_buf + base + h->str_off;
@@ -277,6 +288,18 @@ static int btf_parse(void)
         if (extra < 0 || (u32)extra > types_len - off - sizeof(*t) ||
             !btf_str(str, len, t->name_off))
             return -EBADSLT;
+        {
+            u32 kind = (t->info >> 24) & 31, vlen = t->info & 65535;
+            const u32 *payload = (const void *)(t + 1);
+            if (kind == BTF_KIND_STRUCT || kind == BTF_KIND_UNION ||
+                kind == BTF_KIND_ENUM || kind == BTF_KIND_ENUM64 ||
+                kind == BTF_KIND_FUNC_PROTO) {
+                u32 stride = (kind == BTF_KIND_ENUM || kind == BTF_KIND_FUNC_PROTO) ? 2 : 3;
+                for (u32 i = 0; i < vlen; i++)
+                    if (!btf_str(str, len, payload[i * stride]))
+                        return -EBADSLT;
+            }
+        }
         off += sizeof(*t) + extra;
     }
     off = 0;
@@ -303,11 +326,6 @@ static int btf_parse(void)
                         return -ENODATA;
                     *want->out = bits / 8;
                     want->found = true;
-                if (!kf_strcmp(name, "security_bprm_check_security") ||
-                    !kf_strcmp(name, "security_bprm_check"))
-                    aw_bprm_valid = true;
-                if (!kf_strcmp(name, "security_file_truncate"))
-                    aw_truncate_valid = true;
                 }
             }
         }
@@ -324,29 +342,32 @@ static int btf_parse(void)
                     return -EOPNOTSUPP;
                 n = fn->info & 65535;
                 ret = btf_unqual(fn->size_type);
-                if (!ret || ((ret->info >> 24) & 31) != BTF_KIND_INT || ret->size_type != 4)
+                if (!ret || ((ret->info >> 24) & 31) != BTF_KIND_INT || ret->size_type != 4 ||
+                    !(*(const u32 *)(ret + 1) & 0x01000000u))
                     return -EOPNOTSUPP;
                 params = (const void *)(fn + 1);
                 if (!want->nargs) {
                     if (n == 2 && btf_ptr_to(params[1], "dentry", str, len) &&
                         btf_ptr_to(params[3], "iattr", str, len))
                         aw_setattr_args = 2;
-                    else if (n == 3 && btf_ptr_to(params[1], "mnt_idmap", str, len) &&
+                    else if (n == 3 && (btf_ptr_to(params[1], "mnt_idmap", str, len) ||
+                                     btf_ptr_to(params[1], "user_namespace", str, len)) &&
                              btf_ptr_to(params[3], "dentry", str, len) &&
                              btf_ptr_to(params[5], "iattr", str, len))
                         aw_setattr_args = 3;
                     else
                         return -EOPNOTSUPP;
                 } else {
-                    if (n != (u32)want->nargs)
+                    if (n != (u32)want->nargs &&
+                        !(w == 6 && n == 4))
                         return -EOPNOTSUPP;
                     for (u32 i = 0; i < n; i++) {
                         const struct btf_type_rec *pt = btf_unqual(params[2*i+1]);
                         if (want->params[i]) {
                             if (!btf_ptr_to(params[2*i+1], want->params[i], str, len))
                                 return -EOPNOTSUPP;
-                        } else if (!pt || ((pt->info >> 24) & 31) != BTF_KIND_INT ||
-                                   (pt->size_type != 4 && pt->size_type != 8)) {
+                        } else if (!pt || !btf_int_width(params[2*i+1],
+                                   (!kf_strcmp(name, "security_file_ioctl") && i == 2) ? 8 : 4)) {
                             return -EOPNOTSUPP;
                         }
                     }
@@ -444,6 +465,14 @@ static int btf_load_file(void)
 }
 
 /* ------------------------------------------------------------------ api */
+
+bool aw_btf_hook_validated(const char *name)
+{
+    for (size_t i = 0; i < AW_ARRAY_SIZE(protos); i++)
+        if (!kf_strcmp(protos[i].name, name))
+            return protos[i].found;
+    return false;
+}
 
 int aw_btf_init(void)
 {

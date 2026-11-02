@@ -77,3 +77,21 @@ CI：`.github/workflows/build-antiwipe-kpm.yml` 每次 push 自动构建并上�
 
 模块只 import 内核符号与引擎符号；BTF 需要 `CONFIG_DEBUG_INFO_BTF=y`
 （GKI 全系默认开启）。
+
+
+## Safe activation and unload contract
+
+Loading is inert regardless of load arguments. After verifying load, explicitly
+call control `arm` (`on` is an alias). `off` disables enforcement atomically but
+retains callbacks and path pins. No callback detach is attempted through the
+legacy unsynchronized inline-hook API. Once hooks are attached, exit returns
+`-EBUSY`, and the engine must preserve module memory. Reboot is required for
+physical hook removal. An incomplete arm returns an error with enforcement
+disabled; any attached callbacks stay inert/resident, and retry is rejected.
+This is a deliberate safe-unload refusal until the engine supplies synchronous
+callback/trampoline draining, not a claim that generic detach is safe.
+
+Parser requires full 12-byte BTF type headers, bounded strings and type payloads,
+byte-aligned non-bitfield selected members (offset zero is valid), and validated
+function prototypes before attachment. Unsupported layouts fail closed. Host
+sanitizer tests are in `scripts/test_antiwipe_host.py`; no device operations.

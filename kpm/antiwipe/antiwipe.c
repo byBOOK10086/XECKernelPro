@@ -89,6 +89,8 @@ static unsigned int parse_uint(const char *s)
     while (*s == ' ')
         s++;
     while (*s >= '0' && *s <= '9') {
+        if (v > 3600 / 10)
+            return 3600;
         v = v * 10 + (unsigned int)(*s - '0');
         s++;
     }
@@ -98,17 +100,9 @@ static unsigned int parse_uint(const char *s)
 
 static long antiwipe_init(const char *args, const char *event, void *reserved)
 {
-    int ret;
-
     (void)reserved;
-
-    ret = ksu_antiwipe_arm();
-    if (ret) {
-        pr_err("antiwipe: arm failed: %d\n", ret);
-        return ret;
-    }
-
-    pr_info("antiwipe: armed (event=%s args=%s)\n", event ? event : "-", args ? args : "-");
+    pr_info("antiwipe: loaded inert; explicit arm required (event=%s args=%s)\n",
+            event ? event : "-", args ? args : "-");
     return 0;
 }
 
@@ -118,7 +112,7 @@ static long antiwipe_ctl0(const char *ctl_args, char *out_msg, int outlen)
 
     buf[0] = '\0';
 
-    if (ctl_args && s_prefix(ctl_args, "trust")) {
+    if (ctl_args && s_prefix(ctl_args, "trust ")) {
         unsigned int sec = parse_uint(ctl_args + 5);
 
         if (sec > 3600)
@@ -126,7 +120,13 @@ static long antiwipe_ctl0(const char *ctl_args, char *out_msg, int outlen)
         ksu_antiwipe_trust(sec);
         s_append(buf, (int)sizeof(buf), "trust=");
         s_append_dec(buf, (int)sizeof(buf), (unsigned long long)sec);
-    } else if (ctl_args && s_prefix(ctl_args, "off")) {
+    } else if (ctl_args && ((s_prefix(ctl_args, "arm") && !ctl_args[3]) ||
+                            (s_prefix(ctl_args, "on") && !ctl_args[2]))) {
+        int rc = ksu_antiwipe_arm();
+        if (rc)
+            return rc;
+        s_append(buf, (int)sizeof(buf), "armed=1");
+    } else if (ctl_args && s_prefix(ctl_args, "off") && !ctl_args[3]) {
         ksu_antiwipe_disarm();
         s_append(buf, (int)sizeof(buf), "disarmed");
     } else {
