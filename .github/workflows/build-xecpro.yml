@@ -73,10 +73,9 @@ jobs:
           cargo fmt --all -- --check
       - name: Pure recovery policy tests
         run: |
-          if [ -f userspace/ksud/src/boot_guard_policy.rs ]; then
-            rustc --edition 2024 --test userspace/ksud/src/boot_guard_policy.rs -o /tmp/boot-guard-tests
-            /tmp/boot-guard-tests
-          fi
+          test -f userspace/ksud/src/boot_guard.rs
+          rustc --edition 2024 --test userspace/ksud/src/boot_guard.rs -o /tmp/boot-guard-tests
+          /tmp/boot-guard-tests
 
   generate-key:
     runs-on: ubuntu-latest
