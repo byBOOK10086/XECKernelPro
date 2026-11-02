@@ -520,10 +520,9 @@ fn load_all_modules() -> Result<()> {
             Ok(()) => {
                 if path.file_name() == Some(OsStr::new("antiwipe.kpm"))
                     && path.with_extension("kpm.arm").is_file()
+                    && let Err(e) = control("antiwipe", "arm")
                 {
-                    if let Err(e) = control("antiwipe", "arm") {
-                        log::warn!("KPM: antiwipe activation failed: {e:#}");
-                    }
+                    log::warn!("KPM: antiwipe activation failed: {e:#}");
                 }
                 loaded += 1;
             }
