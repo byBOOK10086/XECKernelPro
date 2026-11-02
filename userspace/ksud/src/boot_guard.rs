@@ -408,7 +408,14 @@ mod runtime {
             ) {
                 Decision::Success => {
                     // State lock serializes success against timeout and explicit resume.
-                    crate::boot_txn::commit_boot_success()?;
+                    if let Err(error) = crate::boot_txn::commit_boot_success() {
+                        state.rescue = true;
+                        state.pending = false;
+                        state.stage = "transaction-error".into();
+                        state.reason = format!("shared boot success commit failed: {error:#}");
+                        reboot(&mut state)?;
+                        return Ok(());
+                    }
                     state.pending = false;
                     state.stage = "success".into();
                     if !state.rescue {
