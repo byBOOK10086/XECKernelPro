@@ -7,6 +7,7 @@
 #include <linux/compiler.h>
 #include <linux/fs.h>
 #include <linux/gfp.h>
+#include <linux/vmalloc.h>
 #include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/printk.h>
