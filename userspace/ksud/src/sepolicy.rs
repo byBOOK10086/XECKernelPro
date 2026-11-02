@@ -380,7 +380,7 @@ enum PolicyObject {
 }
 
 // Existing parsing call sites use TryFrom; retain their fallible API contract.
-#[allow(clippy::try_from_instead_of_from_str)]
+#[allow(unknown_lints, clippy::try_from_instead_of_from_str)]
 impl TryFrom<&str> for PolicyObject {
     type Error = anyhow::Error;
     fn try_from(s: &str) -> Result<Self> {
