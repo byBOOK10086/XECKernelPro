@@ -144,15 +144,21 @@ static void kpm_resolve_symbols(void)
     pr_info("kpm: set_memory_x=%px set_memory_nx=%px\n", kpm_set_memory_x, kpm_set_memory_nx);
 }
 
-static void kpm_set_module_exec(void *addr, unsigned int size)
+static int kpm_set_module_exec(void *addr, unsigned int size)
 {
-    if (!kpm_set_memory_x || !addr)
-        return;
+    int npages, ret;
 
-    int npages = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
-    int ret = kpm_set_memory_x((unsigned long)addr, npages);
+    if (!addr || !size)
+        return -EINVAL;
+    /* vmalloc/module pages are normally NX on GKI.  Running a KPM without a
+     * proven executable transition turns a bad configuration into a panic. */
+    if (!kpm_set_memory_x)
+        return -EOPNOTSUPP;
+    npages = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
+    ret = kpm_set_memory_x((unsigned long)addr, npages);
     if (ret)
         pr_err("kpm: set_memory_x(%px, %d) = %d\n", addr, npages, ret);
+    return ret;
 }
 
 static void kpm_set_module_nx(void *addr, unsigned int size)
@@ -319,19 +325,43 @@ static void *kpm_get_sh_base(struct kp_load_info *info, const char *secname)
 
 static int kpm_elf_header_check(struct kp_load_info *info)
 {
-    if (info->len <= sizeof(*(info->hdr))) {
+    const Elf64_Ehdr *h = info->hdr;
+    size_t shbytes;
+    unsigned int i;
+
+    if (info->len < sizeof(*h)) {
         kpm_set_error(info, "ELF header is truncated");
         return -ENOEXEC;
     }
-    if (memcmp(info->hdr->e_ident, ELFMAG, SELFMAG) || info->hdr->e_type != ET_REL ||
-        info->hdr->e_machine != EM_AARCH64 || info->hdr->e_shentsize != sizeof(Elf64_Shdr)) {
+    if (memcmp(h->e_ident, ELFMAG, SELFMAG) || h->e_ident[EI_CLASS] != ELFCLASS64 ||
+        h->e_ident[EI_DATA] != ELFDATA2LSB || h->e_type != ET_REL ||
+        h->e_machine != EM_AARCH64 || h->e_shentsize != sizeof(Elf64_Shdr) ||
+        !h->e_shnum || h->e_shstrndx >= h->e_shnum) {
         kpm_set_error(info, "ELF header is not a supported AArch64 relocatable module");
         return -ENOEXEC;
     }
-    if (info->hdr->e_shoff >= info->len ||
-        (unsigned long)info->hdr->e_shnum * sizeof(Elf64_Shdr) > info->len - info->hdr->e_shoff) {
+    if (h->e_shoff > info->len || h->e_shnum > (info->len - h->e_shoff) / sizeof(Elf64_Shdr)) {
         kpm_set_error(info, "ELF section headers are invalid");
         return -ENOEXEC;
+    }
+    shbytes = (size_t)h->e_shnum * sizeof(Elf64_Shdr);
+    (void)shbytes;
+    /* Validate every file-backed section before any pointer arithmetic. */
+    for (i = 0; i < h->e_shnum; i++) {
+        const Elf64_Shdr *sh = (const void *)((const char *)h + h->e_shoff) + i;
+        if (sh->sh_type != SHT_NOBITS &&
+            (sh->sh_offset > info->len || sh->sh_size > info->len - sh->sh_offset)) {
+            kpm_set_error(info, "ELF section data is out of bounds");
+            return -ENOEXEC;
+        }
+    }
+    {
+        const Elf64_Shdr *shstr = (const void *)((const char *)h + h->e_shoff) + h->e_shstrndx;
+        if (shstr->sh_type == SHT_NOBITS || shstr->sh_offset > info->len ||
+            shstr->sh_size > info->len - shstr->sh_offset) {
+            kpm_set_error(info, "ELF section-name table is invalid");
+            return -ENOEXEC;
+        }
     }
     return 0;
 }
@@ -709,7 +739,13 @@ static long kpm_load_module(const void *data, int len, const char *args, const c
         goto free_exec;
     }
 
-    kpm_set_module_exec(mod->start, mod->size);
+    rc = kpm_set_module_exec(mod->start, mod->size);
+    if (rc) {
+        kpm_set_error(info, rc == -EOPNOTSUPP
+                      ? "executable memory transition is unavailable"
+                      : "set executable memory failed");
+        goto free_exec;
+    }
     kpm_flush_icache(mod->start, mod->size);
 
     rc = kpm_call_init(mod->init, mod->args, event, NULL);
