@@ -313,6 +313,8 @@ static unsigned int aw_parse_uint(const char *s)
     while (*s == ' ')
         s++;
     while (*s >= '0' && *s <= '9') {
+        if (v > AW_MAX_TRUST_SECONDS / 10u)
+            return AW_MAX_TRUST_SECONDS;
         v = v * 10u + (unsigned int)(*s - '0');
         s++;
     }
@@ -339,7 +341,7 @@ static u32 aw_task_flags(void *task)
 
 static u32 aw_task_euid(void *task)
 {
-    void *cred = *(void **)((char *)task + task_struct_offset.cred_offset);
+    void *cred = *(void **)((char *)task + aw_off.task_cred);
     u32 euid;
 
     if (!cred)
@@ -350,7 +352,7 @@ static u32 aw_task_euid(void *task)
 
 static u32 aw_task_pid(void *task)
 {
-    s16 off = task_struct_offset.pid_offset;
+    size_t off = aw_off.task_pid;
     u32 pid = 0;
 
     if (off > 0)
@@ -360,7 +362,7 @@ static u32 aw_task_pid(void *task)
 
 static void aw_task_comm(void *task, char *out /* TASK_COMM_LEN */)
 {
-    memcpy(out, (const char *)task + task_struct_offset.comm_offset, TASK_COMM_LEN);
+    memcpy(out, (const char *)task + aw_off.task_comm, TASK_COMM_LEN);
     out[TASK_COMM_LEN - 1] = '\0';
 }
 
@@ -369,19 +371,17 @@ static void aw_task_comm(void *task, char *out /* TASK_COMM_LEN */)
  * shell binary in /data fails the path half. */
 static bool aw_exe_path_exempt(void *task)
 {
-    void *mm = *(void **)((char *)task + task_struct_offset.mm_offset);
-    void *exe;
+    struct file_ *exe;
     struct aw_path fp;
     char buf[192];
     char *full;
 
-    if (!mm)
-        return false;
-    exe = *(void **)((char *)mm + aw_off.mm_exe_file);
+    exe = get_task_exe_file(task);
     if (!exe)
         return false;
     memcpy(&fp, (const char *)exe + aw_off.file_f_path, sizeof(fp));
     full = d_path(&fp, buf, sizeof(buf));
+    fput(exe);
     if ((unsigned long)full >= (unsigned long)-4096 || !full)
         return false;
     return aw_dir_prefix(full, "/system") || aw_dir_prefix(full, "/apex") ||
@@ -486,12 +486,13 @@ static void aw_record(u32 kind, const char *target)
     ev.kind = kind;
     aw_task_comm(aw_current_task(), ev.comm);
     if (target)
-        kf_memcpy(ev.target, target, AW_PATH_HINT_LEN - 1);
+        kf_memcpy(ev.target, target, kf_strnlen(target, AW_PATH_HINT_LEN - 1));
 
-    while (__atomic_test_and_set(&aw_last_lock, __ATOMIC_ACQUIRE))
-        ;
-    aw_last = ev;
-    aw_last_lock = 0;
+    /* Logging must never spin if an interrupt/preemption recurses here. */
+    if (!__atomic_test_and_set(&aw_last_lock, __ATOMIC_ACQUIRE)) {
+        aw_last = ev;
+        __atomic_clear(&aw_last_lock, __ATOMIC_RELEASE);
+    }
 
     aw_warn("blocked %s pid=%u comm=%s target=%s\n", aw_kind_name(kind), ev.pid, ev.comm,
             target ? target : "");
@@ -824,7 +825,7 @@ static void aw_unlink_before(hook_fargs2_t *args, void *udata)
 }
 
 /* THREAT-04 enforcement site. */
-static void aw_rename_before(hook_fargs4_t *args, void *udata)
+static void aw_rename_before(hook_fargs8_t *args, void *udata)
 {
     char hint[AW_PATH_HINT_LEN];
 
@@ -857,7 +858,7 @@ static void aw_setattr_before(hook_fargs4_t *args, void *udata)
     if (!aw_watches_current())
         return;
 
-    if (kver >= AW_KVER(6, 9, 0)) {
+    if (aw_setattr_args == 3) {
         dentry = (void *)args->arg1; /* arg0 is mnt_idmap */
         iattr = (void *)args->arg2;
     } else {
@@ -1267,6 +1268,7 @@ static int aw_install_hook(void *func, int argno, void *before)
             return 0;
         }
     }
+    hook_unwrap_remove(func, before, NULL, 1);
     return -ENOSPC;
 }
 
@@ -1291,8 +1293,14 @@ static int aw_arm(void)
     if (aw_armed)
         return 0;
 
+    if (!aw_layout_ready || !sp_el0_is_current || !has_syscall_wrapper)
+        return -EOPNOTSUPP;
     aw_fill_devices();
     aw_fill_pins();
+    if (!aw_pin_data.ok || !aw_pin_adb.ok) {
+        rc = -ENODATA;
+        goto fail;
+    }
 
     /* Core three: open / unlink / rmdir. Failure unwinds everything. */
     rc = aw_install_hook((void *)security_file_open, 1, aw_file_open_before);
@@ -1305,24 +1313,23 @@ static int aw_arm(void)
     if (rc)
         goto fail;
 
-    /* Best effort extras: degrade gracefully, never block arming. */
-    if (aw_install_hook((void *)security_inode_rename, 4, aw_rename_before))
-        aw_warn("rename hook unavailable\n");
-    if (aw_install_hook((void *)security_inode_setattr, kver >= AW_KVER(6, 9, 0) ? 3 : 2,
-                        aw_setattr_before))
-        aw_warn("setattr hook unavailable\n");
+    /* Full policy requires every mandatory dispatcher to attach. */
+    if ((rc = aw_install_hook((void *)security_inode_rename, aw_rename_args, aw_rename_before)))
+        goto fail;
+    if ((rc = aw_install_hook((void *)security_inode_setattr, aw_setattr_args, aw_setattr_before)))
+        goto fail;
     if (aw_fn_bprm_check &&
-        aw_install_hook(aw_fn_bprm_check, 1, aw_bprm_before))
-        aw_warn("exec hook unavailable\n");
+        (rc = aw_install_hook(aw_fn_bprm_check, 1, aw_bprm_before)))
+        goto fail;
     if (aw_fn_file_truncate &&
-        aw_install_hook(aw_fn_file_truncate, 1, aw_truncate_before))
-        aw_warn("truncate hook unavailable\n");
-    if (aw_install_hook((void *)security_file_permission, 2, aw_permission_before))
-        aw_warn("permission hook unavailable\n");
-    if (aw_install_hook((void *)security_file_ioctl, 3, aw_ioctl_before))
-        aw_warn("ioctl hook unavailable\n");
-    if (hook_syscalln(__AW_NR_reboot, narg_reboot, aw_reboot_before, NULL, NULL))
-        aw_warn("reboot hook unavailable\n");
+        (rc = aw_install_hook(aw_fn_file_truncate, 1, aw_truncate_before)))
+        goto fail;
+    if ((rc = aw_install_hook((void *)security_file_permission, 2, aw_permission_before)))
+        goto fail;
+    if ((rc = aw_install_hook((void *)security_file_ioctl, 3, aw_ioctl_before)))
+        goto fail;
+    if ((rc = hook_syscalln(__AW_NR_reboot, narg_reboot, aw_reboot_before, NULL, NULL)))
+        goto fail;
     else if (aw_hook_count < (int)AW_ARRAY_SIZE(aw_hooks)) {
         aw_hooks[aw_hook_count].func = (void *)(unsigned long)__AW_NR_reboot;
         aw_hooks[aw_hook_count].before = aw_reboot_before;
@@ -1339,6 +1346,8 @@ fail:
     aw_err("arm failed: %d, unwinding\n", rc);
     aw_uninstall_all();
     aw_unpin_all();
+    aw_dev_count = 0;
+    aw_dev_ready = false;
     return rc;
 }
 
@@ -1346,6 +1355,8 @@ static void aw_disarm(void)
 {
     if (!aw_armed && !aw_hook_count)
         return;
+
+    __atomic_store_n(&aw_armed, false, __ATOMIC_RELEASE);
 
     /* The reboot hook went through hook_syscalln, not hook_wrap. */
     int i;
@@ -1387,39 +1398,40 @@ static void aw_status_line(char *buf, size_t len)
 static long aw_ctl0(const char *ctl_args, char *out_msg, int outlen)
 {
     char buf[256];
+    int result = 0;
 
+    memset(buf, 0, sizeof(buf));
     buf[0] = '\0';
 
-    if (ctl_args && aw_str_prefix(ctl_args, "trust")) {
+    if (ctl_args && aw_str_prefix(ctl_args, "trust ")) {
         unsigned int sec = aw_parse_uint(ctl_args + 5);
 
         if (sec > AW_MAX_TRUST_SECONDS)
             sec = AW_MAX_TRUST_SECONDS;
         aw_trust_until = sec ? (jiffies + (unsigned long)sec * aw_hz) : 0;
         kf_snprintf(buf, sizeof(buf), "trust=%u", sec);
-    } else if (ctl_args && aw_str_prefix(ctl_args, "off")) {
+    } else if (ctl_args && !aw_strcmp(ctl_args, "off")) {
         aw_disarm();
         kf_snprintf(buf, sizeof(buf), "disarmed hooks=%d", aw_hook_count);
-    } else if (ctl_args && aw_str_prefix(ctl_args, "on")) {
+    } else if (ctl_args && !aw_strcmp(ctl_args, "on")) {
         int rc = aw_arm();
 
-        if (rc)
+        if (rc) {
+            result = rc;
             kf_snprintf(buf, sizeof(buf), "arm error=%d", rc);
+        }
         else
             aw_status_line(buf, sizeof(buf));
-    } else if (ctl_args && aw_str_prefix(ctl_args, "last")) {
+    } else if (ctl_args && !aw_strcmp(ctl_args, "last")) {
         kf_snprintf(buf, sizeof(buf), "last=%s pid=%u comm=%s target=%s", aw_kind_name(aw_last.kind),
                     aw_last.pid, aw_last.comm, aw_last.target);
-    } else if (ctl_args && aw_str_prefix(ctl_args, "selftest")) {
+    } else if (ctl_args && !aw_strcmp(ctl_args, "selftest")) {
         u64 blocked = __atomic_add_fetch(&aw_blocked, 0, __ATOMIC_RELAXED);
-        int offsets_ok = aw_off.file_f_mode && aw_off.file_f_path && aw_off.file_f_inode &&
-                         aw_off.inode_i_mode && aw_off.inode_i_rdev && aw_off.dentry_d_inode &&
-                         aw_off.bprm_filename && aw_off.cred_euid && aw_off.mm_exe_file &&
-                         aw_off.task_flags && aw_off.iattr_ia_valid;
+        int offsets_ok = aw_layout_ready;
 
         kf_snprintf(buf, sizeof(buf),
                     "SELFTEST %s offsets=%u armed=%u hooks=%d devs=%d pins=%d blocked=%llu",
-                    (offsets_ok && (!aw_armed || aw_hook_count >= 3) && aw_count_pins() > 0 && aw_dev_ready)
+                    (offsets_ok && aw_armed && aw_hook_count >= 8 && aw_pin_data.ok && aw_pin_adb.ok)
                         ? "PASS"
                         : "FAIL",
                     offsets_ok ? 1u : 0u, aw_armed ? 1u : 0u, aw_hook_count, aw_dev_count,
@@ -1431,36 +1443,15 @@ static long aw_ctl0(const char *ctl_args, char *out_msg, int outlen)
     if (out_msg && outlen > 0) {
         unsigned long n = (unsigned long)outlen < sizeof(buf) ? (unsigned long)outlen : sizeof(buf);
 
-        _copy_to_user(out_msg, buf, n);
+        unsigned long text = kf_strnlen(buf, sizeof(buf) - 1) + 1;
+        if (n > text)
+            n = text;
+        buf[n - 1] = '\0';
+        if (_copy_to_user(out_msg, buf, n))
+            return -EFAULT;
     }
 
-    return 0;
-}
-
-/* ------------------------------------------------------------- takeover */
-
-/*
- * The legacy guard (feature/antiwipe.c) may be armed through its own KPM API
- * by an older thin module. Two guards double-block harmlessly, but single
- * ownership is cleaner: disarm the built-in one when present. Both symbols
- * are resolved at runtime so this module also loads on kernels without the
- * legacy feature compiled in.
- */
-static void aw_takeover_legacy(void)
-{
-    int (*active)(void);
-    void (*disarm_fn)(void);
-
-    active = (int (*)(void))kallsyms_lookup_name("ksu_antiwipe_active");
-    if (!active)
-        return;
-    if (!active())
-        return;
-    disarm_fn = (void (*)(void))kallsyms_lookup_name("ksu_antiwipe_disarm");
-    if (disarm_fn) {
-        disarm_fn();
-        aw_warn("legacy in-kernel guard disarmed (single-owner takeover)\n");
-    }
+    return result;
 }
 
 /* --------------------------------------------------------- init / exit */
@@ -1473,6 +1464,11 @@ static long antiwipe_init(const char *args, const char *event, void *reserved)
     (void)reserved;
     (void)event;
 
+    if (!printk || !kallsyms_lookup_name || !kf_snprintf || !kf_strlen ||
+        !kf_strnlen || !kf_strcmp || !kf_strncmp || !kf_strrchr || !kf_strstr || !kf_memcpy ||
+        !sp_el0_is_current || !has_syscall_wrapper) {
+        return -EOPNOTSUPP;
+    }
     if (args && kf_strstr(args, "armed=0"))
         auto_arm = false;
 
@@ -1502,7 +1498,6 @@ static long antiwipe_init(const char *args, const char *event, void *reserved)
         return rc;
     }
 
-    aw_takeover_legacy();
 
     if (auto_arm) {
         rc = aw_arm();

@@ -34,11 +34,15 @@ struct aw_offsets {
     size_t mm_exe_file;
     /* struct task_struct (flags; comm/cred/mm come from task_struct_offset) */
     size_t task_flags;
+    size_t task_pid, task_cred, task_comm, task_mm;
     /* struct iattr */
     size_t iattr_ia_valid;
 };
 
 extern struct aw_offsets aw_off;
+extern int aw_setattr_args;
+extern int aw_rename_args;
+extern bool aw_layout_ready;
 
 /* Load and parse /sys/kernel/btf/vmlinux, fill aw_off. Returns 0 on success,
  * negative errno on failure. Allocates a vmalloc buffer freed by

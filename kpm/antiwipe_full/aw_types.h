@@ -147,6 +147,14 @@ typedef hook_fargs8_t hook_fargs5_t;
 typedef hook_fargs8_t hook_fargs6_t;
 typedef hook_fargs8_t hook_fargs7_t;
 
+/* LP64 engine contract. Keep these checked even in freestanding builds. */
+_Static_assert(sizeof(void *) == 8, "arm64 LP64 ABI required");
+_Static_assert(__builtin_offsetof(hook_fargs4_t, local) == 16, "hook local ABI");
+_Static_assert(__builtin_offsetof(hook_fargs4_t, ret) == 80, "hook return ABI");
+_Static_assert(__builtin_offsetof(hook_fargs4_t, arg0) == 88, "hook args ABI");
+_Static_assert(sizeof(hook_fargs4_t) == 120, "hook4 size ABI");
+_Static_assert(sizeof(hook_fargs8_t) == 152, "hook8 size ABI");
+
 typedef void (*hook_chain4_callback)(hook_fargs4_t *fargs, void *udata);
 typedef void (*hook_chain8_callback)(hook_fargs8_t *fargs, void *udata);
 
@@ -171,6 +179,10 @@ struct aw_task_offsets {
 };
 extern struct aw_task_offsets task_struct_offset;
 extern int has_syscall_wrapper;
+struct file_;
+extern int sp_el0_is_current;
+extern struct file_ *get_task_exe_file(void *task);
+extern void fput(struct file_ *file);
 
 /* Hook primitives (function symbols). */
 extern int hook_wrap(void *func, int argno, void *before, void *after, void *udata);
