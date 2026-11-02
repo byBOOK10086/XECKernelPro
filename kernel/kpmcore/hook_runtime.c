@@ -65,9 +65,9 @@ static void *kp_hook_exec_alloc(unsigned long size)
 	void *p = NULL;
 	unsigned long pages = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
 
-	if (kp_hook_module_alloc)
+	if (kp_hook_module_alloc && kp_hook_module_memfree)
 		p = kp_hook_module_alloc(size);
-	else if (kp_hook_execmem_alloc)
+	else if (kp_hook_execmem_alloc && kp_hook_execmem_free)
 		p = kp_hook_execmem_alloc(0 /* EXECMEM_MODULE_TEXT */, size);
 	else
 		p = vmalloc(size);
@@ -77,7 +77,7 @@ static void *kp_hook_exec_alloc(unsigned long size)
                   kp_hook_set_memory_x((unsigned long)p, pages))) {
         if (kp_hook_module_alloc && kp_hook_module_memfree)
             kp_hook_module_memfree(p);
-        else if (!kp_hook_module_alloc && kp_hook_execmem_alloc && kp_hook_execmem_free)
+        else if (kp_hook_execmem_alloc && kp_hook_execmem_free)
             kp_hook_execmem_free(p);
         else
             vfree(p);
@@ -89,9 +89,9 @@ static void *kp_hook_exec_alloc(unsigned long size)
 __nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static void kp_hook_exec_free(void *region)
 {
-	if (kp_hook_module_memfree)
+	if (kp_hook_module_alloc && kp_hook_module_memfree)
 		kp_hook_module_memfree(region);
-	else if (kp_hook_execmem_free)
+	else if (kp_hook_execmem_alloc && kp_hook_execmem_free)
 		kp_hook_execmem_free(region);
 	else
 		vfree(region);

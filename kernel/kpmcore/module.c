@@ -127,9 +127,9 @@ static void kp_clear_bti_gp(unsigned long base, unsigned long size)
 __nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static void *kp_malloc_exec(unsigned long size)
 {
-	if (kp_module_alloc)
+	if (kp_module_alloc && kp_module_memfree)
 		return kp_module_alloc(size);
-	if (kp_execmem_alloc)
+	if (kp_execmem_alloc && kp_execmem_free)
 		return kp_execmem_alloc(0 /* EXECMEM_MODULE_TEXT */, size);
 	/* vmalloc pages are not executable on GKI; refuse this path below rather
 	 * than entering arbitrary KPM bytes and taking an instruction fault. */
@@ -139,9 +139,9 @@ static void *kp_malloc_exec(unsigned long size)
 __nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static void kp_free_exec(void *region)
 {
-	if (kp_module_memfree)
+	if (kp_module_alloc && kp_module_memfree)
 		kp_module_memfree(region);
-	else if (kp_execmem_free)
+	else if (kp_execmem_alloc && kp_execmem_free)
 		kp_execmem_free(region);
 	else
 		vfree(region);
@@ -864,6 +864,7 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
         }
 		if (mod->exit)
 			kp_call_exit(mod->exit, reserved);
+        kp_path_hooks_drain_owner((unsigned long)mod->start, mod->size);
 	}
 
 free:
@@ -901,6 +902,9 @@ long kp_unload_module(const char *name, void __user *reserved)
 	rc = mod->exit ? kp_call_exit(mod->exit, reserved) : 0;
     if (rc)
         goto out;
+    /* Exit callbacks may acquire new adapters; do not trust a successful exit
+     * alone as proof that no callbacks still reference the departing image. */
+    kp_path_hooks_drain_owner((unsigned long)mod->start, mod->size);
 	list_del_rcu(&mod->list);
 	synchronize_rcu();
 
