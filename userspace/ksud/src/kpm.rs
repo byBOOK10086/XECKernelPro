@@ -526,7 +526,7 @@ fn load_all_modules() -> Result<()> {
                     }
                 }
                 loaded += 1;
-            },
+            }
             Err(e) => {
                 failed += 1;
                 log::warn!("KPM: load {} failed: {e:#}", path.display());
