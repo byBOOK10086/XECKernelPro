@@ -28,6 +28,8 @@ import me.weishu.kernelsu.mountstate.MagiskRoot
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import java.io.File
+import java.io.InputStream
+import java.util.UUID
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
@@ -247,55 +249,40 @@ private fun flashWithIO(
 
     // 防格 KPM（antiwipe）已加载时，管理器自己的刷写必须放行；没加载时这条
     // control 会报错，忽略即可。结束立刻收回窗口，别给第三方脚本留时间。
-    runCatching { execKsud("kpm control $ANTIWIPE_MODULE trust 600", true) }
+    runCatching { execKsud("kpm control $ANTIWIPE_MODULE ${shellQuote("trust 600")}", true) }
 
     return try {
         withNewRootShell {
             newJob().add(cmd).to(stdoutCallback, stderrCallback).exec()
         }
     } finally {
-        runCatching { execKsud("kpm control $ANTIWIPE_MODULE trust 0", true) }
+        runCatching { execKsud("kpm control $ANTIWIPE_MODULE ${shellQuote("trust 0")}", true) }
     }
 }
 
-/** 防格 KPM 的模块名（antiwipe.kpm 里的 KPM_NAME），也用于 control/unload。 */
+/** Runtime module identity, independent of the selected file name. */
 const val ANTIWIPE_MODULE: String = "antiwipe"
 
-/**
- * 载入内置防格模块：assets/kpm/antiwipe.kpm → /data/adb/kpm/ → xudc kpm load。
- *
- * 防格逻辑本身在内核里（XEC 内核专有），这个模块只负责 arm/disarm；不加载它就
- * 等于完全没有拦截，这也是"不会再因为守卫把机器卡进重启循环"的保证。
- */
 fun loadAntiwipeKpm(
     onStdout: (String) -> Unit,
     onStderr: (String) -> Unit
-): FlashResult {
-    val asset = "antiwipe.kpm"
-    val present = runCatching { ksuApp.assets.list("kpm") }.getOrNull()?.contains(asset) == true
-    if (!present) {
-        return FlashResult(-1, "antiwipe.kpm missing from assets", false)
-    }
+): FlashResult = loadBuiltinKpm("antiwipe.kpm", ANTIWIPE_MODULE, "", onStdout, onStderr)
 
-    val file = File(ksuApp.cacheDir, asset)
-    ksuApp.assets.open("kpm/$asset").use { input ->
-        file.outputStream().use { output -> input.copyTo(output) }
+/** Remove boot persistence first: even a failed runtime unload must not re-arm next boot. */
+fun unloadAntiwipeKpm(): Boolean {
+    val daemon = shellQuote(getKsuDaemonPath())
+    val result = withNewRootShell {
+        newJob().add("rm -f /data/adb/kpm/antiwipe.kpm /data/adb/kpm/antiwipe.kpm.args && " +
+            "$daemon kpm unload ${shellQuote(ANTIWIPE_MODULE)}").to(ArrayList(), ArrayList()).exec()
     }
-
-    val dest = "/data/adb/kpm/$asset"
-    val cmd = "mkdir -p /data/adb/kpm && cp ${file.absolutePath} $dest && chmod 0644 $dest && " +
-        "${getKsuDaemonPath()} kpm load $dest"
-    val result = flashWithIO(cmd, onStdout, onStderr)
-    file.delete()
-    return FlashResult(result)
+    return result.isSuccess && ANTIWIPE_MODULE !in kpmModuleNames()
 }
 
-/** 卸载防格模块（同时解除所有 hook）。 */
-fun unloadAntiwipeKpm(): Boolean = execKsud("kpm unload $ANTIWIPE_MODULE", true)
-
-/** 给防格模块开/收放行窗口（秒，0 = 立即收回）。 */
-fun antiwipeTrust(seconds: Int): Boolean =
-    execKsud("kpm control $ANTIWIPE_MODULE trust $seconds", true)
+/** Control takes ONE argument string, including the command's parameters. */
+fun antiwipeTrust(seconds: Int): Boolean {
+    require(seconds in 0..600)
+    return execKsud("kpm control $ANTIWIPE_MODULE ${shellQuote("trust $seconds")}", true)
+}
 
 fun flashModule(
     uri: Uri,
@@ -326,18 +313,92 @@ fun flashModule(
     }
 }
 
-suspend fun kpmVersion(): String = withContext(Dispatchers.IO) {
-    val out = withNewRootShell {
-        newJob().add("${getKsuDaemonPath()} kpm version").to(ArrayList<String>(), null).exec().out
+private fun kpmQuery(command: String): String {
+    val result = withNewRootShell {
+        newJob().add("${shellQuote(getKsuDaemonPath())} kpm $command")
+            .to(ArrayList(), ArrayList()).exec()
     }
-    out.firstOrNull()?.trim().orEmpty()
+    check(result.isSuccess) {
+        result.err.joinToString("\n").ifBlank { "KPM $command failed (exit ${result.code})" }
+    }
+    return result.out.joinToString("\n").trim()
 }
 
-suspend fun kpmList(): String = withContext(Dispatchers.IO) {
-    val out = withNewRootShell {
-        newJob().add("${getKsuDaemonPath()} kpm list").to(ArrayList<String>(), null).exec().out
+private fun kpmModuleNames(): Set<String> = kpmQuery("list").lineSequence()
+    .map(String::trim).filter(String::isNotEmpty).toSet()
+
+suspend fun kpmVersion(): String = withContext(Dispatchers.IO) {
+    kpmQuery("version").also { check(it.isNotBlank()) { "KPM engine returned no version" } }
+}
+
+suspend fun kpmList(): String = withContext(Dispatchers.IO) { kpmQuery("list") }
+
+/** All loads use a non-autoload staging directory; failed files never become boot inputs. */
+private fun loadKpmStream(
+    name: String,
+    expectedName: String?,
+    args: String,
+    open: () -> InputStream,
+    onStdout: (String) -> Unit,
+    onStderr: (String) -> Unit,
+): FlashResult {
+    val id = UUID.randomUUID().toString()
+    val file = File(ksuApp.cacheDir, "kpm-$id.tmp")
+    val staging = "/data/adb/kpm/.staging/$id.kpm"
+    val safeName = name.replace(Regex("[^A-Za-z0-9._-]"), "_").take(100)
+        .trim('.').ifBlank { "module-$id" }.let { if (it.endsWith(".kpm")) it else "$it.kpm" }
+    var dest = "/data/adb/kpm/$safeName"
+    val daemon = shellQuote(getKsuDaemonPath())
+    fun root(command: String): Shell.Result = withNewRootShell {
+        newJob().add(command).to(ArrayList(), ArrayList()).exec().also { result ->
+            result.out.forEach(onStdout)
+            result.err.forEach(onStderr)
+        }
     }
-    out.joinToString("\n")
+    var loadedName: String? = null
+    var persisted = false
+    return try {
+        open().use { input -> file.outputStream().use { input.copyTo(it) } }
+        check(file.length() > 0) { "The selected KPM file is empty" }
+        // Capability and list queries are read-only. Never load/arm/selftest while refreshing.
+        check(kpmQuery("version").isNotBlank()) { "KPM engine returned no version" }
+        val before = kpmModuleNames()
+        check(expectedName == null || expectedName !in before) { "$expectedName is already loaded" }
+        val staged = root("mkdir -p /data/adb/kpm/.staging && chmod 0700 /data/adb/kpm/.staging && " +
+            "cp ${shellQuote(file.absolutePath)} ${shellQuote(staging)} && chmod 0600 ${shellQuote(staging)}")
+        check(staged.isSuccess) { staged.err.joinToString("\n").ifBlank { "Cannot stage KPM file" } }
+        val result = root("$daemon kpm load ${shellQuote(staging)} ${shellQuote(args)}")
+        check(result.isSuccess) { result.err.joinToString("\n").ifBlank { "KPM load failed (exit ${result.code})" } }
+        val added = kpmModuleNames() - before
+        loadedName = expectedName?.takeIf { it in added } ?: added.singleOrNull()
+        check(loadedName != null && (expectedName == null || loadedName == expectedName)) {
+            "KPM load returned success but the loaded module could not be verified; boot persistence was not changed"
+        }
+        check(kpmQuery("info ${shellQuote(loadedName!!)}").isNotBlank()) { "KPM module info is empty" }
+        check(loadedName!!.matches(Regex("[A-Za-z0-9_.-]+")) && loadedName != "." && loadedName != "..") {
+            "KPM module identity cannot be persisted safely"
+        }
+        dest = "/data/adb/kpm/$loadedName.kpm"
+        // Rename only after runtime verification. The .args sidecar is read as data by ksud.
+        val saved = root("printf '%s' ${shellQuote(args)} > ${shellQuote("$staging.args")} && " +
+            "chmod 0600 ${shellQuote("$staging.args")} && " +
+            "mv -f ${shellQuote("$staging.args")} ${shellQuote("$dest.args")} && " +
+            "mv -f ${shellQuote(staging)} ${shellQuote(dest)}")
+        check(saved.isSuccess) { "KPM loaded, but saving boot persistence failed: ${saved.err.joinToString("\n")}" }
+        persisted = true
+        FlashResult(0, "", false)
+    } catch (e: Exception) {
+        val message = e.message ?: "KPM installation failed"
+        onStderr(message)
+        FlashResult(-1, message, false)
+    } finally {
+        if (!persisted) loadedName?.let { name ->
+            runCatching { root("$daemon kpm unload ${shellQuote(name)}") }
+                .onFailure { onStderr("Failed to roll back runtime load: ${it.message}") }
+        }
+        runCatching { root("rm -f ${shellQuote(staging)} ${shellQuote("$staging.args")}") }
+        file.delete()
+    }
 }
 
 fun flashKpmModule(
@@ -345,65 +406,33 @@ fun flashKpmModule(
     onStdout: (String) -> Unit,
     onStderr: (String) -> Unit
 ): FlashResult {
-    val resolver = ksuApp.contentResolver
-    // 保留原始文件名并做一次白名单过滤，避免多个模块都被覆盖成同名文件；
-    // 同时加载的是 /data/adb/kpm 下的全局副本（boot 时也从这里自动加载），
-    // 而不是 app 私有 cache 目录——内核态 filp_open 访问 app_data_file 会受 SELinux 限制。
-    val rawName = uri.getFileName(ksuApp)?.takeIf { it.isNotBlank() } ?: "module.kpm"
-    val safeName = rawName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "module.kpm" }
-    with(resolver.openInputStream(uri)) {
-        val file = File(ksuApp.cacheDir, safeName)
-        file.outputStream().use { output ->
-            this?.copyTo(output)
-        }
-        val dest = "/data/adb/kpm/$safeName"
-        val cmd = "mkdir -p /data/adb/kpm && cp ${file.absolutePath} $dest && ${getKsuDaemonPath()} kpm load $dest"
-        val result = flashWithIO(cmd, onStdout, onStderr)
-        Log.i("XECKernelPro", "flash kpm module $uri result: $result")
-
-        file.delete()
-
-        return FlashResult(result)
-    }
+    // file:// providers need not implement query(DISPLAY_NAME).
+    val name = runCatching { uri.getFileName(ksuApp) }.getOrNull()
+        ?: uri.lastPathSegment ?: "module.kpm"
+    return loadKpmStream(name, null, "", {
+        ksuApp.contentResolver.openInputStream(uri)
+            ?: error("Cannot open the selected KPM file")
+    }, onStdout, onStderr)
 }
 
-/**
- * 内置 susfs_lite.kpm 装载（③）：从 APK assets/kpm/ 提取到 cacheDir，拷入
- * /data/adb/kpm/ 全局副本（与手动刷 .kpm 完全同一条路，boot 时自动重载），
- * 默认参数 = 管理器自身 uid 可见 + 隐藏 /data/adb 与 /debug_ramdisk 前缀。
- * 样例保持实验性定位：只覆盖 stat 族 + faccessat，getdents64 不隐藏。
- */
+private fun loadBuiltinKpm(
+    asset: String,
+    module: String,
+    args: String,
+    onStdout: (String) -> Unit,
+    onStderr: (String) -> Unit,
+): FlashResult = loadKpmStream(asset, module, args, {
+    ksuApp.assets.open("kpm/$asset")
+}, onStdout, onStderr)
+
 fun flashBuiltinSusfsLite(
     onStdout: (String) -> Unit,
     onStderr: (String) -> Unit
-): FlashResult {
-    val safeName = "susfs_lite.kpm"
-    // assets/kpm/ 由 CI（build-xecpro.yml）填充；本地直接 assembleRelease 的
-    // APK 没有这个条目——返回失败而不是抛异常（调用方只认 code）。
-    val present = runCatching { ksuApp.assets.list("kpm") }.getOrNull()
-        ?.contains(safeName) == true
-    if (!present) {
-        return FlashResult(-1, "built-in kpm payload missing from assets", false)
-    }
-    val file = File(ksuApp.cacheDir, safeName)
-    ksuApp.assets.open("kpm/$safeName").use { input ->
-        file.outputStream().use { output ->
-            input.copyTo(output)
-        }
-    }
-    val managerUid = ksuApp.applicationInfo.uid
-    val dest = "/data/adb/kpm/$safeName"
-    val args = "allow_uids=$managerUid;prefix=/data/adb,/debug_ramdisk"
-    val cmd =
-        "mkdir -p /data/adb/kpm && cp ${file.absolutePath} $dest && " +
-            "${getKsuDaemonPath()} kpm load $dest '$args'"
-    val result = flashWithIO(cmd, onStdout, onStderr)
-    Log.i("XECKernelPro", "flash builtin kpm result: $result")
-
-    file.delete()
-
-    return FlashResult(result)
-}
+): FlashResult = loadBuiltinKpm(
+    "susfs_lite.kpm", "susfs_lite",
+    "allow_uids=${ksuApp.applicationInfo.uid};prefix=/data/adb,/debug_ramdisk",
+    onStdout, onStderr,
+)
 
 private const val AK3_UPDATER_ENTRY = "META-INF/com/google/android/update-binary"
 
@@ -642,22 +671,25 @@ fun installBootKpm(
     onStdout: (String) -> Unit,
     onStderr: (String) -> Unit,
 ): FlashResult {
-    val resolver = ksuApp.contentResolver
-    val bootFile = with(resolver.openInputStream(bootUri)) {
-        val file = File(ksuApp.cacheDir, "kpm-boot.img")
-        file.outputStream().use { output -> this?.copyTo(output) }
-        file
+    val bootFile = File.createTempFile("kpm-boot-", ".img", ksuApp.cacheDir)
+    return try {
+        val input = ksuApp.contentResolver.openInputStream(bootUri)
+            ?: error("Cannot open the selected boot image")
+        input.use { source -> bootFile.outputStream().use { source.copyTo(it) } }
+        check(bootFile.length() > 0) { "The selected boot image is empty" }
+        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val outFile = File(downloadsDir, "XECKernelPro_KPM_patched_${System.currentTimeMillis()}.img")
+        val result = flashWithIO("${shellQuote(getKsuDaemonPath())} boot-patch-kpm " +
+            "-b ${shellQuote(bootFile.absolutePath)} -o ${shellQuote(outFile.absolutePath)} --force", onStdout, onStderr)
+        // This creates an image; it does not flash the running boot partition.
+        FlashResult(result, false)
+    } catch (e: Exception) {
+        val message = e.message ?: "KPM boot patch failed"
+        onStderr(message)
+        FlashResult(-1, message, false)
+    } finally {
+        bootFile.delete()
     }
-
-    val downloadsDir =
-        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-    val outFile = File(downloadsDir, "XECKernelPro_KPM_patched_${System.currentTimeMillis()}.img")
-    val cmd = "${getKsuDaemonPath()} boot-patch-kpm -b ${bootFile.absolutePath} -o ${outFile.absolutePath} --force"
-    val result = flashWithIO(cmd, onStdout, onStderr)
-    Log.i("XECKernelPro", "install kpm result: ${result.isSuccess}")
-
-    bootFile.delete()
-    return FlashResult(result)
 }
 
 fun embedKpm(
@@ -675,7 +707,7 @@ fun embedKpm(
         onStderr(msg)
         return FlashResult(-1, msg, false)
     }
-    val cmd = "${getKsuDaemonPath()} boot-patch-kpm --flash"
+    val cmd = "${shellQuote(getKsuDaemonPath())} boot-patch-kpm --flash"
     val result = flashWithIO(cmd, onStdout, onStderr)
     Log.i("XECKernelPro", "embed kpm result: ${result.isSuccess}")
     return FlashResult(result)

@@ -28,6 +28,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -40,8 +42,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import me.weishu.kernelsu.ksuApp
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.ObserveAsEvents
+import me.weishu.kernelsu.ui.design.glass.XGlassDialog
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.navigation3.LocalNavigator
@@ -60,6 +64,8 @@ import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SnackbarHost
 import top.yukonga.miuix.kmp.basic.SnackbarHostState as MiuixSnackbarHostState
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
@@ -101,18 +107,40 @@ fun KpmScreen(
     }
 
     val navigator = LocalNavigator.current
+    val canAct = uiState.hasLoaded && !uiState.isLoading && !uiState.isFlashing
+    var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var pendingTitle by remember { mutableStateOf("") }
+    fun confirm(title: String, action: () -> Unit) {
+        if (!canAct) return
+        pendingTitle = title
+        pendingAction = action
+    }
     val onEmbed = {
-        navigator.push(Route.Flash(FlashIt.FlashBootKpmEmbed))
+        confirm(ksuApp.resources.getString(R.string.kpm_embed)) {
+            navigator.push(Route.Flash(FlashIt.FlashBootKpmEmbed))
+        }
+    }
+    if (pendingAction != null) {
+        XGlassDialog(show = true, onDismissRequest = { pendingAction = null }, backdrop = null) {
+            Text(text = pendingTitle)
+            Text(text = stringResource(R.string.kpm_action_confirm))
+            TextButton(text = stringResource(android.R.string.cancel), onClick = { pendingAction = null })
+            TextButton(text = stringResource(android.R.string.ok), enabled = canAct, onClick = {
+                val action = pendingAction
+                pendingAction = null
+                if (canAct) action?.invoke()
+            })
+        }
     }
 
     KpmScreenMiuix(
         uiState = uiState,
         snackbarHostState = miuixSnackbarHostState,
-        onFlash = { pickKpmLauncher.launch("*/*") },
+        onFlash = { if (canAct && uiState.active) pickKpmLauncher.launch("*/*") },
         onEmbed = onEmbed,
-        onFlashBuiltin = { viewModel.flashBuiltin() },
-        onLoadAntiwipe = { viewModel.loadAntiwipe() },
-        onUnloadAntiwipe = { viewModel.unloadAntiwipe() },
+        onFlashBuiltin = { confirm(ksuApp.resources.getString(R.string.kpm_builtin_load), viewModel::flashBuiltin) },
+        onLoadAntiwipe = { confirm(ksuApp.resources.getString(R.string.kpm_antiwipe_load), viewModel::loadAntiwipe) },
+        onUnloadAntiwipe = { confirm(ksuApp.resources.getString(R.string.kpm_antiwipe_unload), viewModel::unloadAntiwipe) },
         onBack = { navigator.pop() },
     )
 }
@@ -128,6 +156,7 @@ private fun KpmScreenMiuix(
     onUnloadAntiwipe: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val canAct = uiState.hasLoaded && !uiState.isLoading && !uiState.isFlashing
     val scrollBehavior = MiuixScrollBehavior()
     val enableBlur = LocalEnableBlur.current
     val backdrop = rememberBlurBackdrop(enableBlur)
@@ -186,11 +215,11 @@ private fun KpmScreenMiuix(
                 ) {
                     KpmStatusCardMiuix(uiState)
                     KpmModuleListMiuix(uiState.modules)
-                    if (!uiState.active) {
+                    if (!uiState.active && uiState.hasLoaded) {
                         Card(
                             modifier = Modifier.xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
                             colors = CardDefaults.defaultColors(color = Color.Transparent),
-                            onClick = onEmbed,
+                            onClick = { if (canAct) onEmbed() },
                         ) {
                             BasicComponent(
                                 title = stringResource(R.string.kpm_embed),
@@ -208,7 +237,7 @@ private fun KpmScreenMiuix(
                     Card(
                         modifier = Modifier.xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
                         colors = CardDefaults.defaultColors(color = Color.Transparent),
-                        onClick = onFlash,
+                        onClick = { if (canAct && uiState.active) onFlash() },
                     ) {
                         BasicComponent(
                             title = if (uiState.isFlashing) stringResource(R.string.processing) else stringResource(R.string.kpm_flash),
@@ -227,7 +256,7 @@ private fun KpmScreenMiuix(
                         Card(
                             modifier = Modifier.xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
                             colors = CardDefaults.defaultColors(color = Color.Transparent),
-                            onClick = onFlashBuiltin,
+                            onClick = { if (canAct) onFlashBuiltin() },
                         ) {
                             BasicComponent(
                                 title = stringResource(R.string.kpm_builtin_load),
@@ -248,7 +277,7 @@ private fun KpmScreenMiuix(
                         Card(
                             modifier = Modifier.xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
                             colors = CardDefaults.defaultColors(color = Color.Transparent),
-                            onClick = if (uiState.antiwipeLoaded) onUnloadAntiwipe else onLoadAntiwipe,
+                            onClick = { if (canAct) { if (uiState.antiwipeLoaded) onUnloadAntiwipe() else onLoadAntiwipe() } },
                         ) {
                             BasicComponent(
                                 title = stringResource(
@@ -279,12 +308,16 @@ private fun KpmScreenMiuix(
 @Composable
 private fun KpmStatusCardMiuix(uiState: KpmUiState) {
     val active = uiState.active
-    val title = if (active) {
+    val title = if (uiState.isLoading || !uiState.hasLoaded) {
+        stringResource(R.string.processing)
+    } else if (active) {
         stringResource(R.string.kpm_activated)
     } else {
         stringResource(R.string.kpm_not_activated)
     }
-    val summary = if (active) {
+    val summary = if (uiState.error.isNotEmpty()) {
+        uiState.error
+    } else if (active) {
         stringResource(R.string.kpm_version, uiState.version)
     } else {
         stringResource(R.string.kpm_not_activated_hint)

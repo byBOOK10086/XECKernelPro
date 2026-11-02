@@ -14,6 +14,7 @@ data class KpmUiState(
     val hasLoaded: Boolean = false,
     val isFlashing: Boolean = false,
     val active: Boolean = false,
+    val error: String = "",
     val version: String = "",
     val modules: List<String> = emptyList(),
     /** 防格模块（antiwipe）当前是否已载入。 */
