@@ -37,7 +37,7 @@ mod runtime {
     use std::fs::{self, File, OpenOptions};
     use std::io::{ErrorKind, Write};
     use std::os::fd::AsRawFd;
-    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     use std::os::unix::process::CommandExt;
     use std::path::Path;
     use std::process::{Command, Stdio};
@@ -121,7 +121,6 @@ mod runtime {
     impl Lock {
         fn acquire(name: &str, nonblock: bool) -> Result<Option<Self>> {
             fs::create_dir_all(DIR)?;
-            use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(DIR, fs::Permissions::from_mode(0o700))?;
             let file = OpenOptions::new()
                 .create(true)
@@ -272,7 +271,7 @@ mod runtime {
     }
 
     /// Call before KPM, common scripts, built-ins, properties, mounts or policy.
-    pub fn begin(stage: &str) -> Result<bool> {
+    pub fn begin(event: &str) -> Result<bool> {
         root()?;
         let guard = locked()?;
         let id = boot_id()?;
@@ -298,7 +297,7 @@ mod runtime {
         if !state.pending {
             return Ok(false);
         }
-        state.stage = stage.into();
+        state.stage = event.into();
         migrate(&mut state)?;
         save(&state)?;
         let rescue = state.rescue;
@@ -307,7 +306,7 @@ mod runtime {
         spawn_watch()?;
         Ok(!rescue)
     }
-    pub fn allow_stage(stage: &str) -> bool {
+    pub fn allow_stage(event: &str) -> bool {
         let result = (|| -> Result<bool> {
             let _guard = locked()?;
             let mut state = load()?;
@@ -319,7 +318,7 @@ mod runtime {
                 return Ok(false);
             }
             if state.pending {
-                state.stage = stage.into();
+                state.stage = event.into();
             }
             save(&state)?;
             Ok(true)
@@ -327,7 +326,7 @@ mod runtime {
         match result {
             Ok(allowed) => allowed,
             Err(e) => {
-                log::error!("boot guard gates {stage}: {e:#}");
+                log::error!("boot guard gates {event}: {e:#}");
                 false
             }
         }
