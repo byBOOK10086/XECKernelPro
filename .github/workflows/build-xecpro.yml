@@ -79,6 +79,12 @@ jobs:
           /tmp/boot-guard-tests
       - name: Transaction policy tests on cloud host
         run: python3 scripts/test_boot_txn_host.py
+      - name: KPM ELF validator host test
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+            kernel/kpmcore/tests/elf_validate_test.c -o /tmp/kpm-elf-test
+          /tmp/kpm-elf-test
+
       - name: KPM parser and ABI host tests
         run: |
           for test_script in scripts/test_antiwipe_host.py scripts/test_kpm_loader_host.py scripts/test_susfs_lite_host.py; do
