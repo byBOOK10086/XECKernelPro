@@ -318,7 +318,10 @@ pub fn on_boot_completed() {
         error!("stealth entrance: {e:#}");
     }
 
-    run_stage("boot-completed", ScriptWait::Until(Instant::now() + defs::BOOT_STAGE_TIMEOUT));
+    run_stage(
+        "boot-completed",
+        ScriptWait::Until(Instant::now() + defs::BOOT_STAGE_TIMEOUT),
+    );
     if let Err(error) = crate::boot_guard::startup_ready() {
         error!("boot guard readiness failed: {error:#}");
     }
