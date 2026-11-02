@@ -114,7 +114,7 @@ static long antiwipe_init(const char *args, const char *event, void *reserved)
 
 static long antiwipe_ctl0(const char *ctl_args, char *out_msg, int outlen)
 {
-    char buf[128];
+    char buf[128] = {0};
 
     buf[0] = '\0';
 
@@ -136,8 +136,16 @@ static long antiwipe_ctl0(const char *ctl_args, char *out_msg, int outlen)
         s_append_dec(buf, (int)sizeof(buf), ksu_antiwipe_blocked());
     }
 
-    if (out_msg && outlen > 0)
-        _copy_to_user(out_msg, buf, sizeof(buf));
+    if (out_msg && outlen > 0) {
+        unsigned long n = 1;
+        while (n < sizeof(buf) && buf[n - 1])
+            n++;
+        if (n > (unsigned long)outlen)
+            n = (unsigned long)outlen;
+        buf[n - 1] = '\0';
+        if (_copy_to_user(out_msg, buf, n))
+            return -14;
+    }
 
     return 0;
 }
