@@ -631,14 +631,6 @@ static DEFINE_MUTEX(module_op_lock);
  * Cleared as soon as kp_call_init() returns. */
 static struct kp_module *kp_loading_mod;
 
-/* One PAGE_SIZE module_alloc'd RWX page. The safe kallsyms_on_each_symbol()
- * stand-in bounces KPM callbacks through an 8-byte bti-c trampoline at
- * page+8 so the kernel's BLR lands on a guarded landing pad instead of the
- * bare-metal (non-BTI) KPM code. Bytes page+0..+7 are kept zeroed so the
- * KCFI inline check's [target-4] read stays inside the mapped page. */
-static void *kp_callback_tramp;
-static unsigned long kp_callback_tramp_size;
-
 typedef int (*kp_kallsyms_on_each_symbol_t)(kp_kallsyms_cb_t fn, void *data);
 static kp_kallsyms_on_each_symbol_t kp_real_kallsyms_on_each_symbol;
 
@@ -679,12 +671,6 @@ bool kp_kpm_cfi_allowed_addr(unsigned long addr)
 		}
 	}
 
-	if (kp_callback_tramp) {
-		start = (unsigned long)kp_callback_tramp;
-		end = start + kp_callback_tramp_size;
-		if (addr >= start && addr < end)
-			return true;
-	}
 	return false;
 }
 
@@ -796,6 +782,18 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 		goto free;
 	}
 	logkfe("KPM [%s] relocations applied\n", info->info.name);
+    {
+        unsigned long start = (unsigned long)mod->start;
+        unsigned long end = start + mod->text_size;
+        if (!mod->init || !*mod->init || (unsigned long)*mod->init < start ||
+            (unsigned long)*mod->init >= end ||
+            (mod->exit && *mod->exit && ((unsigned long)*mod->exit < start ||
+                                       (unsigned long)*mod->exit >= end))) {
+            set_load_error(info, "KPM entry point is outside executable sections");
+            rc = -ENOEXEC;
+            goto free;
+        }
+    }
 
 	/* GKI 5.10+ module_alloc returns PAGE_KERNEL (PXN set, non-executable).
 	 * The kernel's own module loader calls set_memory_x() after writing; we
@@ -874,9 +872,11 @@ long kp_unload_module(const char *name, void __user *reserved)
 		rc = -ENOENT;
 		goto out;
 	}
+	rc = mod->exit ? kp_call_exit(mod->exit, reserved) : 0;
+    if (rc)
+        goto out;
 	list_del_rcu(&mod->list);
 	synchronize_rcu();
-	rc = mod->exit ? kp_call_exit(mod->exit, reserved) : 0;
 
 	if (mod->args)
 		kvfree(mod->args);
@@ -1215,30 +1215,11 @@ int kp_kpm_init(void)
 		return -ENOSYS;
 	}
 
-	/* One RWX page to hold the bti-c trampoline for KPM kallsyms callbacks.
-	 * GKI 5.10+ module_alloc returns PAGE_KERNEL (NX), so make it executable
-	 * like the KPM images. */
-	kp_callback_tramp = kp_malloc_exec(PAGE_SIZE);
-	if (kp_callback_tramp) {
-		kp_callback_tramp_size = PAGE_SIZE;
-		if (kp_set_memory_x) {
-			int xret = kp_do_set_memory_x((unsigned long)kp_callback_tramp, 1);
-			if (xret)
-				logke("callback trampoline set_memory_x(%px) = %d\n",
-				      kp_callback_tramp, xret);
-		}
-		/* module_alloc may return PXN/NX; clear PXN/UXN/GP like KPM images */
-		kp_clear_bti_gp((unsigned long)kp_callback_tramp, PAGE_SIZE);
-		memset(kp_callback_tramp, 0, PAGE_SIZE);
-	} else {
-		logkw("callback trampoline alloc failed; KPM kallsyms iteration unshielded\n");
-	}
-
 	kp_real_kallsyms_on_each_symbol =
 		(kp_kallsyms_on_each_symbol_t)find_kernel_symbol_exact("kallsyms_on_each_symbol");
 	WRITE_ONCE(kp_kpm_ready, true);
 
-	logki("kpm loader ready (module_alloc=%px flush_icache_all=%px tramp=%px)\n", kp_module_alloc,
-	      kp_flush_icache_all_fn, kp_callback_tramp);
+	logki("kpm loader ready (module_alloc=%px flush_icache_all=%px)\n", kp_module_alloc,
+	      kp_flush_icache_all_fn);
 	return 0;
 }

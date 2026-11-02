@@ -86,6 +86,27 @@ static int kpm_validate_elf(const void *data, unsigned long len)
                 s[sh->sh_link].sh_type != SHT_SYMTAB || sh->sh_entsize != ent ||
                 sh->sh_size % ent || sh->sh_offset % __alignof__(Elf64_Rela))
                 return -1;
+            if (sh->sh_type == SHT_RELA) {
+                const Elf64_Rela *rel = (const Elf64_Rela *)((const char *)data + sh->sh_offset);
+                unsigned long count = s[sh->sh_link].sh_size / sizeof(Elf64_Sym);
+                for (j = 0; j < sh->sh_size / ent; j++) {
+                    unsigned long width = 4;
+                    unsigned int type = ELF64_R_TYPE(rel[j].r_info);
+                    if (!type)
+                        continue;
+                    /* ABS64/PREL64 write eight bytes; narrow relocations are
+                     * conservatively bounded to an instruction width. */
+                    if (type == 257 || type == 260)
+                        width = 8;
+                    if (ELF64_R_SYM(rel[j].r_info) >= count ||
+                        rel[j].r_offset > s[sh->sh_info].sh_size ||
+                        width > s[sh->sh_info].sh_size - rel[j].r_offset)
+                        return -1;
+                }
+            } else if (sh->sh_flags & SHF_ALLOC) {
+                /* AArch64 modules require explicit addends. */
+                return -1;
+            }
         }
     }
     return 0;
