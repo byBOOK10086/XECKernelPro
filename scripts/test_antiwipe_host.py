@@ -34,6 +34,7 @@ def rec(name, kind, value=0, vlen=0, extra=b'', kflag=0):
     records.append(struct.pack('<III', st(name), (kind<<24)|vlen|kflag, value)+extra)
     return len(records)
 intid = rec('int', 1, 4, extra=struct.pack('<I', 0x01000020))
+longid = rec('unsigned long', 1, 8, extra=struct.pack('<I', 64))
 u16id = rec('short', 1, 2, extra=struct.pack('<I', 16))
 charid = rec('char', 1, 1, extra=struct.pack('<I', 8))
 arrid = rec('', 3, extra=struct.pack('<III', charid, intid, 16))
@@ -58,7 +59,7 @@ for name, fields in layouts.items():
     ids[name]=rec(name,4, max([b+w for _,w,b in fields] or [8]),len(fields),payload)
 pointers={n:rec('',2,i) for n,i in ids.items()}
 def fn(name, params):
-    payload=b''.join(struct.pack('<II',0,pointers[x] if x else intid) for x in params)
+    payload=b''.join(struct.pack('<II',0,pointers[x] if x else (longid if name=='security_file_ioctl' and i==2 else intid)) for i,x in enumerate(params))
     proto=rec('',13,intid,len(params),payload); rec(name,12,proto)
 for name,params in [
  ('security_file_open',['file']),('security_inode_unlink',['inode','dentry']),
@@ -73,13 +74,26 @@ def blob(recs=None, strs=None):
     t=b''.join(records if recs is None else recs); s=bytes(strings if strs is None else strs)
     return struct.pack('<HBBIIIII',0xeb9f,1,0,24,0,len(t),len(t),len(s))+t+s
 valid=blob()
+# Explicitly cover kflag bit31: all ordinary members remain valid at bitfield size0.
+kflag_records=[]
+for r in records:
+    rr=bytearray(r); info=struct.unpack_from('<I',rr,4)[0]
+    if (info>>24)&31==4: struct.pack_into('<I',rr,4,info|0x80000000)
+    kflag_records.append(bytes(rr))
+# A selected member's nonzero bitfield width must be rejected.
+bitfield_records=list(kflag_records)
+for i,r in enumerate(bitfield_records):
+    info=struct.unpack_from('<I',r,4)[0]
+    if (info>>24)&31==4 and info&65535:
+        rr=bytearray(r); struct.pack_into('<I',rr,20,0x08000000);bitfield_records[i]=bytes(rr);break
+
 with tempfile.TemporaryDirectory(prefix='antiwipe-host-') as tmp:
     tmp=pathlib.Path(tmp); src=tmp/'parser.c'; exe=tmp/'parser'
     src.write_text(types+'\n'+offsets+'\n'+parser+'\n'+harness)
     cc=os.environ.get('CC','clang')
     subprocess.run([cc,'-std=gnu11','-O1','-g','-ffunction-sections','-fdata-sections',
         '-fsanitize=address,undefined','-fno-omit-frame-pointer',str(src),'-Wl,--gc-sections','-o',str(exe)],check=True)
-    cases=[('valid-zero-offsets-float',valid,0),('empty',b'',-57),('short-header',valid[:12],-57),
+    cases=[('valid-zero-offsets-float',valid,0),('valid-kflag31',blob(recs=kflag_records),0),('reject-bitfield-member',blob(recs=bitfield_records),-61),('empty',b'',-57),('short-header',valid[:12],-57),
       ('bad-magic',b'xx'+valid[2:],-57),('unterminated-string',blob(strs=strings[:-1]+b'x'),-57),
       ('truncated-type',blob(recs=[records[0][:-1]]),-57),
       ('overflow-header',valid[:12]+struct.pack('<I',0xfffffff0)+valid[16:],-57)]
@@ -94,4 +108,18 @@ with tempfile.TemporaryDirectory(prefix='antiwipe-host-') as tmp:
         subprocess.run([cc,'--target=aarch64-linux-gnu','-std=gnu11','-O2','-nostdinc',
           '-ffreestanding','-mgeneral-regs-only','-mno-outline-atomics','-Wall','-Wextra',
           '-Werror','-Wno-unused-function','-c',str(aw/name),'-o',str(tmp/(name+'.o'))],check=True)
-    print(f'PASS {len(cases)} BTF ASan/UBSan cases; arm64 module ABI/callback compile')
+    policy=(aw/'antiwipe_full.c').read_text()
+    assert 'bool auto_arm' not in policy
+    assert 'aw_strcmp(ctl_args, "arm")' in policy
+    assert 'hook_unwrap_remove(' not in policy and 'unhook_syscalln(' not in policy
+    assert 'get_task_exe_file(task)' in policy and 'fput(exe);' in policy
+    assert 'if (aw_hook_count)' in policy and 'return -EBUSY;' in policy
+    assert 'kf_strnlen(target, AW_PATH_HINT_LEN - 1)' in policy
+    # Compile exact real short-string helper into an ASan test translation unit.
+    import re
+    func=re.search(r'static bool aw_dir_prefix\(.*?\n}',policy,re.S).group(0)
+    helper=tmp/'short.c'
+    helper.write_text('#include <string.h>\n#include <stdbool.h>\n#include <assert.h>\n#define kf_strlen strlen\n#define kf_strncmp strncmp\n'+func+'\nint main(void){char a[2]={47,0};char b[1]={0};assert(!aw_dir_prefix(a,"/data/system"));assert(!aw_dir_prefix(b,"/data"));assert(aw_dir_prefix("/data/system","/data"));return 0;}')
+    subprocess.run([cc,'-fsanitize=address,undefined','-g',str(helper),'-o',str(tmp/'short')],check=True)
+    subprocess.run([str(tmp/'short')],check=True)
+    print(f'PASS {len(cases)} BTF ASan/UBSan cases; short string sanitizer; explicit arm/lifetime invariants; arm64 module ABI/callback compile')
