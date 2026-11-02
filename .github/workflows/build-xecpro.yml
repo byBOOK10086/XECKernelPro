@@ -18,6 +18,7 @@ on:
     branches:
       - debug/stability-20261102
       - fix/rescue-integration-31261
+      - fix/kpm-integration-31261
     tags:
       - "v*"
   workflow_dispatch:
@@ -361,6 +362,13 @@ jobs:
           name: builtin-kpm
           path: artifacts/builtin-kpm
 
+      - name: Build antiwipe KPM from current source
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld
+          cd kpm/antiwipe_full
+          bash build.sh
+          cp antiwipe.kpm ../../manager/app/src/main/assets/kpm/antiwipe.kpm
       - name: Place built-in KPM payload into assets
         # ③ build-kpm job 用真内核树编出的 susfs_lite.kpm，打进 APK assets/kpm/；
         # 管理器 KPM 页的「内置加载」入口从这里提取（KsuCli.flashBuiltinSusfsLite）。

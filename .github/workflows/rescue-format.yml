@@ -1,7 +1,7 @@
 name: Format recovery branch in cloud
 on:
   push:
-    branches: [fix/rescue-integration-31261]
+    branches: [fix/rescue-integration-31261, fix/kpm-integration-31261]
 permissions:
   contents: write
 jobs:
@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: fix/rescue-integration-31261
+          ref: ${{ github.ref_name }}
       - run: rustup update stable
       - name: Apply repository formatter in cloud
         run: |
@@ -20,7 +20,7 @@ jobs:
             git config user.email "xec-recovery-ci@users.noreply.github.com"
             git add userspace/
             git commit -m "style: Format recovery integration with cloud rustfmt"
-            git push origin HEAD:fix/rescue-integration-31261
+            git push origin HEAD:${{ github.ref_name }}
           fi
       - name: Execute recovery policy tests
         run: |
