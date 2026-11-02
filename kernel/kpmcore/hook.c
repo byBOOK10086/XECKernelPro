@@ -344,7 +344,7 @@ typedef uint64_t (*transit0_func_t)();
     (hook_chain_t *)chain_va; \
 })
 
-uint64_t __attribute__((section(".transit0.text"))) __attribute__((__noinline__)) _transit0()
+uint64_t __attribute__((section(".transit0.text"))) __attribute__((__noinline__)) __nocfi __attribute__((no_sanitize("cfi"))) _transit0()
 {
     hook_chain_t *hook_chain = current_inline_hook_chain();
     if (!hook_chain) return 0;
@@ -374,7 +374,7 @@ extern void _transit0_end();
 // transit4
 typedef uint64_t (*transit4_func_t)(uint64_t, uint64_t, uint64_t, uint64_t);
 
-uint64_t __attribute__((section(".transit4.text"))) __attribute__((__noinline__))
+uint64_t __attribute__((section(".transit4.text"))) __attribute__((__noinline__)) __nocfi __attribute__((no_sanitize("cfi")))
 _transit4(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3)
 {
     hook_chain_t *hook_chain = current_inline_hook_chain();
@@ -410,7 +410,7 @@ extern void _transit4_end();
 // transit8:
 typedef uint64_t (*transit8_func_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
-uint64_t __attribute__((section(".transit8.text"))) __attribute__((__noinline__))
+uint64_t __attribute__((section(".transit8.text"))) __attribute__((__noinline__)) __nocfi __attribute__((no_sanitize("cfi")))
 _transit8(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6,
           uint64_t arg7)
 {
@@ -453,7 +453,7 @@ extern void _transit8_end();
 typedef uint64_t (*transit12_func_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
                                      uint64_t, uint64_t, uint64_t, uint64_t);
 
-uint64_t __attribute__((section(".transit12.text"))) __attribute__((__noinline__))
+uint64_t __attribute__((section(".transit12.text"))) __attribute__((__noinline__)) __nocfi __attribute__((no_sanitize("cfi")))
 _transit12(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6,
            uint64_t arg7, uint64_t arg8, uint64_t arg9, uint64_t arg10, uint64_t arg11)
 {
@@ -591,23 +591,23 @@ hook_err_t hook_prepare(hook_t *hook)
 }
 KP_EXPORT_SYMBOL(hook_prepare);
 
-void hook_install(hook_t *hook)
+int hook_install(hook_t *hook)
 {
     void *addrs[TRAMPOLINE_MAX_NUM];
     for (int32_t i = 0; i < hook->tramp_insts_num; ++i) {
         addrs[i] = (uint32_t *)hook->origin_addr + i;
     }
-    hotpatch(addrs, hook->tramp_insts, hook->tramp_insts_num);
+    return hotpatch(addrs, hook->tramp_insts, hook->tramp_insts_num);
 }
 KP_EXPORT_SYMBOL(hook_install);
 
-void hook_uninstall(hook_t *hook)
+int hook_uninstall(hook_t *hook)
 {
     void *addrs[TRAMPOLINE_MAX_NUM];
     for (int32_t i = 0; i < hook->tramp_insts_num; ++i) {
         addrs[i] = (uint32_t *)hook->origin_addr + i;
     }
-    hotpatch(addrs, hook->origin_insts, hook->tramp_insts_num);
+    return hotpatch(addrs, hook->origin_insts, hook->tramp_insts_num);
 }
 KP_EXPORT_SYMBOL(hook_uninstall);
 
@@ -629,7 +629,8 @@ hook_err_t hook(void *func, void *replace, void **backup)
           hook->origin_addr, hook->replace_addr, hook->relo_addr, (uint64_t)hook);
     err = hook_prepare(hook);
     if (err) goto out;
-    hook_install(hook);
+    err = hook_install(hook);
+    if (err) goto out;
     logkv("Hook func: %llx succsseed\n", hook->func_addr);
     return HOOK_NO_ERR;
 out:
@@ -644,8 +645,11 @@ void unhook(void *func)
     uint64_t origin = branch_func_addr((uint64_t)func);
     hook_t *hook = hook_get_mem_from_origin(origin);
     if (!hook) return;
-    hook_uninstall(hook);
-    hook_mem_free(hook);
+    if (hook_uninstall(hook))
+        return;
+    hook_mem_retire(hook);
+    /* A CPU may already be in the relocated original or callback chain.
+     * Keep executable backing until a separately proven quiescence protocol. */
     logkv("Unhook func: %llx\n", (uint64_t)func);
 }
 KP_EXPORT_SYMBOL(unhook);
@@ -769,7 +773,8 @@ hook_err_t hook_wrap(void *func, int32_t argno, void *before, void *after, void 
     if (err) goto err;
     err = hook_chain_add(chain, before, after, udata);
     if (err) goto err;
-    hook_chain_install(chain);
+    err = hook_chain_install(chain);
+    if (err) goto err;
     logkv("Wrap func: %llx succsseed\n", hook->func_addr);
     return HOOK_NO_ERR;
 err:
@@ -793,9 +798,10 @@ void hook_unwrap_remove(void *func, void *before, void *after, int remove)
     for (int i = 0; i < HOOK_CHAIN_NUM; i++) {
         if (chain->states[i] != CHAIN_ITEM_STATE_EMPTY) return;
     }
-    hook_chain_uninstall(chain);
-    // todo: unsafe
-    hook_mem_free(chain);
+    if (hook_chain_uninstall(chain))
+        return;
+    hook_mem_retire(chain);
+    /* Retain retired executable backing for in-flight trampoline users. */
     logkv("Unwrap func: %llx\n", (uint64_t)func);
 }
 KP_EXPORT_SYMBOL(hook_unwrap_remove);

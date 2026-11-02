@@ -74,7 +74,7 @@
 #endif
 
 #if defined(CONFIG_CFI_CLANG) && defined(__clang__)
-#define KPM_NO_CFI __attribute__((no_sanitize("cfi")))
+#define KPM_NO_CFI __nocfi __attribute__((no_sanitize("cfi")))
 #else
 #define KPM_NO_CFI
 #endif
@@ -144,7 +144,7 @@ static void kpm_resolve_symbols(void)
     pr_info("kpm: set_memory_x=%px set_memory_nx=%px\n", kpm_set_memory_x, kpm_set_memory_nx);
 }
 
-static int kpm_set_module_exec(void *addr, unsigned int size)
+static noinline KPM_NO_CFI int kpm_set_module_exec(void *addr, unsigned int size)
 {
     int npages, ret;
 
@@ -161,7 +161,7 @@ static int kpm_set_module_exec(void *addr, unsigned int size)
     return ret;
 }
 
-static void kpm_set_module_nx(void *addr, unsigned int size)
+static noinline KPM_NO_CFI void kpm_set_module_nx(void *addr, unsigned int size)
 {
     if (!kpm_set_memory_nx || !addr)
         return;
@@ -325,45 +325,12 @@ static void *kpm_get_sh_base(struct kp_load_info *info, const char *secname)
     return (void *)info->hdr + info->sechdrs[idx].sh_offset;
 }
 
+#include "../kpmcore/elf_validate.h"
 static int kpm_elf_header_check(struct kp_load_info *info)
 {
-    const Elf64_Ehdr *h = info->hdr;
-    size_t shbytes;
-    unsigned int i;
-
-    if (info->len < sizeof(*h)) {
-        kpm_set_error(info, "ELF header is truncated");
+    if (kpm_validate_elf(info->hdr, info->len)) {
+        kpm_set_error(info, "invalid or unsupported KPM ELF tables, strings or symbols");
         return -ENOEXEC;
-    }
-    if (memcmp(h->e_ident, ELFMAG, SELFMAG) || h->e_ident[EI_CLASS] != ELFCLASS64 ||
-        h->e_ident[EI_DATA] != ELFDATA2LSB || h->e_type != ET_REL ||
-        h->e_machine != EM_AARCH64 || h->e_shentsize != sizeof(Elf64_Shdr) ||
-        !h->e_shnum || h->e_shstrndx >= h->e_shnum) {
-        kpm_set_error(info, "ELF header is not a supported AArch64 relocatable module");
-        return -ENOEXEC;
-    }
-    if (h->e_shoff > info->len || h->e_shnum > (info->len - h->e_shoff) / sizeof(Elf64_Shdr)) {
-        kpm_set_error(info, "ELF section headers are invalid");
-        return -ENOEXEC;
-    }
-    shbytes = (size_t)h->e_shnum * sizeof(Elf64_Shdr);
-    (void)shbytes;
-    /* Validate every file-backed section before any pointer arithmetic. */
-    for (i = 0; i < h->e_shnum; i++) {
-        const Elf64_Shdr *sh = (const void *)((const char *)h + h->e_shoff) + i;
-        if (sh->sh_type != SHT_NOBITS &&
-            (sh->sh_offset > info->len || sh->sh_size > info->len - sh->sh_offset)) {
-            kpm_set_error(info, "ELF section data is out of bounds");
-            return -ENOEXEC;
-        }
-    }
-    {
-        const Elf64_Shdr *shstr = (const void *)((const char *)h + h->e_shoff) + h->e_shstrndx;
-        if (shstr->sh_type == SHT_NOBITS || shstr->sh_offset > info->len ||
-            shstr->sh_size > info->len - shstr->sh_offset) {
-            kpm_set_error(info, "ELF section-name table is invalid");
-            return -ENOEXEC;
-        }
     }
     return 0;
 }
@@ -1331,7 +1298,11 @@ noinline int sukisu_handle_kpm(unsigned long control_code, unsigned long arg1, u
             goto invalid_arg;
         }
 
-        res = copy_to_user((void __user *)arg2, &buf, size);
+        if (size < 0) {
+            res = size;
+            goto exit;
+        }
+        res = copy_to_user((void __user *)arg2, &buf, size) ? -EFAULT : 0;
 
     } else if (control_code == SUKISU_KPM_LIST) {
         char buf[1024];
@@ -1357,8 +1328,12 @@ noinline int sukisu_handle_kpm(unsigned long control_code, unsigned long arg1, u
             goto exit;
         }
 
-        if (res > 0 && copy_to_user((void __user *)arg1, &buf, res) != 0)
-            pr_info("kpm: Copy to user failed.");
+        if (res >= len) {
+            res = -ENOBUFS;
+            goto exit;
+        }
+        if (copy_to_user((void __user *)arg1, &buf, res + 1))
+            res = -EFAULT;
 
     } else if (control_code == SUKISU_KPM_CONTROL) {
         char kpm_name[KPM_NAME_LEN] = { 0 };
@@ -1389,6 +1364,10 @@ noinline int sukisu_handle_kpm(unsigned long control_code, unsigned long arg1, u
 
         unsigned int outlen = (unsigned int)arg2;
         int len = strlen(buffer);
+        if (!arg1 || !outlen || arg2 > sizeof(buffer)) {
+            res = -EINVAL;
+            goto exit;
+        }
         if (len >= outlen)
             len = outlen - 1;
 
@@ -1397,7 +1376,7 @@ noinline int sukisu_handle_kpm(unsigned long control_code, unsigned long arg1, u
 
 exit:
     if (copy_to_user((void __user *)result_code, &res, sizeof(res)) != 0)
-        pr_info("kpm: Copy to user failed.");
+        return -EFAULT;
 
     return 0;
 invalid_arg:

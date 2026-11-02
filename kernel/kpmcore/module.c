@@ -123,17 +123,19 @@ static void kp_clear_bti_gp(unsigned long base, unsigned long size)
  * only these indirect-call boundaries. noinline: if inlined into a
  * CFI-instrumented caller, the kCFI type-hash load of [fnptr - 4] dereferences
  * NULL when the allocator is absent (6.10+ has no module_alloc). */
-__attribute__((no_sanitize("cfi"), __noinline__))
+__nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static void *kp_malloc_exec(unsigned long size)
 {
 	if (kp_module_alloc)
 		return kp_module_alloc(size);
 	if (kp_execmem_alloc)
 		return kp_execmem_alloc(0 /* EXECMEM_MODULE_TEXT */, size);
+	/* vmalloc pages are not executable on GKI; refuse this path below rather
+	 * than entering arbitrary KPM bytes and taking an instruction fault. */
 	return vmalloc(size);
 }
 
-__attribute__((no_sanitize("cfi"), __noinline__))
+__nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static void kp_free_exec(void *region)
 {
 	if (kp_module_memfree)
@@ -144,7 +146,7 @@ static void kp_free_exec(void *region)
 		vfree(region);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static void kp_flush_kpm_icache(void *start, size_t size)
 {
 	(void)start; (void)size; (void)kp_flush_icache_all_fn;
@@ -154,44 +156,44 @@ static void kp_flush_kpm_icache(void *start, size_t size)
 	isb();
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static long kp_call_init(mod_initcall_t *fn, const char *args, const char *event,
 			 void __user *reserved)
 {
 	return (*fn)(args, event, reserved);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static long kp_call_exit(mod_exitcall_t *fn, void __user *reserved)
 {
 	return (*fn)(reserved);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static int kp_do_set_memory_x(unsigned long addr, int npages)
 {
 	return kp_set_memory_x(addr, npages);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static int kp_do_set_memory_nx(unsigned long addr, int npages)
 {
 	return kp_set_memory_nx(addr, npages);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static long kp_call_ctl0(mod_ctl0call_t *fn, const char *args, char __user *out, int outlen)
 {
 	return (*fn)(args, out, outlen);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static long kp_call_ctl1(mod_ctl1call_t *fn, void *a1, void *a2, void *a3)
 {
 	return (*fn)(a1, a2, a3);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static long kp_call_event(mod_eventcall_t *fn, const char *event, const char *args,
 			  void __user *reserved)
 {
@@ -315,7 +317,7 @@ static unsigned long get_sh_size(struct kp_load_info *info, const char *secname)
 	if (!idx)
 		return 0;
 	Elf_Shdr *infosec = &info->sechdrs[idx];
-	return infosec->sh_entsize;
+	return infosec->sh_size;
 }
 
 static void layout_sections(struct kp_module *mod, struct kp_load_info *info)
@@ -474,7 +476,8 @@ static int rewrite_section_headers(struct kp_load_info *info)
 	info->sechdrs[0].sh_addr = 0;
 	for (int i = 1; i < info->hdr->e_shnum; i++) {
 		Elf_Shdr *shdr = &info->sechdrs[i];
-		if (shdr->sh_type != SHT_NOBITS && info->len < shdr->sh_offset + shdr->sh_size)
+		if (shdr->sh_type != SHT_NOBITS &&
+		    (shdr->sh_offset > info->len || shdr->sh_size > info->len - shdr->sh_offset))
 			return -ENOEXEC;
 		/* Mark all sections sh_addr with their address in the temporary image. */
 		shdr->sh_addr = (size_t)info->hdr + shdr->sh_offset;
@@ -534,7 +537,15 @@ static int setup_load_info(struct kp_load_info *info)
 {
 	int rc = 0;
 	info->sechdrs = (void *)info->hdr + info->hdr->e_shoff;
-	info->secstrings = (void *)info->hdr + info->sechdrs[info->hdr->e_shstrndx].sh_offset;
+	{
+		Elf64_Shdr *shstr = &info->sechdrs[info->hdr->e_shstrndx];
+		if (shstr->sh_type == SHT_NOBITS || !shstr->sh_size ||
+		    !memchr((void *)info->hdr + shstr->sh_offset, 0, shstr->sh_size)) {
+			set_load_error(info, "ELF section-name table is invalid");
+			return -ENOEXEC;
+		}
+		info->secstrings = (void *)info->hdr + shstr->sh_offset;
+	}
 
 	if ((rc = rewrite_section_headers(info))) {
 		logke("rewrite section error\n");
@@ -597,23 +608,14 @@ static int setup_load_info(struct kp_load_info *info)
 	return 0;
 }
 
+#include "elf_validate.h"
 static int elf_header_check(struct kp_load_info *info)
 {
-	if (info->len <= sizeof(*(info->hdr))) {
-		set_load_error(info, "ELF header is truncated");
-		return -ENOEXEC;
-	}
-	if (memcmp(info->hdr->e_ident, ELFMAG, SELFMAG) || info->hdr->e_type != ET_REL ||
-	    info->hdr->e_machine != EM_AARCH64 || info->hdr->e_shentsize != sizeof(Elf_Shdr)) {
-		set_load_error(info, "ELF header is not a supported AArch64 relocatable module");
-		return -ENOEXEC;
-	}
-	if (info->hdr->e_shoff >= info->len ||
-	    (info->hdr->e_shnum * sizeof(Elf_Shdr) > info->len - info->hdr->e_shoff)) {
-		set_load_error(info, "ELF section headers are invalid");
-		return -ENOEXEC;
-	}
-	return 0;
+    if (kpm_validate_elf(info->hdr, info->len)) {
+        set_load_error(info, "invalid or unsupported KPM ELF tables, strings or symbols");
+        return -ENOEXEC;
+    }
+    return 0;
 }
 
 struct kp_module modules = { 0 };
@@ -628,14 +630,6 @@ static DEFINE_MUTEX(module_op_lock);
  * find_check_fn() panic / BTI faults (the KPM may iterate kallsyms from init).
  * Cleared as soon as kp_call_init() returns. */
 static struct kp_module *kp_loading_mod;
-
-/* One PAGE_SIZE module_alloc'd RWX page. The safe kallsyms_on_each_symbol()
- * stand-in bounces KPM callbacks through an 8-byte bti-c trampoline at
- * page+8 so the kernel's BLR lands on a guarded landing pad instead of the
- * bare-metal (non-BTI) KPM code. Bytes page+0..+7 are kept zeroed so the
- * KCFI inline check's [target-4] read stays inside the mapped page. */
-static void *kp_callback_tramp;
-static unsigned long kp_callback_tramp_size;
 
 typedef int (*kp_kallsyms_on_each_symbol_t)(kp_kallsyms_cb_t fn, void *data);
 static kp_kallsyms_on_each_symbol_t kp_real_kallsyms_on_each_symbol;
@@ -677,12 +671,6 @@ bool kp_kpm_cfi_allowed_addr(unsigned long addr)
 		}
 	}
 
-	if (kp_callback_tramp) {
-		start = (unsigned long)kp_callback_tramp;
-		end = start + kp_callback_tramp_size;
-		if (addr >= start && addr < end)
-			return true;
-	}
 	return false;
 }
 
@@ -693,41 +681,35 @@ bool kp_kpm_cfi_allowed_addr(unsigned long addr)
  * iterator. find_check_fn() then validates the trampoline page (covered by
  * kp_kpm_cfi_allowed_addr, noop check fn) and the BLR lands on bti c, which
  * direct-branches into the non-BTI KPM callback with the call args intact. */
-__attribute__((no_sanitize("cfi")))
+struct kp_kallsyms_context {
+    kp_kallsyms_cb_t callback;
+    void *data;
+};
+
+/* A compiler-generated kernel callback has the correct CFI type and BTI
+ * landing pad. Stack context makes recursive/concurrent iterations independent. */
+static noinline __nocfi __attribute__((no_sanitize("cfi")))
+int kp_forward_kallsyms(void *opaque, const char *name,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
+                       struct module *owner,
+#endif
+                       unsigned long address)
+{
+    struct kp_kallsyms_context *ctx = opaque;
+    return ctx->callback(ctx->data, name,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
+                         owner,
+#endif
+                         address);
+}
+
+__nocfi __attribute__((no_sanitize("cfi")))
 int kp_kpm_safe_kallsyms_on_each_symbol(kp_kallsyms_cb_t fn, void *data)
 {
-	if (!kp_real_kallsyms_on_each_symbol)
-		return -EOPNOTSUPP;
-
-	if (!kp_callback_tramp || !kp_kpm_cfi_allowed_addr((unsigned long)fn))
-		return kp_real_kallsyms_on_each_symbol(fn, data);
-
-	{
-		unsigned long flags;
-		u32 *slot = (u32 *)kp_callback_tramp + 2; /* page+8 */
-		u32 *pad = (u32 *)kp_callback_tramp;
-		long off = (long)((unsigned long)fn - ((unsigned long)slot + 4));
-
-		pr_emerg(KPLKM_TAG ": kallsyms safe: fn=%px tramp=%px off=%ld\n",
-			 (void *)fn, kp_callback_tramp, off);
-
-		spin_lock_irqsave(&module_lock, flags);
-		pad[0] = 0; /* keep [target-4] mapped + zeroed for the KCFI check */
-		pad[1] = 0;
-		slot[0] = 0xd503245f; /* bti c */
-		slot[1] = 0x14000000 | (((unsigned long)off >> 2) & 0x03ffffff); /* b <fn> */
-		dsb(ishst);
-		asm volatile("ic iallu");
-		dsb(ish);
-		isb();
-		spin_unlock_irqrestore(&module_lock, flags);
-	}
-
-	{
-		int r = kp_real_kallsyms_on_each_symbol((kp_kallsyms_cb_t)((char *)kp_callback_tramp + 8), data);
-		pr_emerg(KPLKM_TAG ": kallsyms safe done rc=%d\n", r);
-		return r;
-	}
+    struct kp_kallsyms_context ctx = { fn, data };
+    if (!kp_real_kallsyms_on_each_symbol || !fn)
+        return -EOPNOTSUPP;
+    return kp_real_kallsyms_on_each_symbol(kp_forward_kallsyms, &ctx);
 }
 
 static struct kp_module *kp_find_module(const char *name)
@@ -800,17 +782,35 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 		goto free;
 	}
 	logkfe("KPM [%s] relocations applied\n", info->info.name);
+    {
+        unsigned long start = (unsigned long)mod->start;
+        unsigned long end = start + mod->text_size;
+        if (!mod->init || !*mod->init || (unsigned long)*mod->init < start ||
+            (unsigned long)*mod->init >= end ||
+            (mod->exit && *mod->exit && ((unsigned long)*mod->exit < start ||
+                                       (unsigned long)*mod->exit >= end))) {
+            set_load_error(info, "KPM entry point is outside executable sections");
+            rc = -ENOEXEC;
+            goto free;
+        }
+    }
 
 	/* GKI 5.10+ module_alloc returns PAGE_KERNEL (PXN set, non-executable).
 	 * The kernel's own module loader calls set_memory_x() after writing; we
 	 * must do the same, otherwise kp_call_init triggers a permission fault. */
-	if (kp_set_memory_x) {
-		
+	if (!kp_set_memory_x) {
+		set_load_error(info, "executable memory transition is unavailable");
+		rc = -EOPNOTSUPP;
+		goto free;
+	}
+	{
 		int npages = (mod->size + PAGE_SIZE - 1) >> PAGE_SHIFT;
 		int xret = kp_do_set_memory_x((unsigned long)mod->start, npages);
-		if (xret)
-			logke("KPM [%s] set_memory_x(%px, %d) = %d\n",
-			      info->info.name, mod->start, npages, xret);
+		if (xret) {
+			set_load_error(info, "set executable memory failed");
+			rc = xret;
+			goto free;
+		}
 	}
 
 	/* Disable BTI on the KPM pages: the module is bare-metal compiled
@@ -872,9 +872,11 @@ long kp_unload_module(const char *name, void __user *reserved)
 		rc = -ENOENT;
 		goto out;
 	}
+	rc = mod->exit ? kp_call_exit(mod->exit, reserved) : 0;
+    if (rc)
+        goto out;
 	list_del_rcu(&mod->list);
 	synchronize_rcu();
-	rc = mod->exit ? kp_call_exit(mod->exit, reserved) : 0;
 
 	if (mod->args)
 		kvfree(mod->args);
@@ -931,7 +933,14 @@ long kp_load_module_path(const char *path, const char *args, void __user *reserv
 	memset(data, 0, len);
 
 	loff_t pos = 0;
-	kernel_read(filp, data, len, &pos);
+	{
+		ssize_t rd = kernel_read(filp, data, len, &pos);
+		if (rd < 0 || rd != len) {
+			rc = rd < 0 ? rd : -EIO;
+			set_kpm_load_result(reserved, rc, "read module file failed");
+			goto free;
+		}
+	}
 	filp_close(filp, 0);
 	filp = 0;
 
@@ -989,7 +998,14 @@ long kp_load_module_path_event(const char *path, const char *args, const char *e
 	memset(data, 0, len);
 
 	loff_t pos = 0;
-	kernel_read(filp, data, len, &pos);
+	{
+		ssize_t rd = kernel_read(filp, data, len, &pos);
+		if (rd < 0 || rd != len) {
+			rc = rd < 0 ? rd : -EIO;
+			set_kpm_load_result(reserved, rc, "read module file failed");
+			goto free;
+		}
+	}
 	filp_close(filp, 0);
 	filp = 0;
 
@@ -1199,30 +1215,11 @@ int kp_kpm_init(void)
 		return -ENOSYS;
 	}
 
-	/* One RWX page to hold the bti-c trampoline for KPM kallsyms callbacks.
-	 * GKI 5.10+ module_alloc returns PAGE_KERNEL (NX), so make it executable
-	 * like the KPM images. */
-	kp_callback_tramp = kp_malloc_exec(PAGE_SIZE);
-	if (kp_callback_tramp) {
-		kp_callback_tramp_size = PAGE_SIZE;
-		if (kp_set_memory_x) {
-			int xret = kp_do_set_memory_x((unsigned long)kp_callback_tramp, 1);
-			if (xret)
-				logke("callback trampoline set_memory_x(%px) = %d\n",
-				      kp_callback_tramp, xret);
-		}
-		/* module_alloc may return PXN/NX; clear PXN/UXN/GP like KPM images */
-		kp_clear_bti_gp((unsigned long)kp_callback_tramp, PAGE_SIZE);
-		memset(kp_callback_tramp, 0, PAGE_SIZE);
-	} else {
-		logkw("callback trampoline alloc failed; KPM kallsyms iteration unshielded\n");
-	}
-
 	kp_real_kallsyms_on_each_symbol =
 		(kp_kallsyms_on_each_symbol_t)find_kernel_symbol_exact("kallsyms_on_each_symbol");
 	WRITE_ONCE(kp_kpm_ready, true);
 
-	logki("kpm loader ready (module_alloc=%px flush_icache_all=%px tramp=%px)\n", kp_module_alloc,
-	      kp_flush_icache_all_fn, kp_callback_tramp);
+	logki("kpm loader ready (module_alloc=%px flush_icache_all=%px)\n", kp_module_alloc,
+	      kp_flush_icache_all_fn);
 	return 0;
 }

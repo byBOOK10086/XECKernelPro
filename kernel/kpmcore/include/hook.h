@@ -246,8 +246,8 @@ int32_t branch_absolute(uint32_t *buf, uint64_t addr);
 int32_t ret_absolute(uint32_t *buf, uint64_t addr);
 
 hook_err_t hook_prepare(hook_t *hook);
-void hook_install(hook_t *hook);
-void hook_uninstall(hook_t *hook);
+int hook_install(hook_t *hook);
+int hook_uninstall(hook_t *hook);
 
 /**
  * @brief Inline-hook function which address is @param func with function @param replace, 
@@ -381,14 +381,14 @@ static inline void *fp_get_origin_func(void *hook_args)
     return (void *)chain->hook.origin_fp;
 }
 
-static inline void hook_chain_install(hook_chain_t *chain)
+static inline int hook_chain_install(hook_chain_t *chain)
 {
-    hook_install(&chain->hook);
+    return hook_install(&chain->hook);
 }
 
-static inline void hook_chain_uninstall(hook_chain_t *chain)
+static inline int hook_chain_uninstall(hook_chain_t *chain)
 {
-    hook_uninstall(&chain->hook);
+    return hook_uninstall(&chain->hook);
 }
 
 static inline hook_err_t hook_wrap0(void *func, hook_chain0_callback before, hook_chain0_callback after, void *udata)
