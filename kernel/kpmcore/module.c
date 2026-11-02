@@ -317,7 +317,7 @@ static unsigned long get_sh_size(struct kp_load_info *info, const char *secname)
 	if (!idx)
 		return 0;
 	Elf_Shdr *infosec = &info->sechdrs[idx];
-	return infosec->sh_entsize;
+	return infosec->sh_size;
 }
 
 static void layout_sections(struct kp_module *mod, struct kp_load_info *info)
