@@ -146,7 +146,7 @@ static void kp_free_exec(void *region)
 		vfree(region);
 }
 
-__nocfi __attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static void kp_flush_kpm_icache(void *start, size_t size)
 {
 	(void)start; (void)size; (void)kp_flush_icache_all_fn;
@@ -156,44 +156,44 @@ static void kp_flush_kpm_icache(void *start, size_t size)
 	isb();
 }
 
-__nocfi __attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static long kp_call_init(mod_initcall_t *fn, const char *args, const char *event,
 			 void __user *reserved)
 {
 	return (*fn)(args, event, reserved);
 }
 
-__nocfi __attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static long kp_call_exit(mod_exitcall_t *fn, void __user *reserved)
 {
 	return (*fn)(reserved);
 }
 
-__nocfi __attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static int kp_do_set_memory_x(unsigned long addr, int npages)
 {
 	return kp_set_memory_x(addr, npages);
 }
 
-__nocfi __attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static int kp_do_set_memory_nx(unsigned long addr, int npages)
 {
 	return kp_set_memory_nx(addr, npages);
 }
 
-__nocfi __attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static long kp_call_ctl0(mod_ctl0call_t *fn, const char *args, char __user *out, int outlen)
 {
 	return (*fn)(args, out, outlen);
 }
 
-__nocfi __attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static long kp_call_ctl1(mod_ctl1call_t *fn, void *a1, void *a2, void *a3)
 {
 	return (*fn)(a1, a2, a3);
 }
 
-__nocfi __attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static long kp_call_event(mod_eventcall_t *fn, const char *event, const char *args,
 			  void __user *reserved)
 {
