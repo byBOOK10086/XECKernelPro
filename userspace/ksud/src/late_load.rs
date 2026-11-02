@@ -87,7 +87,13 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
 
     // Late-load bypasses on_post_data_fs, so apply the same direct-flash
     // transaction guard before any module startup work.
-    if crate::boot_txn::on_post_fs_data()? {
+    if crate::boot_txn::on_post_fs_data().inspect_err(|error| {
+        if let Err(persist_error) = crate::boot_guard::recovery_failed(&format!(
+            "boot transaction recovery failed: {error:#}"
+        )) {
+            log::error!("persist recovery failure: {persist_error:#}");
+        }
+    })? {
         warn!("boot transaction rollback completed during late-load; skipping module startup");
         crate::boot_guard::rollback_applied()?;
         return Ok(());

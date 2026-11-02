@@ -20,7 +20,15 @@ pub fn on_post_fs_data() -> Result<()> {
     // Resolve a pending direct-flash transaction before any module, SELinux, or
     // SUSFS work can run. A successful rollback owns this boot and must return
     // immediately.
-    if !mount_state && crate::boot_txn::on_post_fs_data()? {
+    if !mount_state
+        && crate::boot_txn::on_post_fs_data().inspect_err(|error| {
+            if let Err(persist_error) = crate::boot_guard::recovery_failed(&format!(
+                "boot transaction recovery failed: {error:#}"
+            )) {
+                log::error!("persist recovery failure: {persist_error:#}");
+            }
+        })?
+    {
         warn!("boot transaction rollback completed; skipping module startup");
         crate::boot_guard::rollback_applied()?;
         return Ok(());

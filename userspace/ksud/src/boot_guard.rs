@@ -288,7 +288,13 @@ mod runtime {
             state.pending = true;
             state.started = uptime()?;
             state.ready = false;
-            state.ota = crate::boot_txn::is_ota_pending()?;
+            match crate::boot_txn::is_ota_pending() {
+                Ok(ota) => state.ota = ota,
+                Err(error) => {
+                    state.rescue = true;
+                    state.reason = format!("cannot inspect boot transaction: {error:#}");
+                }
+            }
         }
         if !state.pending {
             return Ok(false);
@@ -346,6 +352,16 @@ mod runtime {
         ensure!(status.success(), "reboot command failed");
         Ok(())
     }
+    pub fn recovery_failed(reason: &str) -> Result<()> {
+        let _guard = locked()?;
+        let mut state = load()?;
+        state.rescue = true;
+        state.pending = false;
+        state.stage = "transaction-error".into();
+        state.reason = reason.into();
+        save(&state)
+    }
+
     pub fn rollback_applied() -> Result<()> {
         let _guard = locked()?;
         let mut state = load()?;
@@ -444,7 +460,9 @@ mod runtime {
     }
 }
 #[cfg(target_os = "android")]
-pub use runtime::{allow_stage, begin, resume, rollback_applied, startup_ready, status, watch};
+pub use runtime::{
+    allow_stage, begin, recovery_failed, resume, rollback_applied, startup_ready, status, watch,
+};
 
 #[cfg(test)]
 mod tests {
