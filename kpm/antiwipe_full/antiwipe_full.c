@@ -1414,8 +1414,10 @@ static long aw_ctl0(const char *ctl_args, char *out_msg, int outlen)
             aw_status_line(buf, sizeof(buf));
     } else if (ctl_args && !aw_strcmp(ctl_args, "last")) {
         struct aw_last_event ev;
-        if (__atomic_test_and_set(&aw_last_lock, __ATOMIC_ACQUIRE))
+        if (__atomic_test_and_set(&aw_last_lock, __ATOMIC_ACQUIRE)) {
+            __atomic_clear(&aw_lifecycle_busy, __ATOMIC_RELEASE);
             return -EBUSY;
+        }
         ev = aw_last;
         __atomic_clear(&aw_last_lock, __ATOMIC_RELEASE);
         kf_snprintf(buf, sizeof(buf), "last=%s pid=%u comm=%s target=%s", aw_kind_name(ev.kind),
