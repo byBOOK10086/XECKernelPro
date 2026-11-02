@@ -103,6 +103,7 @@ static u32 types_len;
 int aw_setattr_args;
 int aw_rename_args;
 bool aw_layout_ready;
+bool aw_bprm_valid, aw_truncate_valid;
 
 static const char *btf_str(const char *str_base, u32 str_len, u32 name_off)
 {
@@ -241,6 +242,7 @@ static int btf_parse(void)
     size_t base, off = 0;
     u32 len;
     aw_layout_ready = false;
+    aw_bprm_valid = aw_truncate_valid = false;
     aw_setattr_args = aw_rename_args = 0;
     for (size_t w = 0; w < AW_WANTED_N; w++)
         aw_wanted[w].found = false;
@@ -301,6 +303,11 @@ static int btf_parse(void)
                         return -ENODATA;
                     *want->out = bits / 8;
                     want->found = true;
+                if (!kf_strcmp(name, "security_bprm_check_security") ||
+                    !kf_strcmp(name, "security_bprm_check"))
+                    aw_bprm_valid = true;
+                if (!kf_strcmp(name, "security_file_truncate"))
+                    aw_truncate_valid = true;
                 }
             }
         }
@@ -333,13 +340,25 @@ static int btf_parse(void)
                 } else {
                     if (n != (u32)want->nargs)
                         return -EOPNOTSUPP;
-                    for (u32 i = 0; i < n; i++)
-                        if (want->params[i] && !btf_ptr_to(params[2*i+1], want->params[i], str, len))
+                    for (u32 i = 0; i < n; i++) {
+                        const struct btf_type_rec *pt = btf_unqual(params[2*i+1]);
+                        if (want->params[i]) {
+                            if (!btf_ptr_to(params[2*i+1], want->params[i], str, len))
+                                return -EOPNOTSUPP;
+                        } else if (!pt || ((pt->info >> 24) & 31) != BTF_KIND_INT ||
+                                   (pt->size_type != 4 && pt->size_type != 8)) {
                             return -EOPNOTSUPP;
+                        }
+                    }
                     if (!kf_strcmp(name, "security_inode_rename"))
                         aw_rename_args = n;
                 }
                 want->found = true;
+                if (!kf_strcmp(name, "security_bprm_check_security") ||
+                    !kf_strcmp(name, "security_bprm_check"))
+                    aw_bprm_valid = true;
+                if (!kf_strcmp(name, "security_file_truncate"))
+                    aw_truncate_valid = true;
             }
         }
         off += sizeof(*t) + btf_type_size(kind, vlen);

@@ -355,8 +355,7 @@ static u32 aw_task_pid(void *task)
     size_t off = aw_off.task_pid;
     u32 pid = 0;
 
-    if (off > 0)
-        memcpy(&pid, (const char *)task + off, sizeof(pid));
+    memcpy(&pid, (const char *)task + off, sizeof(pid));
     return pid;
 }
 
@@ -1293,7 +1292,9 @@ static int aw_arm(void)
     if (aw_armed)
         return 0;
 
-    if (!aw_layout_ready || !sp_el0_is_current || !has_syscall_wrapper)
+    if (!aw_layout_ready || !sp_el0_is_current || !has_syscall_wrapper ||
+        (aw_fn_bprm_check && !aw_bprm_valid) ||
+        (aw_fn_file_truncate && !aw_truncate_valid))
         return -EOPNOTSUPP;
     aw_fill_devices();
     aw_fill_pins();
@@ -1423,8 +1424,13 @@ static long aw_ctl0(const char *ctl_args, char *out_msg, int outlen)
         else
             aw_status_line(buf, sizeof(buf));
     } else if (ctl_args && !aw_strcmp(ctl_args, "last")) {
-        kf_snprintf(buf, sizeof(buf), "last=%s pid=%u comm=%s target=%s", aw_kind_name(aw_last.kind),
-                    aw_last.pid, aw_last.comm, aw_last.target);
+        struct aw_last_event ev;
+        if (__atomic_test_and_set(&aw_last_lock, __ATOMIC_ACQUIRE))
+            return -EBUSY;
+        ev = aw_last;
+        __atomic_clear(&aw_last_lock, __ATOMIC_RELEASE);
+        kf_snprintf(buf, sizeof(buf), "last=%s pid=%u comm=%s target=%s", aw_kind_name(ev.kind),
+                    ev.pid, ev.comm, ev.target);
     } else if (ctl_args && !aw_strcmp(ctl_args, "selftest")) {
         u64 blocked = __atomic_add_fetch(&aw_blocked, 0, __ATOMIC_RELAXED);
         int offsets_ok = aw_layout_ready;
@@ -1484,9 +1490,9 @@ static long antiwipe_init(const char *args, const char *event, void *reserved)
     {
         unsigned int ms = jiffies_to_msecs(100000);
 
-        aw_hz = ms ? (100000000u / ms) : 250;
+        aw_hz = ms ? (100000000u / ms) : 0;
         if (aw_hz < 50 || aw_hz > 2000)
-            aw_hz = 250;
+            return -EOPNOTSUPP;
     }
 
     aw_fn_file_truncate = (void *)kallsyms_lookup_name("security_file_truncate");
