@@ -272,7 +272,8 @@ fun loadAntiwipeKpm(
 fun unloadAntiwipeKpm(): Boolean {
     val daemon = shellQuote(getKsuDaemonPath())
     val result = withNewRootShell {
-        newJob().add("rm -f /data/adb/kpm/antiwipe.kpm /data/adb/kpm/antiwipe.kpm.args && " +
+        newJob().add("rm -f /data/adb/kpm/antiwipe.kpm /data/adb/kpm/antiwipe.kpm.args /data/adb/kpm/antiwipe.kpm.arm && " +
+            "$daemon kpm control ${shellQuote(ANTIWIPE_MODULE)} ${shellQuote("off")}; " +
             "$daemon kpm unload ${shellQuote(ANTIWIPE_MODULE)}").to(ArrayList(), ArrayList()).exec()
     }
     return result.isSuccess && ANTIWIPE_MODULE !in kpmModuleNames()
@@ -379,12 +380,19 @@ private fun loadKpmStream(
             "KPM module identity cannot be persisted safely"
         }
         dest = "/data/adb/kpm/$loadedName.kpm"
+        if (loadedName == ANTIWIPE_MODULE) {
+            val armed = root("$daemon kpm control ${shellQuote(ANTIWIPE_MODULE)} ${shellQuote("arm")}")
+            check(armed.isSuccess) { "Antiwipe loaded inert, but activation failed: ${armed.err.joinToString("\n")}" }
+        }
         // Rename only after runtime verification. The .args sidecar is read as data by ksud.
         val saved = root("printf '%s' ${shellQuote(args)} > ${shellQuote("$staging.args")} && " +
             "chmod 0600 ${shellQuote("$staging.args")} && " +
             "mv -f ${shellQuote("$staging.args")} ${shellQuote("$dest.args")} && " +
             "mv -f ${shellQuote(staging)} ${shellQuote(dest)}")
         check(saved.isSuccess) { "KPM loaded, but saving boot persistence failed: ${saved.err.joinToString("\n")}" }
+        if (loadedName == ANTIWIPE_MODULE) {
+            check(root("touch ${shellQuote("$dest.arm")}").isSuccess) { "Cannot persist antiwipe activation" }
+        }
         persisted = true
         FlashResult(0, "", false)
     } catch (e: Exception) {
