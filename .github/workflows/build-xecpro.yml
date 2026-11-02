@@ -76,6 +76,8 @@ jobs:
           test -f userspace/ksud/src/boot_guard.rs
           rustc --edition 2024 --test userspace/ksud/src/boot_guard.rs -o /tmp/boot-guard-tests
           /tmp/boot-guard-tests
+      - name: Transaction policy tests on cloud host
+        run: python3 scripts/test_boot_txn_host.py
 
   generate-key:
     runs-on: ubuntu-latest
