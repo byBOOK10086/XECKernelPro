@@ -68,10 +68,13 @@ jobs:
     # Keep the workflow NDK aligned with TEESimulator-RS/Gradle and the
     # cargo-ndk native build. Gradle pins 27.3.13750724; using r29 here can
     # make the native and Gradle parts use different toolchains.
+    # Use the release name (r27d == 27.3.13750724): setup-ndk turns the input
+    # into android-ndk-<input>-linux.zip and Google does not publish a
+    # version-named archive, so the bare version 404s.
     - uses: nttld/setup-ndk@v1
       id: setup-ndk
       with:
-        ndk-version: 27.3.13750724
+        ndk-version: r27d
 
     # Builtin modules (tricky_store / TA_enhanced) carry no committed GPL
     # binaries; they are compiled from the vendored upstream sources in

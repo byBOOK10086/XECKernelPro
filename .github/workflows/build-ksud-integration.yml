@@ -25,7 +25,11 @@ jobs:
       - uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
-          ndk-version: 27.3.13750724
+          # r27d == 27.3.13750724 (TEESimulator-RS pins that exact version in
+          # app/build.gradle.kts). setup-ndk builds android-ndk-<input>-linux.zip;
+          # Google only publishes the release-named archive, so the bare version
+          # string 404s. The sdkmanager step below installs the versioned copy.
+          ndk-version: r27d
 
       - name: Install Android SDK components
         run: |
