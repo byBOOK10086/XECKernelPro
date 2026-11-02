@@ -31,7 +31,6 @@ pub mod android {
     use std::fs::{File, OpenOptions};
     use std::io::Write;
     use std::os::fd::AsRawFd;
-    use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
     use std::process::Command;
 
@@ -283,45 +282,49 @@ pub mod android {
 
     pub(super) fn post_ota() -> Result<()> {
         use crate::assets::BOOTCTL_PATH;
-        use crate::defs::ADB_DIR;
         let status = Command::new(BOOTCTL_PATH).arg("hal-info").status()?;
-        if !status.success() {
-            return Ok(());
-        }
+        anyhow::ensure!(status.success(), "bootctl HAL is unavailable");
 
-        let current_slot = Command::new(BOOTCTL_PATH)
+        let current = Command::new(BOOTCTL_PATH)
             .arg("get-current-slot")
-            .output()?
-            .stdout;
-        let current_slot = String::from_utf8(current_slot)?;
-        let current_slot = current_slot.trim();
-        let target_slot = i32::from(current_slot == "0");
-
-        Command::new(BOOTCTL_PATH)
-            .arg(format!("set-active-boot-slot {target_slot}"))
+            .output()?;
+        anyhow::ensure!(current.status.success(), "bootctl get-current-slot failed");
+        let current = String::from_utf8(current.stdout)?;
+        let target = super::ota_target_slot(current.trim())?;
+        let expected = match get_slot_suffix(false).as_str() {
+            "_a" => 1,
+            "_b" => 0,
+            _ => bail!("OTA requires a valid running A/B slot"),
+        };
+        anyhow::ensure!(target == expected, "bootctl and running slot disagree");
+        // Remove a stale script left by releases that committed too early.
+        let legacy = Path::new(crate::defs::ADB_DIR).join("post-fs-data.d/post_ota.sh");
+        match std::fs::remove_file(legacy) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        let status = Command::new(BOOTCTL_PATH)
+            .arg("set-active-boot-slot")
+            .arg(target.to_string())
             .status()?;
-
-        let post_fs_data = Path::new(ADB_DIR).join("post-fs-data.d");
-        utils::ensure_dir_exists(&post_fs_data)?;
-        let post_ota_sh = post_fs_data.join("post_ota.sh");
-
-        let sh_content = format!(
-            r"
-{BOOTCTL_PATH} mark-boot-successful
-rm -f {BOOTCTL_PATH}
-rm -f /data/adb/post-fs-data.d/post_ota.sh
-"
-        );
-
-        std::fs::write(&post_ota_sh, sh_content)?;
-        std::fs::set_permissions(post_ota_sh, std::fs::Permissions::from_mode(0o755))?;
-
+        anyhow::ensure!(status.success(), "bootctl set-active-boot-slot failed");
+        // Keep bootctl available for boot_txn::commit_boot_success at boot-completed.
         Ok(())
     }
 }
 
 #[cfg(target_os = "android")]
 pub use android::*;
+
+#[cfg(any(target_os = "android", test))]
+fn ota_target_slot(current: &str) -> Result<u8> {
+    match current {
+        "0" => Ok(1),
+        "1" => Ok(0),
+        _ => bail!("invalid bootctl current slot: {current}"),
+    }
+}
 
 fn map_file(file: &Path) -> Result<Mmap> {
     let mut f = File::open(file).with_context(|| format!("open {}", file.display()))?;
@@ -1256,5 +1259,17 @@ mod block_modules_tests {
         };
         assert!(ok.validate().is_ok());
         assert!(KsuConfigArgs::default().validate().is_ok());
+    }
+}
+
+#[cfg(test)]
+mod ota_slot_tests {
+    #[test]
+    fn target_is_only_the_other_valid_bootctl_slot() {
+        assert_eq!(super::ota_target_slot("0").unwrap(), 1);
+        assert_eq!(super::ota_target_slot("1").unwrap(), 0);
+        for invalid in ["", "2", "-1", "_a", "0\n1", "failed"] {
+            assert!(super::ota_target_slot(invalid).is_err());
+        }
     }
 }
