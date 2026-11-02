@@ -7,13 +7,13 @@
 #include <linux/compiler.h>
 #include <linux/fs.h>
 #include <linux/gfp.h>
-#include <linux/vmalloc.h>
 #include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/printk.h>
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/version.h>
+#include <linux/vmalloc.h>
 #include <linux/compiler_types.h>
 #include <linux/hashtable.h>
 #include <linux/kref.h>
@@ -467,7 +467,7 @@ static int journal_read(unsigned int slot, unsigned char **image, struct ksu_j_m
         goto out;
     }
     length = ksu_j_length(m.count, sizeof(struct app_profile));
-    data = kvmalloc(length, GFP_KERNEL);
+    data = vmalloc(length);
     if (!data) {
         rc = -ENOMEM;
         goto out;
@@ -494,7 +494,7 @@ static int journal_read(unsigned int slot, unsigned char **image, struct ksu_j_m
     data = NULL;
     rc = 0;
 out:
-    kvfree(data);
+    vfree(data);
     filp_close(fp, 0);
     return rc;
 }
@@ -567,7 +567,7 @@ static void do_persistent_allow_list(struct callback_head *_cb)
     mutex_lock(&allowlist_mutex);
     count = allow_list_count;
     length = ksu_j_length(count, sizeof(struct app_profile));
-    image = kvmalloc(length, GFP_KERNEL);
+    image = vmalloc(length);
     if (!image) {
         rc = -ENOMEM;
         goto unlock_list;
@@ -615,9 +615,9 @@ unlock_list:
 out:
     if (rc)
         pr_err("allowlist journal save failed: %d; previous slot preserved\n", rc);
-    kvfree(image);
-    kvfree(old[0]);
-    kvfree(old[1]);
+    vfree(image);
+    vfree(old[0]);
+    vfree(old[1]);
     revert_creds(saved);
     mutex_unlock(&allowlist_persist_mutex);
     kfree(_cb);
@@ -789,7 +789,7 @@ void ksu_load_allow_list(void)
         goto close_legacy;
     }
     count = (size - sizeof(header)) / stride;
-    legacy = kvmalloc(count ? count * stride : 1, GFP_KERNEL);
+    legacy = vmalloc(count ? count * stride : 1);
     if (!legacy) {
         rc = -ENOMEM;
         goto close_legacy;
@@ -811,9 +811,9 @@ out:
         allowlist_import(NULL, 0, sizeof(struct app_profile), KSU_APP_PROFILE_VER);
         pr_err("allowlist load failed: %d; grants cleared, evidence preserved\n", rc);
     }
-    kvfree(data[0]);
-    kvfree(data[1]);
-    kvfree(legacy);
+    vfree(data[0]);
+    vfree(data[1]);
+    vfree(legacy);
     mutex_unlock(&allowlist_persist_mutex);
     if (migrate)
         ksu_persistent_allow_list();
