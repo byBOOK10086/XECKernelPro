@@ -105,7 +105,8 @@ mod runtime {
                 ota: flag("ota")?,
             };
             ensure!(
-                state.retries <= 2 && state.failures <= u64::from(u32::MAX / 2)
+                state.retries <= 2
+                    && state.failures <= u64::from(u32::MAX / 2)
                     && (!state.pending || !state.boot.is_empty()),
                 "inconsistent state"
             );
@@ -460,7 +461,9 @@ mod runtime {
     }
 }
 #[cfg(target_os = "android")]
-pub use runtime::{allow_stage, begin, recovery_failed, resume, rollback_applied, startup_ready, status, watch};
+pub use runtime::{
+    allow_stage, begin, recovery_failed, resume, rollback_applied, startup_ready, status, watch,
+};
 
 #[cfg(test)]
 mod tests {

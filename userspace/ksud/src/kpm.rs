@@ -224,10 +224,7 @@ fn suki_version() -> Result<String> {
 /// contract: op 8 is optional and older engines refuse it).
 fn suki_load_event(path: &str, args: Option<&str>, event: &str) -> Result<()> {
     let path_c = CString::new(path)?;
-    let args_c = args
-        .map(CString::new)
-        .transpose()?
-        .unwrap_or_default();
+    let args_c = args.map(CString::new).transpose()?.unwrap_or_default();
     let event_c = CString::new(event)?;
     let payload = ksu_uapi::ksu_kpm_load_event_cmd {
         args: args_c.as_ptr() as u64,
