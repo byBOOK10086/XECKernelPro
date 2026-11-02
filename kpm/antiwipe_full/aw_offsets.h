@@ -43,6 +43,7 @@ extern struct aw_offsets aw_off;
 extern int aw_setattr_args;
 extern int aw_rename_args;
 extern bool aw_layout_ready;
+bool aw_btf_hook_validated(const char *name);
 extern bool aw_bprm_valid, aw_truncate_valid;
 
 /* Load and parse /sys/kernel/btf/vmlinux, fill aw_off. Returns 0 on success,

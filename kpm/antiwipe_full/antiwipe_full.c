@@ -39,8 +39,8 @@
  * ctl0 protocol (superset of the legacy thin module; the manager only sends
  * "trust <sec>" and the ksud list/unload paths are name based):
  *   ""        status      "armed=N blocked=N trust=<s> hooks=N devs=N pins=N"
- *   "on"      arm         "armed=1 ..." / error text
- *   "off"     disarm      "disarmed"
+ *   "arm"     arm ("on" alias)         "armed=1 ..." / error text
+ *   "off"     disable enforcement (hooks remain resident)      "disarmed"
  *   "trust N" open window "trust=N"   (N capped at 3600)
  *   "last"    last block  "last=<kind> pid=<p> comm=<c> target=<t>"
  *   "selftest" dry verify "SELFTEST PASS ..." / "SELFTEST FAIL ..."
@@ -227,6 +227,11 @@ struct aw_pin {
 };
 
 static bool aw_armed;
+static bool aw_install_complete;
+static bool aw_lifecycle_busy;
+/* Old generic inline hook detach does not drain callbacks. Keep attached text
+ * and pins resident until reboot; exit rejects unload once hooks were installed.
+ * off is an enforcement switch, not an unsafe callback removal operation. */
 static unsigned long aw_trust_until; /* jiffies deadline, 0 = closed */
 static unsigned long aw_hz = 250;
 static u64 aw_blocked;
@@ -402,12 +407,14 @@ static bool aw_comm_exempt(void *task)
 
 static bool aw_trust_active(void)
 {
-    unsigned long until = aw_trust_until;
+    unsigned long until = __atomic_load_n(&aw_trust_until, __ATOMIC_RELAXED);
 
     if (!until)
         return false;
     if ((long)(jiffies - until) > 0) {
-        aw_trust_until = 0;
+        /* Do not overwrite a concurrently opened trust window. */
+        __atomic_compare_exchange_n(&aw_trust_until, &until, 0, false,
+                                    __ATOMIC_RELAXED, __ATOMIC_RELAXED);
         return false;
     }
     return true;
@@ -742,7 +749,7 @@ static void aw_file_open_before(hook_fargs1_t *args, void *udata)
 
     (void)udata;
 
-    if (!aw_armed || !file)
+    if (!__atomic_load_n(&aw_armed, __ATOMIC_ACQUIRE) || !file)
         return;
     if (!aw_watches_current())
         return;
@@ -811,7 +818,7 @@ static void aw_unlink_before(hook_fargs2_t *args, void *udata)
 
     (void)udata;
 
-    if (!aw_armed || !dentry)
+    if (!__atomic_load_n(&aw_armed, __ATOMIC_ACQUIRE) || !dentry)
         return;
     if (!aw_watches_current())
         return;
@@ -830,7 +837,7 @@ static void aw_rename_before(hook_fargs8_t *args, void *udata)
 
     (void)udata;
 
-    if (!aw_armed)
+    if (!__atomic_load_n(&aw_armed, __ATOMIC_ACQUIRE))
         return;
     if (!aw_watches_current())
         return;
@@ -852,7 +859,7 @@ static void aw_setattr_before(hook_fargs4_t *args, void *udata)
 
     (void)udata;
 
-    if (!aw_armed)
+    if (!__atomic_load_n(&aw_armed, __ATOMIC_ACQUIRE))
         return;
     if (!aw_watches_current())
         return;
@@ -891,7 +898,7 @@ static void aw_bprm_before(hook_fargs1_t *args, void *udata)
 
     (void)udata;
 
-    if (!aw_armed || !bprm)
+    if (!__atomic_load_n(&aw_armed, __ATOMIC_ACQUIRE) || !bprm)
         return;
     if (!aw_watches_current())
         return;
@@ -921,7 +928,7 @@ static void aw_truncate_before(hook_fargs1_t *args, void *udata)
 
     (void)udata;
 
-    if (!aw_armed || !file)
+    if (!__atomic_load_n(&aw_armed, __ATOMIC_ACQUIRE) || !file)
         return;
     if (!aw_watches_current())
         return;
@@ -951,7 +958,7 @@ static void aw_permission_before(hook_fargs2_t *args, void *udata)
 
     (void)udata;
 
-    if (!aw_armed || !file)
+    if (!__atomic_load_n(&aw_armed, __ATOMIC_ACQUIRE) || !file)
         return;
     if (!(mask & MAY_WRITE))
         return;
@@ -1000,7 +1007,7 @@ static void aw_ioctl_before(hook_fargs4_t *args, void *udata)
 
     (void)udata;
 
-    if (!aw_armed || !file)
+    if (!__atomic_load_n(&aw_armed, __ATOMIC_ACQUIRE) || !file)
         return;
     if (!aw_watches_current())
         return;
@@ -1034,7 +1041,7 @@ static void aw_reboot_before(hook_fargs4_t *args, void *udata)
 
     (void)udata;
 
-    if (!aw_armed)
+    if (!__atomic_load_n(&aw_armed, __ATOMIC_ACQUIRE))
         return;
     if (!aw_watches_root_no_comm())
         return;
@@ -1250,38 +1257,21 @@ static int aw_install_hook(void *func, int argno, void *before)
 {
     int rc;
     size_t i;
-
     if (!func)
-        return 0; /* optional target absent on this kernel */
-
+        return -ENODATA;
+    for (i = 0; i < AW_ARRAY_SIZE(aw_hooks); i++)
+        if (!aw_hooks[i].installed)
+            break;
+    if (i == AW_ARRAY_SIZE(aw_hooks))
+        return -ENOSPC;
     rc = hook_wrap(func, argno, before, NULL, NULL);
     if (rc != HOOK_NO_ERR)
-        return rc;
-
-    for (i = 0; i < AW_ARRAY_SIZE(aw_hooks); i++) {
-        if (!aw_hooks[i].installed) {
-            aw_hooks[i].func = func;
-            aw_hooks[i].before = before;
-            aw_hooks[i].installed = true;
-            aw_hook_count++;
-            return 0;
-        }
-    }
-    hook_unwrap_remove(func, before, NULL, 1);
-    return -ENOSPC;
-}
-
-static void aw_uninstall_all(void)
-{
-    int i;
-
-    for (i = AW_ARRAY_SIZE(aw_hooks) - 1; i >= 0; i--) {
-        if (!aw_hooks[i].installed)
-            continue;
-        hook_unwrap_remove(aw_hooks[i].func, aw_hooks[i].before, NULL, 1);
-        aw_hooks[i].installed = false;
-        aw_hook_count--;
-    }
+        return -EOPNOTSUPP;
+    aw_hooks[i].func = func;
+    aw_hooks[i].before = before;
+    aw_hooks[i].installed = true;
+    aw_hook_count++;
+    return 0;
 }
 
 static int aw_arm(void)
@@ -1289,8 +1279,15 @@ static int aw_arm(void)
     int rc;
     int narg_reboot = has_syscall_wrapper ? 1 : 4;
 
-    if (aw_armed)
+    if (__atomic_load_n(&aw_armed, __ATOMIC_ACQUIRE))
         return 0;
+    if (aw_install_complete) {
+        __atomic_store_n(&aw_armed, true, __ATOMIC_RELEASE);
+        return 0;
+    }
+    /* A failed transaction may retain resident callbacks; never duplicate them. */
+    if (aw_hook_count)
+        return -EBUSY;
 
     if (!aw_layout_ready || !sp_el0_is_current || !has_syscall_wrapper ||
         (aw_fn_bprm_check && !aw_bprm_valid) ||
@@ -1303,7 +1300,7 @@ static int aw_arm(void)
         goto fail;
     }
 
-    /* Core three: open / unlink / rmdir. Failure unwinds everything. */
+    /* Enforcement stays disabled until every required attachment succeeds. */
     rc = aw_install_hook((void *)security_file_open, 1, aw_file_open_before);
     if (rc)
         goto fail;
@@ -1329,6 +1326,10 @@ static int aw_arm(void)
         goto fail;
     if ((rc = aw_install_hook((void *)security_file_ioctl, 3, aw_ioctl_before)))
         goto fail;
+    if (aw_hook_count >= (int)AW_ARRAY_SIZE(aw_hooks)) {
+        rc = -ENOSPC;
+        goto fail;
+    }
     if ((rc = hook_syscalln(__AW_NR_reboot, narg_reboot, aw_reboot_before, NULL, NULL)))
         goto fail;
     else if (aw_hook_count < (int)AW_ARRAY_SIZE(aw_hooks)) {
@@ -1338,46 +1339,31 @@ static int aw_arm(void)
         aw_hook_count++;
     }
 
-    aw_armed = true;
+    aw_install_complete = true;
+    __atomic_store_n(&aw_armed, true, __ATOMIC_RELEASE);
     aw_info("armed: %d hooks, %d devices, %d pinned trees\n", aw_hook_count, aw_dev_count,
             aw_count_pins());
     return 0;
 
 fail:
-    aw_err("arm failed: %d, unwinding\n", rc);
-    aw_uninstall_all();
-    aw_unpin_all();
-    aw_dev_count = 0;
-    aw_dev_ready = false;
-    return rc;
+    /* Do not detach using the unsynchronized legacy hook API. A partial install
+     * remains inert and resident; return error and refuse unload until reboot. */
+    __atomic_store_n(&aw_armed, false, __ATOMIC_RELEASE);
+    aw_install_complete = false;
+    if (!aw_hook_count) {
+        aw_unpin_all();
+        aw_dev_count = 0;
+        aw_dev_ready = false;
+    }
+    aw_err("arm failed: %d; inert hooks=%d retained until reboot\n", rc, aw_hook_count);
+    return rc < 0 ? rc : -EOPNOTSUPP;
 }
 
 static void aw_disarm(void)
 {
-    if (!aw_armed && !aw_hook_count)
-        return;
-
     __atomic_store_n(&aw_armed, false, __ATOMIC_RELEASE);
-
-    /* The reboot hook went through hook_syscalln, not hook_wrap. */
-    int i;
-    for (i = AW_ARRAY_SIZE(aw_hooks) - 1; i >= 0; i--) {
-        if (!aw_hooks[i].installed)
-            continue;
-        if (aw_hooks[i].before == aw_reboot_before)
-            unhook_syscalln(__AW_NR_reboot, aw_reboot_before, NULL);
-        else
-            hook_unwrap_remove(aw_hooks[i].func, aw_hooks[i].before, NULL, 1);
-        aw_hooks[i].installed = false;
-        aw_hook_count--;
-    }
-
-    aw_armed = false;
-    aw_trust_until = 0;
-    aw_unpin_all();
-    aw_dev_count = 0;
-    aw_dev_ready = false;
-    aw_info("disarmed\n");
+    __atomic_store_n(&aw_trust_until, 0, __ATOMIC_RELAXED);
+    aw_info("enforcement disabled; resident hooks=%d retained until reboot\n", aw_hook_count);
 }
 
 /* ------------------------------------------------------------- ctl0 */
@@ -1401,6 +1387,8 @@ static long aw_ctl0(const char *ctl_args, char *out_msg, int outlen)
     char buf[256];
     int result = 0;
 
+    if (__atomic_test_and_set(&aw_lifecycle_busy, __ATOMIC_ACQUIRE))
+        return -EBUSY;
     memset(buf, 0, sizeof(buf));
     buf[0] = '\0';
 
@@ -1409,12 +1397,13 @@ static long aw_ctl0(const char *ctl_args, char *out_msg, int outlen)
 
         if (sec > AW_MAX_TRUST_SECONDS)
             sec = AW_MAX_TRUST_SECONDS;
-        aw_trust_until = sec ? (jiffies + (unsigned long)sec * aw_hz) : 0;
+        __atomic_store_n(&aw_trust_until, sec ? (jiffies + (unsigned long)sec * aw_hz) : 0,
+                         __ATOMIC_RELAXED);
         kf_snprintf(buf, sizeof(buf), "trust=%u", sec);
     } else if (ctl_args && !aw_strcmp(ctl_args, "off")) {
         aw_disarm();
         kf_snprintf(buf, sizeof(buf), "disarmed hooks=%d", aw_hook_count);
-    } else if (ctl_args && !aw_strcmp(ctl_args, "on")) {
+    } else if (ctl_args && (!aw_strcmp(ctl_args, "arm") || !aw_strcmp(ctl_args, "on"))) {
         int rc = aw_arm();
 
         if (rc) {
@@ -1454,9 +1443,10 @@ static long aw_ctl0(const char *ctl_args, char *out_msg, int outlen)
             n = text;
         buf[n - 1] = '\0';
         if (_copy_to_user(out_msg, buf, n))
-            return -EFAULT;
+            result = -EFAULT;
     }
 
+    __atomic_clear(&aw_lifecycle_busy, __ATOMIC_RELEASE);
     return result;
 }
 
@@ -1465,7 +1455,7 @@ static long aw_ctl0(const char *ctl_args, char *out_msg, int outlen)
 static long antiwipe_init(const char *args, const char *event, void *reserved)
 {
     int rc;
-    bool auto_arm = true;
+    /* Loading is inert. Only explicit ctl0 arm may attach policy hooks. */
 
     (void)reserved;
     (void)event;
@@ -1475,8 +1465,6 @@ static long antiwipe_init(const char *args, const char *event, void *reserved)
         !sp_el0_is_current || !has_syscall_wrapper) {
         return -EOPNOTSUPP;
     }
-    if (args && kf_strstr(args, "armed=0"))
-        auto_arm = false;
 
     /* Engine facts must line up with the assumptions baked into this module. */
     if (kver < AW_KVER(5, 10, 0)) {
@@ -1505,12 +1493,11 @@ static long antiwipe_init(const char *args, const char *event, void *reserved)
     }
 
 
-    if (auto_arm) {
-        rc = aw_arm();
-        if (rc) {
-            aw_btf_shutdown();
-            return rc;
-        }
+    if ((aw_fn_file_truncate && !aw_btf_hook_validated("security_file_truncate")) ||
+        (aw_fn_bprm_check && !aw_btf_hook_validated("security_bprm_check") &&
+         !aw_btf_hook_validated("security_bprm_check_security"))) {
+        aw_btf_shutdown();
+        return -EOPNOTSUPP;
     }
 
     aw_info("loaded (event=%s args=%s) armed=%u\n", event ? event : "-", args ? args : "-",
@@ -1521,8 +1508,17 @@ static long antiwipe_init(const char *args, const char *event, void *reserved)
 static long antiwipe_exit(void *reserved)
 {
     (void)reserved;
+    if (__atomic_test_and_set(&aw_lifecycle_busy, __ATOMIC_ACQUIRE))
+        return -EBUSY;
     aw_disarm();
+    if (aw_hook_count) {
+        /* Loader must honor this refusal and keep module memory resident. */
+        __atomic_clear(&aw_lifecycle_busy, __ATOMIC_RELEASE);
+        return -EBUSY;
+    }
+    aw_unpin_all();
     aw_btf_shutdown();
+    __atomic_clear(&aw_lifecycle_busy, __ATOMIC_RELEASE);
     aw_info("unloaded\n");
     return 0;
 }

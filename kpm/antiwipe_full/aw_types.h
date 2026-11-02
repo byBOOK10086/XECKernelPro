@@ -244,6 +244,7 @@ extern void *memset(void *s, int c, size_t count);
 extern void *memcpy(void *dest, const void *src, size_t count);
 
 extern unsigned long jiffies;
+#define EBUSY 16
 
 /* ------------------------------------------------------------ constants */
 
