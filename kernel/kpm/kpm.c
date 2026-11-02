@@ -309,6 +309,8 @@ static int kpm_find_sec(const struct kp_load_info *info, const char *name)
 {
     for (int i = 1; i < info->hdr->e_shnum; i++) {
         Elf64_Shdr *shdr = &info->sechdrs[i];
+        if (shdr->sh_name >= info->sechdrs[info->hdr->e_shstrndx].sh_size)
+            continue;
         if ((shdr->sh_flags & SHF_ALLOC) && strcmp(info->secstrings + shdr->sh_name, name) == 0)
             return i;
     }
@@ -384,7 +386,15 @@ static int kpm_setup_load_info(struct kp_load_info *info)
     int rc;
 
     info->sechdrs = (void *)info->hdr + info->hdr->e_shoff;
-    info->secstrings = (void *)info->hdr + info->sechdrs[info->hdr->e_shstrndx].sh_offset;
+    {
+        Elf64_Shdr *shstr = &info->sechdrs[info->hdr->e_shstrndx];
+        if (!shstr->sh_size || shstr->sh_size > UINT_MAX ||
+            memchr((void *)info->hdr + shstr->sh_offset, 0, shstr->sh_size) == NULL) {
+            kpm_set_error(info, "ELF section-name table is unterminated");
+            return -ENOEXEC;
+        }
+        info->secstrings = (void *)info->hdr + shstr->sh_offset;
+    }
 
     rc = kpm_rewrite_section_headers(info);
     if (rc) {
