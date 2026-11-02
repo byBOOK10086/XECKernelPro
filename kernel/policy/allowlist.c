@@ -10,6 +10,7 @@
 #include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/printk.h>
+#include <linux/rculist.h>
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/version.h>
@@ -679,12 +680,16 @@ static void migrate_profile(u32 version, struct app_profile *profile)
 /* Allocate and validate everything before publishing any grant. */
 static int allowlist_import(const unsigned char *profiles, unsigned int count, size_t stride, u32 version)
 {
-    DEFINE_HASHTABLE(staged, ALLOW_LIST_BITS);
+    struct hlist_head *staged;
     struct perm_data *p, *other;
     struct hlist_node *tmp;
     unsigned int n;
     int i, rc = 0;
-    hash_init(staged);
+    staged = kcalloc(1U << ALLOW_LIST_BITS, sizeof(*staged), GFP_KERNEL);
+    if (!staged)
+        return -ENOMEM;
+    for (i = 0; i < (1U << ALLOW_LIST_BITS); i++)
+        INIT_HLIST_HEAD(&staged[i]);
     for (n = 0; n < count; n++) {
         p = kzalloc(sizeof(*p), GFP_KERNEL);
         if (!p) {
@@ -729,6 +734,7 @@ free_staged:
         hash_del(&p->list);
         kfree(p);
     }
+    kfree(staged);
     return rc;
 }
 
