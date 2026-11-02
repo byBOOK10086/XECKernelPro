@@ -162,14 +162,16 @@ static int handle_kpm(const struct ksu_kpm_cmd *cmd)
         if (!rc) {
             rc = sukisu_kpm_bridge(SUKISU_KPM_INFO, (unsigned long)name,
                                     (unsigned long)buf, KPM_INFO_LEN, 0);
-            rc = copy_output((void __user *)arg2, buf, rc, KPM_INFO_LEN);
+            if (rc >= 0)
+                rc = copy_output((void __user *)arg2, buf, rc, KPM_INFO_LEN);
         }
         kfree(name);
         return rc;
     }
     if (cmd->control_code != SUKISU_KPM_LIST &&
         cmd->control_code != SUKISU_KPM_VERSION) return -EOPNOTSUPP;
-    if (!cmd->arg2 || cmd->arg2 > SUKISU_KPM_OUTPUT_MAX) return -EINVAL;
+    if (!cmd->arg1 || !cmd->arg2 || cmd->arg2 > SUKISU_KPM_OUTPUT_MAX)
+        return -EINVAL;
     size = cmd->arg2;
     buf = kzalloc(size, GFP_KERNEL);
     if (!buf) return -ENOMEM;
