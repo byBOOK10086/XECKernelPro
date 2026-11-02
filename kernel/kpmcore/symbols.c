@@ -34,6 +34,7 @@
 #include "suallow.h"
 #include "include/kstorage.h"
 #include "module.h"
+#include "path_hook.h"
 
 #include <asm/thread_info.h>
 #include "include/hook.h"
@@ -390,6 +391,9 @@ static struct kp_kpm_symbol kp_kpm_symbols[] = {
 	{ "get_ap_mod_exclude", (unsigned long)kp_kpm_get_ap_mod_exclude },
 	{ "set_ap_mod_exclude", (unsigned long)kp_kpm_set_ap_mod_exclude },
 	{ "hotpatch_nosync", (unsigned long)kp_kpm_hotpatch_nosync },
+	{ "kpm_path_hook_abi_v1", (unsigned long)kpm_path_hook_abi_v1 },
+	{ "kpm_path_hook_register_v1", (unsigned long)kpm_path_hook_register_v1 },
+	{ "kpm_path_hook_unregister_v1", (unsigned long)kpm_path_hook_unregister_v1 },
 	{ "hook_wrap", (unsigned long)hook_wrap },
 	{ "hook_unwrap_remove", (unsigned long)hook_unwrap_remove },
 	{ "hook_chain_add", (unsigned long)hook_chain_add },
