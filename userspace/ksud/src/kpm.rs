@@ -482,6 +482,7 @@ fn load_all_modules() -> Result<()> {
         .flatten()
         .map(|entry| entry.path())
         .filter(|p| p.extension().is_some_and(|ex| ex == OsStr::new("kpm")))
+        .filter(|p| !p.with_extension("kpm.disable").exists())
         .collect();
     modules.sort();
 
@@ -497,10 +498,21 @@ fn load_all_modules() -> Result<()> {
     let mut failed = 0usize;
     for path in modules {
         let path_str = path.to_string_lossy().into_owned();
+        let args_path = path.with_extension("kpm.args");
+        let args = if args_path.is_file() {
+            let text = fs::read_to_string(&args_path)
+                .with_context(|| format!("read KPM args {}", args_path.display()))?;
+            if text.len() > KPM_STR_BUF || text.as_bytes().contains(&0) {
+                log::warn!("KPM: ignoring invalid args sidecar {}", args_path.display());
+                None
+            } else {
+                Some(text.trim_end_matches(['\r', '\n']).to_owned())
+            }
+        } else { None };
         let result = if suki_boot {
-            suki_load_event(&path_str, None, "post-fs-data")
+            suki_load_event(&path_str, args.as_deref(), "post-fs-data")
         } else {
-            load_module(&path, None)
+            load_module(&path, args.as_deref())
         };
         match result {
             Ok(()) => loaded += 1,
