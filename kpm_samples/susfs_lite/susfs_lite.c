@@ -1,235 +1,187 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-/*
- * susfs_lite.kpm — experimental stat/access hiding for stock kernels (③).
- *
- * WHAT IT DOES
- *   Registers kretprobes on the newfstatat family and faccessat. When a
- *   process whose uid is NOT in the allow set asks about a path under one of
- *   the configured prefixes (default "/data/adb,/debug_ramdisk"), the syscall
- *   return value is rewritten to -ENOENT — the path simply does not exist
- *   for that caller. Root (uid 0) and the manager uid (passed as args) keep
- *   the real view.
- *
- * WHY THIS SHAPE
- *   This repo's KPM engine (kernel/kpm/) is a loader for relocatable AArch64
- *   ELF modules: it resolves kernel symbols (kallsyms) at relocation time and
- *   calls .kpm.init/.kpm.ctl0/.kpm.exit. There is no inline-hook framework
- *   exported to modules, so the sample uses the standard register_kprobe()
- *   API — available on every kernel this repo builds for.
- *
- * HONEST LIMITS (read before shipping)
- *   - EXPERIMENTAL. Built against a real kernel tree by CI (build-kpm job,
- *     android15-6.6 headers) and shipped inside the manager APK, but NOT
- *     device-verified. struct layouts come from the build tree's headers:
- *     kernels with a different kprobes ABI are out of scope.
- *   - Covers stat-family + faccessat only. getdents64 (directory listings)
- *     is NOT hidden: a detector that lists /data will still see "adb".
- *   - This is a stop-gap for BL-locked stock kernels that cannot run the
- *     real SUSFS (built into GKI kernels only). Where SUSFS exists, use it.
- */
-
-#include <linux/types.h>
-#include <linux/kernel.h>
-#include <linux/printk.h>
-#include <linux/kprobes.h>
-#include <linux/uaccess.h>
-#include <linux/errno.h>
-#include <linux/string.h>
-#include <linux/rcupdate.h>
-#include <linux/version.h>
-/* sscanf 的声明 6.8 起从 kernel.h 拆到 sscanf.h；6.6 仍在 kernel.h。 */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
-#include <linux/sscanf.h>
-#endif
-
+/* Built-in stat/access filter. Native kernel probe ABI stays in the engine. */
+#define __user
 #include "kpmodule.h"
-
-/*
- * Current uid via the engine's compact table (kernel/kpm/compact.c): `current`
- * is percpu and current_uid() a macro — neither can be linked from an ET_REL
- * module. Resolved by the KPM loader at load time, like every other kernel
- * function referenced below.
- */
-extern u32 get_current_uid(void);
+#include "path_hook_v1.h"
 
 KPM_NAME("susfs_lite");
-KPM_VERSION("0.1.0");
+KPM_VERSION("0.2.0");
 KPM_AUTHOR("XECKernelPro");
 KPM_LICENSE("GPL-2.0-or-later");
-KPM_DESCRIPTION("Experimental stat/faccessat hiding via kretprobes (stock-kernel susfs-lite)");
+KPM_DESCRIPTION("Stat/access hiding via versioned engine path hooks");
 
 #define MAX_PREFIXES 8
 #define PREFIX_LEN 96
 #define MAX_ALLOW_UIDS 8
+#define EINVAL 22
+#define EBUSY 16
+#define ENOENT 2
+#define EOPNOTSUPP 95
 
 struct hide_state {
     char prefixes[MAX_PREFIXES][PREFIX_LEN];
-    int prefix_count;
-    u32 allow_uids[MAX_ALLOW_UIDS];
-    int allow_count;
+    unsigned int prefix_count;
+    unsigned int allow_uids[MAX_ALLOW_UIDS];
+    unsigned int allow_count;
 };
-
 static struct hide_state state;
+static void *handles[2];
 
-struct stat_data {
-    char path[PREFIX_LEN];
-};
-
-static bool path_hidden(const char *path)
+static int starts_with(const char *p, const char *key)
 {
-    int i;
-    if (!path[0])
-        return false;
-    for (i = 0; i < state.prefix_count; i++) {
-        if (!strncmp(path, state.prefixes[i], strlen(state.prefixes[i])))
-            return true;
+    while (*key) {
+        if (*p++ != *key++)
+            return 0;
     }
-    return false;
+    return 1;
 }
 
-static bool caller_allowed(void)
+/* Strict bounded parser: never truncate a prefix into a broader rule. */
+static int parse_args(const char *p, struct hide_state *s)
 {
-    u32 uid = get_current_uid();
-    int i;
-    if (uid == 0)
-        return true;
-    for (i = 0; i < state.allow_count; i++) {
-        if (state.allow_uids[i] == uid)
-            return true;
+    unsigned int seen = 0;
+    unsigned int z;
+    for (z = 0; z < sizeof(*s); z++)
+        ((volatile unsigned char *)s)[z] = 0;
+    if (!p)
+        p = "";
+    while (*p) {
+        if (starts_with(p, "allow_uids=")) {
+            if (seen & 1)
+                return -EINVAL;
+            seen |= 1;
+            p += 11;
+            if (*p != ';' && *p) {
+                for (;;) {
+                    unsigned int n = 0;
+                    if (*p < '0' || *p > '9' || s->allow_count == MAX_ALLOW_UIDS)
+                        return -EINVAL;
+                    do {
+                        unsigned int d = (unsigned int)(*p++ - '0');
+                        if (n > (4294967295U - d) / 10)
+                            return -EINVAL;
+                        n = n * 10 + d;
+                    } while (*p >= '0' && *p <= '9');
+                    s->allow_uids[s->allow_count++] = n;
+                    if (*p != ',')
+                        break;
+                    p++;
+                }
+            }
+        } else if (starts_with(p, "prefix=")) {
+            if (seen & 2)
+                return -EINVAL;
+            seen |= 2;
+            p += 7;
+            for (;;) {
+                unsigned int n = 0;
+                if (*p != '/' || s->prefix_count == MAX_PREFIXES)
+                    return -EINVAL;
+                while (*p && *p != ',' && *p != ';') {
+                    if (n == PREFIX_LEN - 1)
+                        return -EINVAL;
+                    s->prefixes[s->prefix_count][n++] = *p++;
+                }
+                /* Strip trailing slash; root cannot be a hiding prefix. */
+                while (n > 1 && s->prefixes[s->prefix_count][n-1] == '/')
+                    n--;
+                if (n == 1)
+                    return -EINVAL;
+                s->prefixes[s->prefix_count++][n] = 0;
+                if (*p != ',')
+                    break;
+                p++;
+            }
+        } else {
+            return -EINVAL;
+        }
+        if (!*p)
+            break;
+        if (*p++ != ';' || !*p)
+            return -EINVAL;
     }
-    return false;
-}
-
-static int entry_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
-{
-    struct stat_data *data = (struct stat_data *)ri->data;
-    const char __user *filename;
-
-    data->path[0] = '\0';
-    if (caller_allowed())
-        return 0;
-
-    // do_sys_newfstatat(dirfd, filename, statbuf, flag): filename is x1.
-    // sys_faccessat(dirfd, filename, mode): filename is x1 as well.
-    filename = (const char __user *)regs->regs[1];
-    if (!filename)
-        return 0;
-    if (strncpy_from_user(data->path, filename, sizeof(data->path)) < 0)
-        data->path[0] = '\0';
-    data->path[sizeof(data->path) - 1] = '\0';
+    if (!(seen & 2)) {
+        const char *d = "/data/adb";
+        unsigned int i = 0;
+        do { s->prefixes[0][i] = d[i]; } while (d[i++]);
+        s->prefix_count = 1;
+    }
     return 0;
 }
 
-static int ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
+static long filter_path(const char *path, unsigned int uid, long result, void *context)
 {
-    struct stat_data *data = (struct stat_data *)ri->data;
-
-    if (!data->path[0])
-        return 0;
-    if (regs->regs[0] != 0)
-        return 0; // already failing
-    if (path_hidden(data->path)) {
-        pr_info("susfs_lite: hiding '%s' from uid %u\n", data->path, get_current_uid());
-        regs->regs[0] = (unsigned long)-ENOENT;
+    const struct hide_state *s = context;
+    unsigned int i;
+    if (result || !uid || !path)
+        return result;
+    for (i = 0; i < s->allow_count; i++)
+        if (s->allow_uids[i] == uid)
+            return result;
+    for (i = 0; i < s->prefix_count; i++) {
+        unsigned int n = 0;
+        while (s->prefixes[i][n] && path[n] == s->prefixes[i][n])
+            n++;
+        if (!s->prefixes[i][n] && (!path[n] || path[n] == '/'))
+            return -ENOENT;
     }
-    return 0;
+    return result;
 }
-
-static struct kretprobe probes[] = {
-    {
-        .kp.symbol_name = "do_sys_newfstatat",
-        .entry_handler = entry_handler,
-        .handler = ret_handler,
-        .data_size = sizeof(struct stat_data),
-        .maxactive = 64,
-    },
-    {
-        .kp.symbol_name = "do_faccessat",
-        .entry_handler = entry_handler,
-        .handler = ret_handler,
-        .data_size = sizeof(struct stat_data),
-        .maxactive = 64,
-    },
-};
 
 static long susfs_lite_init(const char *args, const char *event, void *reserved)
 {
-    int i, ret;
-
-    memset(&state, 0, sizeof(state));
-
-    // args: "allow_uids=10236,10250;prefix=/data/adb,/debug_ramdisk"
-    if (args && args[0]) {
-        const char *p = strstr(args, "allow_uids=");
-        if (p) {
-            p += strlen("allow_uids=");
-            while (*p && *p != ';' && state.allow_count < MAX_ALLOW_UIDS) {
-                u32 uid = 0;
-                int n = 0;
-                if (sscanf(p, "%u%n", &uid, &n) == 1 && n > 0) {
-                    state.allow_uids[state.allow_count++] = uid;
-                    p += n;
-                }
-                if (*p == ',')
-                    p++;
-                else
-                    break;
-            }
-        }
-        p = strstr(args, "prefix=");
-        if (p) {
-            p += strlen("prefix=");
-            while (*p && *p != ';' && state.prefix_count < MAX_PREFIXES) {
-                const char *comma = strchr(p, ',');
-                size_t len = comma ? (size_t)(comma - p) : strlen(p);
-                if (len >= PREFIX_LEN)
-                    len = PREFIX_LEN - 1;
-                memcpy(state.prefixes[state.prefix_count], p, len);
-                state.prefixes[state.prefix_count][len] = '\0';
-                state.prefix_count++;
-                if (!comma)
-                    break;
-                p = comma + 1;
-            }
-        }
+    int ret;
+    struct hide_state next;
+    (void)event;
+    (void)reserved;
+    if (handles[0] || handles[1])
+        return -EBUSY;
+    if (kpm_path_hook_abi_v1() != 1)
+        return -EOPNOTSUPP;
+    ret = parse_args(args, &next);
+    if (ret)
+        return ret;
+    {
+        unsigned int z;
+        for (z = 0; z < sizeof(state); z++)
+            ((volatile unsigned char *)&state)[z] = ((unsigned char *)&next)[z];
     }
-    if (state.prefix_count == 0) {
-        strscpy(state.prefixes[0], "/data/adb", PREFIX_LEN);
-        state.prefix_count = 1;
+    /* Native vfs_fstatat receives the user filename in argument 1.
+     * Engine must reject absent/unsupported targets; no guessed syscall ABI.
+     */
+    ret = kpm_path_hook_register_v1("vfs_fstatat", 1, filter_path, &state, &handles[0]);
+    if (ret)
+        return ret;
+    ret = kpm_path_hook_register_v1("do_faccessat", 1, filter_path, &state, &handles[1]);
+    if (ret) {
+        kpm_path_hook_unregister_v1(handles[0]);
+        handles[0] = 0;
+        return ret;
     }
-
-    for (i = 0; i < (int)(sizeof(probes) / sizeof(probes[0])); i++) {
-        ret = register_kretprobe(&probes[i]);
-        if (ret) {
-            pr_err("susfs_lite: register %s failed: %d\n", probes[i].kp.symbol_name, ret);
-            while (--i >= 0)
-                unregister_kretprobe(&probes[i]);
-            return ret;
-        }
-    }
-    pr_info("susfs_lite: loaded (%d prefix(es), %d allowed uid(s))\n",
-            state.prefix_count, state.allow_count);
     return 0;
 }
 
-static long susfs_lite_ctl0(const char *ctl_args, char __user *out_msg, int outlen)
+static long susfs_lite_ctl0(const char *args, char __user *out, int len)
 {
-    // Runtime re-apply: "reload allow_uids=...;prefix=..." — simplest contract
-    // is "the same args string as init"; return 0 on success.
-    return susfs_lite_init(ctl_args, NULL, NULL);
+    (void)args;
+    (void)out;
+    (void)len;
+    /* No live state writes while callbacks read it. Unload + load to change. */
+    return -EBUSY;
 }
 
 static long susfs_lite_exit(void *reserved)
 {
     int i;
-    for (i = 0; i < (int)(sizeof(probes) / sizeof(probes[0])); i++) {
-        unregister_kretprobe(&probes[i]);
+    (void)reserved;
+    for (i = 1; i >= 0; i--) {
+        if (handles[i]) {
+            kpm_path_hook_unregister_v1(handles[i]);
+            handles[i] = 0;
+        }
     }
-    synchronize_rcu();
-    pr_info("susfs_lite: unloaded\n");
     return 0;
 }
-
 KPM_INIT(susfs_lite_init);
 KPM_CTL0(susfs_lite_ctl0);
 KPM_EXIT(susfs_lite_exit);
