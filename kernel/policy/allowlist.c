@@ -721,12 +721,14 @@ static int allowlist_import(const unsigned char *profiles, unsigned int count, s
     }
     allow_list_count = 0;
     default_non_root_profile.umount_modules = true;
-    hash_for_each_safe(staged, i, tmp, p, list) {
-        hash_del(&p->list);
-        hash_add_rcu(allow_list, &p->list, p->profile.curr_uid);
-        ++allow_list_count;
-        if (p->profile.curr_uid == KSU_APP_PROFILE_PRESERVE_UID)
-            default_non_root_profile.umount_modules = p->profile.nrp_config.profile.umount_modules;
+    for (i = 0; i < (1U << ALLOW_LIST_BITS); i++) {
+        hlist_for_each_entry_safe(p, tmp, &staged[i], list) {
+            hlist_del(&p->list);
+            hash_add_rcu(allow_list, &p->list, p->profile.curr_uid);
+            ++allow_list_count;
+            if (p->profile.curr_uid == KSU_APP_PROFILE_PRESERVE_UID)
+                default_non_root_profile.umount_modules = p->profile.nrp_config.profile.umount_modules;
+        }
     }
     mutex_unlock(&allowlist_mutex);
 free_staged:
