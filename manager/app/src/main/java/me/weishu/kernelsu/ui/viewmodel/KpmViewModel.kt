@@ -3,6 +3,7 @@ package me.weishu.kernelsu.ui.viewmodel
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.Job
@@ -56,10 +57,18 @@ class KpmViewModel : ViewModel() {
                             active = version.isNotEmpty(),
                             version = version,
                             modules = modules,
-                            antiwipeLoaded = modules.any { m -> m.startsWith("antiwipe") },
+                            antiwipeLoaded = modules.any { m -> m == "antiwipe" },
                             hasLoaded = true,
+                            error = "",
                         )
                     }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (generation == loadGeneration) {
+                    _uiState.update { it.copy(active = false, hasLoaded = true, error = e.message ?: "KPM query failed") }
+                    emitEffect(KpmEffect.SnackBar(e.message ?: "KPM query failed"))
                 }
             } finally {
                 if (generation == loadGeneration) {
@@ -75,7 +84,9 @@ class KpmViewModel : ViewModel() {
                 emitEffect(KpmEffect.SnackBar(ksuApp.resources.getString(R.string.kpm_operation_in_progress)))
                 return@launch
             }
-            _uiState.update { it.copy(isFlashing = true) }
+            fetchJob?.cancel()
+            ++loadGeneration
+            _uiState.update { it.copy(isFlashing = true, isLoading = false) }
             try {
                 val result = withContext(Dispatchers.IO) {
                     flashKpmModule(uri, {}, {})
@@ -86,10 +97,16 @@ class KpmViewModel : ViewModel() {
                 } else {
                     R.string.kpm_flash_failed
                 }
-                emitEffect(KpmEffect.SnackBar(res.getString(message)))
-                if (result.code == 0) {
-                    load()
-                }
+                emitEffect(KpmEffect.SnackBar(
+                    if (result.code == 0) res.getString(message)
+                    else res.getString(message) + ": " + result.err
+                ))
+                load()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitEffect(KpmEffect.SnackBar(e.message ?: "KPM operation failed"))
+                load()
             } finally {
                 _uiState.update { it.copy(isFlashing = false) }
                 kpmOperationMutex.unlock()
@@ -104,7 +121,9 @@ class KpmViewModel : ViewModel() {
                 emitEffect(KpmEffect.SnackBar(ksuApp.resources.getString(R.string.kpm_operation_in_progress)))
                 return@launch
             }
-            _uiState.update { it.copy(isFlashing = true) }
+            fetchJob?.cancel()
+            ++loadGeneration
+            _uiState.update { it.copy(isFlashing = true, isLoading = false) }
             try {
                 val result = withContext(Dispatchers.IO) {
                     flashBuiltinSusfsLite({}, {})
@@ -115,10 +134,16 @@ class KpmViewModel : ViewModel() {
                 } else {
                     R.string.kpm_flash_failed
                 }
-                emitEffect(KpmEffect.SnackBar(res.getString(message)))
-                if (result.code == 0) {
-                    load()
-                }
+                emitEffect(KpmEffect.SnackBar(
+                    if (result.code == 0) res.getString(message)
+                    else res.getString(message) + ": " + result.err
+                ))
+                load()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitEffect(KpmEffect.SnackBar(e.message ?: "KPM operation failed"))
+                load()
             } finally {
                 _uiState.update { it.copy(isFlashing = false) }
                 kpmOperationMutex.unlock()
@@ -133,7 +158,9 @@ class KpmViewModel : ViewModel() {
                 emitEffect(KpmEffect.SnackBar(ksuApp.resources.getString(R.string.kpm_operation_in_progress)))
                 return@launch
             }
-            _uiState.update { it.copy(isFlashing = true) }
+            fetchJob?.cancel()
+            ++loadGeneration
+            _uiState.update { it.copy(isFlashing = true, isLoading = false) }
             try {
                 val result = withContext(Dispatchers.IO) { loadAntiwipeKpm({}, {}) }
                 val res = ksuApp.resources
@@ -142,10 +169,16 @@ class KpmViewModel : ViewModel() {
                 } else {
                     R.string.kpm_flash_failed
                 }
-                emitEffect(KpmEffect.SnackBar(res.getString(message)))
-                if (result.code == 0) {
-                    load()
-                }
+                emitEffect(KpmEffect.SnackBar(
+                    if (result.code == 0) res.getString(message)
+                    else res.getString(message) + ": " + result.err
+                ))
+                load()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitEffect(KpmEffect.SnackBar(e.message ?: "KPM operation failed"))
+                load()
             } finally {
                 _uiState.update { it.copy(isFlashing = false) }
                 kpmOperationMutex.unlock()
@@ -160,7 +193,9 @@ class KpmViewModel : ViewModel() {
                 emitEffect(KpmEffect.SnackBar(ksuApp.resources.getString(R.string.kpm_operation_in_progress)))
                 return@launch
             }
-            _uiState.update { it.copy(isFlashing = true) }
+            fetchJob?.cancel()
+            ++loadGeneration
+            _uiState.update { it.copy(isFlashing = true, isLoading = false) }
             try {
                 val ok = withContext(Dispatchers.IO) { unloadAntiwipeKpm() }
                 val res = ksuApp.resources
@@ -170,6 +205,11 @@ class KpmViewModel : ViewModel() {
                     R.string.kpm_flash_failed
                 }
                 emitEffect(KpmEffect.SnackBar(res.getString(message)))
+                load()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitEffect(KpmEffect.SnackBar(e.message ?: "KPM operation failed"))
                 load()
             } finally {
                 _uiState.update { it.copy(isFlashing = false) }

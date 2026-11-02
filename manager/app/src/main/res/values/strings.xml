@@ -1121,4 +1121,5 @@ See the log below for details.</string>
     <string name="boot_guard_resume_warning">This clears rescue mode and the failed-boot count. Skipped components will be tried again after you manually reboot. Fix or disable the suspected module or configuration first: the same problem may prevent startup again. This does not restore a boot image or re-enable individually disabled modules. Root access is required. Continue?</string>
     <string name="boot_guard_resume_failed">Could not restore startup. Check root access and refresh the status before trying again.</string>
     <string name="boot_guard_reboot_required">Rescue mode and the failed-boot count were cleared. Reboot the device manually to retry normal startup. Components skipped in this boot remain inactive until reboot.</string>
+    <string name="kpm_action_confirm">This action changes the running kernel. Successfully loaded modules are also enabled for future boots. Continue?</string>
 </resources>
