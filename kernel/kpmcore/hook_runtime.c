@@ -53,6 +53,7 @@ static void *(*kp_hook_module_alloc)(unsigned long size);
 static void (*kp_hook_module_memfree)(void *region);
 static void (*kp_hook_flush_icache_all)(void);
 static int (*kp_hook_set_memory_x)(unsigned long addr, int numpages);
+static int (*kp_hook_patch_text)(void *addrs[], u32 insns[], int count);
 
 /* noinline: these are raw resolved function pointers; if inlined into a
  * CFI-instrumented caller, the compiler emits a kCFI type-hash load of
@@ -111,6 +112,7 @@ int kp_hook_runtime_init(void)
 	kp_hook_execmem_free = (void *)kp_resolve_symbol("execmem_free");
 	kp_hook_flush_icache_all = (void *)kp_resolve_symbol("flush_icache_all");
 	kp_hook_set_memory_x = (int (*)(unsigned long, int))kp_resolve_symbol("set_memory_x");
+    kp_hook_patch_text = (void *)kp_resolve_symbol("aarch64_insn_patch_text");
 	if (!kp_hook_module_alloc)
 		logkw("module_alloc not found; using execmem_alloc/vmalloc for hook memory\n");
 	if (!kp_hook_set_memory_x && !kp_hook_execmem_alloc) {
@@ -192,23 +194,17 @@ void hook_mem_free(void *payload)
 	mutex_unlock(&kp_hook_lock);
 }
 
+__attribute__((no_sanitize("cfi"), __noinline__))
 int hotpatch(void *addrs[], uint32_t values[], int count)
 {
-	int i, start, rc;
-
-	for (start = 0; start < count; start = i) {
-		for (i = start + 1; i < count; i++) {
-			if ((char *)addrs[i] != (char *)addrs[start] +
-						 (i - start) * sizeof(values[0]))
-				break;
-		}
-		rc = kp_patch_text(addrs[start], &values[start],
-				   (i - start) * sizeof(values[0]),
-				   KP_PATCH_TEXT_FLUSH_DCACHE | KP_PATCH_TEXT_FLUSH_ICACHE);
-		if (rc)
-			return rc;
-	}
-	return 0;
+    if (!kp_hook_patch_text)
+        return -EOPNOTSUPP;
+    if (!addrs || !values || count <= 0 || count > TRAMPOLINE_MAX_NUM)
+        return -EINVAL;
+    /* The public helper owns its internal stop_machine context and synchronizes
+     * all CPUs across the complete replacement. Never emulate its private
+     * callback structure or expose half of an absolute branch to another CPU. */
+    return kp_hook_patch_text(addrs, values, count);
 }
 
 void flush_icache_all(void)
