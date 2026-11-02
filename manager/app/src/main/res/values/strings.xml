@@ -76,7 +76,7 @@
     <string name="hide_pack_dialog_use">Use</string>
     <string name="hide_pack_running">Deploying hidden environment, please keep the screen on…</string>
     <string name="hide_pack_step_extract">Unpacking resource bundle…</string>
-    <string name="hide_pack_step_modules">Flashing bundled modules (HMA / TEESimulator / Violet / LSPosed / SUSFS / brick-rescue)…</string>
+    <string name="hide_pack_step_modules">Flashing bundled modules (HMA / TEESimulator / Violet / LSPosed / SUSFS)…</string>
     <string name="hide_pack_step_apks">Installing bundled apps…</string>
     <string name="hide_pack_step_tricky">Copying keybox.xml / security_patch.txt / target.txt to /data/adb/tricky_store/…</string>
     <string name="hide_pack_done">All done. The device will reboot in %1$d seconds…</string>
@@ -1097,4 +1097,28 @@ See the log below for details.</string>
     <string name="store_source_reset">Use built-in</string>
     <string name="store_notice_source_saved">Catalog source saved</string>
     <string name="store_notice_source_reset">Back to the built-in catalog</string>
+
+    <!-- Native boot protection; daemon owns state and legacy-module migration. -->
+    <string name="boot_guard_title">Boot protection</string>
+    <string name="boot_guard_summary">Built-in boot protection can skip startup components after repeated failed boots. Review the cause before restoring normal startup.</string>
+    <string name="boot_guard_state">State: %1$s</string>
+    <string name="boot_guard_rescue">Rescue mode — startup components are being skipped</string>
+    <string name="boot_guard_monitoring">Monitoring startup</string>
+    <string name="boot_guard_disabled">Not enabled</string>
+    <string name="boot_guard_enabled">Protection enabled: %1$s</string>
+    <string name="boot_guard_yes">Yes</string>
+    <string name="boot_guard_no">No</string>
+    <string name="boot_guard_failures">Failed boots: %1$d</string>
+    <string name="boot_guard_stage">Startup stage: %1$s</string>
+    <string name="boot_guard_reason">Reason: %1$s</string>
+    <string name="boot_guard_skipped">Skipped components: %1$s</string>
+    <string name="boot_guard_last_recovery">Last recovery: %1$s</string>
+    <string name="boot_guard_none">None recorded</string>
+    <string name="boot_guard_loading">Reading boot protection…</string>
+    <string name="boot_guard_unavailable">Boot protection status is unavailable. Grant root access and use a daemon version that supports boot protection, then refresh.</string>
+    <string name="boot_guard_refresh">Refresh status</string>
+    <string name="boot_guard_resume">Restore normal startup</string>
+    <string name="boot_guard_resume_warning">This clears rescue mode and the failed-boot count. Skipped components will be tried again after you manually reboot. Fix or disable the suspected module or configuration first: the same problem may prevent startup again. This does not restore a boot image or re-enable individually disabled modules. Root access is required. Continue?</string>
+    <string name="boot_guard_resume_failed">Could not restore startup. Check root access and refresh the status before trying again.</string>
+    <string name="boot_guard_reboot_required">Rescue mode and the failed-boot count were cleared. Reboot the device manually to retry normal startup. Components skipped in this boot remain inactive until reboot.</string>
 </resources>
