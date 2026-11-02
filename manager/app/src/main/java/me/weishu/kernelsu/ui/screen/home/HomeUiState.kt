@@ -59,7 +59,7 @@ data class HomeUiState(
         get() = isManager &&
                 lkmMode == true &&
                 isLkmBundled &&
-                ksuVersion?.toLong() != currentManagerVersionCode &&
+                ksuVersion?.let { it > 0 && it.toLong() < currentManagerVersionCode } == true &&
                 !requiresNewKernel &&
                 !requiresNewManager
 

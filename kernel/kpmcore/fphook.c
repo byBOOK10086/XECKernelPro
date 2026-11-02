@@ -242,11 +242,11 @@ hook_err_t fp_hook_wrap(uintptr_t fp_addr, int32_t argno, void *before, void *af
             }
             dsb(ish);
             chain->states[i] = CHAIN_ITEM_STATE_READY;
-            logkv("Wrap func pointer add: %llx, %llx, %llx successed\n", chain->hook.fp_addr, before, after);
+            logkv("Wrap func pointer add: %lx, %p, %p succeeded\n", (unsigned long)chain->hook.fp_addr, before, after);
             return HOOK_NO_ERR;
         }
     }
-    logkv("Wrap func pointer add: %llx, %llx, %llx failed\n", chain->hook.fp_addr, before, after);
+    logkv("Wrap func pointer add: %lx, %p, %p failed\n", (unsigned long)chain->hook.fp_addr, before, after);
     return -HOOK_CHAIN_FULL;
 }
 KP_EXPORT_SYMBOL(fp_hook_wrap);

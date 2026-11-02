@@ -22,6 +22,7 @@
 #include "runtime/ksud_boot.h"
 #include "selinux/selinux.h"
 #include "policy/allowlist.h"
+#include "policy/allowlist_journal.h"
 #include "manager/manager_identity.h"
 #include "infra/su_mount_ns.h"
 #include "feature/shell_su_adb_only.h"
@@ -403,43 +404,221 @@ bool ksu_get_allow_list(int *array, u16 length, u16 *out_length, u16 *out_total,
     return true;
 }
 
-// TODO: move to kernel thread or work queue
-static void do_persistent_allow_list(struct callback_head *_cb)
-{
-    u32 magic = FILE_MAGIC;
-    u32 version = FILE_FORMAT_VERSION;
-    struct perm_data *p = NULL;
-    loff_t off = 0;
-    int i;
+/* Fixed two-slot journal: never truncate the newest fully validated snapshot.
+ * Recovery may select the previous committed generation after corruption; that
+ * can restore an older grant/revocation state. This is crash recovery, not an
+ * anti-rollback mechanism. A post-commit legacy mirror supports older kernels;
+ * only the journal is crash-safe, so downgrade still has a mirror-write window.
+ */
+static DEFINE_MUTEX(allowlist_persist_mutex);
+static const char *const journal_paths[] = { KERNEL_SU_ALLOWLIST ".0", KERNEL_SU_ALLOWLIST ".1" };
 
-    const struct cred *saved = override_creds(ksu_cred);
-    struct file *fp = filp_open(KERNEL_SU_ALLOWLIST, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (IS_ERR(fp)) {
-        pr_err("save_allow_list create file failed: %ld\n", PTR_ERR(fp));
+static int allowlist_io(struct file *fp, void *data, size_t size, loff_t *off, bool write)
+{
+    size_t done = 0;
+    while (done < size) {
+        ssize_t n = write ? kernel_write(fp, (char *)data + done, size - done, off) :
+                            kernel_read(fp, (char *)data + done, size - done, off);
+        if (n == -EINTR)
+            continue;
+        if (n <= 0)
+            return n < 0 ? (int)n : (write ? -EIO : -EINVAL);
+        done += n;
+    }
+    return 0;
+}
+
+static int allowlist_sync(struct file *fp)
+{
+    /* Same stable f_op interface already used by infra/file_wrapper.c. */
+    if (!fp->f_op || !fp->f_op->fsync)
+        return -EOPNOTSUPP;
+    return fp->f_op->fsync(fp, 0, LLONG_MAX, 0);
+}
+
+static bool journal_profile_valid(struct app_profile *p)
+{
+    return profile_valid(p) &&
+           (p->curr_uid != KSU_APP_PROFILE_PRESERVE_UID || !strcmp(p->key, "$"));
+}
+
+static int journal_read(unsigned int slot, unsigned char **image, struct ksu_j_meta *meta)
+{
+    unsigned char header[KSU_J_HEADER], extra;
+    unsigned char *data = NULL;
+    struct ksu_j_meta m;
+    struct file *fp;
+    loff_t off = 0;
+    unsigned long length;
+    unsigned int i;
+    int rc;
+    *image = NULL;
+    fp = filp_open(journal_paths[slot], O_RDONLY | O_NOFOLLOW, 0);
+    if (IS_ERR(fp))
+        return PTR_ERR(fp);
+    if (!S_ISREG(file_inode(fp)->i_mode)) {
+        rc = -EINVAL;
         goto out;
     }
-
-    // store magic and version
-    if (kernel_write(fp, &magic, sizeof(magic), &off) != sizeof(magic)) {
-        pr_err("save_allow_list write magic failed.\n");
-        goto close_file;
+    rc = allowlist_io(fp, header, sizeof(header), &off, false);
+    if (rc || ksu_j_header(header, sizeof(struct app_profile), &m)) {
+        rc = rc ?: -EINVAL;
+        goto out;
     }
-
-    if (kernel_write(fp, &version, sizeof(version), &off) != sizeof(version)) {
-        pr_err("save_allow_list write version failed.\n");
-        goto close_file;
+    length = ksu_j_length(m.count, sizeof(struct app_profile));
+    data = kvmalloc(length, GFP_KERNEL);
+    if (!data) {
+        rc = -ENOMEM;
+        goto out;
     }
-
-    mutex_lock(&allowlist_mutex);
-    hash_for_each (allow_list, i, p, list) {
-        kernel_write(fp, &p->profile, sizeof(p->profile), &off);
+    memcpy(data, header, sizeof(header));
+    rc = allowlist_io(fp, data + sizeof(header), length - sizeof(header), &off, false);
+    if (rc)
+        goto out;
+    /* Exact EOF is part of validity; a valid prefix is not a snapshot. */
+    if (kernel_read(fp, &extra, 1, &off) != 0 ||
+        ksu_j_validate(data, length, sizeof(struct app_profile), &m)) {
+        rc = -EINVAL;
+        goto out;
     }
-    mutex_unlock(&allowlist_mutex);
-
-close_file:
-    filp_close(fp, 0);
+    for (i = 0; i < m.count; i++) {
+        struct app_profile *p = (void *)(data + KSU_J_HEADER + i * sizeof(*p));
+        if (!journal_profile_valid(p)) {
+            rc = -EINVAL;
+            goto out;
+        }
+    }
+    *meta = m;
+    *image = data;
+    data = NULL;
+    rc = 0;
 out:
+    kvfree(data);
+    filp_close(fp, 0);
+    return rc;
+}
+
+/* Compatibility only: current kernels never prefer this over a journal. */
+static int allowlist_legacy_mirror(unsigned char *image, unsigned int count)
+{
+    u32 header[2] = { FILE_MAGIC, FILE_FORMAT_VERSION };
+    struct file *fp;
+    loff_t off = 0;
+    int rc;
+    fp = filp_open(KERNEL_SU_ALLOWLIST, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);
+    if (IS_ERR(fp))
+        return PTR_ERR(fp);
+    rc = S_ISREG(file_inode(fp)->i_mode) ?
+         allowlist_io(fp, header, sizeof(header), &off, true) : -EINVAL;
+    if (!rc)
+        rc = allowlist_io(fp, image + KSU_J_HEADER, count * sizeof(struct app_profile), &off, true);
+    if (!rc)
+        rc = allowlist_sync(fp);
+    filp_close(fp, 0);
+    if (rc)
+        return rc;
+    fp = filp_open("/data/adb/ksu", O_RDONLY | O_DIRECTORY, 0);
+    if (IS_ERR(fp))
+        return PTR_ERR(fp);
+    rc = allowlist_sync(fp);
+    filp_close(fp, 0);
+    return rc;
+}
+
+static void do_persistent_allow_list(struct callback_head *_cb)
+{
+    struct ksu_j_meta meta[2];
+    unsigned char *old[2] = { NULL, NULL }, *image = NULL;
+    struct perm_data *p;
+    struct file *fp;
+    const struct cred *saved;
+    unsigned long length;
+    unsigned long long generation = 1;
+    unsigned int count, n = 0, target = 0;
+    int status[2], i, rc = 0;
+    loff_t off = 0;
+
+    mutex_lock(&allowlist_persist_mutex);
+    saved = override_creds(ksu_cred);
+    status[0] = journal_read(0, &old[0], &meta[0]);
+    status[1] = journal_read(1, &old[1], &meta[1]);
+    /* Resource/permission/I/O errors are not evidence that a slot is corrupt. */
+    for (i = 0; i < 2; i++) {
+        if (status[i] && status[i] != -ENOENT && status[i] != -EINVAL) {
+            rc = status[i];
+            goto out;
+        }
+    }
+    if (status[0] && status[1] && (status[0] != -ENOENT || status[1] != -ENOENT)) {
+        rc = -EINVAL; /* preserve corrupt journal evidence; do not overwrite */
+        goto out;
+    }
+    if (!status[0] || !status[1]) {
+        unsigned int newest = status[0] ? 1 : status[1] ? 0 :
+                              (meta[1].generation > meta[0].generation ? 1 : 0);
+        if (meta[newest].generation == ~0ULL) {
+            rc = -EOVERFLOW;
+            goto out;
+        }
+        generation = meta[newest].generation + 1;
+        target = newest ^ 1;
+    }
+    mutex_lock(&allowlist_mutex);
+    count = allow_list_count;
+    length = ksu_j_length(count, sizeof(struct app_profile));
+    image = kvmalloc(length, GFP_KERNEL);
+    if (!image) {
+        rc = -ENOMEM;
+        goto unlock_list;
+    }
+    hash_for_each(allow_list, i, p, list) {
+        if (n >= count || !journal_profile_valid(&p->profile)) {
+            rc = -EINVAL;
+            goto unlock_list;
+        }
+        memcpy(image + KSU_J_HEADER + n++ * sizeof(p->profile), &p->profile, sizeof(p->profile));
+    }
+    if (n != count)
+        rc = -EINVAL;
+unlock_list:
+    mutex_unlock(&allowlist_mutex);
+    if (rc)
+        goto out;
+    ksu_j_seal(image, count, sizeof(struct app_profile), generation);
+    /* The complete validated in-memory snapshot exists before O_TRUNC. */
+    fp = filp_open(journal_paths[target], O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);
+    if (IS_ERR(fp)) {
+        rc = PTR_ERR(fp);
+        goto out;
+    }
+    rc = S_ISREG(file_inode(fp)->i_mode) ? allowlist_io(fp, image, length, &off, true) : -EINVAL;
+    if (!rc)
+        rc = allowlist_sync(fp);
+    filp_close(fp, 0);
+    if (!rc) {
+        /* Persist newly created slot directory entries as well as file data. */
+        fp = filp_open("/data/adb/ksu", O_RDONLY | O_DIRECTORY, 0);
+        if (IS_ERR(fp))
+            rc = PTR_ERR(fp);
+        else {
+            rc = allowlist_sync(fp);
+            filp_close(fp, 0);
+        }
+    }
+    if (!rc) {
+        int mirror_rc = allowlist_legacy_mirror(image, count);
+        if (mirror_rc)
+            pr_err("allowlist legacy mirror failed: %d; journal committed, downgrade permissions may be stale\n",
+                   mirror_rc);
+    }
+out:
+    if (rc)
+        pr_err("allowlist journal save failed: %d; previous slot preserved\n", rc);
+    kvfree(image);
+    kvfree(old[0]);
+    kvfree(old[1]);
     revert_creds(saved);
+    mutex_unlock(&allowlist_persist_mutex);
     kfree(_cb);
 }
 
@@ -496,72 +675,147 @@ static void migrate_profile(u32 version, struct app_profile *profile)
     profile->version = KSU_APP_PROFILE_VER;
 }
 
-void ksu_load_allow_list()
+/* Allocate and validate everything before publishing any grant. */
+static int allowlist_import(const unsigned char *profiles, unsigned int count, size_t stride, u32 version)
 {
+    DEFINE_HASHTABLE(staged, ALLOW_LIST_BITS);
+    struct perm_data *p, *other;
+    struct hlist_node *tmp;
+    unsigned int n;
+    int i, rc = 0;
+    hash_init(staged);
+    for (n = 0; n < count; n++) {
+        p = kzalloc(sizeof(*p), GFP_KERNEL);
+        if (!p) {
+            rc = -ENOMEM;
+            goto free_staged;
+        }
+        memcpy(&p->profile, profiles + n * stride, stride);
+        if (version < KSU_APP_PROFILE_VER)
+            migrate_profile(version, &p->profile);
+        if (!journal_profile_valid(&p->profile)) {
+            kfree(p);
+            rc = -EINVAL;
+            goto free_staged;
+        }
+        hash_for_each_possible(staged, other, list, p->profile.curr_uid) {
+            if (other->profile.curr_uid == p->profile.curr_uid) {
+                kfree(p);
+                rc = -EINVAL;
+                goto free_staged;
+            }
+        }
+        kref_init(&p->ref);
+        hash_add(staged, &p->list, p->profile.curr_uid);
+    }
+    mutex_lock(&allowlist_mutex);
+    hash_for_each_safe(allow_list, i, tmp, p, list) {
+        hash_del_rcu(&p->list);
+        put_perm_data(p);
+    }
+    allow_list_count = 0;
+    default_non_root_profile.umount_modules = true;
+    hash_for_each_safe(staged, i, tmp, p, list) {
+        hash_del(&p->list);
+        hash_add_rcu(allow_list, &p->list, p->profile.curr_uid);
+        ++allow_list_count;
+        if (p->profile.curr_uid == KSU_APP_PROFILE_PRESERVE_UID)
+            default_non_root_profile.umount_modules = p->profile.nrp_config.profile.umount_modules;
+    }
+    mutex_unlock(&allowlist_mutex);
+free_staged:
+    hash_for_each_safe(staged, i, tmp, p, list) {
+        hash_del(&p->list);
+        kfree(p);
+    }
+    return rc;
+}
+
+void ksu_load_allow_list(void)
+{
+    struct ksu_j_meta meta[2];
+    unsigned char *data[2] = { NULL, NULL }, *legacy = NULL;
+    struct file *fp;
+    loff_t off = 0, size;
+    u32 header[2];
+    unsigned int count, chosen;
+    size_t stride;
+    int status[2], rc = 0;
+    bool migrate = false;
 #ifdef CONFIG_KSU_DISABLE_POLICY
     pr_info("allowlist load skipped because policy is disabled\n");
     return;
 #endif
-
-    loff_t off = 0;
-    ssize_t ret = 0;
-    struct file *fp = NULL;
-    u32 magic;
-    u32 version;
-    size_t app_profile_size;
-
-    // load allowlist now!
-    fp = filp_open(KERNEL_SU_ALLOWLIST, O_RDONLY, 0);
-    if (IS_ERR(fp)) {
-        pr_err("load_allow_list open file failed: %ld\n", PTR_ERR(fp));
-        return;
-    }
-
-    // verify magic
-    if (kernel_read(fp, &magic, sizeof(magic), &off) != sizeof(magic) || magic != FILE_MAGIC) {
-        pr_err("allowlist file invalid: %d!\n", magic);
-        goto exit;
-    }
-
-    // get file version
-    if (kernel_read(fp, &version, sizeof(version), &off) != sizeof(version)) {
-        pr_err("allowlist read version: %d failed\n", version);
-        goto exit;
-    }
-
-    if (version < 2 || version > KSU_APP_PROFILE_VER) {
-        pr_err("invalid allowlist version: %d\n", version);
-        goto exit;
-    }
-
-    pr_info("allowlist version: %d\n", version);
-
-    static const size_t kAppProfileSizePreV4 = 776;
-    app_profile_size = version < KSU_APP_PROFILE_VER ? kAppProfileSizePreV4 : sizeof(struct app_profile);
-
-    while (true) {
-        struct app_profile profile;
-
-        ret = kernel_read(fp, &profile, app_profile_size, &off);
-
-        if (ret != app_profile_size) {
-            if (ret != 0)
-                pr_info("load_allow_list read err: %zd\n", ret);
-            break;
+    mutex_lock(&allowlist_persist_mutex);
+    status[0] = journal_read(0, &data[0], &meta[0]);
+    status[1] = journal_read(1, &data[1], &meta[1]);
+    if (!status[0] || !status[1]) {
+        /* Never silently roll back on transient read/permission failures. */
+        int bad = status[0] ? status[0] : status[1];
+        if (bad && bad != -ENOENT && bad != -EINVAL) {
+            rc = bad;
+            goto out;
         }
-
-        migrate_profile(version, &profile);
-
-        pr_info("load_allow_uid, name: %s, uid: %d, allow: %d\n", profile.key, profile.curr_uid, profile.allow_su);
-        ksu_set_app_profile(&profile);
+        chosen = status[0] ? 1 : status[1] ? 0 :
+                 (meta[1].generation > meta[0].generation ? 1 : 0);
+        rc = allowlist_import(data[chosen] + KSU_J_HEADER, meta[chosen].count,
+                              sizeof(struct app_profile), KSU_APP_PROFILE_VER);
+        goto out;
     }
+    if (status[0] != -ENOENT || status[1] != -ENOENT) {
+        pr_err("allowlist journal exists but is invalid/unreadable; refusing legacy grants\n");
+        rc = -EINVAL;
+        goto out;
+    }
+    /* Legacy migration is permitted ONLY when neither journal slot exists. */
+    fp = filp_open(KERNEL_SU_ALLOWLIST, O_RDONLY | O_NOFOLLOW, 0);
+    if (IS_ERR(fp)) {
+        rc = PTR_ERR(fp);
+        goto out;
+    }
+    size = i_size_read(file_inode(fp));
+    rc = allowlist_io(fp, header, sizeof(header), &off, false);
+    if (rc || !S_ISREG(file_inode(fp)->i_mode) || header[0] != FILE_MAGIC ||
+        header[1] < 2 || header[1] > KSU_APP_PROFILE_VER) {
+        rc = rc ?: -EINVAL;
+        goto close_legacy;
+    }
+    stride = header[1] < KSU_APP_PROFILE_VER ? 776 : sizeof(struct app_profile);
+    if (size < sizeof(header) || stride > sizeof(struct app_profile) ||
+        (size - sizeof(header)) % stride ||
+        (size - sizeof(header)) / stride > KSU_J_MAX_COUNT) {
+        rc = -EINVAL;
+        goto close_legacy;
+    }
+    count = (size - sizeof(header)) / stride;
+    legacy = kvmalloc(count ? count * stride : 1, GFP_KERNEL);
+    if (!legacy) {
+        rc = -ENOMEM;
+        goto close_legacy;
+    }
+    rc = allowlist_io(fp, legacy, count * stride, &off, false);
+    if (!rc) {
+        unsigned char extra;
+        if (kernel_read(fp, &extra, 1, &off) != 0)
+            rc = -EINVAL;
+    }
+    if (!rc)
+        rc = allowlist_import(legacy, count, stride, header[1]);
+    migrate = !rc;
+close_legacy:
     filp_close(fp, 0);
-    if (version < KSU_APP_PROFILE_VER)
+out:
+    if (rc && rc != -ENOENT) {
+        /* A repeated load must not retain grants from an earlier epoch. */
+        allowlist_import(NULL, 0, sizeof(struct app_profile), KSU_APP_PROFILE_VER);
+        pr_err("allowlist load failed: %d; grants cleared, evidence preserved\n", rc);
+    }
+    kvfree(data[0]);
+    kvfree(data[1]);
+    kvfree(legacy);
+    mutex_unlock(&allowlist_persist_mutex);
+    if (migrate)
         ksu_persistent_allow_list();
-    return;
-
-exit:
-    filp_close(fp, 0);
 }
 
 void ksu_prune_allowlist(bool (*is_uid_valid)(uid_t, char *, void *), void *data)

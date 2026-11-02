@@ -20,16 +20,16 @@ pub fn on_post_fs_data() -> Result<()> {
     // Resolve a pending direct-flash transaction before any module, SELinux, or
     // SUSFS work can run. A successful rollback owns this boot and must return
     // immediately.
-    if !mount_state
-        && crate::boot_txn::on_post_fs_data().inspect_err(|error| {
-            let _ = crate::boot_guard::recovery_failed(&format!("boot recovery failed: {error:#}"));
-        })?
-    {
+    if crate::boot_txn::on_post_fs_data().inspect_err(|error| {
+        let _ = crate::boot_guard::recovery_failed(&format!("boot recovery failed: {error:#}"));
+    })? {
         warn!("boot transaction rollback completed; skipping module startup");
         crate::boot_guard::rollback_applied()?;
         return Ok(());
     }
     if !guard_allows_startup {
+        // Honor explicit uninstall markers without executing any module hooks.
+        crate::module::prune_modules_rescue()?;
         warn!("native boot rescue: skipping startup stages");
         return Ok(());
     }
@@ -308,8 +308,8 @@ pub fn on_boot_completed() {
         }
         return;
     }
-    // 挂载态没有内核驱动：boot 事务与 UAPI 校验都跳过，但 boot-completed 阶段
-    // 脚本必须照跑（模块靠它收尾）。
+    // Mount state has no kernel UAPI, but disk transaction recovery and
+    // boot-completed scripts still run independently of the root route.
     let mount_state = utils::is_mount_state();
     if !mount_state {
         if let Err(e) = ksucalls::ensure_uapi_version_matched() {

@@ -455,7 +455,14 @@ mod runtime {
                         return Ok(());
                     }
                     // State lock serializes success against timeout and explicit resume.
-                    if let Err(error) = crate::boot_txn::commit_boot_success() {
+                    // A newly armed disk image belongs to the NEXT boot. A
+                    // deferred transaction remains durable while this running
+                    // boot may independently finish its own startup pipeline.
+                    if let Err(error) = crate::boot_txn::commit_boot_success().map(|committed| {
+                        if !committed {
+                            log::info!("current startup stable; flashed image awaits next boot verification");
+                        }
+                    }) {
                         state.rescue = true;
                         state.pending = false;
                         state.stage = "transaction-error".into();

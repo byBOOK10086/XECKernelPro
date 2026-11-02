@@ -624,7 +624,7 @@ static int elf_header_check(struct kp_load_info *info)
     return 0;
 }
 
-struct kp_module modules = { 0 };
+static struct kp_module modules = { 0 };
 static spinlock_t module_lock;
 #define KP_MAX_MODULE_IMAGE (64 * 1024 * 1024)
 /* Serialize registry mutation and arbitrary KPM callbacks. Unload must not

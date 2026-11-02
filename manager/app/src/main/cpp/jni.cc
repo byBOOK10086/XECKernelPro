@@ -7,6 +7,7 @@
 #include <sys/wait.h>
 
 #include <android/log.h>
+#include <cerrno>
 #include <cstring>
 #include <vector>
 
@@ -265,7 +266,18 @@ Java_me_weishu_kernelsu_Natives_getAppProfile(JNIEnv *env, jobject, jstring pkg,
     strcpy(profile.key, key);
     profile.curr_uid = uid;
 
-    bool useDefaultProfile = get_app_profile(&profile) != 0;
+    int profileResult = get_app_profile(&profile);
+    // ioctl returns -1 with errno=ENOENT for an app without a saved profile.
+    // Other failures must remain errors rather than becoming denied defaults.
+    if (profileResult < 0 && errno != ENOENT) {
+        LOGE("get app profile failed for uid %d: errno %d", uid, errno);
+        auto exceptionClass = env->FindClass("java/lang/IllegalStateException");
+        if (exceptionClass != nullptr) {
+            env->ThrowNew(exceptionClass, "Failed to read kernel app profile; existing permissions were not changed");
+        }
+        return nullptr;
+    }
+    bool useDefaultProfile = profileResult != 0;
 
     auto cls = env->FindClass("me/weishu/kernelsu/Natives$Profile");
     auto constructor = env->GetMethodID(cls, "<init>", "()V");

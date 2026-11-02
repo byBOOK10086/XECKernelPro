@@ -10,7 +10,14 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use crate::{boot_patch, defs};
+#[cfg(target_os = "android")]
+use std::os::fd::AsRawFd;
+#[cfg(target_os = "android")]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+#[cfg(target_os = "android")]
+use crate::boot_patch;
+use crate::defs;
 
 const STATE_VERSION: &str = "1";
 const MAX_RECORDS: usize = 3;
@@ -78,6 +85,40 @@ fn state_path() -> PathBuf {
 
 fn state_tmp_path() -> PathBuf {
     Path::new(defs::KSU_BACKUP_DIR).join(defs::BOOT_TXN_STATE_TMP)
+}
+
+#[cfg(target_os = "android")]
+struct FlashLock(File);
+
+#[cfg(target_os = "android")]
+impl FlashLock {
+    fn acquire() -> Result<Self> {
+        std::fs::create_dir_all(defs::KSU_BACKUP_DIR)?;
+        std::fs::set_permissions(defs::KSU_BACKUP_DIR, std::fs::Permissions::from_mode(0o700))?;
+        let path = Path::new(defs::KSU_BACKUP_DIR).join("boot_txn.lock");
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+            .open(&path)
+            .with_context(|| format!("open boot transaction lock {}", path.display()))?;
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
+            return Err(std::io::Error::last_os_error()).context("lock boot transaction");
+        }
+        Ok(Self(file))
+    }
+}
+
+#[cfg(target_os = "android")]
+impl Drop for FlashLock {
+    fn drop(&mut self) {
+        unsafe {
+            libc::flock(self.0.as_raw_fd(), libc::LOCK_UN);
+        }
+    }
 }
 
 fn partition_path(partition: &str, suffix: &str) -> PathBuf {
@@ -300,11 +341,11 @@ fn parse_state(data: &str) -> Result<BootTxn> {
 
 fn load_state() -> Result<Option<BootTxn>> {
     let path = state_path();
-    if !path.exists() {
-        return Ok(None);
-    }
-    let data =
-        std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let data = match std::fs::read_to_string(&path) {
+        Ok(data) => data,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error).with_context(|| format!("read {}", path.display())),
+    };
     Ok(Some(parse_state(&data)?))
 }
 
@@ -334,6 +375,14 @@ fn clear_state() -> Result<()> {
     Ok(())
 }
 
+fn target_record(state: &BootTxn) -> Result<&BackupRecord> {
+    state
+        .records
+        .iter()
+        .find(|record| record.partition == state.target_partition)
+        .context("target backup record missing")
+}
+
 fn copy_backup(source: &Path, backup_name: &str) -> Result<(u64, String)> {
     let destination = Path::new(defs::KSU_BACKUP_DIR).join(backup_name);
     let temporary = destination.with_extension(format!("tmp.{}", std::process::id()));
@@ -345,8 +394,7 @@ fn copy_backup(source: &Path, backup_name: &str) -> Result<(u64, String)> {
         source.display()
     );
     let mut output = OpenOptions::new()
-        .create(true)
-        .truncate(true)
+        .create_new(true)
         .write(true)
         .open(&temporary)?;
     let size = std::io::copy(&mut input.take(MAX_IMAGE_SIZE + 1), &mut output)?;
@@ -392,16 +440,9 @@ fn backup_name(partition: &str, suffix: &str) -> String {
     format!("{}{slot}_{partition}", defs::BOOT_TXN_BACKUP_PREFIX)
 }
 
-/// Back up the selected slot's boot and init_boot (plus vendor_boot when it is
-/// the target) byte-for-byte before a direct flash.
+/// Back up exactly the target partition before a direct flash.
 ///
-/// The rollback source is always the pre-flash partition content: the device
-/// is booted from it right now, so it is by definition the last known-good
-/// state, and undoing a flash restores exactly what was there before. This
-/// deliberately makes no claim about the image being factory-stock — targets
-/// patched by an older release carry no stock marker, and requiring one would
-/// block the standard upgrade path.
-pub fn prepare(slot_suffix: &str, target_partition: &str, ota: bool) -> Result<()> {
+fn prepare_unlocked(slot_suffix: &str, target_partition: &str, ota: bool) -> Result<()> {
     validate_suffix(slot_suffix)?;
     validate_partition(target_partition)?;
     ensure!(
@@ -409,32 +450,17 @@ pub fn prepare(slot_suffix: &str, target_partition: &str, ota: bool) -> Result<(
         "a boot transaction is already pending"
     );
     let boot_id = current_boot_id()?;
-    let mut partitions = vec!["boot", "init_boot"];
-    if target_partition == "vendor_boot" {
-        partitions.push("vendor_boot");
-    }
-    let mut records = Vec::new();
-    for partition in partitions {
-        let path = partition_path(partition, slot_suffix);
-        if !path.exists() {
-            continue;
-        }
-        let name = backup_name(partition, slot_suffix);
-        let (size, sha256) = copy_backup(&path, &name)?;
-        records.push(BackupRecord {
-            partition: partition.to_string(),
-            suffix: slot_suffix.to_string(),
-            backup_name: name,
-            size,
-            sha256,
-        });
-    }
-    ensure!(
-        records
-            .iter()
-            .any(|record| record.partition == target_partition),
-        "target partition is not available"
-    );
+    let partition = partition_path(target_partition, slot_suffix);
+    ensure!(partition.exists(), "target partition is not available");
+    let name = backup_name(target_partition, slot_suffix);
+    let (size, sha256) = copy_backup(&partition, &name)?;
+    let records = vec![BackupRecord {
+        partition: target_partition.to_string(),
+        suffix: slot_suffix.to_string(),
+        backup_name: name,
+        size,
+        sha256,
+    }];
     save_state(&BootTxn {
         phase: Phase::Prepared,
         slot_suffix: slot_suffix.to_string(),
@@ -447,8 +473,7 @@ pub fn prepare(slot_suffix: &str, target_partition: &str, ota: bool) -> Result<(
     })
 }
 
-/// Arm the transaction immediately before the flash syscall.
-pub fn arm(patched_image: &[u8]) -> Result<()> {
+fn arm_unlocked(patched_image: &[u8]) -> Result<()> {
     let mut state = load_state()?.context("boot transaction is not prepared")?;
     ensure!(
         state.phase == Phase::Prepared,
@@ -457,7 +482,9 @@ pub fn arm(patched_image: &[u8]) -> Result<()> {
     );
     state.target_size = patched_image.len() as u64;
     ensure!(
-        state.target_size <= MAX_IMAGE_SIZE,
+        state.target_size > 0
+            && state.target_size <= MAX_IMAGE_SIZE
+            && state.target_size <= target_record(&state)?.size,
         "patched boot image exceeds the supported size"
     );
     state.target_sha256 = sha256::digest(patched_image);
@@ -465,72 +492,135 @@ pub fn arm(patched_image: &[u8]) -> Result<()> {
     save_state(&state)
 }
 
-/// Read every backup into a bounded, verified snapshot before the first write.
-/// Keeping these exact bytes avoids validating one file and flashing another.
-fn restore_images(state: &BootTxn) -> Result<Vec<Vec<u8>>> {
-    state
-        .records
-        .iter()
-        .map(|record| {
-            let backup = Path::new(defs::KSU_BACKUP_DIR).join(&record.backup_name);
-            ensure!(
-                record.size > 0 && record.size <= MAX_IMAGE_SIZE,
-                "invalid backup size"
-            );
-            let input = File::open(&backup)
-                .with_context(|| format!("open boot transaction backup {}", backup.display()))?;
-            ensure!(input.metadata()?.is_file(), "backup is not a regular file");
-            ensure!(
-                input.metadata()?.len() == record.size,
-                "backup size mismatch"
-            );
-            let mut bytes = Vec::new();
-            input.take(record.size + 1).read_to_end(&mut bytes)?;
-            ensure!(bytes.len() as u64 == record.size, "backup size changed");
-            ensure!(
-                sha256::digest(&bytes) == record.sha256,
-                "corrupt boot transaction backup"
-            );
-            Ok(bytes)
-        })
-        .collect()
+/// Read only the target backup into a bounded, verified snapshot before writing.
+fn restore_target_image(state: &BootTxn) -> Result<(BackupRecord, Vec<u8>)> {
+    let record = target_record(state)?.clone();
+    let backup = Path::new(defs::KSU_BACKUP_DIR).join(&record.backup_name);
+    ensure!(
+        record.size > 0 && record.size <= MAX_IMAGE_SIZE,
+        "invalid backup size"
+    );
+    let input = File::open(&backup)
+        .with_context(|| format!("open boot transaction backup {}", backup.display()))?;
+    ensure!(input.metadata()?.is_file(), "backup is not a regular file");
+    ensure!(
+        input.metadata()?.len() == record.size,
+        "backup size mismatch"
+    );
+    let mut bytes = Vec::new();
+    input.take(record.size + 1).read_to_end(&mut bytes)?;
+    ensure!(bytes.len() as u64 == record.size, "backup size changed");
+    ensure!(
+        sha256::digest(&bytes) == record.sha256,
+        "corrupt boot transaction backup"
+    );
+    Ok((record, bytes))
 }
 
-fn verify_restored(state: &BootTxn) -> Result<()> {
-    for record in &state.records {
-        let partition = partition_path(&record.partition, &record.suffix);
-        ensure!(
-            read_prefix_hash(&partition, record.size)? == record.sha256,
-            "restored partition hash mismatch: {}",
-            record.partition
-        );
-    }
+fn verify_target_restored(state: &BootTxn) -> Result<()> {
+    let record = target_record(state)?;
+    let partition = partition_path(&record.partition, &record.suffix);
+    ensure!(
+        read_prefix_hash(&partition, record.size)? == record.sha256,
+        "restored target partition hash mismatch: {}",
+        record.partition
+    );
     Ok(())
 }
 
-fn restore(state: &BootTxn) -> Result<()> {
-    let images = restore_images(state)?;
+fn restore_target(state: &BootTxn) -> Result<()> {
+    let (record, bytes) = restore_target_image(state)?;
     let mut rolling = state.clone();
     rolling.phase = Phase::RollingBack;
     save_state(&rolling)?;
-    for (record, bytes) in state.records.iter().zip(&images) {
-        let partition = partition_path(&record.partition, &record.suffix);
-        boot_patch::flash_partition(partition.to_str().unwrap_or_default(), bytes)?;
-    }
-    verify_restored(state)?;
+    let partition = partition_path(&record.partition, &record.suffix);
+    boot_patch::flash_partition(partition.to_str().unwrap_or_default(), &bytes)?;
+    verify_target_restored(state)?;
     rolling.phase = Phase::Restored;
     rolling.boot_id = current_boot_id()?;
     save_state(&rolling)
 }
 
+fn cleanup_verified(state: &BootTxn) -> Result<()> {
+    verify_target_restored(state)?;
+    clear_state()
+}
+
+/// Reconcile only states whose target still equals the verified pre-flash image.
+/// Never infer successful booting from sys.boot_completed or erase unknown writes.
+#[cfg(target_os = "android")]
+fn reconcile_retry() -> Result<()> {
+    let Some(state) = load_state()? else {
+        return Ok(());
+    };
+    let boot = current_boot_id()?;
+    let slot = crate::utils::getprop("ro.boot.slot_suffix").unwrap_or_default();
+    validate_running_slot(&state, &slot)?;
+    let can_retry = matches!(state.phase, Phase::Prepared | Phase::Armed)
+        || (state.phase == Phase::Restored && state.boot_id != boot);
+    ensure!(
+        can_retry,
+        "boot transaction still requires recovery (phase {}); recovery metadata retained",
+        state.phase.as_str()
+    );
+    // Validate immutable backup and full current target, not just the image prefix.
+    let _ = restore_target_image(&state)?;
+    verify_target_restored(&state).context(
+        "pending boot image differs from its pre-flash backup; reboot to verify/recover before retrying"
+    )?;
+    clear_state()
+}
+
+/// Serializes the complete prepare -> arm -> flash transaction against other
+/// direct flash operations and startup recovery.
+#[cfg(target_os = "android")]
+pub fn flash_transaction<F>(
+    slot_suffix: &str,
+    target_partition: &str,
+    ota: bool,
+    bytes: &[u8],
+    after_flash: F,
+) -> Result<()>
+where
+    F: FnOnce() -> Result<()>,
+{
+    let _lock = FlashLock::acquire()?;
+    reconcile_retry()?;
+    prepare_unlocked(slot_suffix, target_partition, ota)?;
+    arm_unlocked(bytes)?;
+    let target = partition_path(target_partition, slot_suffix);
+    let operation = boot_patch::flash_partition(target.to_str().unwrap_or_default(), bytes)
+        .and_then(|()| {
+            ensure!(
+                read_prefix_hash(&target, bytes.len() as u64)? == sha256::digest(bytes),
+                "flashed target readback mismatch"
+            );
+            after_flash()
+        });
+    if let Err(error) = operation {
+        let state = load_state()?.context("flash failed and transaction metadata disappeared")?;
+        let rollback = restore_target(&state).and_then(|()| cleanup_verified(&state));
+        return match rollback {
+            Ok(()) => {
+                Err(error).context("flash operation failed; verified target rollback completed")
+            }
+            Err(rollback_error) => Err(anyhow::anyhow!(
+                "flash operation failed: {error:#}; verified rollback failed: {rollback_error:#}; transaction metadata retained"
+            )),
+        };
+    }
+    Ok(())
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum BootAction {
-    Clear,
     Continue,
+    CheckPrepared,
     CheckTarget,
     Restore,
     Reboot,
     VerifyRestored,
+    VerifyArmed,
 }
 
 fn validate_running_slot(state: &BootTxn, running_slot: &str) -> Result<()> {
@@ -548,8 +638,15 @@ fn validate_running_slot(state: &BootTxn, running_slot: &str) -> Result<()> {
 
 fn boot_action(state: &BootTxn, boot_id: &str, running_slot: &str) -> Result<BootAction> {
     match state.phase {
-        Phase::Prepared => Ok(BootAction::Clear),
-        Phase::Armed if state.boot_id == boot_id => Ok(BootAction::Continue),
+        Phase::Prepared if state.boot_id == boot_id => Ok(BootAction::Continue),
+        Phase::Prepared => {
+            validate_running_slot(state, running_slot)?;
+            Ok(BootAction::CheckPrepared)
+        }
+        Phase::Armed if state.boot_id == boot_id => {
+            validate_running_slot(state, running_slot)?;
+            Ok(BootAction::VerifyArmed)
+        }
         Phase::Armed => {
             validate_running_slot(state, running_slot)?;
             Ok(BootAction::CheckTarget)
@@ -562,13 +659,23 @@ fn boot_action(state: &BootTxn, boot_id: &str, running_slot: &str) -> Result<Boo
                 BootAction::Restore
             })
         }
-        Phase::RollingBack => Ok(BootAction::Restore),
-        Phase::Restored => Ok(if state.boot_id == boot_id {
-            BootAction::Reboot
-        } else {
-            BootAction::VerifyRestored
-        }),
+        Phase::RollingBack => {
+            validate_running_slot(state, running_slot)?;
+            Ok(BootAction::Restore)
+        }
+        Phase::Restored => {
+            validate_running_slot(state, running_slot)?;
+            Ok(if state.boot_id == boot_id {
+                BootAction::Reboot
+            } else {
+                BootAction::VerifyRestored
+            })
+        }
     }
+}
+
+fn should_defer_commit(state: &BootTxn, boot_id: &str) -> bool {
+    state.boot_id == boot_id && matches!(state.phase, Phase::Prepared | Phase::Armed)
 }
 
 fn validate_commit(state: &BootTxn, boot_id: &str, running_slot: &str) -> Result<()> {
@@ -587,17 +694,45 @@ fn validate_commit(state: &BootTxn, boot_id: &str, running_slot: &str) -> Result
 /// requires a reboot; callers must stop provisioning and modules, including
 /// repeated events in the same boot. Errors must also stop normal boot work.
 pub fn on_post_fs_data() -> Result<bool> {
+    #[cfg(target_os = "android")]
+    let _lock = FlashLock::acquire()?;
     let Some(mut state) = load_state()? else {
         return Ok(false);
     };
     let boot_id = current_boot_id()?;
+    if state.phase == Phase::Prepared && state.boot_id == boot_id {
+        return Ok(false);
+    }
     let running_slot = crate::utils::getprop("ro.boot.slot_suffix").unwrap_or_default();
     match boot_action(&state, &boot_id, &running_slot)? {
-        BootAction::Clear => {
-            clear_state()?;
-            Ok(false)
-        }
         BootAction::Continue => Ok(false),
+        BootAction::CheckPrepared => {
+            let target = partition_path(&state.target_partition, &state.slot_suffix);
+            let backup = target_record(&state)?;
+            if read_prefix_hash(&target, backup.size).ok().as_deref()
+                == Some(backup.sha256.as_str())
+            {
+                clear_state()?;
+                Ok(false)
+            } else {
+                restore_target(&state)?;
+                Ok(true)
+            }
+        }
+        BootAction::VerifyArmed => {
+            let target = partition_path(&state.target_partition, &state.slot_suffix);
+            if state.target_size > 0
+                && read_prefix_hash(&target, state.target_size).ok().as_deref()
+                    == Some(state.target_sha256.as_str())
+            {
+                state.phase = Phase::Observed;
+                save_state(&state)?;
+                Ok(false)
+            } else {
+                restore_target(&state)?;
+                Ok(true)
+            }
+        }
         BootAction::CheckTarget => {
             let target = partition_path(&state.target_partition, &state.slot_suffix);
             if state.target_size > 0
@@ -609,20 +744,20 @@ pub fn on_post_fs_data() -> Result<bool> {
                 save_state(&state)?;
                 Ok(false)
             } else {
-                restore(&state)?;
+                restore_target(&state)?;
                 Ok(true)
             }
         }
         BootAction::Restore => {
-            restore(&state)?;
+            restore_target(&state)?;
             Ok(true)
         }
         BootAction::Reboot => {
-            verify_restored(&state)?;
+            verify_target_restored(&state)?;
             Ok(true)
         }
         BootAction::VerifyRestored => {
-            verify_restored(&state)?;
+            verify_target_restored(&state)?;
             clear_state()?;
             Ok(false)
         }
@@ -630,11 +765,20 @@ pub fn on_post_fs_data() -> Result<bool> {
 }
 
 /// Commit a boot only after `sys.boot_completed` has reached the normal hook.
-pub fn commit_boot_success() -> Result<()> {
+pub fn commit_boot_success() -> Result<bool> {
+    #[cfg(target_os = "android")]
+    let _lock = FlashLock::acquire()?;
     let Some(state) = load_state()? else {
-        return Ok(());
+        return Ok(true);
     };
     let boot_id = current_boot_id()?;
+    if should_defer_commit(&state, &boot_id) {
+        return Ok(false);
+    }
+    ensure!(
+        state.phase == Phase::Observed,
+        "boot transaction is not in an observed success phase"
+    );
     let running_slot = crate::utils::getprop("ro.boot.slot_suffix").unwrap_or_default();
     validate_commit(&state, &boot_id, &running_slot)?;
     if state.ota {
@@ -644,7 +788,8 @@ pub fn commit_boot_success() -> Result<()> {
             .context("mark OTA boot successful")?;
         ensure!(status.success(), "bootctl mark-boot-successful failed");
     }
-    clear_state()
+    clear_state()?;
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -676,14 +821,18 @@ mod tests {
         assert!(boot_action(&armed, "next", "_a").is_err());
         assert!(boot_action(&armed, "next", "").is_err());
         assert!(boot_action(&armed, "next", "_invalid").is_err());
+        assert!(boot_action(&armed, "original", "_a").is_err());
         assert_eq!(
-            boot_action(&armed, "original", "_a").unwrap(),
-            BootAction::Continue
+            boot_action(&armed, "original", "_b").unwrap(),
+            BootAction::VerifyArmed
         );
         assert_eq!(
             boot_action(&armed, "next", "_b").unwrap(),
             BootAction::CheckTarget
         );
+        let mut armed_same_boot = state(Phase::Armed);
+        armed_same_boot.target_size = 4;
+        assert!(validate_commit(&armed_same_boot, "original", "_b").is_err());
         let observed = state(Phase::Observed);
         assert!(validate_commit(&observed, "original", "_a").is_err());
         assert!(validate_commit(&observed, "next", "_b").is_err());
@@ -708,7 +857,7 @@ mod tests {
         );
         assert_eq!(
             boot_action(&state(Phase::Prepared), "next", "_b").unwrap(),
-            BootAction::Clear
+            BootAction::CheckPrepared
         );
     }
 
@@ -725,6 +874,31 @@ mod tests {
         );
         assert!(validate_commit(&restored, "original", "_b").is_err());
         assert_eq!(parse_state(&serialize(&restored)).unwrap(), restored);
+    }
+
+    #[test]
+    fn same_boot_prepared_or_armed_never_certifies_success() {
+        let prepared = state(Phase::Prepared);
+        assert!(should_defer_commit(&prepared, "original"));
+        assert!(!should_defer_commit(&prepared, "next"));
+        let armed = state(Phase::Armed);
+        assert!(should_defer_commit(&armed, "original"));
+        assert!(!should_defer_commit(&armed, "next"));
+        assert!(!should_defer_commit(&state(Phase::Observed), "original"));
+    }
+
+    #[test]
+    fn legacy_extra_snapshots_do_not_change_restore_scope() {
+        let mut legacy = state(Phase::RollingBack);
+        legacy.records.push(BackupRecord {
+            partition: "init_boot".to_string(),
+            suffix: "_b".to_string(),
+            backup_name: backup_name("init_boot", "_b"),
+            size: 4,
+            sha256: sha256::digest(b"init"),
+        });
+        assert_eq!(target_record(&legacy).unwrap().partition, "boot");
+        assert!(validate_commit(&legacy, "original", "_b").is_err());
     }
 
     #[test]

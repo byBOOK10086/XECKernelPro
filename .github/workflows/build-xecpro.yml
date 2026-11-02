@@ -97,6 +97,8 @@ jobs:
           done
           test -f scripts/test_kernel_btf_host.py || { echo "::error::required host test missing: scripts/test_kernel_btf_host.py"; exit 1; }
           python3 scripts/test_kernel_btf_host.py --sanitize
+          test -f scripts/test_allowlist_journal_host.py
+          python3 scripts/test_allowlist_journal_host.py --sanitize
           test -f scripts/test_feature_store_host.rs || { echo "::error::required host test missing: scripts/test_feature_store_host.rs"; exit 1; }
           rustc --edition 2024 scripts/test_feature_store_host.rs -o /tmp/test_feature_store
           /tmp/test_feature_store

@@ -96,6 +96,7 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
     }
 
     if !guard_allows_startup {
+        crate::module::prune_modules_rescue()?;
         warn!("native boot rescue: skipping late-load startup stages");
         crate::boot_guard::startup_ready()?;
         return Ok(());

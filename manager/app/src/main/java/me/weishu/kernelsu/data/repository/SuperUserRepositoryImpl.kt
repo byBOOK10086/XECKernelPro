@@ -77,6 +77,7 @@ class SuperUserRepositoryImpl : SuperUserRepository {
                 }.map {
                     val appInfo = it.applicationInfo!!
                     val profile = Natives.getAppProfile(it.packageName, appInfo.uid)
+                        ?: throw IllegalStateException("Failed to read app profile for ${it.packageName} (uid ${appInfo.uid})")
                     AppInfo(
                         label = appInfo.loadLabel(pm).toString(),
                         packageInfo = it,
@@ -95,7 +96,8 @@ class SuperUserRepositoryImpl : SuperUserRepository {
                 newApps += AppInfo(
                     label = "WebView Zygote",
                     packageInfo = placeholder,
-                    profile = Natives.getAppProfile(WEBVIEW_ZYGOTE_PROFILE_KEY, WEBVIEW_ZYGOTE_UID),
+                    profile = Natives.getAppProfile(WEBVIEW_ZYGOTE_PROFILE_KEY, WEBVIEW_ZYGOTE_UID)
+                        ?: throw IllegalStateException("Failed to read WebView Zygote profile"),
                     profileKey = WEBVIEW_ZYGOTE_PROFILE_KEY,
                     special = true,
                 )
@@ -116,6 +118,7 @@ class SuperUserRepositoryImpl : SuperUserRepository {
 
             currentApps.map {
                 val profile = Natives.getAppProfile(it.profileKey, it.uid)
+                    ?: throw IllegalStateException("Failed to read app profile for ${it.profileKey} (uid ${it.uid})")
                 it.copy(profile = profile)
             }
         }

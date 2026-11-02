@@ -749,6 +749,16 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
         };
 
         #[cfg(target_os = "android")]
+        if flash && patch_file {
+            use std::os::unix::fs::FileTypeExt;
+            ensure!(
+                !std::fs::metadata(&boot_image_file)?
+                    .file_type()
+                    .is_block_device(),
+                "explicit block-device --boot with --flash is unsupported; use automatic partition selection"
+            );
+        }
+        #[cfg(target_os = "android")]
         println!("- Bootdevice: {}", boot_image_file.display());
 
         // try extract bootctl/busybox
@@ -922,22 +932,24 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
         if flash {
             println!("- Flashing new boot image");
             let bootdevice = boot_image_file.display().to_string();
-            // 直接写回 boot 分区之前先落一个可回滚事务（boot_txn）：prepare 记录
-            // boot/init_boot 现状的大小与哈希，arm 记录马上要写进去的镜像哈希；
-            // 下次开机的 on_post_fs_data 会校验写入是否真的生效，没生效就按备份
-            // 还原。prepare 失败即中止（fail-closed）——没有回滚凭证不动引导链。
             if flashes_live_partition {
                 let slot_suffix = get_slot_suffix(ota);
                 let target_partition = choose_boot_partition(&kmi, is_replace_kernel, &partition);
-                crate::boot_txn::prepare(&slot_suffix, &target_partition, ota)?;
-                crate::boot_txn::arm(&new_boot_bytes)?;
+                crate::boot_txn::flash_transaction(
+                    &slot_suffix,
+                    &target_partition,
+                    ota,
+                    &new_boot_bytes,
+                    || if ota { post_ota() } else { Ok(()) },
+                )?;
                 println!(
-                    "- Boot transaction armed (rollback snapshot: {target_partition}{slot_suffix})"
+                    "- Boot transaction committed to flash (rollback snapshot: {target_partition}{slot_suffix})"
                 );
-            }
-            flash_partition(&bootdevice, &new_boot_bytes)?;
-            if ota {
-                post_ota()?;
+            } else {
+                flash_partition(&bootdevice, &new_boot_bytes)?;
+                if ota {
+                    post_ota()?;
+                }
             }
         }
 
@@ -1034,6 +1046,16 @@ pub fn restore(args: BootRestoreArgs) -> Result<()> {
     };
 
     #[cfg(target_os = "android")]
+    if flash && image_supplied {
+        use std::os::unix::fs::FileTypeExt;
+        ensure!(
+            !std::fs::metadata(&boot_image_file)?
+                .file_type()
+                .is_block_device(),
+            "explicit block-device --boot with --flash is unsupported; use automatic partition selection"
+        );
+    }
+    #[cfg(target_os = "android")]
     println!("- Bootdevice: {}", boot_image_file.display());
 
     println!("- Unpacking boot image");
@@ -1109,16 +1131,22 @@ pub fn restore(args: BootRestoreArgs) -> Result<()> {
         let bootdevice = boot_image_file.display().to_string();
         // 还原也是往 boot 分区里写：同样先落回滚事务，否则上一次刷写留下的事务
         // 会把「还原」判成刷写没生效，下次开机又把旧镜像写回去。
-        if !image_supplied {
+        if image_supplied {
+            flash_partition(&bootdevice, &new_boot_bytes)?;
+        } else {
             let slot_suffix = get_slot_suffix(false);
             let target_partition = choose_boot_partition(&kmi, false, &None);
-            crate::boot_txn::prepare(&slot_suffix, &target_partition, false)?;
-            crate::boot_txn::arm(&new_boot_bytes)?;
+            crate::boot_txn::flash_transaction(
+                &slot_suffix,
+                &target_partition,
+                false,
+                &new_boot_bytes,
+                || Ok(()),
+            )?;
             println!(
-                "- Boot transaction armed (rollback snapshot: {target_partition}{slot_suffix})"
+                "- Boot transaction committed to flash (rollback snapshot: {target_partition}{slot_suffix})"
             );
         }
-        flash_partition(&bootdevice, &new_boot_bytes)?;
     }
 
     #[cfg(target_os = "android")]

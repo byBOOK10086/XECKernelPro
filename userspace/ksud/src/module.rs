@@ -1110,6 +1110,14 @@ pub fn load_system_prop() -> Result<()> {
 }
 
 pub fn prune_modules() -> Result<()> {
+    prune_modules_with_hooks(true)
+}
+
+pub fn prune_modules_rescue() -> Result<()> {
+    prune_modules_with_hooks(false)
+}
+
+fn prune_modules_with_hooks(run_hooks: bool) -> Result<()> {
     foreach_module(All, |module| {
         if !module.join(defs::REMOVE_FILE_NAME).exists() {
             return Ok(());
@@ -1117,28 +1125,23 @@ pub fn prune_modules() -> Result<()> {
 
         info!("remove module: {}", module.display());
 
-        // Execute metamodule's metauninstall.sh first
         let module_id = module.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-        // Check if this is a metamodule
         let is_metamodule =
             read_module_prop(module).is_ok_and(|props| metamodule::is_metamodule(&props));
-
         if is_metamodule {
-            info!("Removing metamodule symlink");
-            if let Err(e) = metamodule::remove_symlink() {
-                warn!("Failed to remove metamodule symlink: {e}");
-            }
-        } else if let Err(e) = metamodule::exec_metauninstall_script(module_id) {
+            // Registry cleanup is needed even when rescue suppresses scripts.
+            metamodule::remove_symlink().context("remove metamodule symlink")?;
+        } else if run_hooks && let Err(e) = metamodule::exec_metauninstall_script(module_id) {
             warn!("Failed to exec metamodule uninstall for {module_id}: {e}");
         }
-
-        // Then execute module's own uninstall.sh
-        let uninstaller = module.join("uninstall.sh");
-        if uninstaller.exists()
-            && let Err(e) = exec_script(uninstaller, ScriptWait::Forever)
-        {
-            warn!("Failed to exec uninstaller: {e}");
+        if run_hooks {
+            // Then execute module's own uninstall.sh
+            let uninstaller = module.join("uninstall.sh");
+            if uninstaller.exists()
+                && let Err(e) = exec_script(uninstaller, ScriptWait::Forever)
+            {
+                warn!("Failed to exec uninstaller: {e}");
+            }
         }
 
         // Clear module configs before removing module directory
@@ -1147,14 +1150,15 @@ pub fn prune_modules() -> Result<()> {
         }
 
         // Finally remove the module directory
-        if let Err(e) = remove_dir_all(module) {
-            warn!("Failed to remove {}: {e}", module.display());
-        }
+        remove_dir_all(module).with_context(|| format!("Failed to remove {}", module.display()))?;
 
         Ok(())
     })?;
 
     // collect remaining modules, if none, clean up metamodule record
+    if !Path::new(defs::MODULE_DIR).exists() {
+        return Ok(());
+    }
     let remaining_modules: Vec<_> = std::fs::read_dir(defs::MODULE_DIR)?
         .filter_map(std::result::Result::ok)
         .filter(|entry| entry.path().join("module.prop").exists())
