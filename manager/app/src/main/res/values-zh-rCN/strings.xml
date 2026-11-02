@@ -65,7 +65,7 @@
     <string name="hide_pack_dialog_use">使用</string>
     <string name="hide_pack_running">正在部署隐藏环境，请保持屏幕常亮…</string>
     <string name="hide_pack_step_extract">解包资源文件…</string>
-    <string name="hide_pack_step_modules">刷入内置模块（HMA / TEESimulator / 紫罗兰 / LSPosed / SUSFS / 自动救砖）…</string>
+    <string name="hide_pack_step_modules">刷入内置模块（HMA / TEESimulator / 紫罗兰 / LSPosed / SUSFS）…</string>
     <string name="hide_pack_step_apks">安装内置应用…</string>
     <string name="hide_pack_step_tricky">写入 keybox.xml / security_patch.txt / target.txt 到 /data/adb/tricky_store/…</string>
     <string name="hide_pack_done">全部完成，设备将在 %1$d 秒后自动重启…</string>
@@ -1099,4 +1099,28 @@ XEC 项目组
     <string name="store_source_reset">恢复内置</string>
     <string name="store_notice_source_saved">数据源已保存</string>
     <string name="store_notice_source_reset">已恢复内置数据源</string>
+
+    <!-- Native boot protection; daemon owns state and legacy-module migration. -->
+    <string name="boot_guard_title">启动保护</string>
+    <string name="boot_guard_summary">内置启动保护可在连续启动失败后跳过启动组件。恢复正常启动前，请先检查故障原因。</string>
+    <string name="boot_guard_state">当前状态：%1$s</string>
+    <string name="boot_guard_rescue">救援模式：已跳过部分启动组件</string>
+    <string name="boot_guard_monitoring">正在监测启动</string>
+    <string name="boot_guard_disabled">未启用</string>
+    <string name="boot_guard_enabled">保护已启用：%1$s</string>
+    <string name="boot_guard_yes">是</string>
+    <string name="boot_guard_no">否</string>
+    <string name="boot_guard_failures">启动失败次数：%1$d</string>
+    <string name="boot_guard_stage">启动阶段：%1$s</string>
+    <string name="boot_guard_reason">原因：%1$s</string>
+    <string name="boot_guard_skipped">已跳过的组件：%1$s</string>
+    <string name="boot_guard_last_recovery">上次恢复记录：%1$s</string>
+    <string name="boot_guard_none">暂无记录</string>
+    <string name="boot_guard_loading">正在读取启动保护状态…</string>
+    <string name="boot_guard_unavailable">无法读取启动保护状态。请授予 Root 权限并使用支持启动保护的守护进程版本，然后刷新。</string>
+    <string name="boot_guard_refresh">刷新状态</string>
+    <string name="boot_guard_resume">恢复正常启动</string>
+    <string name="boot_guard_resume_warning">此操作会清除救援模式和启动失败计数。手动重启后，将重新尝试之前跳过的组件。请先修复或停用可疑模块或配置，否则相同问题可能再次导致无法启动。此操作不会还原启动镜像，也不会启用单独停用的模块。需要 Root 权限。是否继续？</string>
+    <string name="boot_guard_resume_failed">恢复启动失败。请检查 Root 权限，刷新状态后重试。</string>
+    <string name="boot_guard_reboot_required">已清除救援模式和启动失败计数。请手动重启设备以重新尝试正常启动，本次启动中跳过的组件在重启前仍不会运行。</string>
 </resources>

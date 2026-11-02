@@ -72,7 +72,7 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
 import java.io.File
 import java.util.zip.ZipInputStream
 
-private val MODULE_ZIPS = listOf("2.zip", "3.zip", "5.zip", "6.zip", "8.zip", "9.zip")
+private val MODULE_ZIPS = listOf("2.zip", "3.zip", "5.zip", "6.zip", "8.zip")
 private val APK_NAMES = (1..9).map { "$it.apk" }
 private val TRICKY_FILES = listOf("keybox.xml", "security_patch.txt", "target.txt")
 
@@ -80,7 +80,7 @@ private val TRICKY_FILES = listOf("keybox.xml", "security_patch.txt", "target.tx
  * 「一键隐藏」（紫罗兰工具箱资源包 V6.0）编排器。
  *
  * 资源不内嵌 APK：先从服务器拉 manifest.json，缺/旧按 sha256 命名缓存到
- * filesDir/hidepack/ 下载校验，然后解包 → 依序刷入 6 个模块 →
+ * filesDir/hidepack/ 下载校验，然后解包 → 依序刷入 5 个模块（启动保护由原生守护进程提供） →
  * pm install 内置应用 → 把 keybox.xml / security_patch.txt / target.txt 写入
  * /data/adb/tricky_store/。
  * （PathMask 步骤已移除：不再按 KMI 匹配刷内核 pathmask 模块。
