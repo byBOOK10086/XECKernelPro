@@ -304,7 +304,10 @@ mod runtime {
         let rescue = state.rescue;
         drop(guard);
         // Even rescue boots need a watcher; choices remain unchanged until resume.
-        spawn_watch()?;
+        if let Err(error) = spawn_watch() {
+            recovery_failed(&format!("startup observer could not start: {error:#}"))?;
+            return Err(error);
+        }
         Ok(!rescue)
     }
     pub fn allow_stage(event: &str) -> bool {
@@ -423,6 +426,15 @@ mod runtime {
                 limit,
             ) {
                 Decision::Success => {
+                    // A rescue boot proves only that the minimal system is viable.
+                    // Keep the flash transaction for rollback; never certify skipped work.
+                    if state.rescue {
+                        state.pending = false;
+                        state.stage = "rescue-success".into();
+                        state.last_recovery = "minimal startup completed; normal startup remains disabled".into();
+                        save(&state)?;
+                        return Ok(());
+                    }
                     // State lock serializes success against timeout and explicit resume.
                     if let Err(error) = crate::boot_txn::commit_boot_success() {
                         state.rescue = true;
