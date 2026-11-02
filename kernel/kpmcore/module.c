@@ -608,34 +608,14 @@ static int setup_load_info(struct kp_load_info *info)
 	return 0;
 }
 
+#include "elf_validate.h"
 static int elf_header_check(struct kp_load_info *info)
 {
-	const Elf64_Ehdr *h = info->hdr;
-	unsigned int i;
-	if (info->len < sizeof(*h)) {
-		set_load_error(info, "ELF header is truncated");
-		return -ENOEXEC;
-	}
-	if (memcmp(h->e_ident, ELFMAG, SELFMAG) || h->e_ident[EI_CLASS] != ELFCLASS64 ||
-	    h->e_ident[EI_DATA] != ELFDATA2LSB || h->e_type != ET_REL ||
-	    h->e_machine != EM_AARCH64 || h->e_shentsize != sizeof(Elf64_Shdr) ||
-	    !h->e_shnum || h->e_shstrndx >= h->e_shnum) {
-		set_load_error(info, "ELF header is not a supported AArch64 relocatable module");
-		return -ENOEXEC;
-	}
-	if (h->e_shoff > info->len || h->e_shnum > (info->len - h->e_shoff) / sizeof(Elf64_Shdr)) {
-		set_load_error(info, "ELF section headers are invalid");
-		return -ENOEXEC;
-	}
-	for (i = 0; i < h->e_shnum; i++) {
-		const Elf64_Shdr *sh = (const void *)((const char *)h + h->e_shoff) + i;
-		if (sh->sh_type != SHT_NOBITS &&
-		    (sh->sh_offset > info->len || sh->sh_size > info->len - sh->sh_offset)) {
-			set_load_error(info, "ELF section data is out of bounds");
-			return -ENOEXEC;
-		}
-	}
-	return 0;
+    if (kpm_validate_elf(info->hdr, info->len)) {
+        set_load_error(info, "invalid or unsupported KPM ELF tables, strings or symbols");
+        return -ENOEXEC;
+    }
+    return 0;
 }
 
 struct kp_module modules = { 0 };
@@ -715,41 +695,35 @@ bool kp_kpm_cfi_allowed_addr(unsigned long addr)
  * iterator. find_check_fn() then validates the trampoline page (covered by
  * kp_kpm_cfi_allowed_addr, noop check fn) and the BLR lands on bti c, which
  * direct-branches into the non-BTI KPM callback with the call args intact. */
+struct kp_kallsyms_context {
+    kp_kallsyms_cb_t callback;
+    void *data;
+};
+
+/* A compiler-generated kernel callback has the correct CFI type and BTI
+ * landing pad. Stack context makes recursive/concurrent iterations independent. */
+static noinline __attribute__((no_sanitize("cfi")))
+int kp_forward_kallsyms(void *opaque, const char *name,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
+                       struct module *owner,
+#endif
+                       unsigned long address)
+{
+    struct kp_kallsyms_context *ctx = opaque;
+    return ctx->callback(ctx->data, name,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
+                         owner,
+#endif
+                         address);
+}
+
 __attribute__((no_sanitize("cfi")))
 int kp_kpm_safe_kallsyms_on_each_symbol(kp_kallsyms_cb_t fn, void *data)
 {
-	if (!kp_real_kallsyms_on_each_symbol)
-		return -EOPNOTSUPP;
-
-	if (!kp_callback_tramp || !kp_kpm_cfi_allowed_addr((unsigned long)fn))
-		return kp_real_kallsyms_on_each_symbol(fn, data);
-
-	{
-		unsigned long flags;
-		u32 *slot = (u32 *)kp_callback_tramp + 2; /* page+8 */
-		u32 *pad = (u32 *)kp_callback_tramp;
-		long off = (long)((unsigned long)fn - ((unsigned long)slot + 4));
-
-		pr_emerg(KPLKM_TAG ": kallsyms safe: fn=%px tramp=%px off=%ld\n",
-			 (void *)fn, kp_callback_tramp, off);
-
-		spin_lock_irqsave(&module_lock, flags);
-		pad[0] = 0; /* keep [target-4] mapped + zeroed for the KCFI check */
-		pad[1] = 0;
-		slot[0] = 0xd503245f; /* bti c */
-		slot[1] = 0x14000000 | (((unsigned long)off >> 2) & 0x03ffffff); /* b <fn> */
-		dsb(ishst);
-		asm volatile("ic iallu");
-		dsb(ish);
-		isb();
-		spin_unlock_irqrestore(&module_lock, flags);
-	}
-
-	{
-		int r = kp_real_kallsyms_on_each_symbol((kp_kallsyms_cb_t)((char *)kp_callback_tramp + 8), data);
-		pr_emerg(KPLKM_TAG ": kallsyms safe done rc=%d\n", r);
-		return r;
-	}
+    struct kp_kallsyms_context ctx = { fn, data };
+    if (!kp_real_kallsyms_on_each_symbol || !fn)
+        return -EOPNOTSUPP;
+    return kp_real_kallsyms_on_each_symbol(kp_forward_kallsyms, &ctx);
 }
 
 static struct kp_module *kp_find_module(const char *name)

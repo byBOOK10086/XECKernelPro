@@ -72,8 +72,16 @@ static void *kp_hook_exec_alloc(unsigned long size)
 		p = vmalloc(size);
 	/* GKI module_alloc returns PAGE_KERNEL (PXN set, NX); vmalloc too. Hook
 	 * trampolines live here and must be executable. */
-	if (p && kp_hook_set_memory_x)
-		kp_hook_set_memory_x((unsigned long)p, pages);
+	if (p && (!kp_hook_set_memory_x ||
+                  kp_hook_set_memory_x((unsigned long)p, pages))) {
+        if (kp_hook_module_alloc && kp_hook_module_memfree)
+            kp_hook_module_memfree(p);
+        else if (!kp_hook_module_alloc && kp_hook_execmem_alloc && kp_hook_execmem_free)
+            kp_hook_execmem_free(p);
+        else
+            vfree(p);
+        return NULL;
+    }
 	return p;
 }
 
