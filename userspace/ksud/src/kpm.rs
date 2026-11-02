@@ -192,7 +192,7 @@ fn driver_control(name: &str, args: &str) -> Result<i32> {
 fn suki_ctl(control: u32, arg1: u64, arg2: u64) -> Result<i32> {
     let mut ret: i32 = -1;
     let mut cmd = ksu_uapi::ksu_kpm_cmd {
-        control_code: control as u64,
+        control_code: u64::from(control),
         arg1,
         arg2,
         result_code: &raw mut ret as u64,
@@ -224,10 +224,7 @@ fn suki_version() -> Result<String> {
 /// contract: op 8 is optional and older engines refuse it).
 fn suki_load_event(path: &str, args: Option<&str>, event: &str) -> Result<()> {
     let path_c = CString::new(path)?;
-    let args_c = args
-        .map(|a| CString::new(a))
-        .transpose()?
-        .unwrap_or_default();
+    let args_c = args.map(CString::new).transpose()?.unwrap_or_default();
     let event_c = CString::new(event)?;
     let payload = ksu_uapi::ksu_kpm_load_event_cmd {
         args: args_c.as_ptr() as u64,
@@ -236,7 +233,7 @@ fn suki_load_event(path: &str, args: Option<&str>, event: &str) -> Result<()> {
     let ret = suki_ctl(
         ksu_uapi::SUKISU_KPM_LOAD_EVENT,
         path_c.as_ptr() as u64,
-        &payload as *const _ as u64,
+        &raw const payload as u64,
     )?;
     if ret == -libc::EOPNOTSUPP {
         log::info!("KPM: bridge has no event-aware load; falling back to plain load");
@@ -296,12 +293,11 @@ fn ensure_kpm_core() -> Result<()> {
 
 /// Remove the staged core so nothing lingers after use.
 fn drop_kpm_core() {
-    if let Ok(_guard) = CORE_STAGE_LOCK.lock() {
-        if let Err(error) = fs::remove_file(KPM_CORE_BIN)
-            && error.kind() != std::io::ErrorKind::NotFound
-        {
-            log::warn!("KPM: failed to remove staged core: {error}");
-        }
+    if let Ok(_guard) = CORE_STAGE_LOCK.lock()
+        && let Err(error) = fs::remove_file(KPM_CORE_BIN)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        log::warn!("KPM: failed to remove staged core: {error}");
     }
 }
 

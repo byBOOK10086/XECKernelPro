@@ -11,6 +11,7 @@ use std::{path::Path, sync::Mutex, time::Instant};
 static STAGE_LOCK: Mutex<()> = Mutex::new(());
 
 pub fn on_post_fs_data() -> Result<()> {
+    let guard_allows_startup = crate::boot_guard::begin("post-fs-data")?;
     // 挂载态（<5.10）没有内核驱动：凡是"跟驱动说话"的步骤都得跳过，否则整条
     // 模块流水线会被 UAPI 校验挡在门外（那一句是 `return Ok(())`，会静默什么都不做）。
     // 反过来，挂载态也不许铺内核态的东西（`/data/adb/ksu` 那一套）。
@@ -19,8 +20,17 @@ pub fn on_post_fs_data() -> Result<()> {
     // Resolve a pending direct-flash transaction before any module, SELinux, or
     // SUSFS work can run. A successful rollback owns this boot and must return
     // immediately.
-    if !mount_state && crate::boot_txn::on_post_fs_data()? {
+    if !mount_state
+        && crate::boot_txn::on_post_fs_data().inspect_err(|error| {
+            let _ = crate::boot_guard::recovery_failed(&format!("boot recovery failed: {error:#}"));
+        })?
+    {
         warn!("boot transaction rollback completed; skipping module startup");
+        crate::boot_guard::rollback_applied()?;
+        return Ok(());
+    }
+    if !guard_allows_startup {
+        warn!("native boot rescue: skipping startup stages");
         return Ok(());
     }
     if !mount_state {
@@ -134,6 +144,9 @@ pub fn on_post_fs_data() -> Result<()> {
         warn!("restorecon failed: {e}");
     }
 
+    if !crate::boot_guard::allow_stage("startup-boundary-0") {
+        return Ok(());
+    }
     // load sepolicy.rule
     if crate::module::load_sepolicy_rule().is_err() {
         warn!("load sepolicy.rule failed");
@@ -152,6 +165,9 @@ pub fn on_post_fs_data() -> Result<()> {
         warn!("init features failed: {e}");
     }
 
+    if !crate::boot_guard::allow_stage("startup-boundary-1") {
+        return Ok(());
+    }
     // execute metamodule post-fs-data script first (priority)
     if let Err(e) = metamodule::exec_stage_script("post-fs-data", wait) {
         warn!("exec metamodule post-fs-data script failed: {e}");
@@ -162,11 +178,17 @@ pub fn on_post_fs_data() -> Result<()> {
         warn!("exec post-fs-data scripts failed: {e}");
     }
 
+    if !crate::boot_guard::allow_stage("startup-boundary-2") {
+        return Ok(());
+    }
     // load system.prop
     if let Err(e) = crate::module::load_system_prop() {
         warn!("load system.prop failed: {e}");
     }
 
+    if !crate::boot_guard::allow_stage("startup-boundary-3") {
+        return Ok(());
+    }
     // execute metamodule mount script；没装 metamodule 时退到内置 magic mount 引擎
     if metamodule::has_metamodule() {
         if let Err(e) = metamodule::exec_mount_script(module_dir) {
@@ -208,6 +230,10 @@ fn mount_modules_magic_fallback() -> Result<()> {
 }
 
 pub fn run_stage(stage: &str, wait: ScriptWait) {
+    if !crate::boot_guard::allow_stage(stage) {
+        warn!("native boot guard: skipping {stage}");
+        return;
+    }
     let Ok(_guard) = STAGE_LOCK.lock() else {
         error!("Failed to acquire stage lock for {stage}");
         return;
@@ -240,6 +266,9 @@ pub fn run_stage(stage: &str, wait: ScriptWait) {
 }
 
 pub fn on_services() {
+    if !crate::boot_guard::allow_stage("services") {
+        return;
+    }
     if let Err(e) = ksucalls::ensure_uapi_version_matched() {
         error!("{e:#}, skip on_services");
         return;
@@ -262,15 +291,17 @@ pub fn on_services() {
 }
 
 pub fn on_boot_completed() {
+    if !crate::boot_guard::allow_stage("boot-completed") {
+        // Minimal rescue can become stable, but the observer never commits its flash.
+        if let Err(error) = crate::boot_guard::startup_ready() {
+            error!("rescue readiness failed: {error:#}");
+        }
+        return;
+    }
     // 挂载态没有内核驱动：boot 事务与 UAPI 校验都跳过，但 boot-completed 阶段
     // 脚本必须照跑（模块靠它收尾）。
     let mount_state = utils::is_mount_state();
     if !mount_state {
-        if let Err(e) = crate::boot_txn::commit_boot_success() {
-            error!("boot transaction commit failed: {e:#}; refusing boot-completed stages");
-            return;
-        }
-
         if let Err(e) = ksucalls::ensure_uapi_version_matched() {
             error!("{e:#}, skip on_boot_completed");
             return;
@@ -287,7 +318,13 @@ pub fn on_boot_completed() {
         error!("stealth entrance: {e:#}");
     }
 
-    run_stage("boot-completed", ScriptWait::NoWait);
+    run_stage(
+        "boot-completed",
+        ScriptWait::Until(Instant::now() + defs::BOOT_STAGE_TIMEOUT),
+    );
+    if let Err(error) = crate::boot_guard::startup_ready() {
+        error!("boot guard readiness failed: {error:#}");
+    }
 }
 
 fn catch_bootlog(logname: &str, command: &[&str]) -> Result<()> {

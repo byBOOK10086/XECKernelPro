@@ -543,7 +543,7 @@ fn spawn_root(request: &Request, fds: &[RawFd; 3]) -> Result<i32> {
                 libc::chdir(cwd.as_ptr());
             }
             let env = build_env();
-            let Ok(program_c) = CString::new(program.clone()) else {
+            let Ok(program_c) = CString::new(program) else {
                 libc::_exit(126);
             };
             let mut exec_argv: Vec<CString> = Vec::with_capacity(args.len() + 2);

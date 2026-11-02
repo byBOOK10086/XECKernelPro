@@ -495,7 +495,8 @@ fn run_watcher() -> Result<()> {
                             };
                             // 全局最小点按间隔：同一物理点按被副输入节点重复
                             // 上报时，120ms 内只认第一下。
-                            if last_tap.is_some_and(|t| tap_at.duration_since(t) < MIN_TAP_INTERVAL) {
+                            if last_tap.is_some_and(|t| tap_at.duration_since(t) < MIN_TAP_INTERVAL)
+                            {
                                 continue;
                             }
                             last_tap = Some(tap_at);

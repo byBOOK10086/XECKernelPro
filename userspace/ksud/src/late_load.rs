@@ -73,6 +73,8 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
     // will be blocked by SELinux because its fsec->sid is still u:r:su:s0 instead of u:r:ksu:s0.
     utils::reset_std()?;
 
+    let guard_allows_startup = crate::boot_guard::begin("late-load")?;
+
     utils::umask(0);
 
     if let Err(e) = crate::module_config::clear_all_temp_configs() {
@@ -85,8 +87,17 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
 
     // Late-load bypasses on_post_data_fs, so apply the same direct-flash
     // transaction guard before any module startup work.
-    if crate::boot_txn::on_post_fs_data()? {
+    if crate::boot_txn::on_post_fs_data().inspect_err(|error| {
+        let _ = crate::boot_guard::recovery_failed(&format!("boot recovery failed: {error:#}"));
+    })? {
         warn!("boot transaction rollback completed during late-load; skipping module startup");
+        crate::boot_guard::rollback_applied()?;
+        return Ok(());
+    }
+
+    if !guard_allows_startup {
+        warn!("native boot rescue: skipping late-load startup stages");
+        crate::boot_guard::startup_ready()?;
         return Ok(());
     }
 
@@ -137,6 +148,9 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
         warn!("restorecon failed: {e}");
     }
 
+    if !crate::boot_guard::allow_stage("startup-boundary-0") {
+        return Ok(());
+    }
     // 6. Load SELinux rules
     if crate::module::load_sepolicy_rule().is_err() {
         warn!("load sepolicy.rule failed");
@@ -156,11 +170,17 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
     let wait = ScriptWait::Until(Instant::now() + defs::BOOT_STAGE_TIMEOUT);
     init_event::run_stage("late-load", wait);
 
+    if !crate::boot_guard::allow_stage("startup-boundary-1") {
+        return Ok(());
+    }
     // 9. Load system.prop
     if let Err(e) = crate::module::load_system_prop() {
         warn!("load system.prop failed: {e}");
     }
 
+    if !crate::boot_guard::allow_stage("startup-boundary-2") {
+        return Ok(());
+    }
     // 10. Execute metamodule mount script (OverlayFS)
     if let Err(e) = metamodule::exec_mount_script(defs::MODULE_DIR) {
         warn!("execute metamodule mount failed: {e}");
@@ -173,7 +193,12 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
     init_event::run_stage("service", ScriptWait::NoWait);
 
     // 13. Execute boot-completed stage scripts (non-blocking)
-    init_event::run_stage("boot-completed", ScriptWait::NoWait);
+    init_event::run_stage(
+        "boot-completed",
+        ScriptWait::Until(Instant::now() + defs::BOOT_STAGE_TIMEOUT),
+    );
+
+    crate::boot_guard::startup_ready()?;
 
     // 14. Restart Manager so it gets a fresh ksu fd from the newly loaded kernel module
     info!("Restarting KernelSU Manager {package_name}...");

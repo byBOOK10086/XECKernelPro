@@ -110,6 +110,7 @@ impl BuiltinApplyLock {
         }
         let file = OpenOptions::new()
             .create(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .open(path)
@@ -345,10 +346,7 @@ fn builtin_store_stamp_path(token: &str) -> PathBuf {
 /// 也不要让设备继续用上一次构建的引擎资产（新版管理器 + 旧引擎是最难查的错配）。
 fn builtin_store_is_current(token: &str) -> bool {
     let stamp = builtin_store_stamp_path(token);
-    match std::fs::read_to_string(&stamp) {
-        Ok(value) => value.trim() == defs::VERSION_CODE,
-        Err(_) => false,
-    }
+    std::fs::read_to_string(&stamp).is_ok_and(|value| value.trim() == defs::VERSION_CODE)
 }
 
 /// 把内置模块的明文资产加密进 /data 上的存储（按 ksud 构建刷新内容戳）。
@@ -393,7 +391,9 @@ fn store_builtin_blob(module_id: &str, token: &str) -> Result<()> {
     };
     for required_path in required {
         ensure!(
-            entries.iter().any(|(path, _, data)| path == required_path && !data.is_empty()),
+            entries
+                .iter()
+                .any(|(path, _, data)| path == required_path && !data.is_empty()),
             "required bundled asset missing or empty: {module_id}/{required_path}"
         );
     }
@@ -468,7 +468,7 @@ fn start_builtin_runtime(module_id: &str) -> Result<()> {
         });
     }
     command
-        .current_dir(script.parent().unwrap_or(Path::new("/")))
+        .current_dir(script.parent().unwrap_or_else(|| Path::new("/")))
         .arg("sh")
         .arg(&script)
         .envs(get_common_script_envs(Some(module_id)))
@@ -513,7 +513,7 @@ fn stop_builtin_runtime(module_id: &str) {
         });
     }
     command
-        .current_dir(script.parent().unwrap_or(Path::new("/")))
+        .current_dir(script.parent().unwrap_or_else(|| Path::new("/")))
         .arg("sh")
         .arg(&script)
         .arg("--stop")
@@ -568,6 +568,7 @@ pub fn builtin_status() -> serde_json::Value {
     serde_json::Value::Object(map)
 }
 
+#[allow(dead_code)]
 pub fn builtin_print_status() -> Result<()> {
     println!("{}", serde_json::to_string_pretty(&builtin_status())?);
     Ok(())
@@ -577,6 +578,9 @@ pub fn builtin_print_status() -> Result<()> {
 /// Refresh persistent blobs and materialize all enabled built-ins for this boot.
 #[cfg(target_os = "android")]
 pub fn ensure_builtin_modules() -> Result<()> {
+    if !crate::boot_guard::allow_stage("builtin-provision") {
+        return Ok(());
+    }
     let _lock = BuiltinApplyLock::acquire()?;
     std::fs::create_dir_all(defs::BUILTIN_STORE_DIR)?;
     std::fs::create_dir_all(defs::BUILTIN_MODULE_DIR)?;
@@ -610,6 +614,10 @@ pub fn builtin_apply(target: &str, on: bool) -> Result<()> {
         );
     }
     set_builtin_flag(key, on)?;
+    if on && !crate::boot_guard::allow_stage("builtin-enable") {
+        println!("{}", serde_json::to_string_pretty(&builtin_status())?);
+        return Ok(());
+    }
 
     if on {
         store_builtin_blob(module_id, token)?;
@@ -732,7 +740,11 @@ pub fn foreach_module(
         ModuleType::Updated => MODULE_UPDATE_DIR,
         _ => defs::MODULE_DIR,
     });
-    let dir = std::fs::read_dir(modules_dir)?;
+    let dir = match std::fs::read_dir(modules_dir) {
+        Ok(dir) => dir,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.into()),
+    };
     for entry in dir.flatten() {
         let path = entry.path();
         if !path.is_dir() {
@@ -1030,6 +1042,9 @@ fn exec_builtin_stage_script(stage: &str, wait: ScriptWait) -> Result<()> {
 }
 
 pub fn exec_stage_script(stage: &str, wait: ScriptWait) -> Result<()> {
+    if !crate::boot_guard::allow_stage(stage) {
+        return Ok(());
+    }
     let metamodule_dir = metamodule::get_metamodule_path().and_then(|path| canonicalize(path).ok());
 
     foreach_active_module(|module| {
@@ -1054,6 +1069,9 @@ pub fn exec_stage_script(stage: &str, wait: ScriptWait) -> Result<()> {
 }
 
 pub fn exec_common_scripts(dir: &str, wait: ScriptWait) -> Result<()> {
+    if !crate::boot_guard::allow_stage(dir) {
+        return Ok(());
+    }
     let script_dir = Path::new(defs::ADB_DIR).join(dir);
     if !script_dir.exists() {
         info!("{} not exists, skip", script_dir.display());

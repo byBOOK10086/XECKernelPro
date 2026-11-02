@@ -135,6 +135,7 @@ fun ToolsScreen() {
                         icon = { Icon(Icons.Rounded.Code, modifier = Modifier.padding(end = 6.dp), contentDescription = null, tint = colorScheme.onBackground) },
                         onClick = { navigator.push(Route.Terminal) },
                     )
+                    BootGuardCard(backdrop)
                     SuperkeyCard(backdrop)
                     StealthCard(backdrop)
                 }

@@ -34,6 +34,7 @@ enum Phase {
     Armed,
     Observed,
     RollingBack,
+    Restored,
 }
 
 impl Phase {
@@ -43,6 +44,7 @@ impl Phase {
             Self::Armed => "armed",
             Self::Observed => "observed",
             Self::RollingBack => "rolling_back",
+            Self::Restored => "restored",
         }
     }
 
@@ -52,6 +54,7 @@ impl Phase {
             "armed" => Ok(Self::Armed),
             "observed" => Ok(Self::Observed),
             "rolling_back" => Ok(Self::RollingBack),
+            "restored" => Ok(Self::Restored),
             _ => bail!("unknown boot transaction phase: {value}"),
         }
     }
@@ -256,6 +259,13 @@ fn parse_state(data: &str) -> Result<BootTxn> {
             .remove(&format!("{prefix}sha256"))
             .with_context(|| format!("missing {prefix}sha256"))?;
         validate_sha256(&sha256)?;
+        ensure!(size > 0 && size <= MAX_IMAGE_SIZE, "invalid backup size");
+        ensure!(
+            !records
+                .iter()
+                .any(|record: &BackupRecord| record.partition == partition),
+            "duplicate backup partition"
+        );
         records.push(BackupRecord {
             partition,
             suffix,
@@ -327,7 +337,7 @@ fn clear_state() -> Result<()> {
 fn copy_backup(source: &Path, backup_name: &str) -> Result<(u64, String)> {
     let destination = Path::new(defs::KSU_BACKUP_DIR).join(backup_name);
     let temporary = destination.with_extension(format!("tmp.{}", std::process::id()));
-    let mut input =
+    let input =
         File::open(source).with_context(|| format!("open backup source {}", source.display()))?;
     ensure!(
         input.metadata()?.len() <= MAX_IMAGE_SIZE,
@@ -339,7 +349,11 @@ fn copy_backup(source: &Path, backup_name: &str) -> Result<(u64, String)> {
         .truncate(true)
         .write(true)
         .open(&temporary)?;
-    let size = std::io::copy(&mut input, &mut output)?;
+    let size = std::io::copy(&mut input.take(MAX_IMAGE_SIZE + 1), &mut output)?;
+    ensure!(
+        size > 0 && size <= MAX_IMAGE_SIZE,
+        "invalid backup image size"
+    );
     output.sync_all()?;
     std::fs::rename(&temporary, &destination)?;
     sync_parent(&destination)?;
@@ -451,65 +465,140 @@ pub fn arm(patched_image: &[u8]) -> Result<()> {
     save_state(&state)
 }
 
-fn restore(state: &BootTxn) -> Result<()> {
-    let mut rolling = state.clone();
-    rolling.phase = Phase::RollingBack;
-    save_state(&rolling)?;
+/// Read every backup into a bounded, verified snapshot before the first write.
+/// Keeping these exact bytes avoids validating one file and flashing another.
+fn restore_images(state: &BootTxn) -> Result<Vec<Vec<u8>>> {
+    state
+        .records
+        .iter()
+        .map(|record| {
+            let backup = Path::new(defs::KSU_BACKUP_DIR).join(&record.backup_name);
+            ensure!(
+                record.size > 0 && record.size <= MAX_IMAGE_SIZE,
+                "invalid backup size"
+            );
+            let input = File::open(&backup)
+                .with_context(|| format!("open boot transaction backup {}", backup.display()))?;
+            ensure!(input.metadata()?.is_file(), "backup is not a regular file");
+            ensure!(
+                input.metadata()?.len() == record.size,
+                "backup size mismatch"
+            );
+            let mut bytes = Vec::new();
+            input.take(record.size + 1).read_to_end(&mut bytes)?;
+            ensure!(bytes.len() as u64 == record.size, "backup size changed");
+            ensure!(
+                sha256::digest(&bytes) == record.sha256,
+                "corrupt boot transaction backup"
+            );
+            Ok(bytes)
+        })
+        .collect()
+}
+
+fn verify_restored(state: &BootTxn) -> Result<()> {
     for record in &state.records {
-        let backup = Path::new(defs::KSU_BACKUP_DIR).join(&record.backup_name);
-        ensure!(
-            backup.is_file(),
-            "missing boot transaction backup {}",
-            backup.display()
-        );
-        ensure!(
-            record.size <= MAX_IMAGE_SIZE,
-            "boot transaction record size exceeds the supported limit"
-        );
-        let backup_size = std::fs::metadata(&backup)
-            .with_context(|| format!("stat boot transaction backup {}", backup.display()))?
-            .len();
-        ensure!(
-            backup_size == record.size,
-            "boot transaction backup {} has an unexpected size",
-            backup.display()
-        );
-        let hash = sha256::try_digest(&backup)?;
-        ensure!(
-            hash == record.sha256,
-            "corrupt boot transaction backup {}",
-            backup.display()
-        );
         let partition = partition_path(&record.partition, &record.suffix);
-        let bytes = std::fs::read(&backup)?;
-        boot_patch::flash_partition(partition.to_str().unwrap_or_default(), &bytes)?;
-        let restored = read_prefix_hash(&partition, record.size)?;
         ensure!(
-            restored == record.sha256,
+            read_prefix_hash(&partition, record.size)? == record.sha256,
             "restored partition hash mismatch: {}",
             record.partition
         );
     }
-    clear_state()
+    Ok(())
 }
 
-/// Handle the earliest reachable boot stage. Returns true when a rollback was
-/// performed; callers must then stop before provisioning or running modules.
+fn restore(state: &BootTxn) -> Result<()> {
+    let images = restore_images(state)?;
+    let mut rolling = state.clone();
+    rolling.phase = Phase::RollingBack;
+    save_state(&rolling)?;
+    for (record, bytes) in state.records.iter().zip(&images) {
+        let partition = partition_path(&record.partition, &record.suffix);
+        boot_patch::flash_partition(partition.to_str().unwrap_or_default(), bytes)?;
+    }
+    verify_restored(state)?;
+    rolling.phase = Phase::Restored;
+    rolling.boot_id = current_boot_id()?;
+    save_state(&rolling)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum BootAction {
+    Clear,
+    Continue,
+    CheckTarget,
+    Restore,
+    Reboot,
+    VerifyRestored,
+}
+
+fn validate_running_slot(state: &BootTxn, running_slot: &str) -> Result<()> {
+    validate_suffix(running_slot)?;
+    ensure!(
+        running_slot == state.slot_suffix,
+        "boot transaction target slot {} is not the running slot {running_slot}",
+        state.slot_suffix
+    );
+    if state.ota {
+        ensure!(!running_slot.is_empty(), "OTA boot requires an A/B slot");
+    }
+    Ok(())
+}
+
+fn boot_action(state: &BootTxn, boot_id: &str, running_slot: &str) -> Result<BootAction> {
+    match state.phase {
+        Phase::Prepared => Ok(BootAction::Clear),
+        Phase::Armed if state.boot_id == boot_id => Ok(BootAction::Continue),
+        Phase::Armed => {
+            validate_running_slot(state, running_slot)?;
+            Ok(BootAction::CheckTarget)
+        }
+        Phase::Observed => {
+            validate_running_slot(state, running_slot)?;
+            Ok(if state.boot_id == boot_id {
+                BootAction::Continue
+            } else {
+                BootAction::Restore
+            })
+        }
+        Phase::RollingBack => Ok(BootAction::Restore),
+        Phase::Restored => Ok(if state.boot_id == boot_id {
+            BootAction::Reboot
+        } else {
+            BootAction::VerifyRestored
+        }),
+    }
+}
+
+fn validate_commit(state: &BootTxn, boot_id: &str, running_slot: &str) -> Result<()> {
+    ensure!(
+        state.phase == Phase::Observed,
+        "boot transaction was not observed successfully"
+    );
+    ensure!(
+        state.boot_id == boot_id,
+        "boot transaction belongs to another boot"
+    );
+    validate_running_slot(state, running_slot)
+}
+
+/// Handle the earliest reachable boot stage. True means verified rollback
+/// requires a reboot; callers must stop provisioning and modules, including
+/// repeated events in the same boot. Errors must also stop normal boot work.
 pub fn on_post_fs_data() -> Result<bool> {
     let Some(mut state) = load_state()? else {
         return Ok(false);
     };
     let boot_id = current_boot_id()?;
-    match state.phase {
-        Phase::Prepared => {
-            // No flash was armed; discard an interrupted preflight transaction.
+    let running_slot = crate::utils::getprop("ro.boot.slot_suffix").unwrap_or_default();
+    match boot_action(&state, &boot_id, &running_slot)? {
+        BootAction::Clear => {
             clear_state()?;
             Ok(false)
         }
-        Phase::Armed => {
-            if boot_id == state.boot_id {
-                return Ok(false);
-            }
+        BootAction::Continue => Ok(false),
+        BootAction::CheckTarget => {
             let target = partition_path(&state.target_partition, &state.slot_suffix);
             if state.target_size > 0
                 && read_prefix_hash(&target, state.target_size).ok().as_deref()
@@ -524,17 +613,18 @@ pub fn on_post_fs_data() -> Result<bool> {
                 Ok(true)
             }
         }
-        Phase::Observed => {
-            if boot_id == state.boot_id {
-                Ok(false)
-            } else {
-                restore(&state)?;
-                Ok(true)
-            }
-        }
-        Phase::RollingBack => {
+        BootAction::Restore => {
             restore(&state)?;
             Ok(true)
+        }
+        BootAction::Reboot => {
+            verify_restored(&state)?;
+            Ok(true)
+        }
+        BootAction::VerifyRestored => {
+            verify_restored(&state)?;
+            clear_state()?;
+            Ok(false)
         }
     }
 }
@@ -545,14 +635,8 @@ pub fn commit_boot_success() -> Result<()> {
         return Ok(());
     };
     let boot_id = current_boot_id()?;
-    ensure!(
-        state.phase == Phase::Observed,
-        "boot transaction was not observed successfully"
-    );
-    ensure!(
-        state.boot_id == boot_id,
-        "boot transaction belongs to another boot"
-    );
+    let running_slot = crate::utils::getprop("ro.boot.slot_suffix").unwrap_or_default();
+    validate_commit(&state, &boot_id, &running_slot)?;
     if state.ota {
         let status = std::process::Command::new(crate::assets::BOOTCTL_PATH)
             .arg("mark-boot-successful")
@@ -561,4 +645,102 @@ pub fn commit_boot_success() -> Result<()> {
         ensure!(status.success(), "bootctl mark-boot-successful failed");
     }
     clear_state()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state(phase: Phase) -> BootTxn {
+        BootTxn {
+            phase,
+            slot_suffix: "_b".to_string(),
+            target_partition: "boot".to_string(),
+            target_size: 4,
+            target_sha256: sha256::digest(b"boot"),
+            boot_id: "original".to_string(),
+            ota: true,
+            records: vec![BackupRecord {
+                partition: "boot".to_string(),
+                suffix: "_b".to_string(),
+                backup_name: backup_name("boot", "_b"),
+                size: 4,
+                sha256: sha256::digest(b"old!"),
+            }],
+        }
+    }
+
+    #[test]
+    fn ota_never_observes_or_commits_the_old_slot() {
+        let armed = state(Phase::Armed);
+        assert!(boot_action(&armed, "next", "_a").is_err());
+        assert!(boot_action(&armed, "next", "").is_err());
+        assert!(boot_action(&armed, "next", "_invalid").is_err());
+        assert_eq!(
+            boot_action(&armed, "original", "_a").unwrap(),
+            BootAction::Continue
+        );
+        assert_eq!(
+            boot_action(&armed, "next", "_b").unwrap(),
+            BootAction::CheckTarget
+        );
+        let observed = state(Phase::Observed);
+        assert!(validate_commit(&observed, "original", "_a").is_err());
+        assert!(validate_commit(&observed, "next", "_b").is_err());
+        assert!(validate_commit(&observed, "original", "_b").is_ok());
+        assert!(validate_commit(&armed, "original", "_b").is_err());
+    }
+
+    #[test]
+    fn observed_boot_retries_restore_on_the_next_boot() {
+        let observed = state(Phase::Observed);
+        assert_eq!(
+            boot_action(&observed, "original", "_b").unwrap(),
+            BootAction::Continue
+        );
+        assert_eq!(
+            boot_action(&observed, "next", "_b").unwrap(),
+            BootAction::Restore
+        );
+        assert_eq!(
+            boot_action(&state(Phase::RollingBack), "original", "_b").unwrap(),
+            BootAction::Restore
+        );
+        assert_eq!(
+            boot_action(&state(Phase::Prepared), "next", "_b").unwrap(),
+            BootAction::Clear
+        );
+    }
+
+    #[test]
+    fn verified_restore_survives_repeated_events_until_reboot() {
+        let restored = state(Phase::Restored);
+        assert_eq!(
+            boot_action(&restored, "original", "_b").unwrap(),
+            BootAction::Reboot
+        );
+        assert_eq!(
+            boot_action(&restored, "next", "_b").unwrap(),
+            BootAction::VerifyRestored
+        );
+        assert!(validate_commit(&restored, "original", "_b").is_err());
+        assert_eq!(parse_state(&serialize(&restored)).unwrap(), restored);
+    }
+
+    #[test]
+    fn rejects_oversized_or_ambiguous_restore_records() {
+        let mut invalid = state(Phase::RollingBack);
+        invalid.records[0].size = MAX_IMAGE_SIZE + 1;
+        assert!(parse_state(&serialize(&invalid)).is_err());
+        invalid.records[0].size = 0;
+        assert!(parse_state(&serialize(&invalid)).is_err());
+        invalid.records[0].size = 4;
+        invalid.records.push(invalid.records[0].clone());
+        assert!(parse_state(&serialize(&invalid)).is_err());
+    }
+}
+
+/// Whether the pending flash needs the longer OTA startup deadline.
+pub fn is_ota_pending() -> Result<bool> {
+    Ok(load_state()?.is_some_and(|state| state.ota))
 }
