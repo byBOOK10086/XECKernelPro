@@ -136,6 +136,7 @@ ifeq ($(CONFIG_ARM64),y)
 kernelsu-objs += kpmcore/core.o
 kernelsu-objs += kpmcore/hook_engine.o
 kernelsu-objs += kpmcore/hook_runtime.o
+kernelsu-objs += kpmcore/path_hook.o
 kernelsu-objs += kpmcore/fphook.o
 kernelsu-objs += kpmcore/insn.o
 kernelsu-objs += kpmcore/relo.o

@@ -20,6 +20,9 @@ static struct fixture valid(void)
     memcpy(f.h.e_ident, ELFMAG, SELFMAG);
     f.h.e_ident[EI_CLASS] = ELFCLASS64;
     f.h.e_ident[EI_DATA] = ELFDATA2LSB;
+    f.h.e_ident[EI_VERSION] = EV_CURRENT;
+    f.h.e_version = EV_CURRENT;
+    f.h.e_ehsize = sizeof(Elf64_Ehdr);
     f.h.e_type = ET_REL;
     f.h.e_machine = EM_AARCH64;
     f.h.e_shentsize = sizeof(Elf64_Shdr);
@@ -63,6 +66,12 @@ int main(void)
     assert(kpm_validate_elf(&f, sizeof(f)));
     f = valid(); f.s[2].sh_flags = SHF_ALLOC; f.s[2].sh_size = KPM_MAX_IMAGE + 1;
     assert(kpm_validate_elf(&f, sizeof(f)));
-    puts("KPM ELF validation: valid image + 9 malformed cases passed");
+    f = valid(); f.h.e_ehsize = 1;
+    assert(kpm_validate_elf(&f, sizeof(f)));
+    f = valid(); f.h.e_version = 0;
+    assert(kpm_validate_elf(&f, sizeof(f)));
+    f = valid(); f.h.e_ident[EI_VERSION] = 0;
+    assert(kpm_validate_elf(&f, sizeof(f)));
+    puts("KPM ELF validation: valid image + 12 malformed cases passed");
     return 0;
 }

@@ -12,6 +12,7 @@
 #include "module.h"
 #include "relo.h"
 #include "symbols.h"
+#include "path_hook.h"
 
 #include <linux/err.h>
 #include <linux/errno.h>
@@ -126,9 +127,9 @@ static void kp_clear_bti_gp(unsigned long base, unsigned long size)
 __nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static void *kp_malloc_exec(unsigned long size)
 {
-	if (kp_module_alloc)
+	if (kp_module_alloc && kp_module_memfree)
 		return kp_module_alloc(size);
-	if (kp_execmem_alloc)
+	if (kp_execmem_alloc && kp_execmem_free)
 		return kp_execmem_alloc(0 /* EXECMEM_MODULE_TEXT */, size);
 	/* vmalloc pages are not executable on GKI; refuse this path below rather
 	 * than entering arbitrary KPM bytes and taking an instruction fault. */
@@ -138,9 +139,9 @@ static void *kp_malloc_exec(unsigned long size)
 __nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static void kp_free_exec(void *region)
 {
-	if (kp_module_memfree)
+	if (kp_module_alloc && kp_module_memfree)
 		kp_module_memfree(region);
-	else if (kp_execmem_free)
+	else if (kp_execmem_alloc && kp_execmem_free)
 		kp_execmem_free(region);
 	else
 		vfree(region);
@@ -392,6 +393,11 @@ static int simplify_symbols(struct kp_module *mod, struct kp_load_info *info)
 			break;
 		case SHN_UNDEF:
 		{
+            /* Legacy hooks expose raw callbacks with no synchronous drain.
+             * Pin the whole image/context by rejecting exit until reboot. */
+            if (!strncmp(name, "hook", 4) || !strncmp(name, "fp_hook", 7) ||
+                !strcmp(name, "unhook") || !strncmp(name, "unhook_syscall", 14))
+                mod->legacy_hooks = true;
 			unsigned long addr = kp_kpm_symbol_lookup(name);
 			if (!addr)
 				addr = find_kernel_symbol_exact(name);
@@ -798,6 +804,13 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 	/* GKI 5.10+ module_alloc returns PAGE_KERNEL (PXN set, non-executable).
 	 * The kernel's own module loader calls set_memory_x() after writing; we
 	 * must do the same, otherwise kp_call_init triggers a permission fault. */
+    if ((mod->ctl0 && *mod->ctl0 && ((unsigned long)*mod->ctl0 < (unsigned long)mod->start || (unsigned long)*mod->ctl0 >= (unsigned long)mod->start + mod->text_size)) ||
+        (mod->ctl1 && *mod->ctl1 && ((unsigned long)*mod->ctl1 < (unsigned long)mod->start || (unsigned long)*mod->ctl1 >= (unsigned long)mod->start + mod->text_size)) ||
+        (mod->event && *mod->event && ((unsigned long)*mod->event < (unsigned long)mod->start || (unsigned long)*mod->event >= (unsigned long)mod->start + mod->text_size))) {
+        set_load_error(info, "KPM control/event entry point outside executable sections");
+        rc = -ENOEXEC;
+        goto free;
+    }
 	if (!kp_set_memory_x) {
 		set_load_error(info, "executable memory transition is unavailable");
 		rc = -EOPNOTSUPP;
@@ -841,8 +854,17 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 		set_load_error(info, "module init failed");
 		logkfi("[%s] failed with [%s] error: %ld, try exit ...\n", mod->info.name,
 		       args ? args : "", rc);
+        kp_path_hooks_drain_owner((unsigned long)mod->start, mod->size);
+        if (mod->legacy_hooks) {
+            /* A failed init may already have installed raw hooks. Preserve the
+             * registry/image and prohibit exit rather than freeing live text. */
+            list_add_tail_rcu(&mod->list, &modules.list);
+            set_load_error(info, "legacy hook init failed; image retained until reboot");
+            goto out;
+        }
 		if (mod->exit)
 			kp_call_exit(mod->exit, reserved);
+        kp_path_hooks_drain_owner((unsigned long)mod->start, mod->size);
 	}
 
 free:
@@ -872,9 +894,17 @@ long kp_unload_module(const char *name, void __user *reserved)
 		rc = -ENOENT;
 		goto out;
 	}
+    if (mod->legacy_hooks) {
+        rc = -EBUSY;
+        goto out;
+    }
+    kp_path_hooks_drain_owner((unsigned long)mod->start, mod->size);
 	rc = mod->exit ? kp_call_exit(mod->exit, reserved) : 0;
     if (rc)
         goto out;
+    /* Exit callbacks may acquire new adapters; do not trust a successful exit
+     * alone as proof that no callbacks still reference the departing image. */
+    kp_path_hooks_drain_owner((unsigned long)mod->start, mod->size);
 	list_del_rcu(&mod->list);
 	synchronize_rcu();
 
@@ -888,7 +918,7 @@ long kp_unload_module(const char *name, void __user *reserved)
 		kp_do_set_memory_nx((unsigned long)mod->start, npages);
 	}
 
-	if (kp_module_memfree && mod->start)
+	if (mod->start)
 		kp_free_exec(mod->start);
 	kfree(mod);
 

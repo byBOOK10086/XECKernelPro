@@ -55,6 +55,8 @@ struct kp_module {
 	mod_exitcall_t *exit;
 	mod_eventcall_t *event;
 
+	/* Raw hook backends have no callback drain: reject unload before exit. */
+	bool legacy_hooks;
 	unsigned int size;
 	unsigned int text_size;
 	unsigned int ro_size;

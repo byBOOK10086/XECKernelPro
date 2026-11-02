@@ -13,7 +13,9 @@ static int kpm_validate_elf(const void *data, unsigned long len)
         return -1;
     if (memcmp(h->e_ident, ELFMAG, SELFMAG) || h->e_ident[EI_CLASS] != ELFCLASS64 ||
         h->e_ident[EI_DATA] != ELFDATA2LSB || h->e_type != ET_REL ||
-        h->e_machine != EM_AARCH64 || h->e_shentsize != sizeof(*s) ||
+        h->e_machine != EM_AARCH64 || h->e_ehsize != sizeof(*h) ||
+        h->e_version != EV_CURRENT || h->e_ident[EI_VERSION] != EV_CURRENT ||
+        h->e_shentsize != sizeof(*s) ||
         !h->e_shnum || !h->e_shstrndx || h->e_shstrndx >= h->e_shnum ||
         h->e_shoff % __alignof__(Elf64_Shdr) || h->e_shoff > len ||
         h->e_shnum > (len - h->e_shoff) / sizeof(*s))
@@ -103,7 +105,7 @@ static int kpm_validate_elf(const void *data, unsigned long len)
                         width > s[sh->sh_info].sh_size - rel[j].r_offset)
                         return -1;
                 }
-            } else if (sh->sh_flags & SHF_ALLOC) {
+            } else if (s[sh->sh_info].sh_flags & SHF_ALLOC) {
                 /* AArch64 modules require explicit addends. */
                 return -1;
             }
