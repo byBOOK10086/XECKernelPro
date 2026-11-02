@@ -11,6 +11,7 @@
 #include <linux/string.h>
 #include <linux/uaccess.h>
 #include <linux/wait.h>
+#include <linux/version.h>
 #include "include/kp_lkm.h"
 #include "symbol_resolver.h"
 #include "path_hook.h"
@@ -59,7 +60,12 @@ static int kp_path_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
 }
 static int kp_path_return(struct kretprobe_instance *ri, struct pt_regs *regs)
 {
-    struct kp_path_hook *hook = container_of(get_kretprobe(ri), struct kp_path_hook, probe);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
+    struct kretprobe *probe = ri->rp;
+#else
+    struct kretprobe *probe = get_kretprobe(ri);
+#endif
+    struct kp_path_hook *hook = container_of(probe, struct kp_path_hook, probe);
     struct kp_path_instance *data = (void *)ri->data;
     atomic_inc(&hook->callbacks);
     regs->regs[0] = kp_path_filter(hook, data, (long)regs_return_value(regs));
