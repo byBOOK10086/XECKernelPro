@@ -137,8 +137,7 @@ jobs:
           PATCH_FILE="$PATCH_DIR/50_add_susfs_in_gki-$KMI.patch"
           if [ ! -f "$PATCH_FILE" ]; then
             CAND=$(find "$PATCH_DIR" -maxdepth 1 -name "50_add_susfs_in_gki-$KMI*.patch" | sort)
-            N=$(printf '%s
-' "$CAND" | grep -c . || true)
+            N=$(printf '%s\n' "$CAND" | grep -c . || true)
             if [ "$N" != "1" ]; then
               echo "::error::expected exactly one 50_add_susfs patch for $KMI, found $N"
               ls -la "$PATCH_DIR" || true

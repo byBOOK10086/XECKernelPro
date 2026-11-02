@@ -11,9 +11,14 @@ name: Build XECKernelPro
 on:
   # Build the integration branch automatically after each pushed fix so the
   # overnight GitHub build does not depend on a manual dispatch.
+  # 分支推送只出内测 APK；v* 标签推送永远走发版（release job 自己按 ref_type 分流）。
+  # 注意：GitHub 不接受同一 mapping 里重复的 key，push 只能写一次，
+  # branches 与 tags 必须并进同一个 push 过滤器里（2026-11-02 修）。
   push:
     branches:
       - debug/stability-20261102
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       publish:
@@ -34,9 +39,6 @@ on:
         type: string
         required: false
         default: ''
-  push:
-    tags:
-      - "v*"
 
 permissions:
   contents: read
