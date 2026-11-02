@@ -15,9 +15,7 @@ use std::os::fd::AsRawFd;
 #[cfg(target_os = "android")]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
-#[cfg(target_os = "android")]
-use crate::boot_patch;
-use crate::defs;
+use crate::{boot_patch, defs};
 
 const STATE_VERSION: &str = "1";
 const MAX_RECORDS: usize = 3;
@@ -546,6 +544,14 @@ fn cleanup_verified(state: &BootTxn) -> Result<()> {
     clear_state()
 }
 
+fn retry_phase_allowed(state: &BootTxn, boot_id: &str) -> bool {
+    state.boot_id != boot_id
+        && matches!(
+            state.phase,
+            Phase::Prepared | Phase::Armed | Phase::Restored
+        )
+}
+
 /// Reconcile only states whose target still equals the verified pre-flash image.
 /// Never infer successful booting from sys.boot_completed or erase unknown writes.
 #[cfg(target_os = "android")]
@@ -556,8 +562,7 @@ fn reconcile_retry() -> Result<()> {
     let boot = current_boot_id()?;
     let slot = crate::utils::getprop("ro.boot.slot_suffix").unwrap_or_default();
     validate_running_slot(&state, &slot)?;
-    let can_retry = matches!(state.phase, Phase::Prepared | Phase::Armed)
-        || (state.phase == Phase::Restored && state.boot_id != boot);
+    let can_retry = retry_phase_allowed(&state, &boot);
     ensure!(
         can_retry,
         "boot transaction still requires recovery (phase {}); recovery metadata retained",
@@ -725,8 +730,6 @@ pub fn on_post_fs_data() -> Result<bool> {
                 && read_prefix_hash(&target, state.target_size).ok().as_deref()
                     == Some(state.target_sha256.as_str())
             {
-                state.phase = Phase::Observed;
-                save_state(&state)?;
                 Ok(false)
             } else {
                 restore_target(&state)?;
@@ -874,6 +877,17 @@ mod tests {
         );
         assert!(validate_commit(&restored, "original", "_b").is_err());
         assert_eq!(parse_state(&serialize(&restored)).unwrap(), restored);
+    }
+
+    #[test]
+    fn retries_require_a_different_boot_and_a_recoverable_phase() {
+        for phase in [Phase::Prepared, Phase::Armed, Phase::Restored] {
+            assert!(!retry_phase_allowed(&state(phase.clone()), "original"));
+            assert!(retry_phase_allowed(&state(phase), "next"));
+        }
+        for phase in [Phase::Observed, Phase::RollingBack] {
+            assert!(!retry_phase_allowed(&state(phase), "next"));
+        }
     }
 
     #[test]

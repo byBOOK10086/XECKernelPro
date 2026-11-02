@@ -1,5 +1,5 @@
 """Execute transaction state/parser tests without Android devices or partitions."""
-import pathlib, tempfile, subprocess
+import os, pathlib, tempfile, subprocess
 root=pathlib.Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix="xec-txn-tests-") as d:
     p=pathlib.Path(d)
@@ -28,4 +28,6 @@ mod assets { pub const BOOTCTL_PATH: &str = "/nonexistent-xec-test-bootctl"; }
 mod boot_txn;
 '''
     (p/"src/lib.rs").write_text(harness.replace("TXN_SOURCE",txn),encoding="utf-8")
-    subprocess.run(["cargo","test","--manifest-path",str(p/"Cargo.toml")],check=True)
+    toolchain = os.environ.get("BOOT_TXN_TEST_TOOLCHAIN")
+    command = ["cargo"] + (["+" + toolchain] if toolchain else [])
+    subprocess.run(command + ["test", "--manifest-path", str(p/"Cargo.toml")], check=True)
