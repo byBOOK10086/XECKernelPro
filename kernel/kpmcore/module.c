@@ -130,6 +130,8 @@ static void *kp_malloc_exec(unsigned long size)
 		return kp_module_alloc(size);
 	if (kp_execmem_alloc)
 		return kp_execmem_alloc(0 /* EXECMEM_MODULE_TEXT */, size);
+	/* vmalloc pages are not executable on GKI; refuse this path below rather
+	 * than entering arbitrary KPM bytes and taking an instruction fault. */
 	return vmalloc(size);
 }
 
@@ -474,7 +476,8 @@ static int rewrite_section_headers(struct kp_load_info *info)
 	info->sechdrs[0].sh_addr = 0;
 	for (int i = 1; i < info->hdr->e_shnum; i++) {
 		Elf_Shdr *shdr = &info->sechdrs[i];
-		if (shdr->sh_type != SHT_NOBITS && info->len < shdr->sh_offset + shdr->sh_size)
+		if (shdr->sh_type != SHT_NOBITS &&
+		    (shdr->sh_offset > info->len || shdr->sh_size > info->len - shdr->sh_offset))
 			return -ENOEXEC;
 		/* Mark all sections sh_addr with their address in the temporary image. */
 		shdr->sh_addr = (size_t)info->hdr + shdr->sh_offset;
@@ -534,7 +537,15 @@ static int setup_load_info(struct kp_load_info *info)
 {
 	int rc = 0;
 	info->sechdrs = (void *)info->hdr + info->hdr->e_shoff;
-	info->secstrings = (void *)info->hdr + info->sechdrs[info->hdr->e_shstrndx].sh_offset;
+	{
+		Elf64_Shdr *shstr = &info->sechdrs[info->hdr->e_shstrndx];
+		if (shstr->sh_type == SHT_NOBITS || !shstr->sh_size ||
+		    !memchr((void *)info->hdr + shstr->sh_offset, 0, shstr->sh_size)) {
+			set_load_error(info, "ELF section-name table is invalid");
+			return -ENOEXEC;
+		}
+		info->secstrings = (void *)info->hdr + shstr->sh_offset;
+	}
 
 	if ((rc = rewrite_section_headers(info))) {
 		logke("rewrite section error\n");
@@ -599,19 +610,30 @@ static int setup_load_info(struct kp_load_info *info)
 
 static int elf_header_check(struct kp_load_info *info)
 {
-	if (info->len <= sizeof(*(info->hdr))) {
+	const Elf64_Ehdr *h = info->hdr;
+	unsigned int i;
+	if (info->len < sizeof(*h)) {
 		set_load_error(info, "ELF header is truncated");
 		return -ENOEXEC;
 	}
-	if (memcmp(info->hdr->e_ident, ELFMAG, SELFMAG) || info->hdr->e_type != ET_REL ||
-	    info->hdr->e_machine != EM_AARCH64 || info->hdr->e_shentsize != sizeof(Elf_Shdr)) {
+	if (memcmp(h->e_ident, ELFMAG, SELFMAG) || h->e_ident[EI_CLASS] != ELFCLASS64 ||
+	    h->e_ident[EI_DATA] != ELFDATA2LSB || h->e_type != ET_REL ||
+	    h->e_machine != EM_AARCH64 || h->e_shentsize != sizeof(Elf64_Shdr) ||
+	    !h->e_shnum || h->e_shstrndx >= h->e_shnum) {
 		set_load_error(info, "ELF header is not a supported AArch64 relocatable module");
 		return -ENOEXEC;
 	}
-	if (info->hdr->e_shoff >= info->len ||
-	    (info->hdr->e_shnum * sizeof(Elf_Shdr) > info->len - info->hdr->e_shoff)) {
+	if (h->e_shoff > info->len || h->e_shnum > (info->len - h->e_shoff) / sizeof(Elf64_Shdr)) {
 		set_load_error(info, "ELF section headers are invalid");
 		return -ENOEXEC;
+	}
+	for (i = 0; i < h->e_shnum; i++) {
+		const Elf64_Shdr *sh = (const void *)((const char *)h + h->e_shoff) + i;
+		if (sh->sh_type != SHT_NOBITS &&
+		    (sh->sh_offset > info->len || sh->sh_size > info->len - sh->sh_offset)) {
+			set_load_error(info, "ELF section data is out of bounds");
+			return -ENOEXEC;
+		}
 	}
 	return 0;
 }
@@ -804,13 +826,19 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 	/* GKI 5.10+ module_alloc returns PAGE_KERNEL (PXN set, non-executable).
 	 * The kernel's own module loader calls set_memory_x() after writing; we
 	 * must do the same, otherwise kp_call_init triggers a permission fault. */
-	if (kp_set_memory_x) {
-		
+	if (!kp_set_memory_x) {
+		set_load_error(info, "executable memory transition is unavailable");
+		rc = -EOPNOTSUPP;
+		goto free;
+	}
+	{
 		int npages = (mod->size + PAGE_SIZE - 1) >> PAGE_SHIFT;
 		int xret = kp_do_set_memory_x((unsigned long)mod->start, npages);
-		if (xret)
-			logke("KPM [%s] set_memory_x(%px, %d) = %d\n",
-			      info->info.name, mod->start, npages, xret);
+		if (xret) {
+			set_load_error(info, "set executable memory failed");
+			rc = xret;
+			goto free;
+		}
 	}
 
 	/* Disable BTI on the KPM pages: the module is bare-metal compiled
@@ -931,7 +959,14 @@ long kp_load_module_path(const char *path, const char *args, void __user *reserv
 	memset(data, 0, len);
 
 	loff_t pos = 0;
-	kernel_read(filp, data, len, &pos);
+	{
+		ssize_t rd = kernel_read(filp, data, len, &pos);
+		if (rd < 0 || rd != len) {
+			rc = rd < 0 ? rd : -EIO;
+			set_kpm_load_result(reserved, rc, "read module file failed");
+			goto free;
+		}
+	}
 	filp_close(filp, 0);
 	filp = 0;
 
@@ -989,7 +1024,14 @@ long kp_load_module_path_event(const char *path, const char *args, const char *e
 	memset(data, 0, len);
 
 	loff_t pos = 0;
-	kernel_read(filp, data, len, &pos);
+	{
+		ssize_t rd = kernel_read(filp, data, len, &pos);
+		if (rd < 0 || rd != len) {
+			rc = rd < 0 ? rd : -EIO;
+			set_kpm_load_result(reserved, rc, "read module file failed");
+			goto free;
+		}
+	}
 	filp_close(filp, 0);
 	filp = 0;
 
