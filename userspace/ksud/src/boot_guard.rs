@@ -105,7 +105,8 @@ mod runtime {
                 ota: flag("ota")?,
             };
             ensure!(
-                state.retries <= 2 && (!state.pending || !state.boot.is_empty()),
+                state.retries <= 2 && state.failures <= u64::from(u32::MAX / 2)
+                    && (!state.pending || !state.boot.is_empty()),
                 "inconsistent state"
             );
             ensure!(
@@ -120,6 +121,8 @@ mod runtime {
     impl Lock {
         fn acquire(name: &str, nonblock: bool) -> Result<Option<Self>> {
             fs::create_dir_all(DIR)?;
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(DIR, fs::Permissions::from_mode(0o700))?;
             let file = OpenOptions::new()
                 .create(true)
                 .truncate(false)
@@ -345,6 +348,7 @@ mod runtime {
     pub fn rollback_applied() -> Result<()> {
         let _guard = locked()?;
         let mut state = load()?;
+        state.boot = boot_id()?;
         state.rescue = true;
         state.pending = false;
         state.stage = "rollback".into();
@@ -404,7 +408,15 @@ mod runtime {
             ) {
                 Decision::Success => {
                     // State lock serializes success against timeout and explicit resume.
-                    crate::boot_txn::commit_boot_success()?;
+                    if let Err(error) = crate::boot_txn::commit_boot_success() {
+                        state.rescue = true;
+                        state.pending = false;
+                        state.stage = "transaction-error".into();
+                        state.reason = format!("boot success transaction failed: {error:#}");
+                        state.last_recovery.clone_from(&state.reason);
+                        save(&state)?;
+                        return Err(error);
+                    }
                     state.pending = false;
                     state.stage = "success".into();
                     if !state.rescue {
