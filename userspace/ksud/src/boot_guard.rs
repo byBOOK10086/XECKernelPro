@@ -37,7 +37,7 @@ mod runtime {
     use std::fs::{self, File, OpenOptions};
     use std::io::{ErrorKind, Write};
     use std::os::fd::AsRawFd;
-    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
     use std::os::unix::process::CommandExt;
     use std::path::Path;
     use std::process::{Command, Stdio};
@@ -119,7 +119,11 @@ mod runtime {
     struct Lock(File);
     impl Lock {
         fn acquire(name: &str, nonblock: bool) -> Result<Option<Self>> {
-            fs::create_dir_all(DIR)?;
+            fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(DIR)?;
+            fs::set_permissions(DIR, fs::Permissions::from_mode(0o700))?;
             let file = OpenOptions::new()
                 .create(true)
                 .truncate(false)
