@@ -239,7 +239,8 @@ class SettingsRepositoryImpl : SettingsRepository {
 
     override fun isLkmMode(): Boolean = Natives.isLkmMode
 
-    override fun execKsudFeatureSave() {
-        execKsud("feature save", true)
+    override fun execKsudFeatureSave(feature: String, value: Long): Boolean {
+        if (feature !in setOf("su_compat", "kernel_umount", "selinux_hide", "sulog", "adb_root")) return false
+        return execKsud("feature save $feature $value", true)
     }
 }

@@ -5,6 +5,7 @@ use std::os::raw::{c_long, c_ulong};
 use std::os::unix::fs::MetadataExt;
 
 use crate::defs;
+use crate::susfs_capabilities::probe_result;
 
 const SUSFS_MAX_VERSION_BUFSIZE: usize = 16;
 const SUSFS_ENABLED_FEATURES_SIZE: usize = 8192;
@@ -29,6 +30,10 @@ const CMD_SUSFS_ADD_OPEN_REDIRECT: u32 = 0x555c0;
 const CMD_SUSFS_ADD_SUS_PATH: u32 = 0x55550;
 const CMD_SUSFS_ADD_SUS_PATH_LOOP: u32 = 0x55553;
 const SUSFS_MAGIC: u32 = 0xFAFAFAFA;
+
+fn check_susfs_result(result: libc::c_long, command_error: i32) -> anyhow::Result<()> {
+    probe_result(result, command_error).map_err(anyhow::Error::msg)
+}
 
 // Field masks from SUSFS v2.3.0's `susfs_def.h`. The layout and flags follow
 // ReSukiSU's SUSFS implementation (commit aa7c82a7f5b5f8693118854383d88d522bdcd0f1,
@@ -167,15 +172,18 @@ pub fn get_susfs_version() -> String {
         err: ERR_CMD_NOT_SUPPORTED,
     };
 
-    unsafe {
+    let result = unsafe {
         libc::syscall(
             SYS_reboot,
             KSU_INSTALL_MAGIC1,
             SUSFS_MAGIC,
             CMD_SUSFS_SHOW_VERSION,
-            &mut cmd,
+            std::ptr::from_mut(&mut cmd),
         )
     };
+    if check_susfs_result(result, cmd.err).is_err() {
+        return "unsupport".to_string();
+    }
 
     let ver = cmd.susfs_version.iter().position(|&b| b == 0).unwrap_or(16);
     let ver = String::from_utf8(cmd.susfs_version[..ver].to_vec())
@@ -198,15 +206,18 @@ pub fn get_susfs_features() -> String {
         err: ERR_CMD_NOT_SUPPORTED,
     };
 
-    unsafe {
+    let result = unsafe {
         libc::syscall(
             SYS_reboot,
             KSU_INSTALL_MAGIC1,
             SUSFS_MAGIC,
             CMD_SUSFS_SHOW_ENABLED_FEATURES,
-            &mut cmd,
+            std::ptr::from_mut(&mut cmd),
         )
     };
+    if check_susfs_result(result, cmd.err).is_err() {
+        return "<unsupported>".to_string();
+    }
 
     let features = cmd
         .enabled_features
@@ -223,15 +234,18 @@ pub fn get_susfs_variant() -> String {
         err: ERR_CMD_NOT_SUPPORTED,
     };
 
-    unsafe {
+    let result = unsafe {
         libc::syscall(
             SYS_reboot,
             KSU_INSTALL_MAGIC1,
             SUSFS_MAGIC,
             CMD_SUSFS_SHOW_VARIANT,
-            &mut cmd,
+            std::ptr::from_mut(&mut cmd),
         )
     };
+    if check_susfs_result(result, cmd.err).is_err() {
+        return "<unsupported>".to_string();
+    }
 
     let variant = cmd
         .susfs_variant
@@ -259,15 +273,16 @@ pub fn set_uname(release: &str, version: &str) -> anyhow::Result<()> {
     cmd.release[..release_bytes.len()].copy_from_slice(release_bytes);
     cmd.version[..version_bytes.len()].copy_from_slice(version_bytes);
 
-    unsafe {
+    let result = unsafe {
         libc::syscall(
             SYS_reboot,
             KSU_INSTALL_MAGIC1,
             SUSFS_MAGIC,
             CMD_SUSFS_SET_UNAME,
-            &mut cmd,
+            std::ptr::from_mut(&mut cmd),
         )
     };
+    check_susfs_result(result, cmd.err)?;
 
     if cmd.err != 0 {
         anyhow::bail!("Failed to set uname: err={}", cmd.err);
@@ -303,15 +318,16 @@ pub fn set_cmdline_or_bootconfig(path: &str) -> anyhow::Result<()> {
     };
     cmd.fake_cmdline_or_bootconfig[..content.len()].copy_from_slice(&content);
 
-    unsafe {
+    let result = unsafe {
         libc::syscall(
             SYS_reboot,
             KSU_INSTALL_MAGIC1,
             SUSFS_MAGIC,
             CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG,
-            &mut cmd,
+            std::ptr::from_mut(&mut cmd),
         )
     };
+    check_susfs_result(result, cmd.err)?;
 
     if cmd.err != 0 {
         anyhow::bail!("Failed to set cmdline_or_bootconfig: err={}", cmd.err);
@@ -325,15 +341,16 @@ pub fn enable_log(enabled: bool) -> anyhow::Result<()> {
         err: ERR_CMD_NOT_SUPPORTED,
     };
 
-    unsafe {
+    let result = unsafe {
         libc::syscall(
             SYS_reboot,
             KSU_INSTALL_MAGIC1,
             SUSFS_MAGIC,
             CMD_SUSFS_ENABLE_LOG,
-            &mut cmd,
+            std::ptr::from_mut(&mut cmd),
         )
     };
+    check_susfs_result(result, cmd.err)?;
 
     if cmd.err != 0 {
         anyhow::bail!("Failed to set enable_log: err={}", cmd.err);
@@ -347,15 +364,16 @@ pub fn enable_avc_log_spoofing(enabled: bool) -> anyhow::Result<()> {
         err: ERR_CMD_NOT_SUPPORTED,
     };
 
-    unsafe {
+    let result = unsafe {
         libc::syscall(
             SYS_reboot,
             KSU_INSTALL_MAGIC1,
             SUSFS_MAGIC,
             CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING,
-            &mut cmd,
+            std::ptr::from_mut(&mut cmd),
         )
     };
+    check_susfs_result(result, cmd.err)?;
 
     if cmd.err != 0 {
         anyhow::bail!("Failed to set enable_avc_log_spoofing: err={}", cmd.err);
@@ -369,15 +387,16 @@ pub fn hide_sus_mnts_for_non_su_procs(enabled: bool) -> anyhow::Result<()> {
         err: ERR_CMD_NOT_SUPPORTED,
     };
 
-    unsafe {
+    let result = unsafe {
         libc::syscall(
             SYS_reboot,
             KSU_INSTALL_MAGIC1,
             SUSFS_MAGIC,
             CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS,
-            &mut cmd,
+            std::ptr::from_mut(&mut cmd),
         )
     };
+    check_susfs_result(result, cmd.err)?;
 
     if cmd.err != 0 {
         anyhow::bail!(
@@ -403,15 +422,16 @@ pub fn add_sus_path(path: &str) -> anyhow::Result<()> {
     };
     copy_path_into(&mut cmd.target_pathname, path)?;
 
-    unsafe {
+    let result = unsafe {
         libc::syscall(
             SYS_reboot,
             KSU_INSTALL_MAGIC1,
             SUSFS_MAGIC,
             CMD_SUSFS_ADD_SUS_PATH,
-            &mut cmd,
+            std::ptr::from_mut(&mut cmd),
         )
     };
+    check_susfs_result(result, cmd.err)?;
 
     if cmd.err != 0 {
         anyhow::bail!("Failed to add sus path {path}: err={}", cmd.err);
@@ -427,15 +447,16 @@ pub fn add_sus_path_loop(path: &str) -> anyhow::Result<()> {
     };
     copy_path_into(&mut cmd.target_pathname, path)?;
 
-    unsafe {
+    let result = unsafe {
         libc::syscall(
             SYS_reboot,
             KSU_INSTALL_MAGIC1,
             SUSFS_MAGIC,
             CMD_SUSFS_ADD_SUS_PATH_LOOP,
-            &mut cmd,
+            std::ptr::from_mut(&mut cmd),
         )
     };
+    check_susfs_result(result, cmd.err)?;
 
     if cmd.err != 0 {
         anyhow::bail!("Failed to add sus path loop {path}: err={}", cmd.err);
@@ -499,15 +520,16 @@ pub fn add_open_redirect(target: &str, redirected: &str, uid_scheme: u32) -> any
     cmd.target_pathname[..target_bytes.len()].copy_from_slice(target_bytes);
     cmd.redirected_pathname[..redirected_bytes.len()].copy_from_slice(redirected_bytes);
 
-    unsafe {
+    let result = unsafe {
         libc::syscall(
             SYS_reboot,
             KSU_INSTALL_MAGIC1,
             SUSFS_MAGIC,
             CMD_SUSFS_ADD_OPEN_REDIRECT,
-            &mut cmd,
+            std::ptr::from_mut(&mut cmd),
         )
     };
+    check_susfs_result(result, cmd.err)?;
 
     if cmd.err != 0 {
         anyhow::bail!("Failed to add open redirect: err={}", cmd.err);
@@ -528,15 +550,16 @@ pub fn add_sus_map(path: &str) -> anyhow::Result<()> {
 
     cmd.target_pathname[..path_bytes.len()].copy_from_slice(path_bytes);
 
-    unsafe {
+    let result = unsafe {
         libc::syscall(
             SYS_reboot,
             KSU_INSTALL_MAGIC1,
             SUSFS_MAGIC,
             CMD_SUSFS_ADD_SUS_MAP,
-            &mut cmd,
+            std::ptr::from_mut(&mut cmd),
         )
     };
+    check_susfs_result(result, cmd.err)?;
 
     if cmd.err != 0 {
         anyhow::bail!("Failed to add sus map: err={}", cmd.err);
@@ -558,16 +581,8 @@ fn submit_kstat(cmd_code: u32, cmd: &mut SusfsKstat, operation: &str) -> anyhow:
             std::ptr::from_mut(cmd),
         )
     };
-    if syscall_result < 0 {
-        return Err(anyhow::anyhow!(
-            "SUSFS {operation} syscall failed: {}",
-            std::io::Error::last_os_error()
-        ));
-    }
-    if cmd.err != 0 {
-        anyhow::bail!("SUSFS {operation} failed: err={}", cmd.err);
-    }
-    Ok(())
+    check_susfs_result(syscall_result, cmd.err)
+        .map_err(|error| anyhow::anyhow!("SUSFS {operation}: {error}"))
 }
 
 fn copy_metadata_to_kstat(cmd: &mut SusfsKstat, metadata: &std::fs::Metadata) {

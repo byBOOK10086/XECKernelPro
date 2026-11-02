@@ -1,6 +1,5 @@
 package me.weishu.kernelsu.ui.component.uninstalldialog
 
-import android.widget.Toast
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -8,7 +7,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.weishu.kernelsu.R
@@ -33,16 +31,11 @@ fun UninstallDialogMiuix(
     show: Boolean,
     onDismissRequest: () -> Unit
 ) {
-    val context = LocalContext.current
     val navigator = LocalNavigator.current
     val options = listOf(
-        // TEMPORARY,
         PERMANENT,
         RESTORE_STOCK_IMAGE
     )
-    val showTodo = {
-        Toast.makeText(context, "TODO", Toast.LENGTH_SHORT).show()
-    }
     val showConfirmDialog = remember(show) { mutableStateOf(false) }
     val runType = remember(show) { mutableStateOf<UninstallType?>(null) }
 
@@ -52,8 +45,7 @@ fun UninstallDialogMiuix(
 
             RESTORE_STOCK_IMAGE -> navigator.push(Route.Flash(FlashIt.FlashRestore))
 
-            TEMPORARY -> showTodo()
-            NONE -> Unit
+            TEMPORARY, NONE -> Unit
         }
     }
 

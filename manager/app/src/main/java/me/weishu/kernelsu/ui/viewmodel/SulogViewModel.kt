@@ -124,8 +124,9 @@ class SulogViewModel(
         val preferredFilePath = _uiState.value.selectedFilePath
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            if (repo.setSulogEnabled(true)) {
-                repo.execKsudFeatureSave()
+            if (!repo.setSulogEnabled(true) || !repo.execKsudFeatureSave("sulog", 1L)) {
+                _uiState.update { it.copy(isLoading = false, errorMessage = "Could not apply or save SU logging") }
+                return@launch
             }
             refresh(preferredFilePath)
         }

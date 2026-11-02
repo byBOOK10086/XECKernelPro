@@ -16,6 +16,7 @@ on:
   # branches 与 tags 必须并进同一个 push 过滤器里（2026-11-02 修）。
   push:
     branches:
+      - fix/stability-upstream-31323
       - debug/stability-20261102
       - fix/rescue-integration-31261
       - fix/kpm-integration-31261
@@ -85,13 +86,20 @@ jobs:
             kernel/kpmcore/tests/elf_validate_test.c -o /tmp/kpm-elf-test
           /tmp/kpm-elf-test
 
-      - name: KPM parser and ABI host tests
+      - name: Antiwipe, BTF, SUSFS, and feature storage host tests
         run: |
-          for test_script in scripts/test_antiwipe_host.py scripts/test_kpm_loader_host.py scripts/test_susfs_lite_host.py; do
-            if [ -f "$test_script" ]; then
-              python3 "$test_script"
-            fi
+          set -euo pipefail
+          for test_script in \
+            scripts/test_antiwipe_host.py \
+            scripts/test_susfs_probe_host.py; do
+            test -f "$test_script" || { echo "::error::required host test missing: $test_script"; exit 1; }
+            python3 "$test_script"
           done
+          test -f scripts/test_kernel_btf_host.py || { echo "::error::required host test missing: scripts/test_kernel_btf_host.py"; exit 1; }
+          python3 scripts/test_kernel_btf_host.py --sanitize
+          test -f scripts/test_feature_store_host.rs || { echo "::error::required host test missing: scripts/test_feature_store_host.rs"; exit 1; }
+          rustc --edition 2024 scripts/test_feature_store_host.rs -o /tmp/test_feature_store
+          /tmp/test_feature_store
 
   generate-key:
     runs-on: ubuntu-latest
@@ -569,7 +577,7 @@ jobs:
   # 触发条件：推 v* 标签（永远发版）；手动 dispatch 必须显式勾上 publish=true。
   # 不勾就只出产物（内测包），版本号、标签、Release 都不会动。
   release:
-    needs: [repack, build-ksud, build-ksuinit]
+    needs: [rescue-check, repack, build-ksud, build-ksuinit]
     if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.publish)
     runs-on: ubuntu-latest
     permissions:

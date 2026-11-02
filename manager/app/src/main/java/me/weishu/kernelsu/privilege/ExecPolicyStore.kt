@@ -21,17 +21,20 @@ object ExecPolicyStore {
     fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** paths 为空 = 解除限制。@return 内核是否接受（调用方以此提示"内核较旧"）。 */
+    /** paths 为空 = 解除限制。无效输入或内核拒绝时返回 false，保留原持久配置。 */
     fun set(context: Context, uid: Int, paths: List<String>): Boolean {
         val cleaned = paths.map { it.trim() }
             .filter { it.isNotEmpty() }
-            .take(MAX_ENTRIES)
+        if (cleaned.size > MAX_ENTRIES || cleaned.any {
+                '\u0000' in it || '\n' in it || it.toByteArray(Charsets.UTF_8).size >= MAX_PATH
+            }) return false
+        if (!push(uid, cleaned)) return false
         if (cleaned.isEmpty()) {
             prefs(context).edit().remove(uid.toString()).apply()
         } else {
             prefs(context).edit().putString(uid.toString(), cleaned.joinToString("\n")).apply()
         }
-        return push(uid, cleaned)
+        return true
     }
 
     fun get(context: Context, uid: Int): List<String> =

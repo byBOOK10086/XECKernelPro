@@ -22,23 +22,26 @@ object UtsSpoofStore {
 
     /** release 与 version 都为空 = 移除该 uid 的条目。@return 内核是否接受。 */
     fun set(context: Context, uid: Int, release: String, version: String): Boolean {
-        val rel = release.trim().take(MAX_LEN)
-        val ver = version.trim().take(MAX_LEN)
-        return if (rel.isEmpty() && ver.isEmpty()) {
+        val rel = release.trim()
+        val ver = version.trim()
+        if (listOf(rel, ver).any {
+                '\u0000' in it || '\n' in it || it.toByteArray(Charsets.UTF_8).size > MAX_LEN
+            }) return false
+        if (!push(uid, rel, ver)) return false
+        if (rel.isEmpty() && ver.isEmpty()) {
             prefs(context).edit().remove(uid.toString()).apply()
-            push(uid, "", "")
         } else {
             prefs(context).edit().putString(uid.toString(), "$rel\n$ver").apply()
-            push(uid, rel, ver)
         }
+        return true
     }
 
     /** @return [release, version]；无条目返回 ["", ""]。 */
     fun get(context: Context, uid: Int): Pair<String, String> {
         val raw = prefs(context).getString(uid.toString(), null) ?: return "" to ""
         val parts = raw.split('\n', limit = 2)
-        return (parts.getOrNull(0) ?: "").trim().take(MAX_LEN) to
-            (parts.getOrNull(1) ?: "").trim().take(MAX_LEN)
+        return (parts.getOrNull(0) ?: "").trim() to
+            (parts.getOrNull(1) ?: "").trim()
     }
 
     fun push(uid: Int, release: String, version: String): Boolean =

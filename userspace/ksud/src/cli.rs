@@ -587,8 +587,14 @@ enum Feature {
     /// Load configuration from file and apply to kernel
     Load,
 
-    /// Save current kernel feature states to file
-    Save,
+    /// Save one feature, or all current states when no ID is supplied
+    Save {
+        /// Optional feature ID or name
+        id: Option<String>,
+        /// Explicit persistent value (requires an ID)
+        #[arg(requires = "id")]
+        value: Option<u64>,
+    },
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -1139,7 +1145,7 @@ pub fn run() -> Result<()> {
             }
             Feature::Check { id } => crate::feature::check_feature(&id),
             Feature::Load => crate::feature::load_config_and_apply(),
-            Feature::Save => crate::feature::save_config(),
+            Feature::Save { id, value } => crate::feature::save_config(id.as_deref(), value),
         },
 
         Commands::Debug { command } => match command {

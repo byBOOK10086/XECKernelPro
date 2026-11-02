@@ -53,6 +53,7 @@ Java_me_weishu_kernelsu_Natives_superkeyStatus(JNIEnv *env, jobject) {
 extern "C"
 JNIEXPORT jboolean JNICALL
 Java_me_weishu_kernelsu_Natives_setExecPolicy(JNIEnv *env, jobject, jint uid, jboolean restricted, jobjectArray paths) {
+    if (!paths) return JNI_FALSE;
     std::vector<std::string> vec;
     jsize n = env->GetArrayLength(paths);
     for (jsize i = 0; i < n; i++) {
@@ -60,8 +61,11 @@ Java_me_weishu_kernelsu_Natives_setExecPolicy(JNIEnv *env, jobject, jint uid, jb
         if (!js)
             continue;
         const char *chars = env->GetStringUTFChars(js, nullptr);
-        if (chars)
-            vec.emplace_back(chars);
+        if (!chars) {
+            env->DeleteLocalRef(js);
+            return JNI_FALSE;
+        }
+        vec.emplace_back(chars);
         env->ReleaseStringUTFChars(js, chars);
         env->DeleteLocalRef(js);
     }
@@ -90,12 +94,14 @@ Java_me_weishu_kernelsu_Natives_setUtsSpoof(JNIEnv *env, jobject, jint uid, jboo
     std::string rel, ver;
     if (release) {
         const char *chars = env->GetStringUTFChars(release, nullptr);
-        if (chars) rel = chars;
+        if (!chars) return JNI_FALSE;
+        rel = chars;
         env->ReleaseStringUTFChars(release, chars);
     }
     if (version) {
         const char *chars = env->GetStringUTFChars(version, nullptr);
-        if (chars) ver = chars;
+        if (!chars) return JNI_FALSE;
+        ver = chars;
         env->ReleaseStringUTFChars(version, chars);
     }
     return set_uts_spoof((uid_t) uid, enabled == JNI_TRUE, rel, ver);

@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
@@ -318,26 +319,33 @@ class ModuleViewModel(
             }
         }
 
-        val fetchedEntries = coroutineScope {
-            modulesToFetch.map { (id, module, signature) ->
-                async {
-                    val info = withTimeoutOrNull(5_000L.milliseconds) {
-                        withContext(Dispatchers.IO) { checkUpdate(module) }
-                    } ?: ModuleUpdateInfo.Empty
-                    id to ModuleUpdateCache(signature, info)
-                }
-            }.awaitAll()
-        }
-
         val changedEntries = mutableListOf<Pair<String, ModuleUpdateInfo>>()
-        updateInfoMutex.withLock {
-            fetchedEntries.forEach { (id, entry) ->
-                val existing = updateInfoCache[id]
-                if (existing == null || existing.signature != entry.signature || existing.info != entry.info) {
-                    updateInfoCache[id] = entry
-                    changedEntries += id to entry.info
+        try {
+            val fetchedEntries = coroutineScope {
+                modulesToFetch.map { (id, module, signature) ->
+                    async {
+                        val info = withTimeoutOrNull(5_000L.milliseconds) {
+                            withContext(Dispatchers.IO) { checkUpdate(module) }
+                        } ?: ModuleUpdateInfo.Empty
+                        id to ModuleUpdateCache(signature, info)
+                    }
+                }.awaitAll()
+            }
+
+            updateInfoMutex.withLock {
+                fetchedEntries.forEach { (id, entry) ->
+                    val existing = updateInfoCache[id]
+                    if (existing == null || existing.signature != entry.signature || existing.info != entry.info) {
+                        updateInfoCache[id] = entry
+                        changedEntries += id to entry.info
+                    }
                 }
-                updateInfoInFlight.remove(id)
+            }
+        } finally {
+            withContext(NonCancellable) {
+                updateInfoMutex.withLock {
+                    modulesToFetch.forEach { (id, _, _) -> updateInfoInFlight.remove(id) }
+                }
             }
         }
 

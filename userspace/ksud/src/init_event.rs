@@ -189,13 +189,8 @@ pub fn on_post_fs_data() -> Result<()> {
     if !crate::boot_guard::allow_stage("startup-boundary-3") {
         return Ok(());
     }
-    // execute metamodule mount script；没装 metamodule 时退到内置 magic mount 引擎
-    if metamodule::has_metamodule() {
-        if let Err(e) = metamodule::exec_mount_script(module_dir) {
-            warn!("execute metamodule mount failed: {e}");
-        }
-    } else if let Err(e) = mount_modules_magic_fallback() {
-        warn!("magic mount failed: {e}");
+    if let Err(e) = mount_modules(module_dir) {
+        warn!("mount modules failed: {e:#}");
     }
 
     run_stage("post-mount", wait);
@@ -203,6 +198,21 @@ pub fn on_post_fs_data() -> Result<()> {
     std::env::set_current_dir("/").with_context(|| "failed to chdir to /")?;
 
     Ok(())
+}
+
+pub fn mount_modules(module_dir: &str) -> Result<()> {
+    if utils::is_safe_mode() || utils::has_magisk_installed() {
+        info!("skip module mounts in safe mode or with Magisk active");
+        return Ok(());
+    }
+    if !crate::boot_guard::allow_stage("module-mount") {
+        return Ok(());
+    }
+    if metamodule::has_metamodule() {
+        metamodule::exec_mount_script(module_dir)
+    } else {
+        mount_modules_magic_fallback()
+    }
 }
 
 /// 没有 metamodule 时的兜底：用内置 magic mount 引擎把 `/data/adb/modules/*` 映射到真实根

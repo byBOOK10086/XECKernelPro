@@ -862,6 +862,10 @@ fun reboot(reason: String = "") {
         }
         val ok = execKsud("soft-reboot", true, true)
         Log.i(TAG, "ksud soft-reboot result: $ok")
+        if (!ok) {
+            Log.w(TAG, "soft reboot failed; falling back to a full reboot")
+            rebootNow("")
+        }
         return
     }
     rebootNow(reason)

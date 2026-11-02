@@ -105,6 +105,7 @@ mod su;
 mod sulog;
 #[cfg(all(target_arch = "aarch64", target_os = "android"))]
 mod susfs;
+mod susfs_capabilities;
 #[cfg(all(target_arch = "aarch64", target_os = "android"))]
 mod susfs_config;
 #[cfg(all(target_arch = "aarch64", target_os = "android"))]

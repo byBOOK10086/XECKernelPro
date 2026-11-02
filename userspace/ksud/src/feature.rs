@@ -2,18 +2,14 @@ use crate::sulog;
 use anyhow::{Context, Result, bail};
 use const_format::concatcp;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{Read, Write};
+#[path = "feature_store.rs"]
+mod feature_store;
 use std::path::Path;
 
 use crate::defs;
 use crate::feature_id::{FeatureId, parse_feature_id};
 
 const FEATURE_CONFIG_PATH: &str = concatcp!(defs::WORKING_DIR, ".feature_config");
-#[allow(clippy::unreadable_literal)]
-const FEATURE_MAGIC: u32 = 0x7f4b5355;
-const FEATURE_VERSION: u32 = 1;
-
 fn on_feature_applied(feature_id: FeatureId, value: u64) {
     if feature_id == FeatureId::Sulog
         && value != 0
@@ -37,90 +33,8 @@ fn is_forced(id: u32) -> bool {
 }
 
 pub fn load_binary_config() -> Result<HashMap<u32, u64>> {
-    let path = Path::new(FEATURE_CONFIG_PATH);
-    if !path.exists() {
-        log::info!("Feature config not found, using defaults");
-        return Ok(HashMap::new());
-    }
-
-    let mut file = File::open(path).with_context(|| "Failed to open feature config")?;
-
-    let mut magic_buf = [0u8; 4];
-    file.read_exact(&mut magic_buf)
-        .with_context(|| "Failed to read magic")?;
-    let magic = u32::from_le_bytes(magic_buf);
-
-    if magic != FEATURE_MAGIC {
-        bail!("Invalid feature config magic: expected 0x{FEATURE_MAGIC:08x}, got 0x{magic:08x}");
-    }
-
-    let mut version_buf = [0u8; 4];
-    file.read_exact(&mut version_buf)
-        .with_context(|| "Failed to read version")?;
-    let version = u32::from_le_bytes(version_buf);
-
-    if version != FEATURE_VERSION {
-        log::warn!(
-            "Feature config version mismatch: expected {FEATURE_VERSION}, got {version
-            }",
-        );
-    }
-
-    let mut count_buf = [0u8; 4];
-    file.read_exact(&mut count_buf)
-        .with_context(|| "Failed to read count")?;
-    let count = u32::from_le_bytes(count_buf);
-
-    let mut features = HashMap::new();
-    for _ in 0..count {
-        let mut id_buf = [0u8; 4];
-        let mut value_buf = [0u8; 8];
-
-        file.read_exact(&mut id_buf)
-            .with_context(|| "Failed to read feature id")?;
-        file.read_exact(&mut value_buf)
-            .with_context(|| "Failed to read feature value")?;
-
-        let id = u32::from_le_bytes(id_buf);
-        let value = u64::from_le_bytes(value_buf);
-
-        features.insert(id, value);
-    }
-
-    log::info!("Loaded {} features from config", features.len());
-    Ok(features)
+    feature_store::load(Path::new(FEATURE_CONFIG_PATH)).context("Failed to load feature config")
 }
-
-pub fn save_binary_config(features: &HashMap<u32, u64>) -> Result<()> {
-    crate::utils::ensure_dir_exists(Path::new(defs::WORKING_DIR))?;
-
-    let path = Path::new(FEATURE_CONFIG_PATH);
-    let mut file = File::create(path).with_context(|| "Failed to create feature config")?;
-
-    file.write_all(&FEATURE_MAGIC.to_le_bytes())
-        .with_context(|| "Failed to write magic")?;
-
-    file.write_all(&FEATURE_VERSION.to_le_bytes())
-        .with_context(|| "Failed to write version")?;
-
-    let count = features.len() as u32;
-    file.write_all(&count.to_le_bytes())
-        .with_context(|| "Failed to write count")?;
-
-    for (&id, &value) in features {
-        file.write_all(&id.to_le_bytes())
-            .with_context(|| format!("Failed to write feature id {id}"))?;
-        file.write_all(&value.to_le_bytes())
-            .with_context(|| format!("Failed to write feature value for id {id}"))?;
-    }
-
-    file.sync_all()
-        .with_context(|| "Failed to sync feature config")?;
-
-    log::info!("Saved {} features to config", features.len());
-    Ok(())
-}
-
 pub fn apply_config(features: &HashMap<u32, u64>) {
     log::info!("Applying feature configuration to kernel...");
 
@@ -333,30 +247,35 @@ pub fn load_config_and_apply() -> Result<()> {
     Ok(())
 }
 
-pub fn save_config() -> Result<()> {
-    // Keep persisted values of forced features, they are in effect again once
-    // the boot config no longer forces them.
-    let mut features = load_binary_config().unwrap_or_default();
-
-    for feature_id in &FeatureId::ALL {
-        let id = *feature_id as u32;
-        if let Ok(state) = crate::ksucalls::get_feature(id)
-            && state.supported
-            && !state.forced
-        {
-            features.insert(id, state.value);
-            log::info!("Saved feature {} = {}", feature_id.name(), state.value);
-        }
+pub fn save_config(id: Option<&str>, value: Option<u64>) -> Result<()> {
+    let selected = id.map(parse_feature_id).transpose()?;
+    if value.is_some() && selected.is_none() {
+        bail!("A feature ID is required with a value");
     }
-
-    save_binary_config(&features)?;
-    println!(
-        "Current feature states saved to config file ({} features)",
-        features.len()
-    );
+    feature_store::update(Path::new(FEATURE_CONFIG_PATH), |features| {
+        if let Some(feature) = selected {
+            let state = crate::ksucalls::get_feature(feature as u32)
+                .map_err(|err| std::io::Error::other(err.to_string()))?;
+            if !state.supported || state.forced {
+                return Err(std::io::Error::other("Feature unsupported or forced"));
+            }
+            features.insert(feature as u32, value.unwrap_or(state.value));
+        } else {
+            // Legacy no-argument save remains a complete runtime snapshot.
+            for feature in FeatureId::ALL {
+                let state = crate::ksucalls::get_feature(feature as u32)
+                    .map_err(|err| std::io::Error::other(err.to_string()))?;
+                if state.supported && !state.forced {
+                    features.insert(feature as u32, state.value);
+                }
+            }
+        }
+        Ok(())
+    })
+    .context("Failed to save feature config")?;
+    println!("Feature configuration saved");
     Ok(())
 }
-
 pub fn check_feature(id: &str) -> Result<()> {
     let feature_id = parse_feature_id(id)?;
 
@@ -411,7 +330,7 @@ pub fn init_forced_features() {
 pub fn init_features() -> Result<()> {
     log::info!("Initializing features from config...");
 
-    let mut features = load_binary_config()?;
+    feature_store::update(Path::new(FEATURE_CONFIG_PATH), |features| {
 
     // Get managed features from active modules and skip them during init
     if let Ok(managed_features_map) = crate::module::get_managed_features() {
@@ -460,10 +379,11 @@ pub fn init_features() -> Result<()> {
         return Ok(());
     }
 
-    apply_config(&features);
+    apply_config(features);
 
     // Save the configuration (excluding managed features)
-    save_binary_config(&features)?;
+    Ok(())
+    }).context("Failed to initialize feature configuration")?;
     log::info!("Saved feature configuration to file");
 
     Ok(())

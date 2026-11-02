@@ -177,12 +177,12 @@ bool set_exec_policy(uid_t uid, bool restricted, const std::vector<std::string> 
     cmd.restricted = restricted && !paths.empty();
     cmd.count = 0;
     for (const auto &path : paths) {
-        if (cmd.count >= KSU_EXEC_POLICY_MAX)
-            break;
         if (path.empty())
             continue;
-        // 截断到 KSU_EXEC_POLICY_PATH-1，保证 NUL 终止。
-        size_t n = std::min(path.size(), (size_t)(KSU_EXEC_POLICY_PATH - 1));
+        if (cmd.count >= KSU_EXEC_POLICY_MAX || path.size() >= KSU_EXEC_POLICY_PATH ||
+            path.find('\0') != std::string::npos)
+            return false;
+        const size_t n = path.size();
         memcpy(cmd.paths[cmd.count], path.data(), n);
         cmd.paths[cmd.count][n] = '\0';
         cmd.count++;
@@ -237,8 +237,11 @@ bool set_uts_spoof(uid_t uid, bool enabled, const std::string &release, const st
     struct ksu_uts_spoof_cmd cmd = {};
     cmd.uid = uid;
     cmd.enabled = enabled;
-    snprintf((char *) cmd.release, sizeof(cmd.release), "%s", release.c_str());
-    snprintf((char *) cmd.version, sizeof(cmd.version), "%s", version.c_str());
+    if (release.size() >= sizeof(cmd.release) || version.size() >= sizeof(cmd.version) ||
+        release.find('\0') != std::string::npos || version.find('\0') != std::string::npos)
+        return false;
+    memcpy(cmd.release, release.data(), release.size());
+    memcpy(cmd.version, version.data(), version.size());
     return ksuctl(KSU_IOCTL_SET_UTS_SPOOF, &cmd) == 0;
 }
 

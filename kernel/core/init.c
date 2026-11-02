@@ -107,6 +107,8 @@ module_param(spoof_version, charp, 0);
 
 int __init kernelsu_init(void)
 {
+    int ret;
+
     pr_info("welcome to KernelSU version " __stringify(KERNEL_SU_VERSION) ", package name " KSU_PACKAGE_NAME "\n");
 #if defined(__x86_64__) && !defined(CONFIG_KSU_X86_PATCH_SYSCALL_DISPATCHER)
     // If the kernel has the hardening patch, X86_FEATURE_INDIRECT_SAFE must be set
@@ -149,6 +151,16 @@ int __init kernelsu_init(void)
         return -ENOSYS;
     }
 
+    ksu_init_symbol_resolver();
+    /* Validate the runtime SELinux inode layout before installing hooks or
+     * initializing SUSFS, so an ABI mismatch can fail without partial setup. */
+    ret = ksu_selinux_inode_init();
+    if (ret) {
+        put_cred(ksu_cred);
+        ksu_cred = NULL;
+        return ret;
+    }
+
 #ifdef CONFIG_KSU_SUSFS
     // SUSFS 模式：初始化基线内核 fs/susfs.c 的数据结构（sus_path/sus_kstat
     // 表、uname/cmdline 缓存、extra works 等）。exec/stat/read/reboot 等入口
@@ -156,8 +168,6 @@ int __init kernelsu_init(void)
     // dispatcher 只保留 prctl 超级调用（见 syscall_hook_manager.c）。
     susfs_init();
 #endif
-
-    ksu_init_symbol_resolver();
 
     if (spoof_release || spoof_version) {
         ksu_spoof_version(spoof_release, spoof_version);

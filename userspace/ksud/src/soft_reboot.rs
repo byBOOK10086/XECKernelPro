@@ -158,6 +158,9 @@ pub fn soft_reboot() -> Result<()> {
         bail!("soft_reboot 需要 KernelSU 驱动；本机没有（挂载态 root 走官方 Magisk）: {e:#}");
     }
 
+    // Reject unsupported stage replay before daemonizing or stopping Android.
+    crate::boot_guard::ensure_soft_reboot_supported()?;
+
     utils::daemonize_with(true, || -> Result<()> {
         switch_mnt_ns(1)?;
         chdir("/")?;

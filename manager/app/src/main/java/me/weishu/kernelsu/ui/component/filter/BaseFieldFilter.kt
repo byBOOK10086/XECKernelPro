@@ -15,26 +15,6 @@ open class BaseFieldFilter() {
         return TextFieldValue()
     }
 
-    protected open fun computePos(): Int {
-        // TODO
-        return 0
-    }
-
-    protected fun getNewTextRange(
-        lastTextFiled: TextFieldValue,
-        inputTextFieldValue: TextFieldValue
-    ): TextRange? {
-        return null
-    }
-
-    protected fun getNewText(
-        lastTextFiled: TextFieldValue,
-        inputTextFieldValue: TextFieldValue
-    ): TextRange? {
-
-        return null
-    }
-
     fun setInputValue(value: String) {
         inputValue.value = TextFieldValue(value, TextRange(value.lastIndex + 1))
     }

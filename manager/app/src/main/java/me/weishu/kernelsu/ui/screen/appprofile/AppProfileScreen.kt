@@ -122,11 +122,12 @@ fun AppProfileScreen(uid: Int) {
             } else {
                 ExecPolicyStore.set(context, uid, if (restricted) paths else emptyList())
             }
-            if (!ok && restricted) {
-                showMessage(context.getString(R.string.exec_policy_kernel_too_old))
+            if (ok) {
+                execPaths = ExecPolicyStore.get(context, uid)
+                execRestricted = execPaths.isNotEmpty()
+            } else {
+                showMessage(context.getString(R.string.failed_to_update_app_profile, uid.toString()))
             }
-            execRestricted = restricted && paths.any { it.isNotBlank() }
-            execPaths = paths
         },
         onUtsSpoofChange = { release, version ->
             val ok = if (!SuperkeyStore.ensureAuthed(context)) {
@@ -135,11 +136,13 @@ fun AppProfileScreen(uid: Int) {
             } else {
                 UtsSpoofStore.set(context, uid, release, version)
             }
-            if (!ok && (release.isNotBlank() || version.isNotBlank())) {
-                showMessage(context.getString(R.string.uts_spoof_kernel_too_old))
+            if (ok) {
+                val saved = UtsSpoofStore.get(context, uid)
+                utsRelease = saved.first
+                utsVersion = saved.second
+            } else {
+                showMessage(context.getString(R.string.failed_to_update_app_profile, uid.toString()))
             }
-            utsRelease = release.trim()
-            utsVersion = version.trim()
         },
         onProfileChange = { updatedProfile ->
             scope.launch {

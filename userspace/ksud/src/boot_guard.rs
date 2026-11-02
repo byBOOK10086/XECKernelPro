@@ -29,9 +29,16 @@ fn may_reboot(retries: u64) -> bool {
     retries < 2
 }
 
+fn soft_reboot_supported(rescue: bool, same_boot: bool) -> bool {
+    !rescue && !same_boot
+}
+
 #[cfg(target_os = "android")]
 mod runtime {
-    use super::{Decision, decision, failures_after_start, may_reboot, rescue_required};
+    use super::{
+        Decision, decision, failures_after_start, may_reboot, rescue_required,
+        soft_reboot_supported,
+    };
     use anyhow::{Context, Result, ensure};
     use serde_json::{Value, json};
     use std::fs::{self, File, OpenOptions};
@@ -374,6 +381,17 @@ mod runtime {
         state.reason = "boot transaction rollback applied; reboot required".into();
         reboot(&mut state)
     }
+    pub fn ensure_soft_reboot_supported() -> Result<()> {
+        root()?;
+        let _guard = locked()?;
+        let state = load()?;
+        ensure!(
+            soft_reboot_supported(state.rescue, state.boot == boot_id()?),
+            "soft reboot is unavailable in rescue mode or the current boot guard epoch; use a full reboot"
+        );
+        Ok(())
+    }
+
     pub fn status() -> Result<()> {
         root()?;
         let _guard = locked()?;
@@ -475,7 +493,8 @@ mod runtime {
 }
 #[cfg(target_os = "android")]
 pub use runtime::{
-    allow_stage, begin, recovery_failed, resume, rollback_applied, startup_ready, status, watch,
+    allow_stage, begin, ensure_soft_reboot_supported, recovery_failed, resume, rollback_applied,
+    startup_ready, status, watch,
 };
 
 #[cfg(test)]
@@ -501,6 +520,13 @@ mod tests {
         assert_eq!(decision(299, None, 300), Decision::Wait);
         assert_eq!(decision(301, None, 1800), Decision::Wait);
         assert_eq!(decision(1800, None, 1800), Decision::Timeout);
+    }
+    #[test]
+    fn soft_reboot_rejects_same_boot_and_rescue() {
+        assert!(!soft_reboot_supported(false, true));
+        assert!(!soft_reboot_supported(true, true));
+        assert!(!soft_reboot_supported(true, false));
+        assert!(soft_reboot_supported(false, false));
     }
     #[test]
     fn automatic_reboot_budget_is_finite() {

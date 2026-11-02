@@ -74,5 +74,5 @@ interface SettingsRepository {
 
     fun isLkmMode(): Boolean
 
-    fun execKsudFeatureSave()
+    fun execKsudFeatureSave(feature: String, value: Long): Boolean
 }

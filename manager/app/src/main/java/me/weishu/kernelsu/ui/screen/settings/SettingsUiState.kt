@@ -6,6 +6,7 @@ import com.materialkolor.dynamiccolor.ColorSpec
 
 @Immutable
 data class SettingsUiState(
+    val featureErrors: Map<String, String> = emptyMap(),
     val checkUpdate: Boolean = true,
     val checkModuleUpdate: Boolean = true,
     val themeMode: Int = 0,
