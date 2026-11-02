@@ -704,7 +704,7 @@ static int allowlist_import(const unsigned char *profiles, unsigned int count, s
             rc = -EINVAL;
             goto free_staged;
         }
-        hash_for_each_possible(staged, other, list, p->profile.curr_uid) {
+        hlist_for_each_entry(other, &staged[hash_min(p->profile.curr_uid, ALLOW_LIST_BITS)], list) {
             if (other->profile.curr_uid == p->profile.curr_uid) {
                 kfree(p);
                 rc = -EINVAL;
@@ -712,7 +712,7 @@ static int allowlist_import(const unsigned char *profiles, unsigned int count, s
             }
         }
         kref_init(&p->ref);
-        hash_add(staged, &p->list, p->profile.curr_uid);
+        hlist_add_head(&p->list, &staged[hash_min(p->profile.curr_uid, ALLOW_LIST_BITS)]);
     }
     mutex_lock(&allowlist_mutex);
     hash_for_each_safe(allow_list, i, tmp, p, list) {
@@ -730,9 +730,11 @@ static int allowlist_import(const unsigned char *profiles, unsigned int count, s
     }
     mutex_unlock(&allowlist_mutex);
 free_staged:
-    hash_for_each_safe(staged, i, tmp, p, list) {
-        hash_del(&p->list);
-        kfree(p);
+    for (i = 0; i < (1U << ALLOW_LIST_BITS); i++) {
+        hlist_for_each_entry_safe(p, tmp, &staged[i], list) {
+            hlist_del(&p->list);
+            kfree(p);
+        }
     }
     kfree(staged);
     return rc;
