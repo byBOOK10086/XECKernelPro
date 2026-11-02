@@ -739,3 +739,8 @@ mod tests {
         assert!(parse_state(&serialize(&invalid)).is_err());
     }
 }
+
+/// Whether the pending flash needs the longer OTA startup deadline.
+pub fn is_ota_pending() -> Result<bool> {
+    Ok(load_state()?.is_some_and(|state| state.ota))
+}
