@@ -110,6 +110,7 @@ impl BuiltinApplyLock {
         }
         let file = OpenOptions::new()
             .create(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .open(path)
@@ -345,10 +346,7 @@ fn builtin_store_stamp_path(token: &str) -> PathBuf {
 /// 也不要让设备继续用上一次构建的引擎资产（新版管理器 + 旧引擎是最难查的错配）。
 fn builtin_store_is_current(token: &str) -> bool {
     let stamp = builtin_store_stamp_path(token);
-    match std::fs::read_to_string(&stamp) {
-        Ok(value) => value.trim() == defs::VERSION_CODE,
-        Err(_) => false,
-    }
+    std::fs::read_to_string(&stamp).is_ok_and(|value| value.trim() == defs::VERSION_CODE)
 }
 
 /// 把内置模块的明文资产加密进 /data 上的存储（按 ksud 构建刷新内容戳）。
@@ -470,7 +468,7 @@ fn start_builtin_runtime(module_id: &str) -> Result<()> {
         });
     }
     command
-        .current_dir(script.parent().unwrap_or(Path::new("/")))
+        .current_dir(script.parent().unwrap_or_else(|| Path::new("/")))
         .arg("sh")
         .arg(&script)
         .envs(get_common_script_envs(Some(module_id)))
@@ -515,7 +513,7 @@ fn stop_builtin_runtime(module_id: &str) {
         });
     }
     command
-        .current_dir(script.parent().unwrap_or(Path::new("/")))
+        .current_dir(script.parent().unwrap_or_else(|| Path::new("/")))
         .arg("sh")
         .arg(&script)
         .arg("--stop")
@@ -570,6 +568,7 @@ pub fn builtin_status() -> serde_json::Value {
     serde_json::Value::Object(map)
 }
 
+#[allow(dead_code)]
 pub fn builtin_print_status() -> Result<()> {
     println!("{}", serde_json::to_string_pretty(&builtin_status())?);
     Ok(())
