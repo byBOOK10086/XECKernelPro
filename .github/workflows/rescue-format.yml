@@ -1,0 +1,29 @@
+name: Format recovery branch in cloud
+on:
+  push:
+    branches: [fix/rescue-integration-31261]
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/rescue-integration-31261
+      - run: rustup update stable
+      - name: Apply repository formatter in cloud
+        run: |
+          cargo fmt --all
+          if ! git diff --quiet; then
+            git config user.name "xec-recovery-ci"
+            git config user.email "xec-recovery-ci@users.noreply.github.com"
+            git add userspace/
+            git commit -m "style: Format recovery integration with cloud rustfmt"
+            git push origin HEAD:fix/rescue-integration-31261
+          fi
+      - name: Execute recovery policy tests
+        run: |
+          rustc --edition 2024 --test userspace/ksud/src/boot_guard.rs -o /tmp/guard-tests
+          /tmp/guard-tests
+          python3 scripts/test_boot_txn_host.py
