@@ -23,6 +23,8 @@ mod assets;
 // android 子模块与 flash_partition 则必须是 `pub`——clippy::redundant_pub_crate
 // （nursery，本 crate 开了 warn(clippy::nursery) 且 CI 用 -Dwarnings）只放过
 // `pub`，写 `pub(crate)` 会被判「inside private module」。
+#[cfg(any(target_os = "android", test))]
+mod boot_guard;
 mod boot_patch;
 #[cfg(target_os = "android")]
 mod boot_txn;

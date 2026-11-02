@@ -27,6 +27,11 @@ struct Args {
 
 #[derive(clap::Subcommand, Debug)]
 enum Commands {
+    /// Native startup safety and recovery
+    BootGuard {
+        #[command(subcommand)]
+        command: BootGuardCmd,
+    },
     /// Manage KernelSU modules
     Module {
         #[command(subcommand)]
@@ -239,6 +244,17 @@ enum Commands {
         #[command(subcommand)]
         command: Susfs,
     },
+}
+
+#[derive(clap::Subcommand, Debug)]
+enum BootGuardCmd {
+    /// Print durable startup safety state as JSON (root only)
+    Status,
+    /// Clear rescue and failure state; reboot is required
+    Resume,
+    /// Internal detached startup observer
+    #[command(hide = true)]
+    Watch,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -863,6 +879,11 @@ pub fn run() -> Result<()> {
     log::info!("command: {:?}", cli.command);
 
     let result = match cli.command {
+        Commands::BootGuard { command } => match command {
+            BootGuardCmd::Status => crate::boot_guard::status(),
+            BootGuardCmd::Resume => crate::boot_guard::resume(),
+            BootGuardCmd::Watch => crate::boot_guard::watch(),
+        },
         Commands::PostFsData => init_event::on_post_fs_data(),
         Commands::BootCompleted => {
             init_event::on_boot_completed();

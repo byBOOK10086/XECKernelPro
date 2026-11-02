@@ -393,7 +393,9 @@ fn store_builtin_blob(module_id: &str, token: &str) -> Result<()> {
     };
     for required_path in required {
         ensure!(
-            entries.iter().any(|(path, _, data)| path == required_path && !data.is_empty()),
+            entries
+                .iter()
+                .any(|(path, _, data)| path == required_path && !data.is_empty()),
             "required bundled asset missing or empty: {module_id}/{required_path}"
         );
     }
@@ -577,6 +579,9 @@ pub fn builtin_print_status() -> Result<()> {
 /// Refresh persistent blobs and materialize all enabled built-ins for this boot.
 #[cfg(target_os = "android")]
 pub fn ensure_builtin_modules() -> Result<()> {
+    if !crate::boot_guard::allow_stage("builtin-provision") {
+        return Ok(());
+    }
     let _lock = BuiltinApplyLock::acquire()?;
     std::fs::create_dir_all(defs::BUILTIN_STORE_DIR)?;
     std::fs::create_dir_all(defs::BUILTIN_MODULE_DIR)?;
@@ -610,6 +615,10 @@ pub fn builtin_apply(target: &str, on: bool) -> Result<()> {
         );
     }
     set_builtin_flag(key, on)?;
+    if on && !crate::boot_guard::allow_stage("builtin-enable") {
+        println!("{}", serde_json::to_string_pretty(&builtin_status())?);
+        return Ok(());
+    }
 
     if on {
         store_builtin_blob(module_id, token)?;
@@ -732,7 +741,11 @@ pub fn foreach_module(
         ModuleType::Updated => MODULE_UPDATE_DIR,
         _ => defs::MODULE_DIR,
     });
-    let dir = std::fs::read_dir(modules_dir)?;
+    let dir = match std::fs::read_dir(modules_dir) {
+        Ok(dir) => dir,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.into()),
+    };
     for entry in dir.flatten() {
         let path = entry.path();
         if !path.is_dir() {
@@ -1030,6 +1043,9 @@ fn exec_builtin_stage_script(stage: &str, wait: ScriptWait) -> Result<()> {
 }
 
 pub fn exec_stage_script(stage: &str, wait: ScriptWait) -> Result<()> {
+    if !crate::boot_guard::allow_stage(stage) {
+        return Ok(());
+    }
     let metamodule_dir = metamodule::get_metamodule_path().and_then(|path| canonicalize(path).ok());
 
     foreach_active_module(|module| {
@@ -1054,6 +1070,9 @@ pub fn exec_stage_script(stage: &str, wait: ScriptWait) -> Result<()> {
 }
 
 pub fn exec_common_scripts(dir: &str, wait: ScriptWait) -> Result<()> {
+    if !crate::boot_guard::allow_stage(dir) {
+        return Ok(());
+    }
     let script_dir = Path::new(defs::ADB_DIR).join(dir);
     if !script_dir.exists() {
         info!("{} not exists, skip", script_dir.display());
