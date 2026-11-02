@@ -334,6 +334,23 @@ fn remove_builtin_runtime(module_id: &str) {
     }
 }
 
+/// 内置模块内容戳的落盘路径：和 blob 放在同一目录，按 token（0.cfg / 1.cfg）区分。
+fn builtin_store_stamp_path(token: &str) -> PathBuf {
+    Path::new(defs::BUILTIN_STORE_DIR).join(format!("{token}.stamp"))
+}
+
+/// /data 上的 blob 是不是当前这次 ksud 构建写出来的。
+///
+/// 没有 stamp、读不出来、或版本号对不上都算"过期"：宁可开机重写一次 blob，
+/// 也不要让设备继续用上一次构建的引擎资产（新版管理器 + 旧引擎是最难查的错配）。
+fn builtin_store_is_current(token: &str) -> bool {
+    let stamp = builtin_store_stamp_path(token);
+    match std::fs::read_to_string(&stamp) {
+        Ok(value) => value.trim() == defs::VERSION_CODE,
+        Err(_) => false,
+    }
+}
+
 /// 把内置模块的明文资产加密进 /data 上的存储（按 ksud 构建刷新内容戳）。
 ///
 /// 关掉的模块也照样刷新：这样用户下次打开开关时不必先等一次开机。
