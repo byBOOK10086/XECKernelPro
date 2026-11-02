@@ -193,7 +193,7 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
     init_event::run_stage("service", ScriptWait::NoWait);
 
     // 13. Execute boot-completed stage scripts (non-blocking)
-    init_event::run_stage("boot-completed", ScriptWait::NoWait);
+    init_event::run_stage("boot-completed", ScriptWait::Until(Instant::now() + defs::BOOT_STAGE_TIMEOUT));
 
     crate::boot_guard::startup_ready()?;
 

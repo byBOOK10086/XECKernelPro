@@ -291,11 +291,11 @@ pub fn on_services() {
 }
 
 pub fn on_boot_completed() {
-    if let Err(e) = crate::boot_guard::startup_ready() {
-        error!("boot guard readiness failed: {e:#}");
-        return;
-    }
     if !crate::boot_guard::allow_stage("boot-completed") {
+        // Minimal rescue can become stable, but the observer never commits its flash.
+        if let Err(error) = crate::boot_guard::startup_ready() {
+            error!("rescue readiness failed: {error:#}");
+        }
         return;
     }
     // 挂载态没有内核驱动：boot 事务与 UAPI 校验都跳过，但 boot-completed 阶段
@@ -318,7 +318,10 @@ pub fn on_boot_completed() {
         error!("stealth entrance: {e:#}");
     }
 
-    run_stage("boot-completed", ScriptWait::NoWait);
+    run_stage("boot-completed", ScriptWait::Until(Instant::now() + defs::BOOT_STAGE_TIMEOUT));
+    if let Err(error) = crate::boot_guard::startup_ready() {
+        error!("boot guard readiness failed: {error:#}");
+    }
 }
 
 fn catch_bootlog(logname: &str, command: &[&str]) -> Result<()> {
