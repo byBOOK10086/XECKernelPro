@@ -431,7 +431,8 @@ mod runtime {
                     if state.rescue {
                         state.pending = false;
                         state.stage = "rescue-success".into();
-                        state.last_recovery = "minimal startup completed; normal startup remains disabled".into();
+                        state.last_recovery =
+                            "minimal startup completed; normal startup remains disabled".into();
                         save(&state)?;
                         return Ok(());
                     }
