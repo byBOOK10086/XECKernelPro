@@ -59,7 +59,7 @@ static int (*kp_hook_patch_text)(void *addrs[], u32 insns[], int count);
  * CFI-instrumented caller, the compiler emits a kCFI type-hash load of
  * [fnptr - 4] that dereferences NULL when the allocator is absent (6.10+ has
  * no module_alloc) and panics. no_sanitize keeps the indirect calls unchecked. */
-__attribute__((no_sanitize("cfi"), __noinline__))
+__nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static void *kp_hook_exec_alloc(unsigned long size)
 {
 	void *p = NULL;
@@ -86,7 +86,7 @@ static void *kp_hook_exec_alloc(unsigned long size)
 	return p;
 }
 
-__attribute__((no_sanitize("cfi"), __noinline__))
+__nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static void kp_hook_exec_free(void *region)
 {
 	if (kp_hook_module_memfree)
@@ -97,7 +97,7 @@ static void kp_hook_exec_free(void *region)
 		vfree(region);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static void kp_hook_flush_all(void)
 {
 	if (kp_hook_flush_icache_all)
@@ -194,7 +194,22 @@ void hook_mem_free(void *payload)
 	mutex_unlock(&kp_hook_lock);
 }
 
-__attribute__((no_sanitize("cfi"), __noinline__))
+/* Retired trampolines must no longer be found by a subsequent re-hook,
+ * but their pages can still be executing on another CPU. */
+void hook_mem_retire(void *payload)
+{
+    struct kp_hook_mem *mem;
+    mutex_lock(&kp_hook_lock);
+    list_for_each_entry(mem, &kp_hook_mems, list) {
+        if (mem->payload == payload) {
+            mem->origin = 0;
+            break;
+        }
+    }
+    mutex_unlock(&kp_hook_lock);
+}
+
+__nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 int hotpatch(void *addrs[], uint32_t values[], int count)
 {
     if (!kp_hook_patch_text)

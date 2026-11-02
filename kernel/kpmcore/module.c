@@ -123,7 +123,7 @@ static void kp_clear_bti_gp(unsigned long base, unsigned long size)
  * only these indirect-call boundaries. noinline: if inlined into a
  * CFI-instrumented caller, the kCFI type-hash load of [fnptr - 4] dereferences
  * NULL when the allocator is absent (6.10+ has no module_alloc). */
-__attribute__((no_sanitize("cfi"), __noinline__))
+__nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static void *kp_malloc_exec(unsigned long size)
 {
 	if (kp_module_alloc)
@@ -135,7 +135,7 @@ static void *kp_malloc_exec(unsigned long size)
 	return vmalloc(size);
 }
 
-__attribute__((no_sanitize("cfi"), __noinline__))
+__nocfi __attribute__((no_sanitize("cfi"), __noinline__))
 static void kp_free_exec(void *region)
 {
 	if (kp_module_memfree)
@@ -146,7 +146,7 @@ static void kp_free_exec(void *region)
 		vfree(region);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static void kp_flush_kpm_icache(void *start, size_t size)
 {
 	(void)start; (void)size; (void)kp_flush_icache_all_fn;
@@ -156,44 +156,44 @@ static void kp_flush_kpm_icache(void *start, size_t size)
 	isb();
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static long kp_call_init(mod_initcall_t *fn, const char *args, const char *event,
 			 void __user *reserved)
 {
 	return (*fn)(args, event, reserved);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static long kp_call_exit(mod_exitcall_t *fn, void __user *reserved)
 {
 	return (*fn)(reserved);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static int kp_do_set_memory_x(unsigned long addr, int npages)
 {
 	return kp_set_memory_x(addr, npages);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static int kp_do_set_memory_nx(unsigned long addr, int npages)
 {
 	return kp_set_memory_nx(addr, npages);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static long kp_call_ctl0(mod_ctl0call_t *fn, const char *args, char __user *out, int outlen)
 {
 	return (*fn)(args, out, outlen);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static long kp_call_ctl1(mod_ctl1call_t *fn, void *a1, void *a2, void *a3)
 {
 	return (*fn)(a1, a2, a3);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 static long kp_call_event(mod_eventcall_t *fn, const char *event, const char *args,
 			  void __user *reserved)
 {
@@ -688,7 +688,7 @@ struct kp_kallsyms_context {
 
 /* A compiler-generated kernel callback has the correct CFI type and BTI
  * landing pad. Stack context makes recursive/concurrent iterations independent. */
-static noinline __attribute__((no_sanitize("cfi")))
+static noinline __nocfi __attribute__((no_sanitize("cfi")))
 int kp_forward_kallsyms(void *opaque, const char *name,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
                        struct module *owner,
@@ -703,7 +703,7 @@ int kp_forward_kallsyms(void *opaque, const char *name,
                          address);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((no_sanitize("cfi")))
 int kp_kpm_safe_kallsyms_on_each_symbol(kp_kallsyms_cb_t fn, void *data)
 {
     struct kp_kallsyms_context ctx = { fn, data };

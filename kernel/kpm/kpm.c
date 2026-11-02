@@ -74,7 +74,7 @@
 #endif
 
 #if defined(CONFIG_CFI_CLANG) && defined(__clang__)
-#define KPM_NO_CFI __attribute__((no_sanitize("cfi")))
+#define KPM_NO_CFI __nocfi __attribute__((no_sanitize("cfi")))
 #else
 #define KPM_NO_CFI
 #endif
