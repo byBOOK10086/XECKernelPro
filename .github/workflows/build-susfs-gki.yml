@@ -288,7 +288,7 @@ jobs:
                      sukisu_kpm_info_apatch sukisu_kpm_control_out \
                      kp_engine_init kp_engine_active sukisu_kpm_bridge \
                      sukisu_kpm_supercall_install kp_load_module_path \
-                     kp_kstorage_init kp_hook_wrap; do
+                     kp_kstorage_init hook_wrap fp_hook_wrap; do
             "$NM" "$ODIR/vmlinux" | grep -q " $SYM$" || {
               echo "::error::symbol $SYM missing from vmlinux (KSU/SUSFS integration broken)"
               exit 1
