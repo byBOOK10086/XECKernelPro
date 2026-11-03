@@ -31,7 +31,6 @@ int kp_su_allow_uid_profile(uid_t uid, struct su_profile *out_profile);
 
 /* APatch module exclude flag (kstorage group KSTORAGE_EXCLUDE_LIST_GROUP). */
 int kp_su_set_ap_mod_exclude(uid_t uid, int exclude);
-int kp_su_get_ap_mod_exclude(uid_t uid);
 
 /* Get/set the su binary path (default "/system/bin/kp"). */
 const char *kp_su_get_path(void);

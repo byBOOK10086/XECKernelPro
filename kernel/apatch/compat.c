@@ -271,6 +271,10 @@ int ksu_apatch_compat_init(void)
             pr_warn("apatch-compat: accctl init failed, su grant degrades\n");
         if (kp_sucompat_init())
             pr_warn("apatch-compat: su allowlist init failed\n");
+        /* 旧引擎在 core.c 里调过一次：把 /data/adb/ap/{su_path,package_config}
+         * 的既有配置导入允许列表。设备上没这俩文件时直接失败，忽略即可。 */
+        if (kp_su_load_config() < 0)
+            pr_debug("apatch-compat: no APatch config to import\n");
     }
     ksu_syscall_table_hook(SC_NR_SUPERCALL, ksu_apatch_syscall45, &sc_orig_syscall45);
     pr_info("apatch-compat: syscall %d hooked (kpver=0x%04x)\n", SC_NR_SUPERCALL, SC_REPORTED_KPVER);

@@ -19,16 +19,6 @@
 
 #include "kp_lkm.h"
 
-long kp_su_unsupported_buildtime(char __user *ubuf, int buf_len)
-{
-	int len = sizeof(KP_LKM_VERSION_STRING);
-	if (buf_len <= len)
-		return -ENOBUFS;
-	if (copy_to_user(ubuf, KP_LKM_VERSION_STRING, len))
-		return -EFAULT;
-	return 0;
-}
-
 long kp_su_sc(const struct su_profile __user *uprofile)
 {
 	struct su_profile *profile;

@@ -211,12 +211,8 @@ private fun flashWithIO(
         }
     }
 
-    return try {
-        withNewRootShell {
-            newJob().add(cmd).to(stdoutCallback, stderrCallback).exec()
-        }
-    } finally {
-        Unit
+    return withNewRootShell {
+        newJob().add(cmd).to(stdoutCallback, stderrCallback).exec()
     }
 }
 

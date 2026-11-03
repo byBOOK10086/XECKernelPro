@@ -117,17 +117,6 @@ int kp_su_set_ap_mod_exclude(uid_t uid, int exclude)
 	return kp_kstorage_remove(exclude_group, (long)uid);
 }
 
-int kp_su_get_ap_mod_exclude(uid_t uid)
-{
-	int exclude = 0;
-	if (exclude_group < 0)
-		return 0;
-	int rc = kp_kstorage_read(exclude_group, (long)uid, &exclude, 0, sizeof(exclude), false);
-	if (rc < 0)
-		return 0;
-	return exclude;
-}
-
 #define KP_SU_PATH_MAX_LEN 128
 
 static char current_su_path[KP_SU_PATH_MAX_LEN];

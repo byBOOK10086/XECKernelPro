@@ -98,31 +98,33 @@ int kp_kstorage_write(int gid, long did, void *data, int offset, int len, bool d
 	}
 	new->dlen = len;
 
-	rcu_read_lock();
+	/* Lookup and mutation must happen under the same lock. Doing the lookup
+	 * under RCU and only then taking the lock lets two writers both keep the
+	 * same `old`: the node gets unlinked twice and queued to call_rcu twice,
+	 * i.e. a double free. Readers are RCU-protected, the lock costs them
+	 * nothing. */
+	spin_lock(lock);
 
-	hlist_for_each_entry_rcu(pos, bucket, hnode) {
+	hlist_for_each_entry(pos, bucket, hnode) {
 		if (pos->did == did) {
 			old = pos;
 			break;
 		}
 	}
 
-	spin_lock(lock);
 	if (old) {
 		hlist_replace_rcu(&old->hnode, &new->hnode);
 	} else {
 		hlist_add_head_rcu(&new->hnode, bucket);
 		group_sizes[gid]++;
 	}
-	spin_unlock(lock);
 
-	rcu_read_unlock();
+	spin_unlock(lock);
 
 	if (old)
 		call_rcu(&old->rcu, reclaim_callback);
 	return 0;
 }
-
 const struct kp_kstorage *kp_kstorage_get(int gid, long did)
 {
 	struct hlist_head *bucket;
@@ -173,11 +175,23 @@ int kp_kstorage_read(int gid, long did, void *data, int offset, int len, bool da
 int kp_kstorage_list_ids(int gid, long *ids, int idslen, bool data_is_user)
 {
 	struct kp_kstorage *pos;
+	long *kbuf = ids;
 	int cnt = 0;
 	int rc = 0;
 
 	if (gid < 0 || gid >= KP_KSTORAGE_MAX_GROUP_NUM)
 		return -ENOENT;
+	if (idslen <= 0)
+		return 0;
+
+	/* copy_to_user() can fault and sleep, which is illegal inside the RCU
+	 * read section below: stage the ids in kernel memory and copy out after
+	 * the unlock. */
+	if (data_is_user) {
+		kbuf = kvmalloc_array((size_t)idslen, sizeof(*kbuf), GFP_KERNEL);
+		if (!kbuf)
+			return -ENOMEM;
+	}
 
 	rcu_read_lock();
 
@@ -185,20 +199,19 @@ int kp_kstorage_list_ids(int gid, long *ids, int idslen, bool data_is_user)
 		hlist_for_each_entry_rcu(pos, &kstorage_groups[gid][b], hnode) {
 			if (cnt >= idslen)
 				goto out;
-			if (data_is_user) {
-				if (copy_to_user(ids + cnt, &pos->did, sizeof(pos->did))) {
-					rc = -EFAULT;
-					goto out;
-				}
-			} else {
-				memcpy(ids + cnt, &pos->did, sizeof(pos->did));
-			}
-			cnt++;
+			kbuf[cnt++] = pos->did;
 		}
 	}
 
 out:
 	rcu_read_unlock();
+
+	if (data_is_user) {
+		if (cnt > 0 && copy_to_user(ids, kbuf, (size_t)cnt * sizeof(*kbuf)))
+			rc = -EFAULT;
+		kvfree(kbuf);
+	}
+
 	return rc ? rc : cnt;
 }
 

@@ -633,7 +633,7 @@ fun ModulePagerMiuix(
                                 showModuleSheet(module)
                             },
                             onOpenHidePack = { navigator.push(Route.HideEnvList) },
-                                    contentPadding = contentPadding,
+                            contentPadding = contentPadding,
                             listState = listState,
                         )
                     }

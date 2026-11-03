@@ -10,9 +10,9 @@
 #include <linux/printk.h>
 #include <linux/version.h>
 
-/* Version. Kbuild reads the repo-root ../version file and passes the three
- * numbers in as -DKP_LKM_MAJOR/MINOR/PATCH, so this header can never drift
- * from it. The #ifndef fallbacks keep the file buildable standalone. */
+/* Version. Upstream KernelPatch fed these from the repo-root ../version file at
+ * build time; this tree no longer does, so the #ifndef fallbacks below are what
+ * actually ships (0.13.3). Bump them together with SC_REPORTED_KPVER. */
 #ifndef KP_LKM_MAJOR
 #define KP_LKM_MAJOR 0
 #endif

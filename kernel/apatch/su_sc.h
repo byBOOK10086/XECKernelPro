@@ -20,6 +20,5 @@ long kp_su_allow_uid_list_sc(uid_t __user *uids, int max);
 long kp_su_allow_uid_profile_sc(uid_t uid, struct su_profile __user *out);
 long kp_su_get_path_sc(char __user *ubuf, int buf_len);
 long kp_su_reset_path_sc(const char __user *upath);
-long kp_su_unsupported_buildtime(char __user *ubuf, int buf_len);
 
 #endif /* _KP_LKM_SU_H_ */

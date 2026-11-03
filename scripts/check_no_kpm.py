@@ -23,6 +23,15 @@ import sys
 
 NEEDLE = 'kpm'
 
+# The removed loader also owned two opaque payloads whose file names never
+# contained "kpm"; ban them by path and by their XOR magic so a silent
+# resurrection is caught too.
+BANNED_PATHS = (
+    'userspace/ksud/bin/aarch64/kpim',
+    'userspace/ksud/bin/aarch64/kptd',
+)
+BANNED_TOKENS = ('xdcv1',)
+
 # path prefixes that may keep historical mentions
 ALLOW_PREFIXES = (
     'docs/superpowers/specs/',
@@ -30,8 +39,12 @@ ALLOW_PREFIXES = (
     'CHANGELOG.md',
 )
 
-# binary-ish or vendored text where a coincidental substring is not a KPM plane
-ALLOW_SUFFIXES = ('.xml',)
+# A certificate blob is base64 text; three letters can appear by coincidence.
+# Allow that one file explicitly instead of every .xml in the tree (the first
+# version of this guard waved through any XML, which is far too wide).
+ALLOW_FILES = (
+    'userspace/ksud/builtin/tricky_store/keybox.xml',
+)
 
 SKIP_DIRS = {'.git', 'node_modules', 'target', 'build', '.gradle', '.idea'}
 
@@ -63,7 +76,7 @@ def tracked_files() -> list[pathlib.Path]:
 def allowed(rel: str) -> bool:
     if rel.startswith(ALLOW_PREFIXES):
         return True
-    return rel.endswith(ALLOW_SUFFIXES)
+    return rel in ALLOW_FILES
 
 
 def main() -> int:
@@ -74,6 +87,9 @@ def main() -> int:
     offenders: list[tuple[str, int, str]] = []
     for path in tracked_files():
         rel = path.as_posix()
+        if rel in BANNED_PATHS:
+            offenders.append((rel, 0, 'removed loader payload is back'))
+            continue
         if allowed(rel):
             continue
         if path.suffix.lower() not in TEXT_SUFFIXES:
@@ -82,25 +98,28 @@ def main() -> int:
             text = path.read_text(encoding='utf-8', errors='replace')
         except OSError:
             continue
-        if NEEDLE not in text.lower():
+        lowered = text.lower()
+        if NEEDLE not in lowered and not any(tok in lowered for tok in BANNED_TOKENS):
             continue
         for lineno, line in enumerate(text.splitlines(), 1):
-            if NEEDLE in line.lower():
+            low = line.lower()
+            if NEEDLE in low or any(tok in low for tok in BANNED_TOKENS):
                 offenders.append((rel, lineno, line.strip()[:120]))
 
     if offenders:
-        print(f'FAIL: {len(offenders)} residual "kpm" reference(s):', file=sys.stderr)
+        print(f'FAIL: {len(offenders)} residual loader reference(s):', file=sys.stderr)
         for rel, lineno, line in offenders:
             print(f'  {rel}:{lineno}: {line}', file=sys.stderr)
         print(
-            '\nThe KPM plane was removed on 2026-11-04. Delete the code, or add the '
-            'path to ALLOW_PREFIXES only if it is historical record.',
+            '\nThe KernelPatch module-loading plane was removed on 2026-11-04. Delete '
+            'the code, or add the path to ALLOW_PREFIXES/ALLOW_FILES only if it is '
+            'historical record or a certificate blob.',
             file=sys.stderr,
         )
         return 1
 
     if not args.quiet:
-        print('OK: no residual KPM references outside the historical whitelist')
+        print('OK: no residual loader references outside the historical whitelist')
     return 0
 
 

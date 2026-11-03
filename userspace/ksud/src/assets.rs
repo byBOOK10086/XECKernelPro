@@ -54,14 +54,8 @@ mod android {
         }
 
         for file in Asset::iter() {
-            if file == "ksuinit"
-                || file == "waitsys"
-                || file == "kptd"
-                || file == "kpim"
-                || file.ends_with(".ko")
-            {
-                // don't extract internal executables (ksuinit, waitsys), the
-                // on-demand patch assets, and kernel modules
+            if file == "ksuinit" || file == "waitsys" || file.ends_with(".ko") {
+                // don't extract internal executables and kernel modules
                 continue;
             }
             let asset =
