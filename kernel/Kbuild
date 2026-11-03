@@ -273,7 +273,12 @@ endif
 
 
 # Calculate version if git version is available
-ifdef KSU_GIT_VERSION_VALID
+ifdef KSU_VERSION
+# The workflow pins the version to the exact value the Manager was built with.
+$(info -- KernelSU version (pinned by build): $(KSU_VERSION))
+ccflags-y += -DKSU_VERSION=$(KSU_VERSION)
+ccflags-y += -DKSU_VERSION_FULL=\"XECKernelPro-$(KSU_VERSION)\"
+else ifdef KSU_GIT_VERSION_VALID
 # ksu_version: 31000 + git commit count. The base MUST match the manager's
 # versionCode (manager/build.gradle.kts uses the same 31000 base): the home
 # screen compares the kernel version against the manager version to decide

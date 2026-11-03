@@ -39,9 +39,24 @@ jobs:
     steps:
     - name: Checkout source code
       uses: actions/checkout@v7
+      with:
+        # The module records 31000 + commit count, exactly like the Manager.
+        # A shallow checkout counts one commit and made the kernel report an
+        # older version than the Manager that shipped it.
+        fetch-depth: 0
+
+    - name: Resolve KernelSU version
+      id: version
+      run: |
+        set -e
+        COUNT=$(git rev-list --count HEAD)
+        VERSION=$(expr 31000 + "$COUNT")
+        echo "count=$COUNT version=$VERSION"
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
     - name: Build kernelsu.ko
       env:
+        KSU_VERSION_OVERRIDE: ${{ steps.version.outputs.version }}
         PACKAGE_NAME: ${{ inputs.package_name }}
         EXPECTED_SIZE: ${{ inputs.expected_size }}
         EXPECTED_HASH: ${{ inputs.expected_hash }}
@@ -53,6 +68,9 @@ jobs:
         echo "=== Building kernelsu.ko for KMI: ${{ inputs.kmi }} ==="
 
         EXTRA_ARGS=""
+        if [ -n "$KSU_VERSION_OVERRIDE" ]; then
+          EXTRA_ARGS="$EXTRA_ARGS KSU_VERSION=$KSU_VERSION_OVERRIDE"
+        fi
         if [ -n "$PACKAGE_NAME" ]; then
           EXTRA_ARGS="$EXTRA_ARGS KSU_PACKAGE_NAME=$PACKAGE_NAME"
         fi
@@ -154,6 +172,9 @@ jobs:
         echo "=== Building x64 kernelsu.ko for KMI: ${{ inputs.kmi }} ==="
 
         EXTRA_ARGS=""
+        if [ -n "$KSU_VERSION_OVERRIDE" ]; then
+          EXTRA_ARGS="$EXTRA_ARGS KSU_VERSION=$KSU_VERSION_OVERRIDE"
+        fi
         if [ -n "$PACKAGE_NAME" ]; then
           EXTRA_ARGS="$EXTRA_ARGS KSU_PACKAGE_NAME=$PACKAGE_NAME"
         fi
