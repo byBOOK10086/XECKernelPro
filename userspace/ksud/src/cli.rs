@@ -7,7 +7,7 @@ use log::{LevelFilter, error, info};
 
 use crate::boot_patch::{BootPatchArgs, BootRestoreArgs};
 #[cfg(target_arch = "aarch64")]
-use crate::kpm_patch::BootPatchKpmArgs;
+use crate::feature_id::parse_feature_id;
 use crate::lkm_image::BootPatchV2Args;
 use crate::module::regenerate_preinit;
 #[cfg(target_arch = "aarch64")]
@@ -141,10 +141,6 @@ enum Commands {
     /// Always operates on a boot image; never selects init_boot or vendor_boot.
     BootPatchV2(BootPatchV2Args),
 
-    /// Patch the boot image kernel (kernel module engine)
-    #[cfg(target_arch = "aarch64")]
-    BootPatchKpm(BootPatchKpmArgs),
-
     /// 给 boot 镜像的 ramdisk 注入 xecinit（<5.10 挂载态 root）
     #[cfg(target_arch = "aarch64")]
     RamdiskPatch(crate::ramdisk_patch::RamdiskPatchArgs),
@@ -216,13 +212,6 @@ enum Commands {
     Initrc {
         #[command(subcommand)]
         command: Initrc,
-    },
-
-    /// KPM module manager
-    #[cfg(target_arch = "aarch64")]
-    Kpm {
-        #[command(subcommand)]
-        command: kpm_cmd::Kpm,
     },
 
     /// 隐身入口守卫：设置→关于手机→版本号连点（默认10下）拉起管理器。
@@ -602,30 +591,6 @@ enum UmountOp {
 enum Initrc {
     /// Regenerate preinit rc file and preinit dirs
     Refresh,
-}
-
-#[cfg(target_arch = "aarch64")]
-mod kpm_cmd {
-    use clap::Subcommand;
-    use std::path::PathBuf;
-
-    #[derive(Subcommand, Debug)]
-    pub enum Kpm {
-        /// Load a KPM module: load <path> [args]
-        Load { path: PathBuf, args: Option<String> },
-        /// Unload a KPM module: unload <name>
-        Unload { name: String },
-        /// Get number of loaded modules
-        Num,
-        /// List loaded KPM modules
-        List,
-        /// Get info of a KPM module: info <name>
-        Info { name: String },
-        /// Send control command to a KPM module: control <name> <args>
-        Control { name: String, args: String },
-        /// Print KPM Loader version
-        Version,
-    }
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -1192,8 +1157,6 @@ pub fn run() -> Result<()> {
         Commands::BootRestore(boot_restore) => crate::boot_patch::restore(boot_restore),
         Commands::BootPatchV2(patch) => crate::lkm_image::patch_boot(&patch),
         #[cfg(target_arch = "aarch64")]
-        Commands::BootPatchKpm(kpm_args) => crate::kpm_patch::patch_kpm(&kpm_args),
-        #[cfg(target_arch = "aarch64")]
         Commands::RamdiskPatch(ramdisk_args) => {
             // 自研注入器（xecinit + xecsu）：设备上已有官方 Magisk 时退场，
             // 否则会往同一台机器上再塞一套 root（见 deny_self_developed_mount_state）。
@@ -1250,25 +1213,6 @@ pub fn run() -> Result<()> {
         Commands::Initrc { command } => match command {
             Initrc::Refresh => regenerate_preinit(),
         },
-        #[cfg(target_arch = "aarch64")]
-        Commands::Kpm { command } => {
-            use crate::cli::kpm_cmd::Kpm;
-            match command {
-                Kpm::Load { path, args } => {
-                    crate::kpm::load_module(path.to_str().unwrap(), args.as_deref())
-                }
-                Kpm::Unload { name } => crate::kpm::unload_module(&name),
-                Kpm::Num => crate::kpm::num().map(|_| ()),
-                Kpm::List => crate::kpm::list(),
-                Kpm::Info { name } => crate::kpm::info(&name),
-                Kpm::Control { name, args } => {
-                    let ret = crate::kpm::control(&name, &args)?;
-                    println!("{ret}");
-                    Ok(())
-                }
-                Kpm::Version => crate::kpm::version(),
-            }
-        }
         #[cfg(target_os = "android")]
         Commands::Stealth { command } => crate::stealth::handle(command),
         #[cfg(target_arch = "aarch64")]

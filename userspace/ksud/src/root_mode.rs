@@ -7,9 +7,8 @@
 //!     提供（管理器驱动官方 `boot_patch.sh` 修补 boot/recovery，模块与 Zygisk 也归 Magisk）。
 //!
 //! 两者**互不干扰、不会共存**：任何会改变 root 形态的操作都必须先过这里的闸门。
-//! 以前这道规则散落在 `boot_patch.rs::ensure_gki_kernel()` 和
-//! `kpm_patch.rs::ensure_non_gki_kernel()` 两处各写一遍，现在统一到这里，
-//! `xudc root-mode` 也能把当前判定与理由打出来，便于核对。
+//! 以前这道规则散落在 `boot_patch.rs::ensure_gki_kernel()` 与别处各写一遍，
+//! 现在统一到这里，`xudc root-mode` 也能把当前判定与理由打出来，便于核对。
 #![cfg(target_os = "android")]
 
 use anyhow::{Result, ensure};

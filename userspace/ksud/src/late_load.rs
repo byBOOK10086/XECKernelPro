@@ -90,14 +90,6 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
         return Ok(());
     }
 
-    // Reload the user's KPM modules from /data/adb/kpm. The late-load path
-    // never runs on_post_data_fs, so without this every .kpm the user placed
-    // is lost on each reboot (Magica/late-load activations).
-    #[cfg(target_arch = "aarch64")]
-    if let Err(e) = crate::kpm::booted_load() {
-        warn!("KPM booted_load failed: {e}");
-    }
-
     // Module stage scripts run through the bundled busybox, so extract the bin
     // assets here too: late-load activates the kernel without a patched
     // init_boot and therefore never runs on_post_fs_data.

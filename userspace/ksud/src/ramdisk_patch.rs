@@ -7,7 +7,7 @@
 //! `.xecpro_init`）。和 Magisk 的 `boot_patch.sh` 是同一套思路，但我们自己实现，
 //! 且**刻意拒绝**在已有其它方案补丁的 ramdisk 上动手（覆盖别人的 init 会让设备变砖）。
 //!
-//! 与 `kpm_patch.rs` 同构：读镜像 → 改 → 重打包；`--flash` 走 `boot_txn` 回滚事务。
+//! 与 `boot_patch.rs` 同构：读镜像 → 改 → 重打包；`--flash` 走 `boot_txn` 回滚事务。
 //!
 //! 支持两类布局：
 //!

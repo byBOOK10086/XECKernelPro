@@ -56,7 +56,6 @@ mod android {
         for file in Asset::iter() {
             if file == "ksuinit"
                 || file == "waitsys"
-                || file == "kpmd"
                 || file == "kptd"
                 || file == "kpim"
                 || file.ends_with(".ko")

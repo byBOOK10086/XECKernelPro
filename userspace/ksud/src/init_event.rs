@@ -47,11 +47,6 @@ pub fn on_post_fs_data() -> Result<()> {
         warn!("refresh daemon links failed: {e}");
     }
 
-    #[cfg(target_arch = "aarch64")]
-    if !mount_state && let Err(e) = crate::kpm::booted_load() {
-        warn!("kpm booted_load failed: {e}");
-    }
-
     // Clear all temporary module configs early
     if let Err(e) = crate::module_config::clear_all_temp_configs() {
         warn!("clear temp configs failed: {e}");

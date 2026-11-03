@@ -200,8 +200,7 @@ pub mod android {
     }
 
     // Upstream narrows this to `pub(super)`; our boot_txn (direct-flash rollback)
-    // and kpm_patch also flash partitions from outside this module, so keep it
-    // crate-visible. Declared `pub`（而不是 `pub(crate)`）：外层模块是 crate 根的
+    // also flashes partitions from outside this module, so keep it crate-visible. Declared `pub`（而不是 `pub(crate)`）：外层模块是 crate 根的
     // 私有模块，写 `pub(crate)` 会被 clippy::redundant_pub_crate 判成冗余。
     pub fn flash_partition(partition: &str, data: &[u8]) -> Result<()> {
         let mut blk = std::fs::OpenOptions::new()

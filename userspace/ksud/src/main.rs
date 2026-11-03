@@ -18,7 +18,7 @@
 
 mod apk_sign;
 mod assets;
-// boot_txn / kpm_patch 从兄弟模块调 boot_patch::flash_partition：crate 根声明的
+// boot_txn 从兄弟模块调 boot_patch::flash_partition：crate 根声明的
 // 私有模块对整棵 crate 可见，所以这里不需要动可见性；boot_patch 里对应的
 // android 子模块与 flash_partition 则必须是 `pub`——clippy::redundant_pub_crate
 // （nursery，本 crate 开了 warn(clippy::nursery) 且 CI 用 -Dwarnings）只放过
@@ -55,14 +55,10 @@ mod feature_id;
 mod hot_install;
 #[cfg(target_os = "android")]
 mod init_event;
-// KPM / SuSFS are Android-only: they reach into `crate::utils`,
+// SuSFS is Android-only: it reaches into `crate::utils`,
 // `crate::defs::WORKING_DIR` and the libc-backed susfs helpers, none of which
 // exist for the host-side (macOS / musl) boot-image patcher builds. Keep both
 // conditions so `cargo build` for `aarch64-apple-darwin` stays green.
-#[cfg(all(target_arch = "aarch64", target_os = "android"))]
-mod kpm;
-#[cfg(all(target_arch = "aarch64", target_os = "android"))]
-mod kpm_patch;
 #[cfg(target_os = "android")]
 mod ksucalls;
 #[cfg(target_os = "android")]
