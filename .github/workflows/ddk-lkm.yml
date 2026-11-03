@@ -49,6 +49,10 @@ jobs:
       id: version
       run: |
         set -e
+        # Container jobs run as root over a checkout owned by another uid; git
+        # refuses that without an explicit safe.directory (the build step below
+        # sets it too, but this step runs first).
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
         COUNT=$(git rev-list --count HEAD)
         VERSION=$(expr 31000 + "$COUNT")
         echo "count=$COUNT version=$VERSION"
