@@ -213,11 +213,9 @@ int kp_task_su(pid_t pid, uid_t to_uid, const char *sctx)
 	 * freed twice (UAF) while one of the new creds leaks. Serialise writers;
 	 * readers still go through RCU. */
 	mutex_lock(&kp_task_su_lock);
-	rcu_read_lock();
 	old = task->cred;
 	rcu_assign_pointer(task->cred, new);
 	rcu_assign_pointer(task->real_cred, new);
-	rcu_read_unlock();
 	put_cred(old);
 	mutex_unlock(&kp_task_su_lock);
 

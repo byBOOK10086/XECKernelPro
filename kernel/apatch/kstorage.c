@@ -72,7 +72,7 @@ int kp_kstorage_write(int gid, long did, void *data, int offset, int len, bool d
 	struct kp_kstorage *new;
 
 	if (gid < 0 || gid >= KP_KSTORAGE_MAX_GROUP_NUM)
-		return rc;
+		return -EINVAL;
 
 	bucket = kstorage_bucket(gid, did);
 	lock = &kstorage_glocks[gid];

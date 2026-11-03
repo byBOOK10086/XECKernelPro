@@ -33,8 +33,6 @@ static const char default_su_path[] = SU_PATH; /* "/system/bin/kp" */
 static int su_group = -1;
 static int exclude_group = -1;
 
-
-
 int kp_su_add_allow_uid(uid_t uid, uid_t to_uid, const char *scontext)
 {
 	if (su_group < 0)
