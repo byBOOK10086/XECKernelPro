@@ -171,6 +171,16 @@ int get_app_profile(app_profile *profile) {
     return ret;
 }
 
+// True only when this process actually holds the driver fd. Without it every
+// ioctl fails with EBADF, which is "no KernelSU on this device", not a kernel
+// error: callers must degrade instead of throwing.
+bool has_driver() {
+    if (fd < 0) {
+        fd = scan_driver_fd();
+    }
+    return fd >= 0;
+}
+
 bool set_exec_policy(uid_t uid, bool restricted, const std::vector<std::string> &paths) {
     struct ksu_exec_policy_cmd cmd = {};
     cmd.uid = uid;

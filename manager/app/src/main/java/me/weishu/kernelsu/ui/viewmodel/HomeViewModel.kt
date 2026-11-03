@@ -2,9 +2,11 @@ package me.weishu.kernelsu.ui.viewmodel
 
 import android.os.Build
 import android.system.Os
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.topjohnwu.superuser.ShellUtils
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,6 +43,10 @@ class HomeViewModel(
     private val settingsRepo: SettingsRepository = SettingsRepositoryImpl()
 ) : ViewModel() {
 
+    private companion object {
+        const val TAG = "HomeViewModel"
+    }
+
     private val _uiState = MutableStateFlow(buildState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
@@ -54,25 +60,33 @@ class HomeViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            val baseState = withContext(Dispatchers.IO) {
-                val state = buildState()
-                state.copy(isRescueMode = state.isRootAvailable && detectRescueMode())
-            }
-            // 挂载态（唯一判据：没有 KSU 驱动应答且内核低于 5.10）：root 就是 Magisk 自己的，
-            // 首页要把正在跑的 magiskd 版本显示出来。snapshot() 会开一条 root shell，
-            // 所以只在 IO 线程里读；这条闸门之外（内核态，含 <5.10 的 KPatch）一次都不会执行到它。
-            val magiskVersion = if (baseState.isMountState) {
-                withContext(Dispatchers.IO) {
-                    runCatching { MagiskRoot.snapshot().version }.getOrNull()
+            try {
+                val baseState = withContext(Dispatchers.IO) {
+                    val state = buildState()
+                    state.copy(isRescueMode = state.isRootAvailable && detectRescueMode())
                 }
-            } else {
-                null
+                // 挂载态（唯一判据：没有 KSU 驱动应答且内核低于 5.10）：root 就是 Magisk 自己的，
+                // 首页要把正在跑的 magiskd 版本显示出来。snapshot() 会开一条 root shell，
+                // 所以只在 IO 线程里读；这条闸门之外（内核态，含 <5.10 的 KPatch）一次都不会执行到它。
+                val magiskVersion = if (baseState.isMountState) {
+                    withContext(Dispatchers.IO) {
+                        runCatching { MagiskRoot.snapshot().version }.getOrNull()
+                    }
+                } else {
+                    null
+                }
+                _uiState.update { baseState.copy(magiskVersion = magiskVersion) }
+                // 始终拉取一次版本信息，用于首页展示累计下载量；更新提示仍由 checkUpdateEnabled 控制
+                val latestVersionInfo = withContext(Dispatchers.IO) { checkNewVersion() }
+                _uiState.update { it.copy(latestVersionInfo = latestVersionInfo) }
+                publishWidgetState(_uiState.value)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                // 首页探测失败（无 root、旧守护进程、系统属性异常）只能降级显示，
+                // 绝不允许把整个管理器进程带走：没有 root 的设备也必须能打开。
+                Log.e(TAG, "home refresh failed", t)
             }
-            _uiState.update { baseState.copy(magiskVersion = magiskVersion) }
-            // 始终拉取一次版本信息，用于首页展示累计下载量；更新提示仍由 checkUpdateEnabled 控制
-            val latestVersionInfo = withContext(Dispatchers.IO) { checkNewVersion() }
-            _uiState.update { it.copy(latestVersionInfo = latestVersionInfo) }
-            publishWidgetState(_uiState.value)
         }
     }
 

@@ -64,6 +64,10 @@ int get_uts_spoof(uid_t uid, std::string &release, std::string &version);
 
 int get_app_profile(app_profile *profile);
 
+// Whether this process holds the KernelSU driver fd (i.e. the kernel side is
+// installed and this app is recognised). False means "no KernelSU here".
+bool has_driver();
+
 // Su compat
 bool set_su_enabled(bool enabled);
 

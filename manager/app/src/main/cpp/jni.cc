@@ -267,9 +267,12 @@ Java_me_weishu_kernelsu_Natives_getAppProfile(JNIEnv *env, jobject, jstring pkg,
     profile.curr_uid = uid;
 
     int profileResult = get_app_profile(&profile);
-    // ioctl returns -1 with errno=ENOENT for an app without a saved profile.
-    // Other failures must remain errors rather than becoming denied defaults.
-    if (profileResult < 0 && errno != ENOENT) {
+    // Without the driver fd the ioctl fails with EBADF: this device simply has
+    // no KernelSU, so the app must fall back to the default profile (that is
+    // what shipped before the strict error handling). Only a real kernel error
+    // on a device that does hold the fd is reported to Kotlin.
+    bool noDriver = !has_driver();
+    if (profileResult < 0 && errno != ENOENT && !noDriver) {
         LOGE("get app profile failed for uid %d: errno %d", uid, errno);
         auto exceptionClass = env->FindClass("java/lang/IllegalStateException");
         if (exceptionClass != nullptr) {
