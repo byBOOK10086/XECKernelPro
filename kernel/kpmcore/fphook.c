@@ -13,7 +13,7 @@
 extern void flush_icache_all(void);
 #include "hmem.h"
 
-/* Resident trampolines use normal .text.* in built-in and module builds.
+/* Use compiler-default text placement for strict GKI LTO and module builds.
  * This backend branches to functions; it needs no kpimg section-end markers.
  */
 // transit0
@@ -25,7 +25,7 @@ typedef uint64_t (*transit0_func_t)();
     (fp_hook_chain_t *)chain_va; \
 })
 
-uint64_t __attribute__((section(".text.kpm.fp.transit0.text"))) __attribute__((__noinline__)) _fp_transit0()
+uint64_t __attribute__((__noinline__)) _fp_transit0()
 {
     fp_hook_chain_t *hook_chain = current_fp_hook_chain();
     if (!hook_chain) return 0;
@@ -52,7 +52,7 @@ uint64_t __attribute__((section(".text.kpm.fp.transit0.text"))) __attribute__((_
 // transit4
 typedef uint64_t (*transit4_func_t)(uint64_t, uint64_t, uint64_t, uint64_t);
 
-uint64_t __attribute__((section(".text.kpm.fp.transit4.text"))) __attribute__((__noinline__))
+uint64_t __attribute__((__noinline__))
 _fp_transit4(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3)
 {
     fp_hook_chain_t *hook_chain = current_fp_hook_chain();
@@ -85,7 +85,7 @@ _fp_transit4(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3)
 // transit8:
 typedef uint64_t (*transit8_func_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
-uint64_t __attribute__((section(".text.kpm.fp.transit8.text"))) __attribute__((__noinline__))
+uint64_t __attribute__((__noinline__))
 _fp_transit8(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6,
              uint64_t arg7)
 {
@@ -125,7 +125,7 @@ _fp_transit8(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_
 typedef uint64_t (*transit12_func_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
                                      uint64_t, uint64_t, uint64_t, uint64_t);
 
-uint64_t __attribute__((section(".text.kpm.fp.transit12.text"))) __attribute__((__noinline__))
+uint64_t __attribute__((__noinline__))
 _fp_transit12(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6,
               uint64_t arg7, uint64_t arg8, uint64_t arg9, uint64_t arg10, uint64_t arg11)
 {
