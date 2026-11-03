@@ -18,6 +18,7 @@
 #include <linux/sched.h>
 #include <linux/sched/task.h>
 #include <linux/task_work.h>
+#include <linux/version.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 #include "kp_scdefs.h"
