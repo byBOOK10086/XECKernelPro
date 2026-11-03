@@ -17,6 +17,7 @@
 #include <linux/pid.h>
 #include <linux/sched.h>
 #include <linux/sched/task.h>
+#include <linux/task_work.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 #include "kp_scdefs.h"
@@ -41,9 +42,6 @@ struct kp_lsm_blob_sizes {
 };
 
 static struct kp_lsm_blob_sizes *kp_selinux_blob_sizes;
-
-/* Serialises cross-task cred swaps (kp_task_su); see the comment there. */
-static DEFINE_MUTEX(kp_task_su_lock);
 
 /* task_security_struct { osid, sid, ... } — RANDSTRUCT is off, so sid is the
  * second u32 (offset 4). */
@@ -187,11 +185,47 @@ int kp_commit_su(uid_t to_uid, const char *sctx)
 	return 0;
 }
 
+/*
+ * Cross-task su is deferred to the *target* task's own task_work queue.
+ *
+ * Doing the swap from the caller (read task->cred, assign, put_cred(old)) is
+ * unsafe no matter how the callers are serialised: the target task can run
+ * commit_creds() itself (its own su / setuid / exec), which installs a new
+ * cred and puts the old one. Our put_cred(old) would then be a second put on
+ * the same cred -> refcount underflow, and the cred we installed can be lost
+ * without anybody releasing it.
+ *
+ * Running in the target's context removes the race by construction: task_work
+ * callbacks run in that task, so this cannot overlap with its own
+ * commit_creds(), and prepare_creds() here copies the target's creds (not the
+ * caller's), which is also the semantically correct base.
+ */
+struct kp_su_task_work {
+	struct callback_head cb;
+	uid_t to_uid;
+};
+
+static void kp_su_task_work_fn(struct callback_head *cb)
+{
+	struct kp_su_task_work *w = container_of(cb, struct kp_su_task_work, cb);
+	struct cred *new = prepare_creds();
+
+	if (new) {
+		su_cred(new, w->to_uid);
+		commit_creds(new);
+	} else {
+		logke("task_su: no memory to prepare creds for pid %d\n", current->pid);
+	}
+	kfree(w);
+}
+
 int kp_task_su(pid_t pid, uid_t to_uid, const char *sctx)
 {
 	struct task_struct *task;
-	const struct cred *old;
-	struct cred *new;
+	struct kp_su_task_work *w;
+	int rc;
+
+	(void)sctx;
 
 	task = find_get_task_by_vpid(pid);
 	if (!task) {
@@ -199,27 +233,27 @@ int kp_task_su(pid_t pid, uid_t to_uid, const char *sctx)
 		return -ESRCH;
 	}
 
-	new = prepare_creds();
-	if (!new) {
+	w = kzalloc(sizeof(*w), GFP_KERNEL);
+	if (!w) {
 		put_task_struct(task);
 		return -ENOMEM;
 	}
-	su_cred(new, to_uid);
-	(void)sctx;
+	init_task_work(&w->cb, kp_su_task_work_fn);
+	w->to_uid = to_uid;
 
-	/* Read-modify-write must be one critical section: two concurrent
-	 * SC_CMD_SU_TASK calls for the same pid would otherwise both read the
-	 * same old cred, each replace it, and each put_cred(old) -> the cred is
-	 * freed twice (UAF) while one of the new creds leaks. Serialise writers;
-	 * readers still go through RCU. */
-	mutex_lock(&kp_task_su_lock);
-	old = task->cred;
-	rcu_assign_pointer(task->cred, new);
-	rcu_assign_pointer(task->real_cred, new);
-	put_cred(old);
-	mutex_unlock(&kp_task_su_lock);
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0)
+	rc = task_work_add(task, &w->cb, TWA_RESUME);
+#else
+	rc = task_work_add(task, &w->cb, true);
+#endif
 	put_task_struct(task);
-	logki("task_su: pid %d -> uid %u\n", pid, to_uid);
+
+	if (rc) {
+		kfree(w);
+		logke("task_su: cannot queue work for pid %d: %d\n", pid, rc);
+		return rc;
+	}
+
+	logki("task_su: pid %d -> uid %u queued\n", pid, to_uid);
 	return 0;
 }
