@@ -335,6 +335,11 @@ int32_t branch_from_to(uint32_t *tramp_buf, uint64_t src_addr, uint64_t dst_addr
     return ret_absolute(tramp_buf, dst_addr);
 }
 
+/* These resident trampolines must remain executable for the hook lifetime.
+ * Use .text.* so both vmlinux TEXT_MAIN and the module loader retain them in
+ * normal executable text; kpimg-only .transit*.text sections are GKI orphans.
+ * hook_engine.c branches here and does not copy linker-delimited sections.
+ */
 // transit0
 typedef uint64_t (*transit0_func_t)();
 
@@ -344,7 +349,7 @@ typedef uint64_t (*transit0_func_t)();
     (hook_chain_t *)chain_va; \
 })
 
-uint64_t __attribute__((section(".transit0.text"))) __attribute__((__noinline__)) __nocfi __attribute__((no_sanitize("cfi"))) _transit0()
+uint64_t __attribute__((section(".text.kpm.transit0.text"))) __attribute__((__noinline__)) __nocfi __attribute__((no_sanitize("cfi"))) _transit0()
 {
     hook_chain_t *hook_chain = current_inline_hook_chain();
     if (!hook_chain) return 0;
@@ -374,7 +379,7 @@ extern void _transit0_end();
 // transit4
 typedef uint64_t (*transit4_func_t)(uint64_t, uint64_t, uint64_t, uint64_t);
 
-uint64_t __attribute__((section(".transit4.text"))) __attribute__((__noinline__)) __nocfi __attribute__((no_sanitize("cfi")))
+uint64_t __attribute__((section(".text.kpm.transit4.text"))) __attribute__((__noinline__)) __nocfi __attribute__((no_sanitize("cfi")))
 _transit4(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3)
 {
     hook_chain_t *hook_chain = current_inline_hook_chain();
@@ -410,7 +415,7 @@ extern void _transit4_end();
 // transit8:
 typedef uint64_t (*transit8_func_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
-uint64_t __attribute__((section(".transit8.text"))) __attribute__((__noinline__)) __nocfi __attribute__((no_sanitize("cfi")))
+uint64_t __attribute__((section(".text.kpm.transit8.text"))) __attribute__((__noinline__)) __nocfi __attribute__((no_sanitize("cfi")))
 _transit8(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6,
           uint64_t arg7)
 {
@@ -453,7 +458,7 @@ extern void _transit8_end();
 typedef uint64_t (*transit12_func_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
                                      uint64_t, uint64_t, uint64_t, uint64_t);
 
-uint64_t __attribute__((section(".transit12.text"))) __attribute__((__noinline__)) __nocfi __attribute__((no_sanitize("cfi")))
+uint64_t __attribute__((section(".text.kpm.transit12.text"))) __attribute__((__noinline__)) __nocfi __attribute__((no_sanitize("cfi")))
 _transit12(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6,
            uint64_t arg7, uint64_t arg8, uint64_t arg9, uint64_t arg10, uint64_t arg11)
 {

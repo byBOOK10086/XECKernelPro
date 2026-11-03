@@ -13,6 +13,9 @@
 extern void flush_icache_all(void);
 #include "hmem.h"
 
+/* Resident trampolines use normal .text.* in built-in and module builds.
+ * This backend branches to functions; it needs no kpimg section-end markers.
+ */
 // transit0
 typedef uint64_t (*transit0_func_t)();
 
@@ -22,7 +25,7 @@ typedef uint64_t (*transit0_func_t)();
     (fp_hook_chain_t *)chain_va; \
 })
 
-uint64_t __attribute__((section(".fp.transit0.text"))) __attribute__((__noinline__)) _fp_transit0()
+uint64_t __attribute__((section(".text.kpm.fp.transit0.text"))) __attribute__((__noinline__)) _fp_transit0()
 {
     fp_hook_chain_t *hook_chain = current_fp_hook_chain();
     if (!hook_chain) return 0;
@@ -49,7 +52,7 @@ uint64_t __attribute__((section(".fp.transit0.text"))) __attribute__((__noinline
 // transit4
 typedef uint64_t (*transit4_func_t)(uint64_t, uint64_t, uint64_t, uint64_t);
 
-uint64_t __attribute__((section(".fp.transit4.text"))) __attribute__((__noinline__))
+uint64_t __attribute__((section(".text.kpm.fp.transit4.text"))) __attribute__((__noinline__))
 _fp_transit4(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3)
 {
     fp_hook_chain_t *hook_chain = current_fp_hook_chain();
@@ -82,7 +85,7 @@ _fp_transit4(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3)
 // transit8:
 typedef uint64_t (*transit8_func_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
-uint64_t __attribute__((section(".fp.transit8.text"))) __attribute__((__noinline__))
+uint64_t __attribute__((section(".text.kpm.fp.transit8.text"))) __attribute__((__noinline__))
 _fp_transit8(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6,
              uint64_t arg7)
 {
@@ -122,7 +125,7 @@ _fp_transit8(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_
 typedef uint64_t (*transit12_func_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
                                      uint64_t, uint64_t, uint64_t, uint64_t);
 
-uint64_t __attribute__((section(".fp.transit12.text"))) __attribute__((__noinline__))
+uint64_t __attribute__((section(".text.kpm.fp.transit12.text"))) __attribute__((__noinline__))
 _fp_transit12(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6,
               uint64_t arg7, uint64_t arg8, uint64_t arg9, uint64_t arg10, uint64_t arg11)
 {
@@ -269,7 +272,7 @@ void fp_hook_unwrap(uintptr_t fp_addr, void *before, void *after)
                 break;
             }
     }
-    logkv("Wrap func pointer remove: %llx, %llx, %llx\n", chain->hook.fp_addr, before, after);
+    logkv("Wrap func pointer remove: %lx, %p, %p\n", (unsigned long)chain->hook.fp_addr, before, after);
 
     for (int i = 0; i < FP_HOOK_CHAIN_NUM; i++) {
         if (chain->states[i] != CHAIN_ITEM_STATE_EMPTY) return;
@@ -277,6 +280,6 @@ void fp_hook_unwrap(uintptr_t fp_addr, void *before, void *after)
     fp_unhook(chain->hook.fp_addr, (void *)chain->hook.origin_fp);
     // todo: unsafe
     hook_mem_free(chain);
-    logkv("Unwrap func pointer: %llx, %llx, %llx\n", fp_addr, before, after);
+    logkv("Unwrap func pointer: %lx, %p, %p\n", (unsigned long)fp_addr, before, after);
 }
 KP_EXPORT_SYMBOL(fp_hook_unwrap);

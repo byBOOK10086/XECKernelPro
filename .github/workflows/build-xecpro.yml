@@ -516,6 +516,61 @@ jobs:
             -S "$KEY_PASSWORD" \
             --strip
 
+      - name: Verify signed APK embeds this run's arm64 daemon
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          import shutil
+          import subprocess
+          import tempfile
+          from zipfile import ZipFile
+          import repack_apk
+
+          source = Path('target/aarch64-linux-android/release/xudc')
+          if not source.is_file() or source.stat().st_size == 0:
+              raise SystemExit('same-run arm64 xudc is missing or empty')
+          strip_tool = repack_apk.find_strip_tool()
+          if (strip_tool is None or strip_tool.name != 'llvm-strip'
+                  or '/toolchains/llvm/prebuilt/' not in strip_tool.resolve().as_posix()):
+              raise SystemExit('NDK llvm-strip is required to verify the repacked daemon')
+          apk = Path('dist') / (repack_apk.find_latest_apk('release').stem + '.apk')
+          entry = 'lib/arm64-v8a/libxeccli.so'
+          with tempfile.TemporaryDirectory(prefix='verify-xudc-') as directory:
+              expected_path = Path(directory) / 'xudc'
+              shutil.copy2(source, expected_path)
+              # Match repack_apk.strip_binary exactly; never modify the source artifact.
+              subprocess.run([str(strip_tool), '--strip-all', str(expected_path)], check=True)
+              expected = expected_path.read_bytes()
+          with ZipFile(apk) as archive:
+              matches = [info for info in archive.infolist() if info.filename == entry]
+              if len(matches) != 1:
+                  raise SystemExit(f'expected exactly one {entry}, found {len(matches)}')
+              actual = archive.read(matches[0])
+          digest = lambda data: hashlib.sha256(data).hexdigest()
+          source_hash = digest(source.read_bytes())
+          expected_hash = digest(expected)
+          actual_hash = digest(actual)
+          print(f'source_github_sha={os.environ["GITHUB_SHA"]}')
+          print(f'source_xudc_sha256={source_hash}')
+          print(f'ndk_strip_tool={strip_tool}')
+          print(f'stripped_xudc_sha256={expected_hash}')
+          print(f'signed_apk_daemon_sha256={actual_hash}')
+          if not expected or actual != expected:
+              raise SystemExit('signed APK daemon differs from this run\'s NDK-stripped xudc')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+              summary.write(
+                  '\n### Signed APK daemon identity\n'
+                  f'- Source commit: `{os.environ["GITHUB_SHA"]}`\n'
+                  f'- Source xudc SHA-256: `{source_hash}`\n'
+                  f'- NDK `--strip-all` / APK daemon SHA-256: `{actual_hash}`\n'
+                  f'- Final APK: `{apk}`; entry: `{entry}`\n'
+                  '- Byte identity verified; Android daemon version execution is not available on the Linux runner.\n'
+              )
+          PY
+
       - name: Verify Magisk payload survived repack + sign
         # repack 与签名是另一个 job：下载、解包那一步校验过了，打包/重签这一环再掉载荷
         # （AGP 的资源过滤、repack_apk.py 的条目遍历、--strip …）就没人拦得住，而管理器会
