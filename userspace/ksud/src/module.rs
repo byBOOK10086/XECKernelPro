@@ -1118,42 +1118,57 @@ pub fn prune_modules_rescue() -> Result<()> {
 }
 
 fn prune_modules_with_hooks(run_hooks: bool) -> Result<()> {
+    let mut failures = Vec::new();
     foreach_module(All, |module| {
-        if !module.join(defs::REMOVE_FILE_NAME).exists() {
-            return Ok(());
-        }
-
-        info!("remove module: {}", module.display());
-
-        let module_id = module.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        let is_metamodule =
-            read_module_prop(module).is_ok_and(|props| metamodule::is_metamodule(&props));
-        if is_metamodule {
-            // Registry cleanup is needed even when rescue suppresses scripts.
-            metamodule::remove_symlink().context("remove metamodule symlink")?;
-        } else if run_hooks && let Err(e) = metamodule::exec_metauninstall_script(module_id) {
-            warn!("Failed to exec metamodule uninstall for {module_id}: {e}");
-        }
-        if run_hooks {
-            // Then execute module's own uninstall.sh
-            let uninstaller = module.join("uninstall.sh");
-            if uninstaller.exists()
-                && let Err(e) = exec_script(uninstaller, ScriptWait::Forever)
-            {
-                warn!("Failed to exec uninstaller: {e}");
+        let result = (|| -> Result<()> {
+            if !module.join(defs::REMOVE_FILE_NAME).exists() {
+                return Ok(());
             }
+
+            info!("remove module: {}", module.display());
+
+            let module_id = module.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let is_metamodule =
+                read_module_prop(module).is_ok_and(|props| metamodule::is_metamodule(&props));
+            if is_metamodule {
+                // Registry cleanup is needed even when rescue suppresses scripts.
+                metamodule::remove_symlink().context("remove metamodule symlink")?;
+            } else if run_hooks && let Err(e) = metamodule::exec_metauninstall_script(module_id) {
+                warn!("Failed to exec metamodule uninstall for {module_id}: {e}");
+            }
+            if run_hooks {
+                // Then execute module's own uninstall.sh
+                let uninstaller = module.join("uninstall.sh");
+                if uninstaller.exists()
+                    && let Err(e) = exec_script(uninstaller, ScriptWait::Forever)
+                {
+                    warn!("Failed to exec uninstaller: {e}");
+                }
+            }
+
+            // Clear module configs before removing module directory
+            if let Err(e) = crate::module_config::clear_module_configs(module_id) {
+                warn!("Failed to clear configs for {module_id}: {e}");
+            }
+
+            // Finally remove the module directory
+            remove_dir_all(module)
+                .with_context(|| format!("Failed to remove {}", module.display()))?;
+
+            Ok(())
+        })();
+        if let Err(error) = result {
+            let message = format!("{}: {error:#}", module.display());
+            warn!("Module removal failed: {message}");
+            failures.push(message);
         }
-
-        // Clear module configs before removing module directory
-        if let Err(e) = crate::module_config::clear_module_configs(module_id) {
-            warn!("Failed to clear configs for {module_id}: {e}");
-        }
-
-        // Finally remove the module directory
-        remove_dir_all(module).with_context(|| format!("Failed to remove {}", module.display()))?;
-
         Ok(())
     })?;
+    ensure!(
+        failures.is_empty(),
+        "Module removal failed: {}",
+        failures.join("; ")
+    );
 
     // collect remaining modules, if none, clean up metamodule record
     if !Path::new(defs::MODULE_DIR).exists() {
