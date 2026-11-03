@@ -216,45 +216,17 @@ vendored 源码树（`third_party/`）始终**零修改**：上述修复全部�
   依据（kpatch 补丁流程、magic mount 挂载模型）；其中 KernelPatch 的内核侧
   引擎现按下一节整体 vendored（GPL-2.0，与本树内核同许可）。
 
-## KPM 双引擎（vendored，`kernel/kpmcore/` 与 `kernel/kpmsuki/`，GPL-2.0-or-later）
+## APatch / KernelPatch SU 方言（vendored，`kernel/apatch/`，GPL-2.0-or-later）
 
-2026-10-31 起随内核模块分发的两套 KPM 引擎，均为内核侧 GPL-2.0 兼容引入，
-文件头保留原始版权与 SPDX：
+2026-11-04 起内核只保留 APatch / KernelPatch 兼容层的 **SU 方言**（允许列表 /
+凭据切换 / kstorage KV 存储），文件头保留原始版权与 SPDX：
 
-- **KernelPatch LKM 引擎**（`bmax121/KernelPatch`，**GPL-2.0-or-later**，作者
-  bmax121 与 KernelPatch 贡献者，修订 main 分支 2026-10 快照，版本 0.13.9）—
-  `kernel/kpmcore/`：hook 引擎（`hook.c`/`hook_engine.c`/`hook_runtime.c`/
-  `fphook.c`，inline hook + fp 函数指针 hook 双路，`_transitN`/`_fp_transitN`
-  链均为 LKM 外链适配）、KPM ELF 加载器（`module.c`/`relo.c`/`insn.c`/
-  `symbols.c`，含 CFI/BTI 盾与 kallsyms 回调跳板）、`kstorage.c` KV 存储、
-  `patch_memory.c`/`syscall_table.c`/`symbol_resolver.c`/`secpass.c` 基础设施、
-  su 允许列表栈（`suallow.c`/`accctl.c`/`su_sc.c`）、APatch 管理器扫描栈
-  （`manager/apk_sign.c`/`manager/manager.c` + `sha256.c`（Brad Conte 参考实现，
-  经 KernelPatch 引入），默认不编、`CONFIG_KSU_KPM_AP_MANAGER` 显式开启）与
-  `include/` 下的 `hook.h`/`scdefs.h`/`kpmodule_ap.h` 等。supercall 分发表覆盖
-  scdefs 全集（KPM 0x1020-0x32、kstorage 0x1040-0x45、SU 族、KLOG、
-  CONTROL_FEATURE stub）。本地适配（均为移植必需，非功能改动）：
-  符号解析改走本树 `find_kernel_symbol_exact()`（GKI 6.1+ 未导出
-  kallsyms_lookup_name）、可执行内存经 module_alloc/execmem/vmalloc 回退链、
-  新增 `kp_load_module_path_event()`（对齐 kpimg 的 op 8 事件装载）、
-  include 路径本地化、KPM 符号表并入 SukiSU compact 表助手与 fp_hook 族、
-  AP 管理器 APK 扫描保留但默认关闭（`CONFIG_KSU_KPM_AP_MANAGER`，见上）。
-  上游 https://github.com/bmax121/KernelPatch 。
-- **SukiSU Ultra GKI 桥接**（`SukiSU-Ultra/SukiSU-Ultra` 与
-  `SukiSU-Ultra/SukiSU_KernelPatch_patch`，内核侧 **GPL-2.0**，作者 SukiSU
-  Ultra 贡献者，修订 main 分支 2026-10 快照）— `kernel/kpmsuki/`：
-  `supercall.c`（truncate 魔数应答端，ops 1..8）移植自
-  SukiSU_KernelPatch_patch `kernel/patch/sukisu/sukisu.c`；`bridge.c`
-  （控制面与内核间桥）移植自 SukiSU-Ultra `kernel/extension/kpm/kpm.c` 与
-  `bridge.h` 协议。本地适配：符号解析走本树解析器、装载入口对齐 kpmcore 的
-  `kp_*` API。上游 https://github.com/SukiSU-Ultra/SukiSU-Ultra 。
-- **满血防格 KPM 模块**（`kpm/antiwipe_full/`，模块逻辑 **GPL-2.0-only**，
-  XECKernelPro 原创）：拦截逻辑全部驻留模块（`hook_wrap` 挂 LSM 分发函数 +
-  `hook_syscalln` 挂 sys_reboot + BTF 偏移自举）。其中 `aw_types.h` 内的 KPM
-  ABI 宏与 hook 链参数结构**派生自 KernelPatch** `kernel/include/kpmodule.h`/
-  `hook.h`（**GPL-2.0-or-later**，上述上游），随模块以 ET_REL ELF 分发时整体
-  按 GPL-2.0 兼容许可提供；派生部分已在文件头标注。原薄开关模块
-  `kpm/antiwipe/` 保留作为 legacy 引擎回退。
+- 来源：`bmax121/KernelPatch`（**GPL-2.0-or-later**，作者 bmax121 与 KernelPatch
+  贡献者），`kernel/patch/common/` 下的 `kstorage.c`、`sucompat.c`（仅允许列表
+  部分）、`accctl.c`，以及 supercall 层的 SU 处理。本地适配：符号解析改走本树
+  `find_kernel_symbol_exact()`、include 路径本地化。
+- 内核模块装载面（原 KernelPatch LKM 引擎与 SukiSU GKI 桥接）已于 2026-11-04
+  整体移除，不再随本树分发，相关实现与模块样例一并删除。
 
 ## Magisk 路线（5.10 以下挂载态 root，方案甲）
 

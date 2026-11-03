@@ -58,7 +58,6 @@ Detect
 
 Modules / Repo / Themes
 ├── module cards          actions, DIY backgrounds, repo source
-├── KPM                   KernelPatch module manager
 └── theme store           install, edit, publish, live apply
 ```
 
