@@ -87,6 +87,3 @@ fun getTemplateInfoById(id: String): me.weishu.kernelsu.data.model.TemplateInfo?
         Log.e(TAG, "ignore invalid template: $it", it)
     }.getOrNull()
 }
-
-@Suppress("unused")
-

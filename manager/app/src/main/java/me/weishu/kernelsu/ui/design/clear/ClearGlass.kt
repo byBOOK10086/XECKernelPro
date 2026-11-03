@@ -208,9 +208,6 @@ internal fun Modifier.xClearGlassLayer(
     }
 }
 
-/** 透明玻璃卡片：内容区容器，卡体语义（圆角与模糊档位比表面低一档）。 */
-@Composable
-
 /** 透明玻璃栏：顶栏 / 底栏 / 悬浮栏（全宽贴边的栏在调用点传只圆部分角的 shape）。 */
 @Composable
 fun ClearGlassBar(

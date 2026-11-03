@@ -377,8 +377,6 @@ internal fun Modifier.xGlassRim(
  * 与 [XGlassSurface] 的区别只有在语义上——卡片额外给一层极轻的投影，
  * 把"内容块"从"贴底的栏"里区分出来。圆角仍由 `Xc.shapes` 说了算。
  */
-@Composable
-
 /**
  * 玻璃栏：顶栏 / 底栏 / 侧边栏。
  *

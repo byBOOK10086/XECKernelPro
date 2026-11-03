@@ -55,5 +55,3 @@ fun rememberRebootAction(): (String) -> Unit {
     }
 }
 
-@Composable
-
