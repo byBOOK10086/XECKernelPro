@@ -350,6 +350,24 @@ mod runtime {
         state.ready = true;
         save(&state)
     }
+    /// Android reached `boot-completed` in this boot, so the guarded startup
+    /// succeeded. The detached watcher normally does this after its stability
+    /// window; when the watcher is not alive the pending flag would otherwise
+    /// survive and count the *next* boot as a failure until rescue engages.
+    /// Rescue itself is never cleared here: that stays an explicit user action.
+    pub fn mark_boot_completed() -> Result<()> {
+        let _guard = locked()?;
+        let mut state = load()?;
+        if state.boot != boot_id()? || !state.pending || state.rescue {
+            return Ok(());
+        }
+        state.pending = false;
+        state.failures = 0;
+        state.retries = 0;
+        state.stage = "boot-completed".into();
+        state.reason.clear();
+        save(&state)
+    }
     fn reboot(state: &mut State) -> Result<()> {
         if !may_reboot(state.retries) {
             return save(state);
@@ -500,8 +518,8 @@ mod runtime {
 }
 #[cfg(target_os = "android")]
 pub use runtime::{
-    allow_stage, begin, ensure_soft_reboot_supported, recovery_failed, resume, rollback_applied,
-    startup_ready, status, watch,
+    allow_stage, begin, ensure_soft_reboot_supported, mark_boot_completed, recovery_failed, resume,
+    rollback_applied, startup_ready, status, watch,
 };
 
 #[cfg(test)]

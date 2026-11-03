@@ -347,6 +347,12 @@ pub fn on_boot_completed() {
     if let Err(error) = crate::boot_guard::startup_ready() {
         error!("boot guard readiness failed: {error:#}");
     }
+    // Same reasoning as the transaction commit above: success must be recorded
+    // from a hook that always runs. Leaving `pending` set makes the next boot
+    // count as uncommitted and eventually forces rescue mode.
+    if let Err(error) = crate::boot_guard::mark_boot_completed() {
+        error!("boot guard completion failed: {error:#}");
+    }
 }
 
 fn catch_bootlog(logname: &str, command: &[&str]) -> Result<()> {
