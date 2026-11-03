@@ -32,6 +32,7 @@ import me.weishu.kernelsu.ui.util.checkNewVersion
 import me.weishu.kernelsu.ui.util.getKsuDaemonPath
 import me.weishu.kernelsu.ui.util.getSELinuxStatusRaw
 import me.weishu.kernelsu.ui.util.getRootShell
+import me.weishu.kernelsu.ui.util.readBootGuardStatus
 import me.weishu.kernelsu.ui.util.module.LatestVersionInfo
 import me.weishu.kernelsu.ui.util.resolveDeviceName
 import me.weishu.kernelsu.ui.util.rootAvailable
@@ -43,9 +44,20 @@ class HomeViewModel(
     private val _uiState = MutableStateFlow(buildState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    /**
+     * 救援模式不是 root 缺失，也不是安全模式：内核还在、su 还能用，只是启动阶段
+     * 被启动保护整段跳过了。读不到状态（旧守护进程/无 root）时按未进入处理，
+     * "读不到"由工具页的启动保护卡解释。
+     */
+    private suspend fun detectRescueMode(): Boolean =
+        runCatching { readBootGuardStatus().rescue }.getOrDefault(false)
+
     fun refresh() {
         viewModelScope.launch {
-            val baseState = withContext(Dispatchers.IO) { buildState() }
+            val baseState = withContext(Dispatchers.IO) {
+                val state = buildState()
+                state.copy(isRescueMode = state.isRootAvailable && detectRescueMode())
+            }
             // 挂载态（唯一判据：没有 KSU 驱动应答且内核低于 5.10）：root 就是 Magisk 自己的，
             // 首页要把正在跑的 magiskd 版本显示出来。snapshot() 会开一条 root shell，
             // 所以只在 IO 线程里读；这条闸门之外（内核态，含 <5.10 的 KPatch）一次都不会执行到它。

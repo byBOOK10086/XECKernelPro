@@ -38,6 +38,12 @@ data class HomeUiState(
      * 只在挂载态探测（见 `HomeViewModel.refresh()`）：内核态首页一次都不引用 Magisk。
      */
     val magiskVersion: String? = null,
+    /**
+     * 启动保护处于救援模式：内核态 root 仍在，但模块/KPM/内置组件等启动阶段被
+     * 整段跳过。这不是安全模式，也不是 Magisk，必须显式告诉用户，否则会被
+     * 当成"刷入失败"或"Zygisk 坏了"来反馈。
+     */
+    val isRescueMode: Boolean = false,
 ) {
     val isSELinuxPermissive: Boolean
         get() = systemInfo.selinuxStatus == "Permissive"
@@ -73,6 +79,10 @@ data class HomeUiState(
     // 所有"内置了却没效果"的问题都是这个形态，必须显式暴露而不是静默失败。
     val showDaemonMissingWarning: Boolean
         get() = ksuVersion != null && !isDaemonPresent
+
+    /** 救援模式要和普通启动区分开：它是"能开机但组件被跳过"，不是刷机失败。 */
+    val showRescueWarning: Boolean
+        get() = isManager && isRescueMode
 
     val showManagerPrBuildWarning: Boolean
         get() = isManager && isManagerPrBuild

@@ -126,6 +126,11 @@ Aborted — the device was NOT rebooted.</string>
     <string name="reboot_bootloader">Reboot to Bootloader</string>
     <string name="reboot_download">Reboot to Download</string>
     <string name="reboot_edl">Reboot to EDL</string>
+    <string name="reboot_exit_rescue">Exit rescue mode</string>
+    <string name="rescue_mode">Rescue mode</string>
+    <string name="rescue_exit_warning">This clears rescue mode and the startup failure count. The device must be fully restarted afterwards; modules, KPM and built-in components stay skipped until then. Fix or disable the module that caused the failure first, or the same problem will come back.</string>
+    <string name="rescue_exit_failed">Could not leave rescue mode. Check root access and retry.</string>
+    <string name="home_rescue_mode_warning">Rescue mode: startup components were skipped, so modules, KPM, Zygisk and built-in TEE/TA are not active. Root itself still works. Use the power menu → Exit rescue mode, then fully restart.</string>
     <string name="about">About</string>
     <string name="module_uninstall_confirm">Are you sure you want to uninstall module %s?</string>
     <string name="metamodule_uninstall_confirm">Are you sure you want to uninstall module %s? This action will affect all modules, and certain features provided by the metamodule (such as mounting) will no longer work.</string>

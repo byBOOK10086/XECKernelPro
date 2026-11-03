@@ -115,6 +115,11 @@
     <string name="reboot_bootloader">重启到 Bootloader</string>
     <string name="reboot_download">重启到 Download</string>
     <string name="reboot_edl">重启到 EDL</string>
+    <string name="reboot_exit_rescue">退出救援模式</string>
+    <string name="rescue_mode">救援模式</string>
+    <string name="rescue_exit_warning">此操作会清除救援模式和启动失败次数。之后必须完整重启设备；重启之前，模块、KPM 与内置组件仍然不会运行。请先修复或停用导致启动失败的模块，否则同样的问题会再次出现。</string>
+    <string name="rescue_exit_failed">退出救援模式失败。请检查 root 权限后重试。</string>
+    <string name="home_rescue_mode_warning">救援模式：已跳过部分启动组件，模块、KPM、Zygisk 与内置 TEE/TA 都不生效，root 本身正常。请在电源菜单里选择「退出救援模式」，然后完整重启。</string>
     <string name="about">关于</string>
     <string name="module_uninstall_confirm">确定要卸载模块 %s 吗？</string>
     <string name="metamodule_uninstall_confirm">确定要卸载模块 %s 吗？此操作将影响所有模块，并且元模块提供的某些功能（如挂载）将不再工作</string>

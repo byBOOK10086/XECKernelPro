@@ -223,6 +223,9 @@ fun HomePagerMiuix(
                         if (state.showRootWarning) {
                             WarningCard(stringResource(id = R.string.grant_root_failed), block = warningBlock)
                         }
+                        if (state.showRescueWarning) {
+                            WarningCard(stringResource(id = R.string.home_rescue_mode_warning), block = warningBlock)
+                        }
                         if (state.showDaemonMissingWarning) {
                             WarningCard(stringResource(id = R.string.home_daemon_missing), block = warningBlock)
                         }
@@ -466,6 +469,11 @@ private fun StatusCard(
                     }
                     if (state.isLateLoadMode) {
                         append(" [${stringResource(id = R.string.jailbreak_mode)}]")
+                    }
+                    // 救援模式与上面两种并列显示：它同样是"能开机但不是正常态"，
+                    // 用户看到这行才知道模块为什么全都没生效。
+                    if (state.isRescueMode) {
+                        append(" [${stringResource(id = R.string.rescue_mode)}]")
                     }
                 }
                 // <5.10 内核走 KernelPatch 注入路线（kpimg + ftruncate supercall），
