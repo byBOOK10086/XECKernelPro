@@ -2,62 +2,19 @@
 /*
  * Copyright (C) 2023 bmax121. All Rights Reserved.
  *
- * KernelPatch LKM common definitions: version and logging.
+ * KernelPatch logging macros. Upstream also carried the version block here; the
+ * version is now reported from apatch/scdefs.h (SC_REPORTED_KPVER), so only the
+ * log helpers are left.
  */
 #ifndef _KP_LKM_H_
 #define _KP_LKM_H_
 
 #include <linux/printk.h>
-#include <linux/version.h>
-
-/* Version. Upstream KernelPatch fed these from the repo-root ../version file at
- * build time; this tree no longer does, so the #ifndef fallbacks below are what
- * actually ships (0.13.3). Bump them together with SC_REPORTED_KPVER. */
-#ifndef KP_LKM_MAJOR
-#define KP_LKM_MAJOR 0
-#endif
-#ifndef KP_LKM_MINOR
-#define KP_LKM_MINOR 13
-#endif
-#ifndef KP_LKM_PATCH
-#define KP_LKM_PATCH 3
-#endif
-#define KP_LKM_VERSION_CODE ((KP_LKM_MAJOR << 16) | (KP_LKM_MINOR << 8) | KP_LKM_PATCH)
-#define kpver KP_LKM_VERSION_CODE
-
-/* "x.y.z" for MODULE_VERSION. */
-#define KP_LKM_STR2(x) #x
-#define KP_LKM_STR(x) KP_LKM_STR2(x)
-#define KP_LKM_VERSION_STRING \
-	KP_LKM_STR(KP_LKM_MAJOR) "." KP_LKM_STR(KP_LKM_MINOR) "." KP_LKM_STR(KP_LKM_PATCH)
-
-/* kver mirrors KP: major<<16 | minor<<8 | patch. */
-static inline long kp_kver(void)
-{
-	return (long)LINUX_VERSION_CODE;
-}
 
 #define KPLKM_TAG "kernelpatch-lkm"
-#ifndef logki
 #define logki(fmt, ...) pr_info(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
-#endif
-#ifndef logke
 #define logke(fmt, ...) pr_err(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
-#endif
-#ifndef logkw
 #define logkw(fmt, ...) pr_warn(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
-#endif
-#ifndef logkd
 #define logkd(fmt, ...) pr_debug(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
-#endif
-#ifndef logkfi
-#define logkfi(fmt, ...) logki(fmt, ##__VA_ARGS__)
-#endif
-#ifndef logkfe
-#define logkfe(fmt, ...) logke(fmt, ##__VA_ARGS__)
-#endif
-#ifndef logkfd
-#define logkfd(fmt, ...) logkd(fmt, ##__VA_ARGS__)
-#endif
 
 #endif /* _KP_LKM_H_ */

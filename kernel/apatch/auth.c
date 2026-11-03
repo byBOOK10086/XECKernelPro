@@ -68,6 +68,11 @@ static ssize_t sc_read_file(const char *path, void *buf, size_t count)
     if (IS_ERR(filp))
         return PTR_ERR(filp);
 
+    /* The legacy ->read path takes a __user buffer, but `buf` here is kernel
+     * memory. No GKI filesystem implements ->read any more (f2fs/ext4/tmpfs are
+     * all read_iter-only), so this branch is unreachable in practice; it is kept
+     * because an out-of-tree filesystem could still provide it, and casting is
+     * the only way to call the old signature. */
     if (filp->f_op->read)
         ret = filp->f_op->read(filp, (char __user *)buf, count, &pos);
     else if (filp->f_op->read_iter) {

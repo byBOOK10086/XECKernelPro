@@ -121,7 +121,7 @@ static bool sc_dispatch(u16 magic, u64 key, u16 cmd, u64 a1, u64 a2, u64 a3, u64
     /* HELLO 与版本查询是只读的，SU 档也放行 */
     switch (cmd) {
     case SC_CMD_HELLO:
-        pr_info("apatch-compat: hello from %s client\n", magic == SC_MAGIC_KPNEXT ? "KPatch-Next" : "KernelPatch");
+        pr_debug("apatch-compat: hello from %s client\n", magic == SC_MAGIC_KPNEXT ? "KPatch-Next" : "KernelPatch");
         *out = magic == SC_MAGIC_KPNEXT ? (long)SC_HELLO_MAGIC_KPNEXT : (long)SC_HELLO_MAGIC_KP;
         return true;
     case SC_CMD_KERNELPATCH_VER:
@@ -181,11 +181,20 @@ static bool sc_dispatch(u16 magic, u64 key, u16 cmd, u64 a1, u64 a2, u64 a3, u64
         *out = kp_su_reset_path_sc((const char __user *)a1);
         return true;
     case SC_CMD_KSTORAGE_ALLOC_GROUP:
-        if (a1 || a2 || a3 || a4)
-            return false;
+        if (a1 || a2 || a3 || a4) {
+            *out = -EINVAL;
+            return true;
+        }
         *out = kp_kstorage_alloc_group();
         return true;
     case SC_CMD_KSTORAGE_WRITE:
+        /* No length ceiling on purpose: the caller already needs ADMIN, and
+         * bounding it would break clients that store larger blobs. The only
+         * cost of a huge len is a failed vmalloc() in kp_kstorage_write(). */
+        if ((int)a4 < 0 || !a3) {
+            *out = -EINVAL;
+            return true;
+        }
         *out = kp_kstorage_write((int)a1, (long)a2, (void __user *)a3, 0, (int)a4, true);
         return true;
     case SC_CMD_KSTORAGE_READ:
@@ -195,8 +204,10 @@ static bool sc_dispatch(u16 magic, u64 key, u16 cmd, u64 a1, u64 a2, u64 a3, u64
         *out = kp_kstorage_list_ids((int)a1, (long __user *)a2, (int)a3, true);
         return true;
     case SC_CMD_KSTORAGE_REMOVE:
-        if (a4)
-            return false;
+        if (a4) {
+            *out = -EINVAL;
+            return true;
+        }
         *out = kp_kstorage_remove((int)a1, (long)a2);
         return true;
     case SC_CMD_KSTORAGE_REMOVE_GROUP: {
@@ -205,10 +216,10 @@ static bool sc_dispatch(u16 magic, u64 key, u16 cmd, u64 a1, u64 a2, u64 a3, u64
         int gid = (int)a1;
         long rc = 0, i, n;
 
-        if (a2 || a3 || a4)
-            return false;
-        if (gid < 0 || gid >= KP_KSTORAGE_MAX_GROUP_NUM)
-            return false;
+        if (a2 || a3 || a4 || gid < 0 || gid >= KP_KSTORAGE_MAX_GROUP_NUM) {
+            *out = -EINVAL;
+            return true;
+        }
         do {
             n = kp_kstorage_list_ids(gid, ids, ARRAY_SIZE(ids), false);
             if (n < 0) {

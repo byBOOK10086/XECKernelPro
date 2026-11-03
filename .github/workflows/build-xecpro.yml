@@ -42,6 +42,18 @@ env:
   BRAND_NAME: XECKernelPro
 
 jobs:
+  guards:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Reverse guard: the KernelPatch module-loading plane was removed on
+      # 2026-11-04. This fails the build if any of it (or its payloads) comes
+      # back. It is a separate cheap job so it reports before the heavy matrix.
+      - name: No residual loader references
+        run: python3 scripts/check_no_kpm.py
+
   generate-key:
     runs-on: ubuntu-latest
     steps:

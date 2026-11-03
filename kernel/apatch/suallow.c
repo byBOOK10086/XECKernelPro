@@ -33,16 +33,7 @@ static const char default_su_path[] = SU_PATH; /* "/system/bin/kp" */
 static int su_group = -1;
 static int exclude_group = -1;
 
-bool kp_is_su_allow_uid(uid_t uid)
-{
-	if (su_group < 0)
-		return false;
-	rcu_read_lock();
-	const struct kp_kstorage *ks = kp_kstorage_get(su_group, (long)uid);
-	bool ok = !IS_ERR(ks);
-	rcu_read_unlock();
-	return ok;
-}
+
 
 int kp_su_add_allow_uid(uid_t uid, uid_t to_uid, const char *scontext)
 {

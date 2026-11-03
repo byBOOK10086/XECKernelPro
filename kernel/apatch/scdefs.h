@@ -25,13 +25,8 @@
 #define SC_HELLO_MAGIC_KP 0x11581158u
 #define SC_HELLO_MAGIC_KPNEXT 0x20262026u
 
-/* 命令号有效区间：0x1000 … 0x1200 */
-#define SC_CMD_MIN 0x1000
-#define SC_CMD_MAX 0x1200
-
 /* 基础/版本 */
 #define SC_CMD_HELLO 0x1000
-#define SC_CMD_KLOG 0x1004
 #define SC_CMD_BUILD_TIME 0x1007
 #define SC_CMD_KERNELPATCH_VER 0x1008
 #define SC_CMD_KERNEL_VER 0x1009
@@ -59,8 +54,6 @@
 
 /* 字符串长度上限（接口事实） */
 #define SC_KEY_MAX_LEN 0x40
-#define SC_LIST_BUF_LEN 4096
-#define SC_INFO_BUF_LEN 2048
 
 /*
  * 本兼容层对外声明的 KernelPatch 版本号（(maj << 16) | (min << 8) | patch）。

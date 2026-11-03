@@ -13,6 +13,7 @@
 #include <linux/cred.h>
 #include <linux/err.h>
 #include <linux/errno.h>
+#include <linux/mutex.h>
 #include <linux/pid.h>
 #include <linux/sched.h>
 #include <linux/sched/task.h>
@@ -40,6 +41,9 @@ struct kp_lsm_blob_sizes {
 };
 
 static struct kp_lsm_blob_sizes *kp_selinux_blob_sizes;
+
+/* Serialises cross-task cred swaps (kp_task_su); see the comment there. */
+static DEFINE_MUTEX(kp_task_su_lock);
 
 /* task_security_struct { osid, sid, ... } — RANDSTRUCT is off, so sid is the
  * second u32 (offset 4). */
@@ -203,12 +207,19 @@ int kp_task_su(pid_t pid, uid_t to_uid, const char *sctx)
 	su_cred(new, to_uid);
 	(void)sctx;
 
+	/* Read-modify-write must be one critical section: two concurrent
+	 * SC_CMD_SU_TASK calls for the same pid would otherwise both read the
+	 * same old cred, each replace it, and each put_cred(old) -> the cred is
+	 * freed twice (UAF) while one of the new creds leaks. Serialise writers;
+	 * readers still go through RCU. */
+	mutex_lock(&kp_task_su_lock);
 	rcu_read_lock();
 	old = task->cred;
 	rcu_assign_pointer(task->cred, new);
 	rcu_assign_pointer(task->real_cred, new);
 	rcu_read_unlock();
 	put_cred(old);
+	mutex_unlock(&kp_task_su_lock);
 
 	put_task_struct(task);
 	logki("task_su: pid %d -> uid %u\n", pid, to_uid);

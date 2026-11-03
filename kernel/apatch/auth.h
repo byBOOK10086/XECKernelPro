@@ -5,10 +5,16 @@
 #include <linux/types.h>
 
 /*
- * 调用者凭据等级。三档与上游语义对齐：
+ * 调用者凭据等级：
  *   NONE  —— 非 root、没给 key，也不是管理器；
- *   SU    —— 通过 "su" 字面量/白名单路径进来的普通授权（只放行只读+提权类命令）；
- *   ADMIN —— 真 superkey、或 root、或管理器（可放行 SU/SKEY 等写侧命令）。
+ *   SU    —— 通过 "su" 字面量/白名单路径进来的普通授权；
+ *   ADMIN —— 真 superkey、或 root、或管理器。
+ *
+ * 实际放行面（与上游 KernelPatch 的差别，刻意收紧）：当前只有 HELLO 与版本
+ * 查询对 SU 档开放，其余命令（含全部 SU / kstorage 族）都要求 ADMIN。上游把
+ * SU 档也放给 SUPERCALL_SU 一族，那等于让白名单里的任意 uid 直接换 root；本
+ * 内核对 root 的唯一权威是 KernelSU 允许列表（policy/allowlist.c），所以这里
+ * 不再开第二条提权路径。要放开必须先想清楚这个前提。
  */
 enum sc_cred {
     SC_CRED_NONE = 0,

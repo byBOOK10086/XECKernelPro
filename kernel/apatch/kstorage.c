@@ -146,8 +146,12 @@ const struct kp_kstorage *kp_kstorage_get(int gid, long did)
 int kp_kstorage_read(int gid, long did, void *data, int offset, int len, bool data_is_user)
 {
 	const struct kp_kstorage *pos;
+	void *bounce = NULL;
 	int min_len;
 	int rc = 0;
+
+	if (offset < 0 || len < 0)
+		return -EINVAL;
 
 	rcu_read_lock();
 
@@ -161,14 +165,28 @@ int kp_kstorage_read(int gid, long did, void *data, int offset, int len, bool da
 	if (min_len < 0)
 		min_len = 0;
 
-	if (data_is_user) {
-		if (copy_to_user(data, pos->data + offset, min_len))
-			rc = -EFAULT;
-	} else {
-		memcpy(data, pos->data + offset, min_len);
+	/* copy_to_user() can fault and sleep, which is illegal inside the RCU
+	 * read section: bounce the payload through kernel memory and only touch
+	 * userspace after the unlock. GFP_ATOMIC because we still hold the lock. */
+	if (data_is_user && min_len > 0) {
+		bounce = kmalloc((size_t)min_len, GFP_ATOMIC);
+		if (!bounce) {
+			rcu_read_unlock();
+			return -ENOMEM;
+		}
+		memcpy(bounce, pos->data + offset, (size_t)min_len);
+	} else if (min_len > 0) {
+		memcpy(data, pos->data + offset, (size_t)min_len);
 	}
 
 	rcu_read_unlock();
+
+	if (bounce) {
+		if (copy_to_user(data, bounce, (size_t)min_len))
+			rc = -EFAULT;
+		kfree(bounce);
+	}
+
 	return rc;
 }
 
@@ -232,8 +250,8 @@ int kp_kstorage_remove(int gid, long did)
 	hlist_for_each_entry_rcu(pos, bucket, hnode) {
 		if (pos->did == did) {
 			hlist_del_rcu(&pos->hnode);
-			spin_unlock(lock);
 			group_sizes[gid]--;
+			spin_unlock(lock);
 			call_rcu(&pos->rcu, reclaim_callback);
 			return 0;
 		}

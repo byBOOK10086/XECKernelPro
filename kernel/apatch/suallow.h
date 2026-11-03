@@ -13,10 +13,16 @@
 struct su_profile;
 
 /* Initialize the allowlist: allocate kstorage group 0, pre-allow shell (2000)
- * and root (0). */
+ * and root (0).
+ *
+ * The table is a **data plane only**: it is what GRANT_UID / REVOKE_UID /
+ * SU_NUMS / SU_LIST / SU_PROFILE read and write, and what
+ * kp_su_load_config() imports from /data/adb/ap/package_config. Nothing in this
+ * kernel grants root by consulting it -- root on this kernel is KernelSU's
+ * allowlist (policy/allowlist.c) alone. An APatch manager can therefore manage
+ * the table, but membership in it does not authorise SUPERCALL_SU. */
 int kp_sucompat_init(void);
 
-bool kp_is_su_allow_uid(uid_t uid);
 
 int kp_su_add_allow_uid(uid_t uid, uid_t to_uid, const char *scontext);
 

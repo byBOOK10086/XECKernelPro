@@ -102,7 +102,9 @@ def main() -> int:
         if NEEDLE not in lowered and not any(tok in lowered for tok in BANNED_TOKENS):
             continue
         for lineno, line in enumerate(text.splitlines(), 1):
-            low = line.lower()
+            # Mentioning this guard by name is not a residual implementation.
+            probe = line.replace('check_no_kpm', '')
+            low = probe.lower()
             if NEEDLE in low or any(tok in low for tok in BANNED_TOKENS):
                 offenders.append((rel, lineno, line.strip()[:120]))
 
