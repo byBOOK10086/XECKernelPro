@@ -232,12 +232,3 @@ fun ClearGlassBar(
         content = content,
     )
 }
-
-/**
- * 透明玻璃按钮：按下 0.96 缩放 + 弱弹簧回弹，无 ripple（玻璃自带的边缘光就是按压反馈）。
- *
- * 默认采 [LocalWallpaperBackdrop]：按钮长在卡片/列表里时，采页面级 backdrop 必成环，
- * 而采壁纸永远安全——折射出的正是按钮身后那段壁纸，与所在卡体的玻璃同源。
- */
-@Composable
-
