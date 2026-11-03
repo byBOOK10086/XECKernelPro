@@ -36,6 +36,7 @@ pub fn on_post_fs_data() -> Result<()> {
     if !mount_state {
         if let Err(e) = ksucalls::ensure_uapi_version_matched() {
             error!("{e:#}, skip on_post_fs_data");
+            crate::module::prune_modules_rescue()?;
             return Ok(());
         }
 
@@ -108,6 +109,7 @@ pub fn on_post_fs_data() -> Result<()> {
         if let Err(e) = crate::module::disable_all_modules() {
             warn!("disable all modules failed: {e}");
         }
+        crate::module::prune_modules_rescue()?;
         return Ok(());
     }
 
