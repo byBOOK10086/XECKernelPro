@@ -378,25 +378,6 @@ internal fun Modifier.xGlassRim(
  * 把"内容块"从"贴底的栏"里区分出来。圆角仍由 `Xc.shapes` 说了算。
  */
 @Composable
-fun XGlassCard(
-    backdrop: LayerBackdrop?,
-    modifier: Modifier = Modifier,
-    shape: Shape = Xc.shapes.md,
-    tint: Color = Xc.colors.glassTint,
-    glassEnabled: Boolean = true,
-    content: @Composable BoxScope.() -> Unit,
-) {
-    XGlassSurface(
-        backdrop = backdrop,
-        modifier = modifier,
-        shape = shape,
-        tint = tint,
-        blurRadius = 8.dp,
-        refraction = 26.dp,
-        glassEnabled = glassEnabled,
-        content = content,
-    )
-}
 
 /**
  * 玻璃栏：顶栏 / 底栏 / 侧边栏。
@@ -406,23 +387,4 @@ fun XGlassCard(
  * 例如顶栏只圆下沿。
  */
 @Composable
-fun XGlassBar(
-    backdrop: LayerBackdrop?,
-    modifier: Modifier = Modifier,
-    shape: Shape = Xc.shapes.bar,
-    tint: Color = Xc.colors.glassTint,
-    glassEnabled: Boolean = true,
-    content: @Composable BoxScope.() -> Unit,
-) {
-    XGlassSurface(
-        backdrop = backdrop,
-        modifier = modifier,
-        shape = shape,
-        tint = tint,
-        blurRadius = 10.dp,
-        refraction = 36.dp,
-        innerHighlight = false,
-        glassEnabled = glassEnabled,
-        content = content,
-    )
-}
+

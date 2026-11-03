@@ -56,6 +56,4 @@ fun rememberRebootAction(): (String) -> Unit {
 }
 
 @Composable
-fun RebootListPopup() {
-    RebootListPopupMiuix()
-}
+

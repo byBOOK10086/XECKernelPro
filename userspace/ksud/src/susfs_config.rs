@@ -38,25 +38,6 @@ pub const KEY_ENABLE_AVC_LOG_SPOOFING: &str = "enable_avc_log_spoofing";
 pub const DEFAULT_UNAME: &str = "default";
 pub const DEFAULT_BUILD_TIME: &str = "default";
 
-/// All known config keys in load order
-#[allow(dead_code)]
-pub const ALL_KEYS: &[&str] = &[
-    KEY_UNAME_VALUE,
-    KEY_BUILD_TIME_VALUE,
-    KEY_AUTO_START_ENABLED,
-    KEY_SUS_PATHS,
-    KEY_SUS_LOOP_PATHS,
-    KEY_SUS_MAPS,
-    KEY_ENABLE_LOG,
-    KEY_EXECUTE_IN_POST_FS_DATA,
-    KEY_KSTAT_CONFIGS,
-    KEY_ADD_KSTAT_PATHS,
-    KEY_HIDE_SUS_MOUNTS_FOR_ALL_PROCS,
-    KEY_ENABLE_CLEANUP_RESIDUE,
-    KEY_ENABLE_HIDE_BL,
-    KEY_ENABLE_AVC_LOG_SPOOFING,
-];
-
 // ── path helpers ─────────────────────────────────────────────────────────────
 
 fn config_path() -> &'static Path {
@@ -275,9 +256,6 @@ fn split_kstat_configs(raw: &str) -> Vec<String> {
 }
 
 #[allow(dead_code)]
-fn join_kstat_configs(configs: &[String]) -> String {
-    configs.join(";;")
-}
 
 /// Load config from disk and convert to `ModuleConfig` for `susfs_module::install_module`.
 pub fn load_module_config() -> Result<ModuleConfig> {

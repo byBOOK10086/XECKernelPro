@@ -87,17 +87,11 @@ Aborted — the device was NOT rebooted.</string>
     <string name="confirm">Confirm</string>
     <string name="uninstall">Uninstall</string>
     <string name="enable">Enable</string>
-    <string name="disable">Disable</string>
     <string name="module_install">Install</string>
     <string name="install">Install</string>
     <string name="reboot">Reboot</string>
     <string name="settings">Settings</string>
     <string name="terminal">Terminal</string>
-    <string name="terminal_unavailable">Unable to reach %1$s</string>
-    <string name="terminal_hint">Make sure the Auto_Trigger module is installed and enabled, then retry.</string>
-    <string name="terminal_starting">Starting the module web service…</string>
-    <string name="terminal_start_failed">The module web service did not start</string>
-    <string name="terminal_start_hint">The module binary was found and launched, but nothing is listening on the port. Reboot and retry.</string>
     <string name="reboot_soft">Soft restart</string>
     <string name="reboot_userspace">Userspace reboot</string>
     <string name="reboot_recovery">Reboot to Recovery</string>
@@ -114,7 +108,6 @@ Aborted — the device was NOT rebooted.</string>
     <string name="module_description">Description</string>
     <string name="module_update_url">Update URL</string>
     <string name="webui">WebUi</string>
-    <string name="module_long_press_hint">Long press a module banner for 1 second to view details</string>
     <string name="module_sheet_capability_hint">Action and WebUi are available only when the module provides them</string>
     <string name="module_sheet_background">Photo</string>
     <string name="module_sheet_background_clear_hint">Long-press the Photo button to clear this card\'s background</string>
@@ -253,7 +246,6 @@ XEC Project Team
     <string name="home_pr_build_warning">This is a PR debug build. Do NOT use it in production!</string>
     <string name="home_pr_kernel_warning">The kernel was built with PR signature support. This is not a production kernel!</string>
     <string name="action">Action</string>
-    <string name="open">Open</string>
     <string name="close">Close</string>
     <string name="enable_web_debugging">WebView debugging</string>
     <string name="enable_web_debugging_summary">Can be used to debug WebUI. Please enable only when needed.</string>
@@ -473,7 +465,6 @@ See the log below for details.</string>
     <string name="remote_submit_index_note">Uploaded files only have a direct link. Submit them once with the GitHub form to list them in the module repo, otherwise the receiver needs the code or link.</string>
     <!-- 自定义背景：本机私有目录里的浅/深两档壁纸，作为全应用液态玻璃的折射源。 -->
     <string name="settings_wallpaper">Custom background</string>
-    <string name="settings_wallpaper_summary">Use your own image behind the whole app.</string>
     <string name="wallpaper_title">Custom background</string>
     <string name="wallpaper_summary_builtin">Built-in pool · random each cold start</string>
     <string name="wallpaper_summary_light">Light mode · custom image</string>
@@ -569,12 +560,6 @@ See the log below for details.</string>
     <string name="terminal_cancel">Cancel</string>
 
     <!-- Dynamic island -->
-    <string name="island_home">Home</string>
-    <string name="island_superuser">SuperUser</string>
-    <string name="island_modules">Modules</string>
-    <string name="island_detect">Detect</string>
-    <string name="island_settings">Settings</string>
-    <string name="island_working">Working</string>
     <string name="island_not_working">Not working</string>
     <string name="island_granted">%1$d granted</string>
     <string name="island_modules_count">%1$d modules (%2$d on)</string>
@@ -582,7 +567,6 @@ See the log below for details.</string>
     <string name="terminal_tab_console">Console</string>
     <string name="terminal_tab_files">Files</string>
     <string name="terminal_files_empty">(empty directory)</string>
-    <string name="terminal_files_loading">Loading…</string>
     <string name="terminal_parent_dir">Parent directory</string>
     <string name="terminal_copy_all">Copy output</string>
     <!-- MT-style visual file manager (terminal FILES tab) -->
@@ -724,7 +708,6 @@ See the log below for details.</string>
     <string name="themes_search_hint">Search themes</string>
     <string name="themes_empty">Nothing here yet</string>
     <string name="themes_offline">No network</string>
-    <string name="themes_load_failed">Could not load the index: %1$s</string>
     <string name="themes_installed">Installed</string>
     <string name="themes_updatable">Update available</string>
     <string name="themes_apply">Apply</string>
@@ -734,12 +717,9 @@ See the log below for details.</string>
     <string name="themes_restored">Back to the default look</string>
     <string name="themes_download">Download</string>
     <string name="themes_downloading">Downloading… %1$d%%</string>
-    <string name="themes_download_failed">Download failed: %1$s</string>
     <string name="themes_delete">Delete</string>
     <string name="themes_delete_confirm">Delete theme %1$s? Its package is removed; a background it applied stays as your wallpaper.</string>
-    <string name="themes_deleted">Deleted</string>
     <string name="themes_by">by %1$s</string>
-    <string name="themes_size">%1$s KB</string>
     <string name="themes_export">Export package</string>
     <string name="themes_export_done">Saved %1$s</string>
     <string name="themes_export_failed">Export failed: %1$s</string>
@@ -747,24 +727,16 @@ See the log below for details.</string>
     <string name="themes_import_done">Imported: %1$s</string>
     <string name="themes_import_failed">Import failed: %1$s</string>
     <string name="themes_publish">Publish to the store</string>
-    <string name="themes_publish_note">Uploads the package to the XEC drive; the store bot adds it automatically (no GitHub account needed).</string>
-    <string name="themes_publish_uploading">Uploading…</string>
-    <string name="themes_publish_uploaded">Uploaded. Paste this link into the form: %1$s</string>
     <string name="themes_publish_failed">Upload failed: %1$s</string>
     <string name="themes_publish_entry_title">Publish my theme</string>
     <string name="themes_publish_entry_summary">%1$s theme(s) on this device — upload one to the store</string>
-    <string name="themes_publish_entry_empty">No local theme yet — make one in the editor, or import a .xectheme</string>
     <string name="themes_publish_picker_title">Pick a theme to publish</string>
     <string name="themes_publish_picker_hint">The package is uploaded to the XEC drive and the store bot collects it within ~10 minutes. No GitHub account needed.</string>
     <string name="themes_publish_picker_empty">Nothing to publish yet. Create a theme in the editor, or import one with .xectheme.</string>
     <string name="themes_publish_pending">Submitted. The store bot collects it within ~10 minutes — refresh the store afterwards. The link below also works for the GitHub form.</string>
-    <string name="themes_copy_link">Copy link</string>
-    <string name="themes_copied">Copied</string>
     <string name="themes_open_form">Open the GitHub form (optional)</string>
     <string name="theme_editor_title">Theme editor</string>
     <string name="theme_editor_new">New theme</string>
-    <string name="theme_editor_base">Start from</string>
-    <string name="theme_editor_base_current">the current look</string>
     <string name="theme_editor_name">Name</string>
     <string name="theme_editor_id">ID (letters, digits, . _ -)</string>
     <string name="theme_editor_author">Author</string>
@@ -804,11 +776,9 @@ See the log below for details.</string>
     <string name="theme_editor_saved">Saved: %1$s</string>
     <string name="theme_editor_save_failed">Save failed: %1$s</string>
     <string name="theme_editor_reset_token">Reset</string>
-    <string name="theme_editor_preview">Preview</string>
     <string name="theme_editor_invalid_id">ID must start with a letter and contain only letters, digits, . _ -</string>
     <string name="theme_editor_name_required">Give the theme a name</string>
     <string name="theme_editor_pick_image">Pick an image</string>
-    <string name="theme_editor_overwrite">A theme with this ID exists. Overwrite it?</string>
     <string name="theme_editor_dirty">You have unsaved changes</string>
 
     <!-- XEC Score / Liquid Home -->
@@ -951,11 +921,8 @@ See the log below for details.</string>
     <string name="mode_badge_text_color">Text color</string>
     <string name="mode_badge_color_auto">Auto</string>
     <string name="themes_featured">Featured</string>
-    <string name="themes_category_all">All</string>
     <string name="themes_category_colors">Colors</string>
     <string name="themes_category_mode_badge">Mode badge</string>
-    <string name="themes_section_latest">Latest</string>
-    <string name="themes_section_all">All themes</string>
     <string name="theme_editor_badge_title">Mode badge element</string>
     <string name="theme_editor_badge_prefix">Text before the mode word</string>
     <string name="theme_editor_badge_suffix">Text after the mode word</string>

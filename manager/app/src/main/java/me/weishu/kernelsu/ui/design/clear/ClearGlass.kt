@@ -210,25 +210,6 @@ internal fun Modifier.xClearGlassLayer(
 
 /** 透明玻璃卡片：内容区容器，卡体语义（圆角与模糊档位比表面低一档）。 */
 @Composable
-fun ClearGlassCard(
-    backdrop: LayerBackdrop?,
-    modifier: Modifier = Modifier,
-    shape: Shape = Xc.shapes.md,
-    tint: Color = Xc.colors.clearGlassTint,
-    glassEnabled: Boolean = true,
-    content: @Composable BoxScope.() -> Unit,
-) {
-    ClearGlassSurface(
-        backdrop = backdrop,
-        modifier = modifier,
-        shape = shape,
-        tint = tint,
-        blurRadius = 2.dp,
-        refraction = 34.dp,
-        glassEnabled = glassEnabled,
-        content = content,
-    )
-}
 
 /** 透明玻璃栏：顶栏 / 底栏 / 悬浮栏（全宽贴边的栏在调用点传只圆部分角的 shape）。 */
 @Composable
@@ -262,41 +243,4 @@ fun ClearGlassBar(
  * 而采壁纸永远安全——折射出的正是按钮身后那段壁纸，与所在卡体的玻璃同源。
  */
 @Composable
-fun ClearGlassButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    backdrop: LayerBackdrop? = LocalWallpaperBackdrop.current,
-    shape: Shape = Xc.shapes.pill,
-    tint: Color = Xc.colors.clearGlassTint,
-    glassEnabled: Boolean = true,
-    content: @Composable BoxScope.() -> Unit,
-) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.96f else 1f,
-        animationSpec = spring(dampingRatio = 0.55f, stiffness = 380f),
-        label = "clearGlassButtonPress",
-    )
-    Box(
-        modifier = modifier
-            .xClearGlassLayer(
-                backdrop = backdrop,
-                shape = shape,
-                tint = tint,
-                blurRadius = 2.dp,
-                refraction = 24.dp,
-                rimColor = Xc.colors.glassRim,
-                rim = true,
-                glassEnabled = glassEnabled,
-                adaptive = true,
-                specular = 1.2f,
-            )
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            },
-        content = content,
-    )
-}
+

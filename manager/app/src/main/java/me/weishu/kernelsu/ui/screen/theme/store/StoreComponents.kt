@@ -1076,14 +1076,6 @@ fun StoreActionButton(
 
 /** 下载图标（详情页/下载管理行复用）。 */
 @Composable
-fun StoreDownloadIcon(tint: Color = Xc.colors.accent) {
-    Icon(
-        imageVector = Icons.Rounded.GetApp,
-        contentDescription = null,
-        tint = tint,
-        modifier = Modifier.size(15.dp),
-    )
-}
 
 /** 关闭按钮（搜索框右侧/提示条右侧）。 */
 @Composable

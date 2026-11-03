@@ -74,19 +74,13 @@
     <string name="module_repos_detail_no_release">暂无可下载版本。</string>
     <string name="uninstall">卸载</string>
     <string name="enable">启用</string>
-    <string name="disable">关闭</string>
     <string name="module_install">安装</string>
     <string name="install">安装</string>
     <string name="reboot">重启</string>
     <string name="settings">设置</string>
     <string name="terminal">终端</string>
-    <string name="terminal_unavailable">无法连接 %1$s</string>
-    <string name="terminal_hint">请确认模块已安装并已启用，然后重试。</string>
     <!-- 模块 WebUI 的终端：等 Web 服务起来的那几句。此前只写在默认语言里，
          中文设备上整段是英文。 -->
-    <string name="terminal_starting">正在启动模块 Web 服务…</string>
-    <string name="terminal_start_failed">模块 Web 服务没有启动</string>
-    <string name="terminal_start_hint">模块二进制找到了也拉起来了，但端口上没有任何进程在听。重启一次再试。</string>
     <string name="reboot_soft">软重启</string>
     <string name="reboot_userspace">用户空间重启</string>
     <string name="reboot_recovery">重启到 Recovery</string>
@@ -103,7 +97,6 @@
     <string name="module_description">介绍</string>
     <string name="module_update_url">更新 URL</string>
     <string name="webui">WebUi</string>
-    <string name="module_long_press_hint">长按模块横幅 1 秒查看详情</string>
     <string name="module_sheet_capability_hint">Action、WebUi 仅当模块包含对应能力时可点击</string>
     <string name="module_sheet_background">背景</string>
     <string name="module_sheet_background_clear_hint">长按「背景」按钮可清除这张卡的背景</string>
@@ -243,7 +236,6 @@ XEC 项目组
     <string name="home_pr_build_warning">当前为 PR 调试构建，请勿在生产环境中使用！</string>
     <string name="home_pr_kernel_warning">当前内核包含 PR 签名支持，这不是一个生产内核！</string>
     <string name="action">执行</string>
-    <string name="open">打开</string>
     <string name="close">关闭</string>
     <string name="enable_web_debugging">WebView 调试</string>
     <string name="enable_web_debugging_summary">可用于调试 WebUI，请仅在需要时启用</string>
@@ -478,7 +470,6 @@ XEC 项目组
     <string name="remote_submit_index_note">上传的文件只有直链。要让模块出现在模块仓库列表里，需要用 GitHub 表单提交一次；否则只能靠加密码或直链分发。</string>
     <!-- 自定义背景：本机私有目录里的浅/深两档壁纸，作为全应用液态玻璃的折射源。 -->
     <string name="settings_wallpaper">自定义背景</string>
-    <string name="settings_wallpaper_summary">用自己的图片作为全应用背景。</string>
     <string name="wallpaper_title">自定义背景</string>
     <string name="wallpaper_summary_builtin">内置随机池 · 每次冷启动随机抽一张</string>
     <string name="wallpaper_summary_light">浅色档 · 已自定义</string>
@@ -571,12 +562,6 @@ XEC 项目组
     <string name="terminal_cancel">取消</string>
 
     <!-- 灵动岛 -->
-    <string name="island_home">主页</string>
-    <string name="island_superuser">授权</string>
-    <string name="island_modules">模块</string>
-    <string name="island_detect">检测</string>
-    <string name="island_settings">设置</string>
-    <string name="island_working">运行中</string>
     <string name="island_not_working">未激活</string>
     <string name="island_granted">%1$d 个已授权</string>
     <string name="island_modules_count">%1$d 个模块（%2$d 启用）</string>
@@ -584,7 +569,6 @@ XEC 项目组
     <string name="terminal_tab_console">终端</string>
     <string name="terminal_tab_files">文件</string>
     <string name="terminal_files_empty">（空目录）</string>
-    <string name="terminal_files_loading">正在读取…</string>
     <string name="terminal_parent_dir">上一级</string>
     <string name="terminal_copy_all">复制输出</string>
     <!-- MT 形态的可视化文件管理（终端「文件」页） -->
@@ -726,7 +710,6 @@ XEC 项目组
     <string name="themes_search_hint">搜索主题</string>
     <string name="themes_empty">这里还没有内容</string>
     <string name="themes_offline">没有网络</string>
-    <string name="themes_load_failed">读不到主题索引：%1$s</string>
     <string name="themes_installed">已安装</string>
     <string name="themes_updatable">可更新</string>
     <string name="themes_apply">应用</string>
@@ -736,12 +719,9 @@ XEC 项目组
     <string name="themes_restored">已恢复默认外观</string>
     <string name="themes_download">下载</string>
     <string name="themes_downloading">下载中… %1$d%%</string>
-    <string name="themes_download_failed">下载失败：%1$s</string>
     <string name="themes_delete">删除</string>
     <string name="themes_delete_confirm">删除主题 %1$s？主题包会被删掉；它铺出去的背景会留作你的壁纸。</string>
-    <string name="themes_deleted">已删除</string>
     <string name="themes_by">作者：%1$s</string>
-    <string name="themes_size">%1$s KB</string>
     <string name="themes_export">导出主题包</string>
     <string name="themes_export_done">已保存 %1$s</string>
     <string name="themes_export_failed">导出失败：%1$s</string>
@@ -749,24 +729,16 @@ XEC 项目组
     <string name="themes_import_done">已导入：%1$s</string>
     <string name="themes_import_failed">导入失败：%1$s</string>
     <string name="themes_publish">发布到主题商城</string>
-    <string name="themes_publish_note">把主题包上传到 XEC 网盘；主题仓库的机器人会自动收录，不需要 GitHub 账号。</string>
-    <string name="themes_publish_uploading">上传中…</string>
-    <string name="themes_publish_uploaded">已上传。把这条直链填进表单：%1$s</string>
     <string name="themes_publish_failed">上传失败：%1$s</string>
     <string name="themes_publish_entry_title">发布我的主题</string>
     <string name="themes_publish_entry_summary">本机有 %1$s 个主题，挑一个传到主题商城</string>
-    <string name="themes_publish_entry_empty">本机还没有主题：去「编辑器」做一个，或导入别人分享的 .xectheme</string>
     <string name="themes_publish_picker_title">选择要发布的主题</string>
     <string name="themes_publish_picker_hint">包会传到 XEC 网盘，主题仓库的机器人 10 分钟内自动收录，不需要 GitHub 账号。</string>
     <string name="themes_publish_picker_empty">还没有可发布的主题。先去「编辑器」做一个，或用 .xectheme 导入一个。</string>
     <string name="themes_publish_pending">已提交。机器人 10 分钟内收录，之后刷新商城就能看到；下面这条直链也可以贴进 GitHub 表单。</string>
-    <string name="themes_copy_link">复制直链</string>
-    <string name="themes_copied">已复制</string>
     <string name="themes_open_form">去 GitHub 开 issue（可选）</string>
     <string name="theme_editor_title">主题编辑器</string>
     <string name="theme_editor_new">新建主题</string>
-    <string name="theme_editor_base">基于</string>
-    <string name="theme_editor_base_current">当前外观</string>
     <string name="theme_editor_name">主题名</string>
     <string name="theme_editor_id">ID（字母、数字、. _ -）</string>
     <string name="theme_editor_author">作者</string>
@@ -806,11 +778,9 @@ XEC 项目组
     <string name="theme_editor_saved">已保存：%1$s</string>
     <string name="theme_editor_save_failed">保存失败：%1$s</string>
     <string name="theme_editor_reset_token">重置</string>
-    <string name="theme_editor_preview">预览</string>
     <string name="theme_editor_invalid_id">ID 必须以字母开头，只能含字母、数字、. _ -</string>
     <string name="theme_editor_name_required">请填写主题名</string>
     <string name="theme_editor_pick_image">选择图片</string>
-    <string name="theme_editor_overwrite">已经有一个同 ID 的主题，要覆盖它吗？</string>
     <string name="theme_editor_dirty">有未保存的改动</string>
 
     <!-- XEC Score / Liquid Home -->
@@ -953,11 +923,8 @@ XEC 项目组
     <string name="mode_badge_text_color">文字颜色</string>
     <string name="mode_badge_color_auto">跟随主题</string>
     <string name="themes_featured">精选</string>
-    <string name="themes_category_all">全部</string>
     <string name="themes_category_colors">配色</string>
     <string name="themes_category_mode_badge">模式牌</string>
-    <string name="themes_section_latest">最新上架</string>
-    <string name="themes_section_all">全部主题</string>
     <string name="theme_editor_badge_title">模式牌元素</string>
     <string name="theme_editor_badge_prefix">模式词前缀</string>
     <string name="theme_editor_badge_suffix">模式词后缀</string>
