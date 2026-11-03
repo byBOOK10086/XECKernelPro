@@ -1015,14 +1015,16 @@ pub fn exec_script_with<T: AsRef<Path>>(
                 )))
             }
         }
-        ScriptWait::Until(deadline) => command.spawn().and_then(|mut child| {
+        ScriptWait::Until(deadline) => command.spawn().and_then(|child| {
             // Once the shared deadline has passed, launch later scripts without waiting.
             if deadline > Instant::now()
                 && !sigchld.wait_until(child.id() as libc::pid_t, deadline)?
             {
                 warn!("Timed out waiting for script: {}", path.as_ref().display());
-                let _ = child.kill();
-                let _ = child.wait();
+                // This deadline bounds boot-stage waiting, not the module's
+                // lifetime. Killing a launcher here can interrupt daemon setup
+                // (including Zygisk's service handshake). Let it finish in the
+                // background, as scripts started after the deadline already do.
             }
             Ok(())
         }),
