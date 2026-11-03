@@ -547,6 +547,29 @@ fn verify_target_restored(state: &BootTxn) -> Result<()> {
     Ok(())
 }
 
+/// The live partition still holds the image this transaction flashed and
+/// observed. It is therefore the image the next transaction must back up
+/// before overwriting it.
+fn verify_target_flashed(state: &BootTxn) -> Result<()> {
+    ensure!(
+        flashed_metadata_present(state),
+        "flashed target metadata is missing"
+    );
+    let record = target_record(state)?;
+    let partition = partition_path(&record.partition, &record.suffix);
+    ensure!(
+        read_prefix_hash(&partition, state.target_size)? == state.target_sha256,
+        "flashed target partition no longer matches the recorded image: {}",
+        record.partition
+    );
+    Ok(())
+}
+
+/// `Observed` is only meaningful when the transaction recorded what it wrote.
+const fn flashed_metadata_present(state: &BootTxn) -> bool {
+    state.target_size > 0 && !state.target_sha256.is_empty()
+}
+
 fn restore_target(state: &BootTxn) -> Result<()> {
     let (record, bytes) = restore_target_image(state)?;
     let mut rolling = state.clone();
@@ -566,15 +589,18 @@ fn cleanup_verified(state: &BootTxn) -> Result<()> {
 }
 
 fn retry_phase_allowed(state: &BootTxn, boot_id: &str) -> bool {
-    state.boot_id != boot_id
-        && matches!(
-            state.phase,
-            Phase::Prepared | Phase::Armed | Phase::Restored
-        )
+    match state.phase {
+        // `Observed` means this transaction flashed the image that is running
+        // now and its bytes were re-verified after boot. Replacing it is safe in
+        // the same boot: the next transaction backs up exactly these bytes.
+        Phase::Observed => true,
+        Phase::Prepared | Phase::Armed | Phase::Restored => state.boot_id != boot_id,
+        Phase::RollingBack => false,
+    }
 }
 
-/// Reconcile only states whose target still equals the verified pre-flash image.
-/// Never infer successful booting from sys.boot_completed or erase unknown writes.
+/// Reconcile only states whose target still equals a verified image. Never
+/// infer successful booting from sys.boot_completed or erase unknown writes.
 #[cfg(target_os = "android")]
 fn reconcile_retry() -> Result<()> {
     let Some(state) = load_state()? else {
@@ -591,9 +617,15 @@ fn reconcile_retry() -> Result<()> {
     );
     // Validate immutable backup and full current target, not just the image prefix.
     let _ = restore_target_image(&state)?;
-    verify_target_restored(&state).context(
-        "pending boot image differs from its pre-flash backup; reboot to verify/recover before retrying"
-    )?;
+    if state.phase == Phase::Observed {
+        verify_target_flashed(&state).context(
+            "flashed boot image changed since it was verified; reboot to verify/recover before retrying",
+        )?;
+    } else {
+        verify_target_restored(&state).context(
+            "pending boot image differs from its pre-flash backup; reboot to verify/recover before retrying",
+        )?;
+    }
     clear_state()
 }
 
@@ -1017,9 +1049,23 @@ mod tests {
             assert!(!retry_phase_allowed(&state(phase.clone()), "original"));
             assert!(retry_phase_allowed(&state(phase), "next"));
         }
-        for phase in [Phase::Observed, Phase::RollingBack] {
-            assert!(!retry_phase_allowed(&state(phase), "next"));
-        }
+        // A verified observation may be replaced in the same boot: the next
+        // transaction snapshots exactly the running image before writing.
+        assert!(retry_phase_allowed(&state(Phase::Observed), "original"));
+        assert!(retry_phase_allowed(&state(Phase::Observed), "next"));
+        assert!(!retry_phase_allowed(&state(Phase::RollingBack), "next"));
+    }
+
+    #[test]
+    fn observed_retry_requires_recorded_flash_metadata() {
+        let mut observed = state(Phase::Observed);
+        assert!(flashed_metadata_present(&observed));
+        assert!(retry_phase_allowed(&observed, "original"));
+        observed.target_sha256.clear();
+        assert!(!flashed_metadata_present(&observed));
+        observed.target_sha256 = sha256::digest(b"boot");
+        observed.target_size = 0;
+        assert!(!flashed_metadata_present(&observed));
     }
 
     #[test]

@@ -323,6 +323,16 @@ pub fn on_boot_completed() {
     }
     info!("on_boot_completed triggered!");
 
+    // This is the only hook that runs after `sys.boot_completed` in a normal
+    // boot. Without committing here the verified transaction stays `observed`
+    // forever whenever the boot-guard watcher is not alive, and the *next* boot
+    // then rolls the working image back and drops into rescue mode.
+    match crate::boot_txn::commit_boot_success() {
+        Ok(true) => info!("boot transaction committed"),
+        Ok(false) => info!("flashed image awaits its next boot verification"),
+        Err(error) => error!("boot transaction commit failed: {error:#}"),
+    }
+
     crate::preinit::on_boot_completed();
 
     // 隐身入口守卫开机自启：配置在就拉起（失败不影响启动流程）。
