@@ -39,12 +39,6 @@
 #include "infra/symbol_resolver.h"
 #include "preinit/preinit.h"
 
-#ifdef CONFIG_KPM
-#include "kpm/kpm.h"
-#endif
-#ifdef CONFIG_KSU_KPM_SUKI
-#include "kpmsuki/bridge.h"
-#endif
 
 static int do_grant_root(void __user *arg)
 {
@@ -1018,21 +1012,6 @@ static int do_get_hook_mode(void __user *arg)
     return 0;
 }
 
-// 102. ENABLE_KPM - Check if KPM is enabled
-static int do_enable_kpm(void __user *arg)
-{
-    struct ksu_enable_kpm_cmd cmd;
-
-    cmd.enabled = IS_ENABLED(CONFIG_KPM);
-
-    if (copy_to_user(arg, &cmd, sizeof(cmd))) {
-        pr_err("enable_kpm: copy_to_user failed\n");
-        return -EFAULT;
-    }
-
-    return 0;
-}
-
 /*
  * Resolve symbols of the running kernel image, exported or not, matching
  * them like ksuinit's /proc/kallsyms walk. Userspace uses this to bind a
@@ -1371,28 +1350,6 @@ static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
         .handler = do_get_hook_type,
         .perm_check = manager_or_root
     },
-    { 
-        .cmd = KSU_IOCTL_ENABLE_KPM,
-        .name = "GET_ENABLE_KPM",
-        .handler = do_enable_kpm,
-        .perm_check = manager_or_root
-    },
-#ifdef CONFIG_KPM
-    { 
-        .cmd = KSU_IOCTL_KPM,
-        .name = "KPM_OPERATION",
-        .handler = do_kpm,
-        .perm_check = manager_or_root
-    },
-#endif
-#ifdef CONFIG_KSU_KPM_SUKI
-    {
-        .cmd = KSU_IOCTL_KPM_SUKI,
-        .name = "KPM_SUKI_OPERATION",
-        .handler = do_kpm_suki,
-        .perm_check = manager_or_root
-    },
-#endif
     { 
         .cmd = KSU_IOCTL_LIST_TRY_UMOUNT,
         .name = "LIST_TRY_UMOUNT",

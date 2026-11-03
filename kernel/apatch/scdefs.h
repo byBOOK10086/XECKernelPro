@@ -10,6 +10,8 @@
  *           a1, a2, a3, a4);
  * 内核侧只把 arg1 的低 16 位当命令号，魔数只用于挑 HELLO 的应答值。本实现额外
  * 要求魔数命中已知值（见 compat.c 的说明），以免真实 brk/truncate 调用被误判。
+ *
+ * 命令集只剩基础/版本、SU 方言与 kstorage 两族；内核模块装载面已从本内核移除。
  */
 #ifndef __KSU_APATCH_SCDEFS_H
 #define __KSU_APATCH_SCDEFS_H
@@ -18,7 +20,7 @@
 #define SC_NR_SUPERCALL 45
 
 #define SC_MAGIC_KP 0x1158 /* KernelPatch / APatch / SukiSU */
-#define SC_MAGIC_KPNEXT 0x2026 /* KernelSU-Next / KPatch-Next（本仓库内置的 kpmd） */
+#define SC_MAGIC_KPNEXT 0x2026 /* KernelSU-Next / KPatch-Next 客户端 */
 
 #define SC_HELLO_MAGIC_KP 0x11581158u
 #define SC_HELLO_MAGIC_KPNEXT 0x20262026u
@@ -36,33 +38,29 @@
 #define SC_CMD_SKEY_GET 0x100a
 #define SC_CMD_SKEY_SET 0x100b
 
-/* KPM（本兼容层的主体） */
-#define SC_CMD_KPM_LOAD 0x1020
-#define SC_CMD_KPM_UNLOAD 0x1021
-#define SC_CMD_KPM_CONTROL 0x1022
-#define SC_CMD_KPM_NUMS 0x1030
-#define SC_CMD_KPM_LIST 0x1031
-#define SC_CMD_KPM_INFO 0x1032
+/* SU 方言（允许列表 + 凭据），实现见 apatch/su_sc.c / suallow.c / accctl.c */
+#define SC_CMD_SU 0x1010
+#define SC_CMD_SU_TASK 0x1011
+#define SC_CMD_SU_GRANT_UID 0x1100
+#define SC_CMD_SU_REVOKE_UID 0x1101
+#define SC_CMD_SU_NUMS 0x1102
+#define SC_CMD_SU_LIST 0x1103
+#define SC_CMD_SU_PROFILE 0x1104
+#define SC_CMD_SU_GET_PATH 0x1110
+#define SC_CMD_SU_RESET_PATH 0x1111
+
+/* kstorage：SU 允许列表（group 0）/ 模块排除表（group 1）的载体 */
+#define SC_CMD_KSTORAGE_ALLOC_GROUP 0x1040
+#define SC_CMD_KSTORAGE_WRITE 0x1041
+#define SC_CMD_KSTORAGE_READ 0x1042
+#define SC_CMD_KSTORAGE_LIST_IDS 0x1043
+#define SC_CMD_KSTORAGE_REMOVE 0x1044
+#define SC_CMD_KSTORAGE_REMOVE_GROUP 0x1045
 
 /* 字符串长度上限（接口事实） */
 #define SC_KEY_MAX_LEN 0x40
-#define SC_KPM_NAME_LEN 32
-#define SC_KPM_PATH_LEN 1024
-#define SC_KPM_ARGS_LEN 1024
-#define SC_KPM_INFO_NAME_LEN 64
 #define SC_LIST_BUF_LEN 4096
 #define SC_INFO_BUF_LEN 2048
-
-/* KPM_LOAD 的回传结构（magic 必须匹配且 size 足够才启用） */
-#define SC_LOAD_RESULT_MAGIC 0x4b504d52u /* "KPMR" */
-#define SC_LOAD_ERROR_MSG_LEN 160
-
-struct sc_kpm_load_result {
-    unsigned int magic; /* in: SC_LOAD_RESULT_MAGIC */
-    unsigned int size; /* in: >= sizeof(struct sc_kpm_load_result) */
-    int code; /* out: 加载返回码 */
-    char message[SC_LOAD_ERROR_MSG_LEN]; /* out */
-};
 
 /*
  * 本兼容层对外声明的 KernelPatch 版本号（(maj << 16) | (min << 8) | patch）。

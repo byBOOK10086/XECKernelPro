@@ -15,9 +15,9 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
-#include "include/scdefs.h"
+#include "kp_scdefs.h"
 
-#include "include/kp_lkm.h"
+#include "kp_lkm.h"
 
 long kp_su_unsupported_buildtime(char __user *ubuf, int buf_len)
 {

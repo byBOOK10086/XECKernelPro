@@ -2,10 +2,9 @@
 /*
  * APatch / KernelPatch supercall 兼容层（arm64）。
  *
- * 为什么需要它：本仓库用户态早就在等这套 ABI —— ksud 内置的 KPM 客户端
- * （Engine::Embedded，XOR "xdcv1" 解到 /dev/.kpmd 执行）说的就是 KPatch-Next
- * 的 supercall 方言，而内核侧从来没人应答那个 syscall。这个文件补上应答端：
- * 用户态不用改，KPM 生态（kpmd / APatch 工具链）能直接对上话。
+ * 为什么需要它：APatch / KernelPatch 用户在 syscall 45 上讲话（arm64 是 brk，
+ * x86_64 是 truncate）。这个文件补上应答端，让它们能管理 SU 允许列表、超键和
+ * kstorage KV 存储，而不必改用户态。
  *
  * 安全设计（与上游的差别，都是刻意收紧的）：
  *   1. 只有 arg1 的 [31:16] 命中已知魔数（0x1158 / 0x2026）**且**低 16 位落在
@@ -14,7 +13,8 @@
  *      误判（上游只取低 16 位，我们额外要求魔数命中）。
  *   2. 凭据不足时同样放行原 syscall，而不是回一个只有兼容内核才有的错误码，
  *      免得凭空多一个"这是 APatch 兼容内核"的探测指纹。
- *   3. 不实现 PANIC / TEST / rehook 这类危险或纯指纹命令。
+ *   3. 不实现 PANIC / TEST / rehook 这类危险或纯指纹命令；内核模块装载面已从
+ *      本内核移除，所以那些命令也按未实现放行。
  */
 #include <linux/errno.h>
 #include <linux/kernel.h>
@@ -30,7 +30,10 @@
 #include "apatch/auth.h"
 #include "apatch/compat.h"
 #include "apatch/scdefs.h"
-#include "kpmcore/kpm_engine.h"
+#include "apatch/kstorage.h"
+#include "apatch/accctl.h"
+#include "apatch/su_sc.h"
+#include "apatch/suallow.h"
 
 #if !defined(__aarch64__)
 /*
@@ -47,27 +50,18 @@ void ksu_apatch_compat_exit(void)
 }
 #else
 
-/* KPM 引擎的桥接函数（kpm/kpm.c 导出；本兼容层只调用，不改它的语义） */
-extern void sukisu_kpm_load_module_path(const char *path, const char *args, void *ptr, int *result);
-extern void sukisu_kpm_unload_module(const char *name, void *ptr, int *result);
-extern void sukisu_kpm_num(int *result);
-extern void sukisu_kpm_list_apatch(void *out, int bufferSize, int *result);
-extern void sukisu_kpm_info_apatch(const char *name, char *buf, int bufferSize, int *result);
-extern void sukisu_kpm_control_out(const char *name, const char *args, long arg_len, char __user *out, int outlen,
-                                   int *result);
+/* SU 允许列表（kstorage group 0/1）与凭据切换都在本目录实现；帮助函数
+ * 直接调用，不在本层之外转发。 */
 
 static syscall_fn_t sc_orig_syscall45;
 
 /* 只把这些命令当成 supercall；其它一律放行原 syscall。
  *
- * kpmcore 引擎（CONFIG_KSU_KPM_AP）活跃时放宽到整个 scdefs 命令窗：SU 族 /
- * kstorage / 特性控制交给 kp_handle_supercall 分发（未实现命令回 -ENOSYS，
- * 不会落到原 truncate —— 与 KernelPatch 原生内核的 truncate 通道行为一致）；
- * PANIC/TEST 在引擎分发里同样回 -ENOSYS，不实现任何 panic 面。 */
+ * SU / kstorage 这两族是 APatch 方言的实体（允许列表 + 凭据），由本层直接
+ * 应答；不存在的命令回 -ENOSYS，不落回原 truncate —— 与 KernelPatch 原生
+ * 内核的 truncate 通道行为一致。PANIC/TEST 一类不实现，也不应答。 */
 static bool sc_cmd_supported(u16 cmd)
 {
-    if (kp_engine_active() && cmd >= SC_CMD_HELLO && cmd <= SC_CMD_MAX)
-        return true;
     switch (cmd) {
     case SC_CMD_HELLO:
     case SC_CMD_BUILD_TIME:
@@ -75,12 +69,21 @@ static bool sc_cmd_supported(u16 cmd)
     case SC_CMD_KERNEL_VER:
     case SC_CMD_SKEY_GET:
     case SC_CMD_SKEY_SET:
-    case SC_CMD_KPM_LOAD:
-    case SC_CMD_KPM_UNLOAD:
-    case SC_CMD_KPM_CONTROL:
-    case SC_CMD_KPM_NUMS:
-    case SC_CMD_KPM_LIST:
-    case SC_CMD_KPM_INFO:
+    case SC_CMD_SU:
+    case SC_CMD_SU_TASK:
+    case SC_CMD_SU_GRANT_UID:
+    case SC_CMD_SU_REVOKE_UID:
+    case SC_CMD_SU_NUMS:
+    case SC_CMD_SU_LIST:
+    case SC_CMD_SU_PROFILE:
+    case SC_CMD_SU_GET_PATH:
+    case SC_CMD_SU_RESET_PATH:
+    case SC_CMD_KSTORAGE_ALLOC_GROUP:
+    case SC_CMD_KSTORAGE_WRITE:
+    case SC_CMD_KSTORAGE_READ:
+    case SC_CMD_KSTORAGE_LIST_IDS:
+    case SC_CMD_KSTORAGE_REMOVE:
+    case SC_CMD_KSTORAGE_REMOVE_GROUP:
         return true;
     default:
         return false;
@@ -97,160 +100,6 @@ static long sc_copy_out(char __user *dst, int dstlen, const char *src, int len)
         return 0; /* 没有内容也算成功 */
 
     return copy_to_user(dst, src, len) ? -EFAULT : len;
-}
-
-static long sc_kpm_load(u64 path_ptr, u64 args_ptr, u64 result_ptr)
-{
-    struct sc_kpm_load_result res;
-    char *path = NULL;
-    char *args = NULL;
-    int rc = -EINVAL;
-    long n;
-
-    if (!path_ptr)
-        return -EINVAL;
-
-    /* 路径/参数各 1KB，走堆：内核栈上的 2KB 大帧会被 -Wframe-larger-than 盯上 */
-    path = kzalloc(SC_KPM_PATH_LEN, GFP_KERNEL);
-    args = kzalloc(SC_KPM_ARGS_LEN, GFP_KERNEL);
-    if (!path || !args) {
-        rc = -ENOMEM;
-        goto out;
-    }
-
-    n = strncpy_from_user(path, (const char __user *)path_ptr, SC_KPM_PATH_LEN - 1);
-    if (n <= 0)
-        goto out;
-
-    if (args_ptr) {
-        n = strncpy_from_user(args, (const char __user *)args_ptr, SC_KPM_ARGS_LEN - 1);
-        if (n < 0)
-            goto out;
-    }
-
-    sukisu_kpm_load_module_path(path, args[0] ? args : NULL, NULL, &rc);
-
-    /* 回传结构：magic 与 size 都对上才写回（与上游 module.c 的判定一致） */
-    if (result_ptr) {
-        if (!copy_from_user(&res, (void __user *)result_ptr, sizeof(res)) && res.magic == SC_LOAD_RESULT_MAGIC &&
-            res.size >= sizeof(res)) {
-            res.code = rc;
-            if (rc != 0)
-                scnprintf(res.message, sizeof(res.message), "kpm load failed: %d", rc);
-            else
-                res.message[0] = '\0';
-            if (copy_to_user((void __user *)result_ptr, &res, sizeof(res))) {
-                rc = -EFAULT;
-                goto out;
-            }
-        }
-    }
-
-out:
-    kfree(path);
-    kfree(args);
-    return rc;
-}
-
-static long sc_kpm_unload(u64 name_ptr)
-{
-    char name[SC_KPM_NAME_LEN + 1] = { 0 };
-    int rc = -EINVAL;
-    long n;
-
-    if (!name_ptr)
-        return -EINVAL;
-
-    n = strncpy_from_user(name, (const char __user *)name_ptr, sizeof(name) - 1);
-    if (n <= 0)
-        return -EINVAL;
-
-    sukisu_kpm_unload_module(name, NULL, &rc);
-    return rc;
-}
-
-static long sc_kpm_list(u64 buf_ptr, u64 buflen)
-{
-    char *buf;
-    int len = 0;
-    long rc;
-    int want = (int)buflen;
-
-    if (!buf_ptr || want <= 0)
-        return -EINVAL;
-    if (want > SC_LIST_BUF_LEN)
-        want = SC_LIST_BUF_LEN;
-
-    /* 上游用 4K 内核栈；我们走堆，避免大栈帧被 -Wframe-larger-than 拦下 */
-    buf = kzalloc(SC_LIST_BUF_LEN, GFP_KERNEL);
-    if (!buf)
-        return -ENOMEM;
-
-    sukisu_kpm_list_apatch(buf, SC_LIST_BUF_LEN, &len);
-    if (len < 0)
-        rc = len;
-    else
-        rc = sc_copy_out((char __user *)buf_ptr, want, buf, len);
-
-    kfree(buf);
-    return rc;
-}
-
-static long sc_kpm_info(u64 name_ptr, u64 buf_ptr, u64 buflen)
-{
-    char name[SC_KPM_INFO_NAME_LEN + 1] = { 0 };
-    char *buf;
-    int len = 0;
-    long rc, n;
-
-    if (!name_ptr || !buf_ptr || (int)buflen <= 0)
-        return -EINVAL;
-
-    n = strncpy_from_user(name, (const char __user *)name_ptr, sizeof(name) - 1);
-    if (n <= 0)
-        return -EINVAL;
-
-    buf = kzalloc(SC_INFO_BUF_LEN, GFP_KERNEL);
-    if (!buf)
-        return -ENOMEM;
-
-    sukisu_kpm_info_apatch(name, buf, SC_INFO_BUF_LEN, &len);
-    if (len <= 0)
-        rc = -ENOENT;
-    else
-        rc = sc_copy_out((char __user *)buf_ptr, (int)buflen, buf, len);
-
-    kfree(buf);
-    return rc;
-}
-
-static long sc_kpm_control(u64 name_ptr, u64 args_ptr, u64 out_ptr, u64 outlen)
-{
-    char name[SC_KPM_NAME_LEN + 1] = { 0 };
-    char *args;
-    int rc = -EINVAL;
-    long n;
-
-    if (!name_ptr || !args_ptr || !out_ptr || (int)outlen <= 0)
-        return -EINVAL;
-
-    n = strncpy_from_user(name, (const char __user *)name_ptr, sizeof(name) - 1);
-    if (n <= 0)
-        return -EINVAL;
-
-    args = kzalloc(SC_KPM_ARGS_LEN, GFP_KERNEL);
-    if (!args)
-        return -ENOMEM;
-
-    n = strncpy_from_user(args, (const char __user *)args_ptr, SC_KPM_ARGS_LEN - 1);
-    if (n <= 0) {
-        kfree(args);
-        return -EINVAL;
-    }
-
-    sukisu_kpm_control_out(name, args, n, (char __user *)out_ptr, (int)outlen, &rc);
-    kfree(args);
-    return rc;
 }
 
 /*
@@ -293,47 +142,93 @@ static bool sc_dispatch(u16 magic, u64 key, u16 cmd, u64 a1, u64 a2, u64 a3, u64
         break;
     }
 
-    /* 写侧（KPM / SKEY）只给 ADMIN */
+    /* 写侧（SU / kstorage / SKEY）只给 ADMIN */
     if (!admin)
         return false;
 
     switch (cmd) {
-    case SC_CMD_KPM_LOAD:
-        *out = sc_kpm_load(a1, a2, a3);
-        return true;
-    case SC_CMD_KPM_UNLOAD:
-        *out = sc_kpm_unload(a1);
-        return true;
-    case SC_CMD_KPM_CONTROL:
-        *out = sc_kpm_control(a1, a2, a3, a4);
-        return true;
-    case SC_CMD_KPM_NUMS: {
-        int num = 0;
-
-        sukisu_kpm_num(&num);
-        *out = num;
-        return true;
-    }
-    case SC_CMD_KPM_LIST:
-        *out = sc_kpm_list(a1, a2);
-        return true;
-    case SC_CMD_KPM_INFO:
-        *out = sc_kpm_info(a1, a2, a3);
-        return true;
     case SC_CMD_SKEY_GET:
         *out = sc_auth_get_key((char __user *)a1, (int)a2);
         return true;
     case SC_CMD_SKEY_SET:
         *out = sc_auth_set_key((const char __user *)a1);
         return true;
+    case SC_CMD_SU:
+        *out = kp_su_sc((const struct su_profile __user *)a1);
+        return true;
+    case SC_CMD_SU_TASK:
+        *out = kp_su_task_sc((pid_t)a1, (const struct su_profile __user *)a2);
+        return true;
+    case SC_CMD_SU_GRANT_UID:
+        *out = kp_su_grant_uid_sc((const struct su_profile __user *)a1);
+        return true;
+    case SC_CMD_SU_REVOKE_UID:
+        *out = kp_su_revoke_uid_sc((uid_t)a1);
+        return true;
+    case SC_CMD_SU_NUMS:
+        *out = kp_su_allow_uid_nums_sc();
+        return true;
+    case SC_CMD_SU_LIST:
+        *out = kp_su_allow_uid_list_sc((uid_t __user *)a1, (int)a2);
+        return true;
+    case SC_CMD_SU_PROFILE:
+        *out = kp_su_allow_uid_profile_sc((uid_t)a1, (struct su_profile __user *)a2);
+        return true;
+    case SC_CMD_SU_GET_PATH:
+        *out = kp_su_get_path_sc((char __user *)a1, (int)a2);
+        return true;
+    case SC_CMD_SU_RESET_PATH:
+        *out = kp_su_reset_path_sc((const char __user *)a1);
+        return true;
+    case SC_CMD_KSTORAGE_ALLOC_GROUP:
+        if (a1 || a2 || a3 || a4)
+            return false;
+        *out = kp_kstorage_alloc_group();
+        return true;
+    case SC_CMD_KSTORAGE_WRITE:
+        *out = kp_kstorage_write((int)a1, (long)a2, (void __user *)a3, 0, (int)a4, true);
+        return true;
+    case SC_CMD_KSTORAGE_READ:
+        *out = kp_kstorage_read((int)a1, (long)a2, (void __user *)a3, 0, (int)a4, true);
+        return true;
+    case SC_CMD_KSTORAGE_LIST_IDS:
+        *out = kp_kstorage_list_ids((int)a1, (long __user *)a2, (int)a3, true);
+        return true;
+    case SC_CMD_KSTORAGE_REMOVE:
+        if (a4)
+            return false;
+        *out = kp_kstorage_remove((int)a1, (long)a2);
+        return true;
+    case SC_CMD_KSTORAGE_REMOVE_GROUP: {
+        /* kstorage 一次只删一个 key，组清空靠 list_ids 逐个排干。 */
+        long ids[64];
+        int gid = (int)a1;
+        long rc = 0, i, n;
+
+        if (a2 || a3 || a4)
+            return false;
+        if (gid < 0 || gid >= KP_KSTORAGE_MAX_GROUP_NUM)
+            return false;
+        do {
+            n = kp_kstorage_list_ids(gid, ids, ARRAY_SIZE(ids), false);
+            if (n < 0) {
+                *out = n;
+                return true;
+            }
+            for (i = 0; i < n; i++) {
+                rc = kp_kstorage_remove(gid, ids[i]);
+                if (rc) {
+                    *out = rc;
+                    return true;
+                }
+            }
+        } while (n == ARRAY_SIZE(ids));
+        *out = 0;
+        return true;
+    }
     default:
-        /* 引擎活跃：scdefs 其余命令（KPM 族已在上方经桥接函数路由、SU 族、
-         * kstorage、CONTROL_FEATURE）走 kpmcore 分发表；SKEY_* 由本层持有
-         * （超键存储在 policy/superkey.c），永远不进引擎。 */
-        if (kp_engine_active()) {
-            *out = kp_handle_supercall(cmd, a1, a2, a3, a4);
-            return true;
-        }
+        /* 未实现的命令一律放行原 syscall：不给探测者"兼容内核专属错误码"
+         * 这种可枚举指纹。 */
         return false;
     }
 }
@@ -367,6 +262,16 @@ int ksu_apatch_compat_init(void)
     }
 
     sc_auth_init();
+    /* SU 方言的底座：KV 存储 → 凭据切换 → 允许列表。任一步失败只让对应命令
+     * 退化成错误码，不影响内核模块本身加载（这是可选兼容层）。 */
+    if (kp_kstorage_init())
+        pr_warn("apatch-compat: kstorage init failed, SU supercalls degrade\n");
+    else {
+        if (kp_accctl_init())
+            pr_warn("apatch-compat: accctl init failed, su grant degrades\n");
+        if (kp_sucompat_init())
+            pr_warn("apatch-compat: su allowlist init failed\n");
+    }
     ksu_syscall_table_hook(SC_NR_SUPERCALL, ksu_apatch_syscall45, &sc_orig_syscall45);
     pr_info("apatch-compat: syscall %d hooked (kpver=0x%04x)\n", SC_NR_SUPERCALL, SC_REPORTED_KPVER);
     return 0;

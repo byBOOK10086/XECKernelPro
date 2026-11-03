@@ -3,7 +3,7 @@
  * APatch/KernelPatch 兼容层的凭据判定。
  *
  * 兼容层必须同时接受三种凭据（内核侧 ABI 规格 §2）：
- *   1. arg0 == NULL：KPatch-Next 的 kpmd 全部调用都传 NULL，只要求 uid 0；
+ *   1. arg0 == NULL：KPatch-Next 的客户端全部调用都传 NULL，只要求 uid 0；
  *   2. arg0 == "su"：APatch 0.13.9 的默认路径（管理器 / 白名单）；
  *   3. arg0 == 真 superkey：常量时间比较（Kconfig 编译期 key 或
  *      /data/adb/ap/superkey，运行期还可用 SKEY_SET 更新）。
@@ -25,7 +25,7 @@
 #include "apatch/auth.h"
 #include "apatch/scdefs.h"
 
-/* ITER_DEST 只在 v6.2 起存在（同 kpm.c 的处理） */
+/* ITER_DEST 只在 v6.2 起存在（同 compat.c 的处理） */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
 #define SC_ITER_DEST ITER_DEST
 #else
@@ -56,7 +56,7 @@ static bool sc_key_equal(const char *a, size_t alen, const char *b, size_t blen)
 
 /*
  * 读文件的小工具。kernel_read() 在新内核里没有了，所以按 f_op->read /
- * read_iter 两条路走（与 kpm.c 的 kpm_kernel_read 同一套兼容写法）。
+ * read_iter 两条路走（与 file_wrapper 同一套兼容写法）。
  */
 static ssize_t sc_read_file(const char *path, void *buf, size_t count)
 {
@@ -191,7 +191,7 @@ enum sc_cred sc_cred_of(u64 key_ptr)
     enum sc_cred cred = SC_CRED_NONE;
     long n;
 
-    /* 1) kpmd / KPatch-Next：arg0 == NULL，只看 uid */
+    /* 1) KPatch-Next：arg0 == NULL，只看 uid */
     if (!key_ptr)
         return is_root ? SC_CRED_ADMIN : SC_CRED_NONE;
 

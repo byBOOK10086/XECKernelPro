@@ -6,7 +6,7 @@
  * interception hooks are out of scope for the LKM framework).
  */
 #include "suallow.h"
-#include "include/kstorage.h"
+#include "kstorage.h"
 
 #include <linux/err.h>
 #include <linux/errno.h>
@@ -17,9 +17,9 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/vmalloc.h>
-#include "include/scdefs.h"
+#include "kp_scdefs.h"
 
-#include "include/kp_lkm.h"
+#include "kp_lkm.h"
 
 #define KP_SU_GROUP 0 /* KSTORAGE_SU_LIST_GROUP */
 #define KP_EXCLUDE_GROUP 1 /* KSTORAGE_EXCLUDE_LIST_GROUP */
@@ -107,7 +107,7 @@ int kp_su_allow_uid_profile(uid_t uid, struct su_profile *out_profile)
 
 /* APatch module exclude flag (group KSTORAGE_EXCLUDE_LIST_GROUP), mirroring
  * kernel/patch/common/sucompat.c. The auto-loaded package_config writes here,
- * and the KPM-facing get/set_ap_mod_exclude delegates to these. */
+ * and the supercall-facing get/set_ap_mod_exclude delegates to these. */
 int kp_su_set_ap_mod_exclude(uid_t uid, int exclude)
 {
 	if (exclude_group < 0)

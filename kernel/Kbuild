@@ -61,7 +61,6 @@ kernelsu-objs += feature/selinux_hide.o
 kernelsu-objs += feature/shell_su_adb_only.o
 
 kernelsu-objs += feature/uts_spoof.o
-kernelsu-objs += feature/antiwipe.o
 
 ifdef KBUILD_EXTMOD
 ifeq ($(CONFIG_KSU_DISABLE_MANAGER),y)
@@ -100,113 +99,34 @@ endif
 
 ccflags-y += -I$(KSU_KERNEL_DIR) -I$(KSU_KERNEL_DIR)/include
 
-# KPM (KernelPatch Module) loader. This is AArch64-only and is always linked
-# into the external module. Out-of-tree (LKM) builds only honour obj-m, so a
-# plain `obj-$(CONFIG_KPM)` (obj-y) would be silently dropped and the loader
-# would never make it into kernelsu.ko. Define the C macro as well so that
-# supercall/dispatch.c registers the KSU_IOCTL_KPM handler.
-kernelsu-objs += kpm/compact.o
-kernelsu-objs += kpm/insn.o
-kernelsu-objs += kpm/kpm.o
-kernelsu-objs += kpm/relo.o
-kernelsu-objs += kpm/super_access.o
-ccflags-y += -DCONFIG_KPM=1
-
-# APatch/KernelPatch supercall 兼容层（应答 syscall 45，把命令转发给上面的 KPM
-# 引擎）。对象总是编进去（外置模块构建不处理本模块的 Kconfig，理由同上），
-# 行为由 CONFIG_KSU_APATCH_COMPAT 决定：外置构建靠 workflow 传同名 make 变量
-# 走到下面的 ccflag，内置构建靠 generated/autoconf.h。
+# APatch / KernelPatch supercall 兼容层（应答 syscall 45）。对象总是编进去（外置
+# 模块构建不处理本模块的 Kconfig），行为由 CONFIG_KSU_APATCH_COMPAT 决定：外置
+# 构建靠 workflow 传同名 make 变量走到下面的 ccflag，内置构建靠 autoconf.h。
+#
+# SU 方言（允许列表 / 凭据切换 / kstorage KV 存储）随兼容层保留；内核模块装载面
+# 已整体移除，任何客户端都不能再向本内核装载 KernelPatch 模块——那些命令现在按
+# "未实现"放行原 syscall。
 kernelsu-objs += apatch/auth.o
 kernelsu-objs += apatch/compat.o
-ifeq ($(CONFIG_KSU_APATCH_COMPAT),y)
-ccflags-y += -DCONFIG_KSU_APATCH_COMPAT=1
-endif
 
-# KernelPatch 全量 KPM 引擎（kpmcore/，vendor 自 KernelPatch lkm/，GPL-2.0-or-later）
-# 与 SukiSU Ultra GKI 桥接（kpmsuki/，vendor 自 SukiSU_KernelPatch_patch +
-# SukiSU-Ultra extension/kpm，GPL-2.0）。与 kpm/、apatch/ 同一约定：对象无条件
-# 编入（外置模块构建不处理本模块 Kconfig），行为由 CONFIG_KSU_KPM_AP /
-# CONFIG_KSU_KPM_SUKI 决定 —— 内置构建走 autoconf.h，外置构建由 workflow 传
-# 同名 make 变量走到下面的 ccflags。关闭时 kp_engine_init() 直接返回，legacy
-# kpm/ 装载器保持唯一引擎。
-# 引擎本体是 AArch64-only（hook/patch_memory/insn 都是 arm64 实现）：非 arm64
-# 构建改链 kpmcore/stub.o —— 同一套符号面全部回 -EOPNOTSUPP/false，legacy kpm/
-# 装载器照旧是唯一引擎（与 apatch/compat.c 的 per-arch stub 同一模式）。
+# SU 方言只在 arm64 上有意义（syscall 45 = brk，且 compat.c 的实现体只在 arm64
+# 编译）。其它架构不编这些对象：compat.c 已是空实现，不会缺符号。
 ifeq ($(CONFIG_ARM64),y)
-kernelsu-objs += kpmcore/core.o
-kernelsu-objs += kpmcore/hook_engine.o
-kernelsu-objs += kpmcore/hook_runtime.o
-kernelsu-objs += kpmcore/fphook.o
-kernelsu-objs += kpmcore/insn.o
-kernelsu-objs += kpmcore/relo.o
-kernelsu-objs += kpmcore/module.o
-kernelsu-objs += kpmcore/symbols.o
-kernelsu-objs += kpmcore/kpm_sc.o
-kernelsu-objs += kpmcore/kstorage.o
-kernelsu-objs += kpmcore/symbol_resolver.o
-kernelsu-objs += kpmcore/patch_memory.o
-kernelsu-objs += kpmcore/syscall_table.o
-kernelsu-objs += kpmcore/supercall.o
-kernelsu-objs += kpmcore/secpass.o
-kernelsu-objs += kpmcore/accctl.o
-kernelsu-objs += kpmcore/su_sc.o
-kernelsu-objs += kpmcore/suallow.o
-kernelsu-objs += kpmsuki/bridge.o
-kernelsu-objs += kpmsuki/supercall.o
-# APatch 管理器扫描栈（apk_sign/manager/sha256）：默认不编。开启
-# CONFIG_KSU_KPM_AP_MANAGER 后，me.bmax.apatch 的 APK 证书扫描结果会作为
-# AP 方言超管身份（kp_manager_appid）参与 kpmcore 分发的鉴权——单一管理器
-# 身份是默认立场，这是给"完整 APatch 行为"的显式出口。
-ifeq ($(CONFIG_KSU_KPM_AP_MANAGER),y)
-kernelsu-objs += kpmcore/manager/apk_sign.o
-kernelsu-objs += kpmcore/manager/manager.o
-kernelsu-objs += kpmcore/sha256.o
-ccflags-y += -DCONFIG_KSU_KPM_AP_MANAGER=1
-endif
-else
-kernelsu-objs += kpmcore/stub.o
+kernelsu-objs += apatch/kstorage.o
+kernelsu-objs += apatch/accctl.o
+kernelsu-objs += apatch/su_sc.o
+kernelsu-objs += apatch/suallow.o
 endif
 
-# vendored 代码不带本树的警告纪律：单独降级，不污染其余对象。
-# manager 扫描栈（vendor 自 AP lkm/manager）同样豁免。
-$(eval CFLAGS_kpmcore/manager/apk_sign.o += -Wno-error -Wno-declaration-after-statement)
-$(eval CFLAGS_kpmcore/manager/manager.o += -Wno-error -Wno-declaration-after-statement)
-$(eval CFLAGS_kpmcore/sha256.o += -Wno-error)
-$(foreach o, core hook_engine hook_runtime insn relo module symbols kpm_sc\
-             kstorage symbol_resolver patch_memory syscall_table supercall\
-             secpass accctl su_sc suallow,\
-    $(eval CFLAGS_kpmcore/$(o).o += -Wno-error -Wno-declaration-after-statement\
-        -Wno-unused-function -Wno-unused-variable -Wno-int-conversion))
-
-# hook 引擎内的 _transitN 从内核文本 inline hook 里运行：x18 不是本模块的
-# shadow-call-stack、返回地址不经过 PAC 签验，且裸 KPM 回调不在 CFI 跳表内
-# （与上游 lkm/Kbuild 完全一致的豁免面）。
-CFLAGS_kpmcore/hook_engine.o += -fno-sanitize=cfi -fno-stack-protector
-CFLAGS_kpmcore/hook_engine.o += -fno-jump-tables -fno-unwind-tables
-CFLAGS_kpmcore/hook_engine.o += -fno-asynchronous-unwind-tables -fno-lto
-CFLAGS_kpmcore/hook_engine.o += -fno-sanitize=shadow-call-stack
-CFLAGS_kpmcore/hook_engine.o += -mbranch-protection=bti -std=gnu11
-CFLAGS_kpmcore/hook_engine.o += -Wno-strict-prototypes
-# fphook 的 _fp_transitN 与 hook_engine 的 _transitN 同一运行环境。
-CFLAGS_kpmcore/fphook.o += -Wno-error -Wno-declaration-after-statement
-CFLAGS_kpmcore/fphook.o += -fno-sanitize=cfi -fno-stack-protector
-CFLAGS_kpmcore/fphook.o += -fno-jump-tables -fno-unwind-tables
-CFLAGS_kpmcore/fphook.o += -fno-asynchronous-unwind-tables -fno-lto
-CFLAGS_kpmcore/fphook.o += -fno-sanitize=shadow-call-stack
-CFLAGS_kpmcore/fphook.o += -mbranch-protection=bti -std=gnu11
-CFLAGS_kpmcore/fphook.o += -Wno-strict-prototypes
-# secpass 经 backup 变量调内核函数指针，豁免 CFI 慢路径递归（上游同款）。
-CFLAGS_kpmcore/secpass.o += -fno-sanitize=cfi
-
-ifeq ($(CONFIG_KSU_KPM_AP),y)
-ccflags-y += -DCONFIG_KSU_KPM_AP=1
-endif
-ifeq ($(CONFIG_KSU_KPM_SUKI),y)
-ccflags-y += -DCONFIG_KSU_KPM_SUKI=1
-endif
 ifeq ($(CONFIG_KSU_APATCH_COMPAT),y)
 ccflags-y += -DCONFIG_KSU_APATCH_COMPAT=1
 endif
+
+# 从 KernelPatch 迁出的 SU 方言仍是 vendored 代码，不带本树的警告纪律：单独
+# 降级，不污染其余对象。
+$(foreach o, accctl kstorage su_sc suallow,\
+    $(eval CFLAGS_apatch/$(o).o += -Wno-error -Wno-declaration-after-statement\
+        -Wno-unused-function -Wno-unused-variable -Wno-int-conversion))
 
 # preinit runner: a static nolibc binary embedded into kernelsu, see preinit/.
 # It is built against the installed UAPI headers of the target kernel

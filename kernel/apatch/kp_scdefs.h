@@ -6,7 +6,7 @@
 #ifndef _KP_UAPI_SCDEF_H_
 #define _KP_UAPI_SCDEF_H_
 
-#include "ktypes.h"
+#include <linux/types.h>
 
 static inline long hash_key(const char *key)
 {
@@ -37,25 +37,6 @@ static inline long hash_key(const char *key)
 
 #define SUPERCALL_SU 0x1010
 #define SUPERCALL_SU_TASK 0x1011 // syscall(__NR_gettid)
-
-#define SUPERCALL_KPM_LOAD 0x1020
-#define SUPERCALL_KPM_UNLOAD 0x1021
-#define SUPERCALL_KPM_CONTROL 0x1022
-
-#define SUPERCALL_KPM_NUMS 0x1030
-#define SUPERCALL_KPM_LIST 0x1031
-#define SUPERCALL_KPM_INFO 0x1032
-
-#define KPM_LOAD_RESULT_MAGIC 0x4b504d52
-#define KPM_LOAD_ERROR_MESSAGE_LEN 160
-
-struct kpm_load_result
-{
-    unsigned int magic;
-    unsigned int size;
-    int code;
-    char message[KPM_LOAD_ERROR_MESSAGE_LEN];
-};
 
 struct kernel_storage
 {

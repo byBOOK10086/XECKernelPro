@@ -4,8 +4,8 @@
 
 /*
  * APatch / KernelPatch 兼容层：应答用户态在 syscall 45 上的 supercall
- * （KPatch-Next 的 kpmd、APatch 的 apd/ap 等），把 KPM 命令转发到本项目
- * 已有的 KPM 引擎。仅 arm64；未开 CONFIG_KSU_APATCH_COMPAT 时是空实现。
+ * （KPatch-Next、APatch 的 apd/ap 等），提供 SU 方言（允许列表 + 凭据）与
+ * kstorage KV 存储。仅 arm64；未开 CONFIG_KSU_APATCH_COMPAT 时是空实现。
  */
 int ksu_apatch_compat_init(void);
 void ksu_apatch_compat_exit(void);

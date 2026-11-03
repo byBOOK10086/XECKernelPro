@@ -4,7 +4,7 @@
  *
  * Ported from kernel/patch/common/kstorage.c.
  */
-#include "include/kstorage.h"
+#include "kstorage.h"
 
 #include <linux/err.h>
 #include <linux/errno.h>
@@ -19,7 +19,7 @@
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
 
-#include "include/kp_lkm.h"
+#include "kp_lkm.h"
 
 #define KSTORAGE_HASH_BITS 8
 #define KSTORAGE_NBUCKETS (1 << KSTORAGE_HASH_BITS)

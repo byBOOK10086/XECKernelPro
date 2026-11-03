@@ -8,7 +8,7 @@
  * 调用者凭据等级。三档与上游语义对齐：
  *   NONE  —— 非 root、没给 key，也不是管理器；
  *   SU    —— 通过 "su" 字面量/白名单路径进来的普通授权（只放行只读+提权类命令）；
- *   ADMIN —— 真 superkey、或 root、或管理器（可放行 KPM/SKEY 等写侧命令）。
+ *   ADMIN —— 真 superkey、或 root、或管理器（可放行 SU/SKEY 等写侧命令）。
  */
 enum sc_cred {
     SC_CRED_NONE = 0,

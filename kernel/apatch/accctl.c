@@ -18,10 +18,10 @@
 #include <linux/sched/task.h>
 #include <linux/slab.h>
 #include <linux/string.h>
-#include "include/scdefs.h"
+#include "kp_scdefs.h"
 
-#include "include/kp_lkm.h"
-#include "symbol_resolver.h"
+#include "kp_lkm.h"
+#include "infra/symbol_resolver.h"
 
 /* security_secctx_to_secid is exported on some KMIs only; resolve it at
  * runtime like every other non-exported symbol so no modpost ever fails. */
@@ -50,8 +50,8 @@ struct kp_task_sec {
 
 int kp_accctl_init(void)
 {
-	kp_selinux_blob_sizes = (struct kp_lsm_blob_sizes *)kp_resolve_symbol("selinux_blob_sizes");
-	kp_secctx_to_secid_fn = (int (*)(const char *, u32, u32 *))kp_resolve_symbol("security_secctx_to_secid");
+	kp_selinux_blob_sizes = (struct kp_lsm_blob_sizes *)find_kernel_symbol_exact("selinux_blob_sizes");
+	kp_secctx_to_secid_fn = (int (*)(const char *, u32, u32 *))find_kernel_symbol_exact("security_secctx_to_secid");
 	if (!kp_secctx_to_secid_fn)
 		logkw("security_secctx_to_secid not found; selinux translabel disabled\n");
 	if (!kp_selinux_blob_sizes) {
