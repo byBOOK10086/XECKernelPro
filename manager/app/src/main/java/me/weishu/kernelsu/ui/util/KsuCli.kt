@@ -176,11 +176,12 @@ suspend fun getFeaturePersistValue(feature: String): Long? = withContext(Dispatc
     valueLine.substringAfter("Value:").trim().toLongOrNull()
 }
 
-fun install() {
+fun install(): Boolean {
     val start = SystemClock.elapsedRealtime()
     val libadbroot = File(ksuApp.applicationInfo.nativeLibraryDir, "libadbroot.so").absolutePath
     val result = execKsud("install --libadbroot $libadbroot --data-path ${ksuApp.applicationInfo.deviceProtectedDataDir}", true)
     Log.w(TAG, "install result: $result, cost: ${SystemClock.elapsedRealtime() - start}ms")
+    return result
 }
 
 fun listModules(): String {
@@ -668,8 +669,10 @@ fun installBoot(
 
     // if boot uri is empty, it is direct install, when success, we should show reboot button
     val showReboot = bootUri == null && result.isSuccess // we create a temporary val here, to avoid calc showReboot double
-    if (showReboot) { // because we decide do not update ksud when startActivity
-        install() // install ksud here
+    if (showReboot && !install()) {
+        val message = "Boot image flashed, but daemon installation failed. Install the daemon successfully before rebooting."
+        onStderr(message)
+        return FlashResult(-1, message, false)
     }
     return FlashResult(result, showReboot)
 }
