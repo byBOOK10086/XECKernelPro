@@ -119,6 +119,27 @@ impl Drop for FlashLock {
     }
 }
 
+fn current_source_identity(
+    slot: &str,
+    partition: &str,
+    ota: bool,
+    boot: &str,
+    resolved: PathBuf,
+    device: u64,
+    bytes: &[u8],
+) -> SourceIdentity {
+    SourceIdentity {
+        slot: slot.into(),
+        partition: partition.into(),
+        ota,
+        boot: boot.into(),
+        resolved,
+        device,
+        size: bytes.len(),
+        digest: sha256::digest(bytes),
+    }
+}
+
 fn partition_path(partition: &str, suffix: &str) -> PathBuf {
     PathBuf::from(format!("/dev/block/by-name/{partition}{suffix}"))
 }
@@ -576,6 +597,93 @@ fn reconcile_retry() -> Result<()> {
     clear_state()
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SourceIdentity {
+    slot: String,
+    partition: String,
+    ota: bool,
+    boot: String,
+    resolved: PathBuf,
+    device: u64,
+    size: usize,
+    digest: String,
+}
+
+impl SourceIdentity {
+    fn verify(&self, current: &Self) -> Result<()> {
+        ensure!(self == current, "source partition changed; retry patching");
+        Ok(())
+    }
+}
+
+/// Owned source bytes and the identity of the live partition they came from.
+#[cfg(target_os = "android")]
+pub struct SourceSnapshot {
+    pub bytes: Vec<u8>,
+    identity: SourceIdentity,
+}
+
+#[cfg(target_os = "android")]
+impl SourceSnapshot {
+    pub fn take_bytes(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.bytes)
+    }
+}
+
+#[cfg(target_os = "android")]
+fn read_source(path: &Path) -> Result<(Vec<u8>, PathBuf, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    let resolved = std::fs::canonicalize(path)?;
+    let input = File::open(&resolved)?;
+    let device = input.metadata()?.rdev();
+    let mut bytes = Vec::new();
+    input.take(MAX_IMAGE_SIZE + 1).read_to_end(&mut bytes)?;
+    ensure!(
+        !bytes.is_empty() && bytes.len() as u64 <= MAX_IMAGE_SIZE,
+        "invalid source partition size"
+    );
+    Ok((bytes, resolved, device))
+}
+
+/// Read under the same lock used by flashing and recovery, then patch outside it.
+#[cfg(target_os = "android")]
+pub fn snapshot_source(slot: &str, partition: &str, ota: bool) -> Result<SourceSnapshot> {
+    validate_suffix(slot)?;
+    validate_partition(partition)?;
+    let _lock = FlashLock::acquire()?;
+    reconcile_retry()?;
+    let (bytes, resolved, device) = read_source(&partition_path(partition, slot))?;
+    let digest = sha256::digest(&bytes);
+    Ok(SourceSnapshot {
+        identity: SourceIdentity {
+            slot: slot.into(),
+            partition: partition.into(),
+            ota,
+            boot: current_boot_id()?,
+            resolved,
+            device,
+            size: bytes.len(),
+            digest,
+        },
+        bytes,
+    })
+}
+
+#[cfg(target_os = "android")]
+fn validate_source(source: &SourceSnapshot, slot: &str, partition: &str, ota: bool) -> Result<()> {
+    let (bytes, resolved, device) = read_source(&partition_path(partition, slot))?;
+    source.identity.verify(&current_source_identity(
+        slot,
+        partition,
+        ota,
+        &current_boot_id()?,
+        resolved,
+        device,
+        &bytes,
+    ))?;
+    Ok(())
+}
+
 /// Serializes the complete prepare -> arm -> flash transaction against other
 /// direct flash operations and startup recovery.
 #[cfg(target_os = "android")]
@@ -583,6 +691,7 @@ pub fn flash_transaction<F>(
     slot_suffix: &str,
     target_partition: &str,
     ota: bool,
+    source: &SourceSnapshot,
     bytes: &[u8],
     after_flash: F,
 ) -> Result<()>
@@ -591,6 +700,7 @@ where
 {
     let _lock = FlashLock::acquire()?;
     reconcile_retry()?;
+    validate_source(source, slot_suffix, target_partition, ota)?;
     prepare_unlocked(slot_suffix, target_partition, ota)?;
     arm_unlocked(bytes)?;
     let target = partition_path(target_partition, slot_suffix);
@@ -816,6 +926,28 @@ mod tests {
                 sha256: sha256::digest(b"old!"),
             }],
         }
+    }
+
+    #[test]
+    fn source_identity_accepts_unchanged_and_rejects_mutated_target() {
+        let original = SourceIdentity {
+            slot: "_a".into(),
+            partition: "boot".into(),
+            ota: false,
+            boot: "boot-id".into(),
+            resolved: PathBuf::from("/dev/block/boot_a"),
+            device: 1,
+            size: 4,
+            digest: sha256::digest(b"same"),
+        };
+        let same = original.clone();
+        assert!(original.verify(&same).is_ok());
+        let mut changed = same;
+        changed.digest = sha256::digest(b"new!");
+        assert!(original.verify(&changed).is_err());
+        changed.digest.clone_from(&original.digest);
+        changed.slot = "_b".into();
+        assert!(original.verify(&changed).is_err());
     }
 
     #[test]

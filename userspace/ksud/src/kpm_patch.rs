@@ -12,12 +12,6 @@ use anyhow::{Context, Result, anyhow, bail, ensure};
 
 use crate::assets;
 
-// tmpfs staging paths (never under /data/adb).
-const PATCH_TOOL_BIN: &str = "/dev/.kptd";
-const PATCH_CORE_BIN: &str = "/dev/.kpim";
-const KERNEL_IN: &str = "/dev/.kkin";
-const KERNEL_OUT: &str = "/dev/.kkot";
-
 const XOR_KEY: &[u8] = b"xdcv1";
 
 fn decode(data: &[u8]) -> Vec<u8> {
@@ -28,25 +22,12 @@ fn decode(data: &[u8]) -> Vec<u8> {
 }
 
 /// Stage a bundled (obfuscated) asset into tmpfs.
-fn stage_asset(name: &str, dst: &str) -> Result<()> {
-    if Path::new(dst).exists() {
-        return Ok(());
-    }
+fn stage_asset(name: &str, dst: &Path) -> Result<()> {
     let asset = assets::get_asset(name).with_context(|| format!("asset {name} not bundled"))?;
     let decoded = decode(asset.as_ref().as_ref());
-    fs::write(dst, decoded).with_context(|| format!("failed to write {dst}"))?;
+    fs::write(dst, decoded).with_context(|| format!("failed to write {}", dst.display()))?;
     fs::set_permissions(dst, fs::Permissions::from_mode(0o755))?;
     Ok(())
-}
-
-/// Removes all tmpfs staging files on drop (success or failure).
-struct CleanupGuard;
-impl Drop for CleanupGuard {
-    fn drop(&mut self) {
-        for p in [PATCH_TOOL_BIN, PATCH_CORE_BIN, KERNEL_IN, KERNEL_OUT] {
-            let _ = fs::remove_file(p);
-        }
-    }
 }
 
 #[derive(clap::Args, Debug)]
@@ -70,28 +51,20 @@ pub struct BootPatchKpmArgs {
     pub flash: bool,
 }
 
-/// Read a block device (e.g. /dev/block/by-name/boot) into memory. Block
-/// devices report length 0 via metadata, so use seek-to-end to size the buffer.
-#[cfg(target_os = "android")]
-fn read_block_device(path: &str) -> Result<Vec<u8>> {
-    use std::io::{Read, Seek, SeekFrom};
-    let mut f = std::fs::File::open(path).with_context(|| format!("open {path}"))?;
-    let len = f
-        .seek(SeekFrom::End(0))
-        .with_context(|| format!("seek end of {path}"))? as usize;
-    f.seek(SeekFrom::Start(0))
-        .with_context(|| format!("seek start of {path}"))?;
-    let mut buf = vec![0u8; len];
-    f.read_exact(&mut buf)
-        .with_context(|| format!("read {path}"))?;
-    Ok(buf)
-}
-
 /// In-memory core: patch a boot image (raw bytes) with the KPatch-Next engine.
 /// Returns the repacked boot image bytes. If the image has no kernel block, the
 /// input is returned unchanged.
 pub fn patch_kpm_bytes(boot_data: &[u8]) -> Result<Vec<u8>> {
-    let _guard = CleanupGuard;
+    // A private tmpfs directory prevents concurrent patch calls from sharing
+    // executable/input/output paths or removing each other's staging files.
+    let staging = tempfile::Builder::new()
+        .prefix(".xec-kpm-")
+        .tempdir_in("/dev")?;
+    fs::set_permissions(staging.path(), fs::Permissions::from_mode(0o700))?;
+    let patch_tool = staging.path().join("kptd");
+    let patch_core = staging.path().join("kpim");
+    let kernel_in = staging.path().join("kernel.in");
+    let kernel_out = staging.path().join("kernel.out");
 
     let boot_image = BootImage::parse(boot_data).context("cannot parse boot image")?;
     let Some(kernel) = boot_image.get_blocks().get_kernel() else {
@@ -105,21 +78,19 @@ pub fn patch_kpm_bytes(boot_data: &[u8]) -> Result<Vec<u8>> {
         .dump(&mut raw_kernel, false)
         .context("cannot decompress boot kernel")?;
 
-    stage_asset("kptd", PATCH_TOOL_BIN)?;
-    stage_asset("kpim", PATCH_CORE_BIN)?;
-    fs::write(KERNEL_IN, &raw_kernel).context("cannot stage kernel")?;
+    stage_asset("kptd", &patch_tool)?;
+    stage_asset("kpim", &patch_core)?;
+    fs::write(&kernel_in, &raw_kernel).context("cannot stage kernel")?;
 
     println!("- Patching kernel with KPatch-Next");
-    let status = Command::new(PATCH_TOOL_BIN)
-        .args([
-            "-p",
-            "-i",
-            KERNEL_IN,
-            "-k",
-            PATCH_CORE_BIN,
-            "-o",
-            KERNEL_OUT,
-        ])
+    let status = Command::new(&patch_tool)
+        .arg("-p")
+        .arg("-i")
+        .arg(&kernel_in)
+        .arg("-k")
+        .arg(&patch_core)
+        .arg("-o")
+        .arg(&kernel_out)
         .output()
         .context("cannot run patch tool")?;
     if !status.status.success() {
@@ -129,7 +100,7 @@ pub fn patch_kpm_bytes(boot_data: &[u8]) -> Result<Vec<u8>> {
         );
     }
 
-    let patched_kernel = fs::read(KERNEL_OUT).context("cannot read patched kernel")?;
+    let patched_kernel = fs::read(&kernel_out).context("cannot read patched kernel")?;
 
     println!("- Repacking boot image");
     let mut patcher = BootImagePatchOption::new(&boot_image);
@@ -150,12 +121,12 @@ fn patch_kpm_flash() -> Result<()> {
     let slot = crate::boot_patch::get_slot_suffix(false);
     let partition = format!("/dev/block/by-name/boot{slot}");
     println!("- Patching live boot partition: {partition}");
-    let boot_data = read_block_device(&partition)?;
-    let repacked = patch_kpm_bytes(&boot_data)?;
+    let source = crate::boot_txn::snapshot_source(&slot, "boot", false)?;
+    let repacked = patch_kpm_bytes(&source.bytes)?;
     println!("- Flashing patched boot back to {partition}");
     // Serialize and checkpoint the write so partial flash failures restore only
     // the boot image that this operation targets.
-    crate::boot_txn::flash_transaction(&slot, "boot", false, &repacked, || Ok(()))?;
+    crate::boot_txn::flash_transaction(&slot, "boot", false, &source, &repacked, || Ok(()))?;
     println!("- KPatch-Next embedded successfully. Reboot to take effect.");
     Ok(())
 }

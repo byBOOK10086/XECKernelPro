@@ -734,6 +734,16 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
             Ok,
         )?;
 
+        #[cfg(target_os = "android")]
+        let live_target = if flashes_live_partition {
+            Some((
+                get_slot_suffix(ota),
+                choose_boot_partition(&kmi, is_replace_kernel, &partition),
+            ))
+        } else {
+            None
+        };
+
         let boot_image_file = if let Some(image) = image {
             ensure!(image.exists(), "boot image not found");
             std::fs::canonicalize(image)?
@@ -767,11 +777,31 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
 
         println!("- Preparing assets");
         println!("- Unpacking boot image");
-        let boot_image_data = map_file(&boot_image_file)?;
-        let boot_image = if ramdisk {
-            BootImage::parse_raw_ramdisk(&boot_image_data)?
+        #[cfg(target_os = "android")]
+        let mut source_snapshot = if flash && flashes_live_partition {
+            let (slot, target_partition) = live_target.as_ref().context("missing live target")?;
+            Some(crate::boot_txn::snapshot_source(
+                slot,
+                target_partition,
+                ota,
+            )?)
         } else {
-            BootImage::parse(&boot_image_data)?
+            None
+        };
+        let boot_image_data: Box<dyn AsRef<[u8]>> = {
+            #[cfg(target_os = "android")]
+            if let Some(source) = &mut source_snapshot {
+                Box::new(source.take_bytes())
+            } else {
+                Box::new(map_file(&boot_image_file)?)
+            }
+            #[cfg(not(target_os = "android"))]
+            Box::new(map_file(&boot_image_file)?)
+        };
+        let boot_image = if ramdisk {
+            BootImage::parse_raw_ramdisk(boot_image_data.as_ref().as_ref())?
+        } else {
+            BootImage::parse(boot_image_data.as_ref().as_ref())?
         };
         enforce_bootimage_version(&boot_image)?;
 
@@ -933,12 +963,15 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
             println!("- Flashing new boot image");
             let bootdevice = boot_image_file.display().to_string();
             if flashes_live_partition {
-                let slot_suffix = get_slot_suffix(ota);
-                let target_partition = choose_boot_partition(&kmi, is_replace_kernel, &partition);
+                let (slot_suffix, target_partition) =
+                    live_target.as_ref().context("missing live target")?;
                 crate::boot_txn::flash_transaction(
-                    &slot_suffix,
-                    &target_partition,
+                    slot_suffix,
+                    target_partition,
                     ota,
+                    source_snapshot
+                        .as_ref()
+                        .context("missing live source snapshot")?,
                     &new_boot_bytes,
                     || if ota { post_ota() } else { Ok(()) },
                 )?;
@@ -1059,8 +1092,36 @@ pub fn restore(args: BootRestoreArgs) -> Result<()> {
     println!("- Bootdevice: {}", boot_image_file.display());
 
     println!("- Unpacking boot image");
-    let bootimage_data = map_file(&boot_image_file)?;
-    let boot_image = BootImage::parse(&bootimage_data)?;
+    #[cfg(target_os = "android")]
+    let live_target = if flash && !image_supplied {
+        Some((
+            get_slot_suffix(false),
+            choose_boot_partition(&kmi, false, &None),
+        ))
+    } else {
+        None
+    };
+    #[cfg(target_os = "android")]
+    let mut source_snapshot = if let Some((slot, target_partition)) = &live_target {
+        Some(crate::boot_txn::snapshot_source(
+            slot,
+            target_partition,
+            false,
+        )?)
+    } else {
+        None
+    };
+    let bootimage_data: Box<dyn AsRef<[u8]>> = {
+        #[cfg(target_os = "android")]
+        if let Some(source) = &mut source_snapshot {
+            Box::new(source.take_bytes())
+        } else {
+            Box::new(map_file(&boot_image_file)?)
+        }
+        #[cfg(not(target_os = "android"))]
+        Box::new(map_file(&boot_image_file)?)
+    };
+    let boot_image = BootImage::parse(bootimage_data.as_ref().as_ref())?;
     enforce_bootimage_version(&boot_image)?;
 
     let (mut cpio, vendor_ramdisk_idx) =
@@ -1134,12 +1195,15 @@ pub fn restore(args: BootRestoreArgs) -> Result<()> {
         if image_supplied {
             flash_partition(&bootdevice, &new_boot_bytes)?;
         } else {
-            let slot_suffix = get_slot_suffix(false);
-            let target_partition = choose_boot_partition(&kmi, false, &None);
+            let (slot_suffix, target_partition) =
+                live_target.as_ref().context("missing live target")?;
             crate::boot_txn::flash_transaction(
-                &slot_suffix,
-                &target_partition,
+                slot_suffix,
+                target_partition,
                 false,
+                source_snapshot
+                    .as_ref()
+                    .context("missing live source snapshot")?,
                 &new_boot_bytes,
                 || Ok(()),
             )?;
