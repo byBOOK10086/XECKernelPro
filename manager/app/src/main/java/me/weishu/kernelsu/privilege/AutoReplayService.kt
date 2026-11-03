@@ -19,7 +19,7 @@ import me.weishu.kernelsu.ui.util.rootAvailable
  * 自动重放引擎（⑦）：开机后自动恢复 root 的"准永久"体验。
  *
  * 两条路径按设备形态自动分工：
- *  - 内核已打 kpimg/KPM 的设备：接收器同时拉起的 Magica（app-zygote 预载 exec
+ *  - 内核已打补丁的设备：接收器同时拉起的 Magica（app-zygote 预载 exec
  *    ksud late-load）通常几秒内就把内核模块带起来——本服务先等它（轮询
  *    rootAvailable），等到了就直接收工，不跑漏洞。
  *  - BL 锁定 + 原厂内核的设备：Magica 无从生效（ksud 没有 root，late-load 不了），

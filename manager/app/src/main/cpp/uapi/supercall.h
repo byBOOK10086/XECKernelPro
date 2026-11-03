@@ -264,34 +264,13 @@ struct ksu_get_hook_mode_cmd {
     char mode[16]; // Output: "Tracepoint" / "Kprobes" / "Inline (SUSFS)"
 };
 
-struct ksu_enable_kpm_cmd {
-    __u8 enabled; // Output: true if KPM is enabled
-};
-
-static const __u32 SUKISU_KPM_LOAD = 1;
-static const __u32 SUKISU_KPM_UNLOAD = 2;
-static const __u32 SUKISU_KPM_NUM = 3;
-static const __u32 SUKISU_KPM_LIST = 4;
-static const __u32 SUKISU_KPM_INFO = 5;
-static const __u32 SUKISU_KPM_CONTROL = 6;
-static const __u32 SUKISU_KPM_VERSION = 7;
-
-struct ksu_kpm_cmd {
-    __aligned_u64 control_code;
-    __aligned_u64 arg1;
-    __aligned_u64 arg2;
-    __aligned_u64 result_code;
-};
-
 // Other IOCTL command definitions
 // 98 号：Zygisk Next / ReZygisk 的 root 实现探测命令（对应 ksu_get_hook_mode_cmd）
 static const __u32 KSU_IOCTL_GET_HOOK_MODE = _IOC(_IOC_READ, 'K', 98, 0);
 static const __u32 KSU_IOCTL_GET_FULL_VERSION = _IOC(_IOC_READ, 'K', 100, 0);
 static const __u32 KSU_IOCTL_HOOK_TYPE = _IOC(_IOC_READ, 'K', 101, 0);
-static const __u32 KSU_IOCTL_ENABLE_KPM = _IOC(_IOC_READ, 'K', 102, 0);
 static const __u32 KSU_IOCTL_LIST_TRY_UMOUNT = _IOC(_IOC_READ | _IOC_WRITE, 'K', 103, 0);
 static const __u32 KSU_IOCTL_SET_SPOOF_VERSION = _IOC(_IOC_WRITE, 'K', 104, 0);
-static const __u32 KSU_IOCTL_KPM = _IOC(_IOC_READ | _IOC_WRITE, 'K', 200, 0);
 
 /*
  * XECKernelPro extension (ioctl 110/111, outside the upstream numbering

@@ -136,7 +136,7 @@ fun BottomBarMiuix(
 }
 
 /**
- * 底栏目的地。2026-10-06 收敛为 5 页、2026-10-26 检测页下线后为 4 页：KPM 并入模块页入口卡（[me.weishu.kernelsu.ui.navigation3.Route.Kpm]）、
+ * 底栏目的地。2026-10-06 收敛为 5 页、2026-10-26 检测页下线后为 4 页：
  * 终端并入设置页入口卡（[me.weishu.kernelsu.ui.navigation3.Route.Terminal]）——
  * 底栏只留高频页，低频工具页一律走各自归属页的入口卡。
  */

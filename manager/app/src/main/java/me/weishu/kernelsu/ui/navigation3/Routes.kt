@@ -118,11 +118,6 @@ sealed interface Route : NavKey, Parcelable {
     @Serializable
     data object RemoteAssistant : Route
 
-    /** KPM 管理：原底栏第 4 页，现从模块页入口卡进入（底栏 7 页收敛为 5 页）。 */
-    @Parcelize
-    @Serializable
-    data object Kpm : Route
-
     /** 终端：原底栏第 7 页，现从设置页入口卡进入（底栏 7 页收敛为 5 页）。 */
     @Parcelize
     @Serializable

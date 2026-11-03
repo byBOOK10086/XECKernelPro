@@ -136,7 +136,6 @@ internal fun InstallScreenMiuix(
                             onSelected = actions.onSelectMethod,
                             onDownloadFile = actions.onDownloadFile,
                             onSelectBootImage = actions.onSelectBootImage,
-                            onSelectBootImageForKpm = actions.onSelectBootImageForKpm,
                             onSelectAnyKernel = actions.onSelectAnyKernel,
                             onSelectBootImageForKpatch = actions.onSelectBootImageForKpatch,
                             onSelectBootImageForMagisk = actions.onSelectBootImageForMagisk,
@@ -369,7 +368,6 @@ private fun SelectInstallMethod(
     onSelected: (InstallMethod) -> Unit,
     onDownloadFile: () -> Unit,
     onSelectBootImage: () -> Unit,
-    onSelectBootImageForKpm: () -> Unit,
     onSelectAnyKernel: () -> Unit,
     onSelectBootImageForKpatch: () -> Unit,
     onSelectBootImageForMagisk: () -> Unit,
@@ -390,7 +388,6 @@ private fun SelectInstallMethod(
     val onClick = { option: InstallMethod ->
         when (option) {
             is InstallMethod.SelectFile -> onSelectBootImage()
-            is InstallMethod.SelectFileForKpm -> onSelectBootImageForKpm()
             is InstallMethod.DownloadFile -> onDownloadFile()
             is InstallMethod.AnyKernel -> onSelectAnyKernel()
             is InstallMethod.MagiskPatch -> onSelectBootImageForMagisk()

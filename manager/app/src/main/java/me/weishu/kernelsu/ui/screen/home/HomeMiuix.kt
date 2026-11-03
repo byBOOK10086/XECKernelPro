@@ -471,7 +471,7 @@ private fun StatusCard(
                 // <5.10 内核走 KernelPatch 注入路线（kpimg + ftruncate supercall），
                 // 状态卡模式名换成对应用法；GKI 设备维持 LKM/GKI 口径。
                 // （本管理器不实现 Magisk/APatch 那套模块挂载，模块加载仍由
-                //  KernelSU/KPM 侧负责。）
+                //  KernelSU 侧负责。）
                 // 顺序要紧：HomeViewModel 里 lkmMode 只在 GKI 设备上取值（非 GKI 恒为
                 // null），非 GKI 判断必须排在 lkmMode == null 之前，否则
                 // home_working_kpatch 永远显示不出来。

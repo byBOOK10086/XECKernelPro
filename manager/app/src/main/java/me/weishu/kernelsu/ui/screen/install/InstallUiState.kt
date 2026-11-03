@@ -71,7 +71,6 @@ internal data class InstallScreenActions(
     val onSelectMethod: (InstallMethod) -> Unit,
     val onDownloadFile: () -> Unit,
     val onSelectBootImage: () -> Unit,
-    val onSelectBootImageForKpm: () -> Unit,
     val onSelectAnyKernel: () -> Unit,
     val onSelectBootImageForKpatch: () -> Unit,
     val onSelectBootImageForMagisk: () -> Unit,

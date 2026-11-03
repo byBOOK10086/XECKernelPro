@@ -62,7 +62,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -517,7 +516,6 @@ fun ModulePagerMiuix(
                         showModuleSheet(module)
                     },
                     onOpenHidePack = { navigator.push(Route.HideEnvList) },
-                    onOpenKpm = { navigator.push(Route.Kpm) },
                     contentPadding = PaddingValues(
                         top = 6.dp,
                         start = 0.dp,
@@ -635,8 +633,7 @@ fun ModulePagerMiuix(
                                 showModuleSheet(module)
                             },
                             onOpenHidePack = { navigator.push(Route.HideEnvList) },
-                            onOpenKpm = { navigator.push(Route.Kpm) },
-                            contentPadding = contentPadding,
+                                    contentPadding = contentPadding,
                             listState = listState,
                         )
                     }
@@ -789,7 +786,6 @@ private fun ModuleList(
     onModuleAddShortcut: (Module, ShortcutType) -> Unit,
     onLongPressModule: (Module) -> Unit,
     onOpenHidePack: () -> Unit = {},
-    onOpenKpm: () -> Unit = {},
     contentPadding: PaddingValues,
     listState: LazyListState = rememberLazyListState(),
 ) {
@@ -803,9 +799,6 @@ private fun ModuleList(
     ) {
         item(key = "hide_pack_entry", contentType = "hide_pack") {
             HidePackEntryCard(onClick = onOpenHidePack)
-        }
-        item(key = "kpm_entry", contentType = "kpm_entry") {
-            KpmEntryCard(onClick = onOpenKpm)
         }
         items(
             items = modules,
@@ -949,7 +942,7 @@ fun ModuleItem(
                 // 平台标准语义：纹丝不动按住 longPressTimeout（默认 400ms）弹操作面板；
                 // 指头漂出 touchSlop 则长按取消、父级 HorizontalPager 正常翻页。
                 // 点击仍是打开 WebUI。此前自造 1000ms 计时器与父级同阈竞速，
-                // 微动必输、页面翻到 KPM，长按面板弹不出来。
+                // 微动必输、页面翻走，长按面板弹不出来。
                 interactionSource = cardInteraction,
                 indication = null,
                 onClick = { if (module.hasWebUi) onOpenWebUi() },
@@ -1104,20 +1097,6 @@ private fun HidePackEntryCard(onClick: () -> Unit) {
         icon = Icons.Rounded.VisibilityOff,
         title = stringResource(R.string.hide_one_tap_title),
         subtitle = stringResource(R.string.hide_one_tap_subtitle),
-        onClick = onClick,
-    )
-}
-
-/**
- * KPM 入口卡：原底栏第 4 页（KpmScreen）收敛进模块页后的入口，固定在
- * 「一键隐藏」之下。与模块卡同一套语言（见 [HidePackEntryCard]）。
- */
-@Composable
-private fun KpmEntryCard(onClick: () -> Unit) {
-    ModuleEntryCard(
-        icon = Icons.Rounded.Memory,
-        title = stringResource(R.string.kpm),
-        subtitle = stringResource(R.string.kpm_entry_subtitle),
         onClick = onClick,
     )
 }

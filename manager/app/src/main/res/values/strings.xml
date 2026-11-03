@@ -41,31 +41,12 @@
     <string name="module_failed_to_disable">Failed to disable module: %s</string>
     <string name="module_empty">No module installed</string>
     <string name="module">Module</string>
-    <string name="kpm_empty">No kernel patch module installed</string>
-    <string name="kpm">KPM</string>
-    <string name="kpm_activated">KPM activated</string>
-    <string name="kpm_not_activated">KPM not activated</string>
-    <string name="kpm_not_activated_hint">Enable CONFIG_KPM in your kernel and reboot to use kernel patch modules</string>
-    <string name="kpm_version">KPM version: %s</string>
-    <string name="kpm_flash">Flash KPM module</string>
-    <string name="kpm_antiwipe_title">Anti-wipe module</string>
-    <string name="kpm_antiwipe_summary">Blocks raw writes to critical partitions and removal of system/user data paths by root. The logic lives in the kernel and only exists on XEC kernels; unloading it removes every hook.</string>
-    <string name="kpm_antiwipe_load">Load anti-wipe module</string>
-    <string name="kpm_antiwipe_unload">Unload anti-wipe module</string>
-    <string name="kpm_antiwipe_loaded_toast">Anti-wipe module loaded</string>
-    <string name="kpm_antiwipe_unloaded_toast">Anti-wipe module unloaded</string>
-    <string name="kpm_builtin_load">Load built-in susfs_lite (experimental)</string>
-    <string name="kpm_builtin_hint">Hides /data/adb and /debug_ramdisk from stat-family and faccessat probes for other apps (directory listings are NOT hidden). Same load path as flashing a .kpm; unload with `xudc kpm unload susfs_lite`.</string>
-    <string name="kpm_flash_success">KPM module flashed successfully</string>
-    <string name="kpm_flash_failed">Failed to flash KPM module</string>
-    <string name="kpm_embed">Embed KPM engine</string>
     <!-- One-Tap Hide (Violet Toolbox pack) -->
     <string name="hide_env_title">Hide environments</string>
     <string name="hide_env_violet_title">Violet environment hide</string>
     <string name="hide_env_violet_desc">Violet Toolbox V6.0 · full hidden-environment deploy (modules + apps + keys)</string>
     <string name="hide_one_tap_title">One-Tap Hide</string>
     <string name="hide_one_tap_subtitle">Violet Toolbox · deploy hidden environment</string>
-    <string name="kpm_entry_subtitle">Kernel patch module (KPM) management</string>
     <string name="hide_pack_step_manifest">Fetching resource manifest…</string>
     <string name="hide_pack_step_download">Preparing resource bundle (download / verify)…</string>
     <string name="hide_pack_manifest_fail">Failed to fetch resource manifest: %1$s</string>
@@ -83,7 +64,6 @@
 Aborted — the device was NOT rebooted.</string>
     <string name="hide_pack_back">Go back</string>
 
-    <string name="kpm_embed_hint">Patch the current boot partition with KPatch-Next and flash it back. A reboot is required afterwards — no fastboot needed.</string>
     <string name="module_install_prompt_with_name">The following modules will be installed: %1$s</string>
     <string name="module_sort_action_first">Action first</string>
     <string name="module_sort_enabled_first">Enabled first</string>
@@ -279,8 +259,6 @@ XEC Project Team
     <string name="enable_web_debugging_summary">Can be used to debug WebUI. Please enable only when needed.</string>
     <string name="direct_install">Direct install (Recommended)</string>
     <string name="select_file">Select a file and patch KMI</string>
-    <string name="select_file_kpm">Select a file and patch KPM</string>
-    <string name="select_file_kpm_tip">Patch the boot partition kernel to enable KPM</string>
     <string name="download_file">Download a file and patch</string>
     <string name="download_dialog_title">Enter URL</string>
     <string name="download_dialog_msg">Full OTA image or factory image</string>
@@ -561,7 +539,7 @@ See the log below for details.</string>
 
     <!-- KernelPatch route (<5.10 kernels) -->
     <string name="kernel_patch_install">Kernel patch (kernels below 5.10)</string>
-    <string name="kernel_patch_summary">Patches a boot image with kpimg (KernelPatch); flash the result yourself via fastboot/recovery. Note: the manager only produces the image — it does not implement APatch/Magisk module mounting or a module repository; module loading stays on the KernelSU/KPM side.</string>
+    <string name="kernel_patch_summary">Patches a boot image through the KernelPatch channel; flash the result yourself via fastboot/recovery. Note: the manager only produces the image — it does not implement APatch/Magisk module mounting or a module repository; module loading stays on the KernelSU side.</string>
     <string name="kernel_patch_unavailable">This APK has no bundled kptools payload (the build did not include the KernelPatch binaries), so kernel patching is unavailable.</string>
     <string name="kernel_patch_failed">Kernel patch failed: %1$s</string>
     <string name="kernel_patch_saved">Patched boot image saved. Flash it as the boot partition, then reboot.</string>

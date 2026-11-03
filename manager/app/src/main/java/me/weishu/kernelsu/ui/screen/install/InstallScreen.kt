@@ -110,7 +110,6 @@ fun InstallScreen() {
 
     val selectFileTip = stringResource(id = R.string.select_file_tip, defaultPartition)
     val selectFileTipNoGki = stringResource(id = R.string.select_file_tip_nogki)
-    val selectFileKpmTip = stringResource(id = R.string.select_file_kpm_tip)
     val downloadFileMsg = stringResource(id = R.string.download_dialog_msg)
     val anyKernelTip = stringResource(id = R.string.install_anykernel_tip)
     val kernelPatchTip = stringResource(id = R.string.kernel_patch_summary)
@@ -157,10 +156,9 @@ fun InstallScreen() {
         if (isMountStateDevice && magiskPatchAvailable == false) magiskPatchUnavailableTip else null
     // `isGkiDevice` 必须留在 key 里：探测完成时它从 null 变成 true/false，
     // 下面 SelectFile 的 summary 要跟着从「非 GKI」提示换成 GKI 提示。
-    val installMethodOptions = remember(isAbDevice, isGkiDevice, isMountStateDevice, kpatchAvailable, magiskPatchAvailable, kernelPatchBlockedReason, magiskPatchBlockedReason, selectFileTip, selectFileTipNoGki, selectFileKpmTip, downloadFileMsg, anyKernelTip, kernelPatchTip, magiskPatchTip) {
+    val installMethodOptions = remember(isAbDevice, isGkiDevice, isMountStateDevice, kpatchAvailable, magiskPatchAvailable, kernelPatchBlockedReason, magiskPatchBlockedReason, selectFileTip, selectFileTipNoGki, downloadFileMsg, anyKernelTip, kernelPatchTip, magiskPatchTip) {
         buildList {
             add(InstallMethod.SelectFile(summary = if (isGkiDevice == true) selectFileTip else selectFileTipNoGki))
-            add(InstallMethod.SelectFileForKpm(summary = selectFileKpmTip))
             add(InstallMethod.DownloadFile(summary = downloadFileMsg))
             add(InstallMethod.AnyKernel(summary = anyKernelTip))
             add(InstallMethod.DirectInstall)
@@ -218,9 +216,6 @@ fun InstallScreen() {
                             allowShell = allowShell,
                             enableAdb = enableAdb,
                             backup = forceBackup
-                        )
-                        is InstallMethod.SelectFileForKpm -> FlashIt.FlashBootKpm(
-                            boot = method.uri ?: return@let
                         )
                         is InstallMethod.AnyKernel -> FlashIt.FlashAnyKernel(
                             uri = method.uri ?: return@let
@@ -312,15 +307,6 @@ fun InstallScreen() {
             }
         }
     }
-    val selectKpmImageLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) {
-        if (it.resultCode == Activity.RESULT_OK) {
-            it.data?.data?.let { uri ->
-                installMethod = InstallMethod.SelectFileForKpm(uri, summary = selectFileKpmTip)
-            }
-        }
-    }
     val selectAnyKernelLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) {
@@ -401,9 +387,6 @@ fun InstallScreen() {
         onDownloadFile = { downloadDialogShown = true },
         onSelectBootImage = {
             selectImageLauncher.launch(Intent(Intent.ACTION_GET_CONTENT).apply { type = "application/octet-stream" })
-        },
-        onSelectBootImageForKpm = {
-            selectKpmImageLauncher.launch(Intent(Intent.ACTION_GET_CONTENT).apply { type = "application/octet-stream" })
         },
         onSelectAnyKernel = {
             selectAnyKernelLauncher.launch(Intent(Intent.ACTION_GET_CONTENT).apply { type = "application/zip" })
@@ -522,7 +505,6 @@ fun InstallScreen() {
                     // selection needed.
                     is InstallMethod.DownloadFile -> false
                     is InstallMethod.SelectFile -> true
-                    is InstallMethod.SelectFileForKpm -> false
                     is InstallMethod.AnyKernel -> false
                     else -> isKmiUnknown
                 }

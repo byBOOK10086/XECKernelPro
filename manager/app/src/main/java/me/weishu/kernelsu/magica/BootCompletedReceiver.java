@@ -31,7 +31,7 @@ public class BootCompletedReceiver extends BroadcastReceiver {
         if (!autoJailbreak) return;
         if (KsuCliKt.rootAvailable()) return;
         // 路径一：Magica（app-zygote 预载 exec ksud late-load）——内核已打
-        // kpimg/KPM 的设备的快路。
+        // 补丁的设备的快路。
         try {
             context.startService(new Intent(context, XecMagicaService.class));
             Log.i(TAG, "MagicaService started from boot action: " + action);

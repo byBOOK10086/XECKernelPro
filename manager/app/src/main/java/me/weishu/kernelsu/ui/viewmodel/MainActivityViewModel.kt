@@ -96,7 +96,7 @@ private class MainPageState(
 
 object MainPagerConfig {
     /**
-     * 7 → 5（2026-10-06）：底栏收敛——KPM 并入模块页入口卡、终端并入设置页入口卡，
+     * 7 → 5（2026-10-06）：底栏收敛——终端并入设置页入口卡，
      * 现为 Home / SuperUser / Module / Detect / Setting 五页。
      * 旧版本存过的 selected_main_page=5/6 由 [coercePage] 在读取侧夹回范围。
      */

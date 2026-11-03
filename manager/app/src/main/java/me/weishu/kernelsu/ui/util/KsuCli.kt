@@ -23,7 +23,6 @@ import me.weishu.kernelsu.core.tasks.ExtractImage
 import me.weishu.kernelsu.core.tasks.ProbeResult
 import me.weishu.kernelsu.core.utils.DataSourceChannel
 import me.weishu.kernelsu.ksuApp
-import me.weishu.kernelsu.getKernelVersion
 import me.weishu.kernelsu.mountstate.MagiskRoot
 import okhttp3.OkHttpClient
 import org.json.JSONArray
@@ -212,57 +211,14 @@ private fun flashWithIO(
         }
     }
 
-    // 防格 KPM（antiwipe）已加载时，管理器自己的刷写必须放行；没加载时这条
-    // control 会报错，忽略即可。结束立刻收回窗口，别给第三方脚本留时间。
-    runCatching { execKsud("kpm control $ANTIWIPE_MODULE trust 600", true) }
-
     return try {
         withNewRootShell {
             newJob().add(cmd).to(stdoutCallback, stderrCallback).exec()
         }
     } finally {
-        runCatching { execKsud("kpm control $ANTIWIPE_MODULE trust 0", true) }
+        Unit
     }
 }
-
-/** 防格 KPM 的模块名（antiwipe.kpm 里的 KPM_NAME），也用于 control/unload。 */
-const val ANTIWIPE_MODULE: String = "antiwipe"
-
-/**
- * 载入内置防格模块：assets/kpm/antiwipe.kpm → /data/adb/kpm/ → xudc kpm load。
- *
- * 防格逻辑本身在内核里（XEC 内核专有），这个模块只负责 arm/disarm；不加载它就
- * 等于完全没有拦截，这也是"不会再因为守卫把机器卡进重启循环"的保证。
- */
-fun loadAntiwipeKpm(
-    onStdout: (String) -> Unit,
-    onStderr: (String) -> Unit
-): FlashResult {
-    val asset = "antiwipe.kpm"
-    val present = runCatching { ksuApp.assets.list("kpm") }.getOrNull()?.contains(asset) == true
-    if (!present) {
-        return FlashResult(-1, "antiwipe.kpm missing from assets", false)
-    }
-
-    val file = File(ksuApp.cacheDir, asset)
-    ksuApp.assets.open("kpm/$asset").use { input ->
-        file.outputStream().use { output -> input.copyTo(output) }
-    }
-
-    val dest = "/data/adb/kpm/$asset"
-    val cmd = "mkdir -p /data/adb/kpm && cp ${file.absolutePath} $dest && chmod 0644 $dest && " +
-        "${getKsuDaemonPath()} kpm load $dest"
-    val result = flashWithIO(cmd, onStdout, onStderr)
-    file.delete()
-    return FlashResult(result)
-}
-
-/** 卸载防格模块（同时解除所有 hook）。 */
-fun unloadAntiwipeKpm(): Boolean = execKsud("kpm unload $ANTIWIPE_MODULE", true)
-
-/** 给防格模块开/收放行窗口（秒，0 = 立即收回）。 */
-fun antiwipeTrust(seconds: Int): Boolean =
-    execKsud("kpm control $ANTIWIPE_MODULE trust $seconds", true)
 
 fun flashModule(
     uri: Uri,
@@ -291,85 +247,6 @@ fun flashModule(
 
         return FlashResult(result)
     }
-}
-
-suspend fun kpmVersion(): String = withContext(Dispatchers.IO) {
-    val out = withNewRootShell {
-        newJob().add("${getKsuDaemonPath()} kpm version").to(ArrayList<String>(), null).exec().out
-    }
-    out.firstOrNull()?.trim().orEmpty()
-}
-
-suspend fun kpmList(): String = withContext(Dispatchers.IO) {
-    val out = withNewRootShell {
-        newJob().add("${getKsuDaemonPath()} kpm list").to(ArrayList<String>(), null).exec().out
-    }
-    out.joinToString("\n")
-}
-
-fun flashKpmModule(
-    uri: Uri,
-    onStdout: (String) -> Unit,
-    onStderr: (String) -> Unit
-): FlashResult {
-    val resolver = ksuApp.contentResolver
-    // 保留原始文件名并做一次白名单过滤，避免多个模块都被覆盖成同名文件；
-    // 同时加载的是 /data/adb/kpm 下的全局副本（boot 时也从这里自动加载），
-    // 而不是 app 私有 cache 目录——内核态 filp_open 访问 app_data_file 会受 SELinux 限制。
-    val rawName = uri.getFileName(ksuApp)?.takeIf { it.isNotBlank() } ?: "module.kpm"
-    val safeName = rawName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "module.kpm" }
-    with(resolver.openInputStream(uri)) {
-        val file = File(ksuApp.cacheDir, safeName)
-        file.outputStream().use { output ->
-            this?.copyTo(output)
-        }
-        val dest = "/data/adb/kpm/$safeName"
-        val cmd = "mkdir -p /data/adb/kpm && cp ${file.absolutePath} $dest && ${getKsuDaemonPath()} kpm load $dest"
-        val result = flashWithIO(cmd, onStdout, onStderr)
-        Log.i("XECKernelPro", "flash kpm module $uri result: $result")
-
-        file.delete()
-
-        return FlashResult(result)
-    }
-}
-
-/**
- * 内置 susfs_lite.kpm 装载（③）：从 APK assets/kpm/ 提取到 cacheDir，拷入
- * /data/adb/kpm/ 全局副本（与手动刷 .kpm 完全同一条路，boot 时自动重载），
- * 默认参数 = 管理器自身 uid 可见 + 隐藏 /data/adb 与 /debug_ramdisk 前缀。
- * 样例保持实验性定位：只覆盖 stat 族 + faccessat，getdents64 不隐藏。
- */
-fun flashBuiltinSusfsLite(
-    onStdout: (String) -> Unit,
-    onStderr: (String) -> Unit
-): FlashResult {
-    val safeName = "susfs_lite.kpm"
-    // assets/kpm/ 由 CI（build-xecpro.yml）填充；本地直接 assembleRelease 的
-    // APK 没有这个条目——返回失败而不是抛异常（调用方只认 code）。
-    val present = runCatching { ksuApp.assets.list("kpm") }.getOrNull()
-        ?.contains(safeName) == true
-    if (!present) {
-        return FlashResult(-1, "built-in kpm payload missing from assets", false)
-    }
-    val file = File(ksuApp.cacheDir, safeName)
-    ksuApp.assets.open("kpm/$safeName").use { input ->
-        file.outputStream().use { output ->
-            input.copyTo(output)
-        }
-    }
-    val managerUid = ksuApp.applicationInfo.uid
-    val dest = "/data/adb/kpm/$safeName"
-    val args = "allow_uids=$managerUid;prefix=/data/adb,/debug_ramdisk"
-    val cmd =
-        "mkdir -p /data/adb/kpm && cp ${file.absolutePath} $dest && " +
-            "${getKsuDaemonPath()} kpm load $dest '$args'"
-    val result = flashWithIO(cmd, onStdout, onStderr)
-    Log.i("XECKernelPro", "flash builtin kpm result: $result")
-
-    file.delete()
-
-    return FlashResult(result)
 }
 
 private const val AK3_UPDATER_ENTRY = "META-INF/com/google/android/update-binary"
@@ -602,50 +479,6 @@ fun installBoot(
         install() // install ksud here
     }
     return FlashResult(result, showReboot)
-}
-
-fun installBootKpm(
-    bootUri: Uri,
-    onStdout: (String) -> Unit,
-    onStderr: (String) -> Unit,
-): FlashResult {
-    val resolver = ksuApp.contentResolver
-    val bootFile = with(resolver.openInputStream(bootUri)) {
-        val file = File(ksuApp.cacheDir, "kpm-boot.img")
-        file.outputStream().use { output -> this?.copyTo(output) }
-        file
-    }
-
-    val downloadsDir =
-        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-    val outFile = File(downloadsDir, "XECKernelPro_KPM_patched_${System.currentTimeMillis()}.img")
-    val cmd = "${getKsuDaemonPath()} boot-patch-kpm -b ${bootFile.absolutePath} -o ${outFile.absolutePath} --force"
-    val result = flashWithIO(cmd, onStdout, onStderr)
-    Log.i("XECKernelPro", "install kpm result: ${result.isSuccess}")
-
-    bootFile.delete()
-    return FlashResult(result)
-}
-
-fun embedKpm(
-    onStdout: (String) -> Unit,
-    onStderr: (String) -> Unit,
-): FlashResult {
-    // 一键嵌入：对当前 boot 分区直接打 KPatch-Next 补丁并写回，无需外部 boot 文件或 fastboot。
-    // 但 kpimg 只服务 5.10 以下（非 GKI）内核：GKI 设备上已经有内置 KSU 与 LKM 两条
-    // 受支持的安装路线，拿 kpimg 覆盖 boot 分区等于顶掉一个可用的安装。ksud 侧
-    // （kpm_patch.rs 的 ensure_non_gki_kernel）也会再拦一次，这里先给出一句人话。
-    val kernelVersion = runCatching { getKernelVersion() }.getOrNull()
-    if (kernelVersion != null && kernelVersion.isGKI()) {
-        val msg = "KernelPatch embedding only supports non-GKI kernels below 5.10 " +
-                "(running kernel $kernelVersion); use the built-in KSU GKI kernel or the LKM route instead."
-        onStderr(msg)
-        return FlashResult(-1, msg, false)
-    }
-    val cmd = "${getKsuDaemonPath()} boot-patch-kpm --flash"
-    val result = flashWithIO(cmd, onStdout, onStderr)
-    Log.i("XECKernelPro", "embed kpm result: ${result.isSuccess}")
-    return FlashResult(result)
 }
 
 fun downloadBoot(

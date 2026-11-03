@@ -96,7 +96,6 @@ import me.weishu.kernelsu.ui.screen.flash.FlashScreen
 import me.weishu.kernelsu.ui.screen.home.HomePager
 import me.weishu.kernelsu.ui.screen.hidepack.HideEnvListScreen
 import me.weishu.kernelsu.ui.screen.hidepack.OneTapHideScreen
-import me.weishu.kernelsu.ui.screen.kpm.KpmScreen
 import me.weishu.kernelsu.ui.screen.remote.RemoteAssistantScreen
 import me.weishu.kernelsu.ui.screen.terminal.TerminalScreen
 import me.weishu.kernelsu.ui.screen.tools.ToolsScreen
@@ -375,7 +374,6 @@ open class MainActivity : ComponentActivity() {
                                             entry<Route.HideEnvList> { HideEnvListScreen() }
                                             entry<Route.OneTapHide> { OneTapHideScreen() }
                                             entry<Route.RemoteAssistant> { RemoteAssistantScreen() }
-                                            entry<Route.Kpm> { KpmScreen() }
                                             entry<Route.Terminal> { TerminalScreen() }
                                             entry<Route.Tools> { ToolsScreen() }
                                             entry<Route.Privilege> { key -> PrivilegeScreen(key.updateMode) }
