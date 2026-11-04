@@ -187,9 +187,12 @@ int escape_with_root_profile(void)
     // https://github.com/torvalds/linux/commit/905ae01c4ae2ae3df05bb141801b1db4b7d83c61#diff-ff6060da281bd9ef3f24e17b77a9b0b5b2ed2d7208bb69b29107bee69732bd31
     // on older kernels, per-UID process accounting lives in user_struct.
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 14, 0)
-    if (set_cred_ucounts(cred)) {
+    // Keep the failure: abort_creds() with ret still 0 reads as success to
+    // all three callers. set_cred_ucounts() returns -EAGAIN when its ucounts
+    // allocation fails, so propagate that instead of losing it.
+    ret = set_cred_ucounts(cred);
+    if (ret)
         goto out_abort_creds;
-    }
 #endif
 
     memcpy(&cred->cap_effective, &profile->capabilities.effective, sizeof(cred->cap_effective));
@@ -201,7 +204,16 @@ int escape_with_root_profile(void)
     }
 
     setup_groups(profile, cred);
-    setup_selinux(profile->selinux_domain, cred);
+
+    /*
+     * Committing without the requested SELinux domain would hand back uid 0
+     * with all caps while the process is still in untrusted_app, the broken
+     * state the comments above refuse to produce. setup_selinux() reports the
+     * translabel error now, so abort the prepared creds and propagate it.
+     */
+    ret = setup_selinux(profile->selinux_domain, cred);
+    if (ret)
+        goto out_abort_creds;
 
     commit_creds(cred);
 
@@ -234,7 +246,13 @@ void escape_to_root_for_init(void)
         return;
     }
 
-    setup_selinux(KERNEL_SU_CONTEXT, cred);
+    // Same rule as escape_with_root_profile(): never commit a cred whose
+    // domain did not change. For init the uid is 0 either way, so keeping the
+    // old creds is a strictly safer failure mode than a half-done escape.
+    if (setup_selinux(KERNEL_SU_CONTEXT, cred)) {
+        abort_creds(cred);
+        return;
+    }
     commit_creds(cred);
 }
 

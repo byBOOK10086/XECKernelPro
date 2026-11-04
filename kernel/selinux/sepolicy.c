@@ -659,72 +659,94 @@ void *ksu_kvrealloc_compat(const void *p, size_t oldsize, size_t newsize, gfp_t 
 static bool add_type(struct policydb *db, const char *type_name, bool attr)
 {
     struct type_datum *type = symtab_search(&db->p_types, type_name);
+    struct ebitmap *new_type_attr_map_array;
+    struct type_datum **new_type_val_to_struct;
+    char **new_val_to_name_types;
+    char *key;
+    u32 value;
+    int i;
+
     if (type) {
         pr_warn("Type %s already exists\n", type_name);
         return true;
     }
 
-    u32 value = ++db->p_types.nprim;
     type = (struct type_datum *)kzalloc(sizeof(struct type_datum), GFP_KERNEL);
     if (!type) {
         pr_err("add_type: alloc type_datum failed.\n");
         return false;
     }
 
+    value = db->p_types.nprim + 1;
     type->primary = 1;
     type->value = value;
     type->attribute = attr;
 
-    char *key = kstrdup(type_name, GFP_KERNEL);
+    key = kstrdup(type_name, GFP_KERNEL);
     if (!key) {
         pr_err("add_type: alloc key failed.\n");
-        return false;
+        goto out_free_type;
     }
 
-    if (symtab_insert(&db->p_types, key, type)) {
-        pr_err("add_type: insert symtab failed.\n");
-        return false;
-    }
-
-    struct ebitmap *new_type_attr_map_array =
-        ksu_kvrealloc(db->type_attr_map_array, value * sizeof(struct ebitmap), (value - 1) * sizeof(struct ebitmap));
-
+    /*
+     * Insert into the symtab last and bump nprim after every fallible step:
+     * a type that is already reachable through p_types while the value-indexed
+     * arrays are still too small is not just a leak, it makes the next
+     * add_typeattribute_raw() index type_attr_map_array[type->value - 1] out
+     * of bounds. Conversely kvrealloc() frees the old buffer when it succeeds,
+     * so a successful realloc must be published even if a later one fails,
+     * or db->type_* would keep pointing at freed memory.
+     */
+    new_type_attr_map_array =
+        ksu_kvrealloc(db->type_attr_map_array, value * sizeof(struct ebitmap),
+                      (value - 1) * sizeof(struct ebitmap));
     if (!new_type_attr_map_array) {
         pr_err("add_type: alloc type_attr_map_array failed\n");
-        return false;
+        goto out_free_key;
     }
+    db->type_attr_map_array = new_type_attr_map_array;
 
-    struct type_datum **new_type_val_to_struct = ksu_kvrealloc(
+    new_type_val_to_struct = ksu_kvrealloc(
         db->type_val_to_struct, sizeof(*db->type_val_to_struct) * value, sizeof(*db->type_val_to_struct) * (value - 1));
-
     if (!new_type_val_to_struct) {
         pr_err("add_type: alloc type_val_to_struct failed\n");
-        return false;
+        goto out_free_key;
     }
+    db->type_val_to_struct = new_type_val_to_struct;
 
-    char **new_val_to_name_types =
+    new_val_to_name_types =
         ksu_kvrealloc(db->sym_val_to_name[SYM_TYPES], sizeof(char *) * value, sizeof(char *) * (value - 1));
     if (!new_val_to_name_types) {
         pr_err("add_type: alloc val_to_name failed\n");
-        return false;
+        goto out_free_key;
+    }
+    db->sym_val_to_name[SYM_TYPES] = new_val_to_name_types;
+
+    if (symtab_insert(&db->p_types, key, type)) {
+        pr_err("add_type: insert symtab failed.\n");
+        goto out_free_key;
     }
 
-    db->type_attr_map_array = new_type_attr_map_array;
+    // The type is visible from here on; nothing below can fail.
+    db->p_types.nprim = value;
+
     ebitmap_init(&db->type_attr_map_array[value - 1]);
     ebitmap_set_bit(&db->type_attr_map_array[value - 1], value - 1, 1);
 
-    db->type_val_to_struct = new_type_val_to_struct;
     db->type_val_to_struct[value - 1] = type;
-
-    db->sym_val_to_name[SYM_TYPES] = new_val_to_name_types;
     db->sym_val_to_name[SYM_TYPES][value - 1] = key;
 
-    int i;
     for (i = 0; i < db->p_roles.nprim; ++i) {
         ebitmap_set_bit(&db->role_val_to_struct[i]->types, value - 1, 1);
     }
 
     return true;
+
+out_free_key:
+    kfree(key);
+out_free_type:
+    kfree(type);
+    return false;
 }
 
 static bool set_type_state(struct policydb *db, const char *type_name, bool permissive)

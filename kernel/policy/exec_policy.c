@@ -82,25 +82,36 @@ static bool token_matches(const char *cmd, const char *rule)
 bool ksu_exec_policy_allows_argv(uid_t uid, const char __user *const __user *argv_user)
 {
     char command[KSU_EXEC_POLICY_PATH];
+    struct exec_policy_entry *entry;
+    bool restricted;
     bool allowed = false;
     int i;
 
     if (!argv_user)
         return false;
 
+    /*
+     * Phase A: under RCU, snapshot only whether this uid is restricted. The
+     * argv walk further down copies from user memory, and a page fault there
+     * can sleep -- illegal inside an RCU read-side critical section (RCU
+     * stall on non-preemptible RCU, which is what GKI android12-5.10 builds).
+     * Keep this section free of anything that may fault or block.
+     */
     rcu_read_lock();
-    struct exec_policy_entry *entry = lookup_entry(uid);
-    if (!entry || !entry->restricted || entry->count == 0) {
-        rcu_read_unlock();
-        // Not restricted at all: caller should not have asked.
+    entry = lookup_entry(uid);
+    restricted = entry && entry->restricted && entry->count > 0;
+    rcu_read_unlock();
+
+    // Not restricted at all: caller should not have asked.
+    if (!restricted)
         return true;
-    }
 
     /*
-     * Walk up to 8 argv slots: skip argv[0] and any option ("-c", "-mm",
-     * ...). The first non-option slot is the command string; take its first
-     * whitespace-delimited token. No non-option slot found (interactive su)
-     * => denied, and argv read errors => denied (fail closed).
+     * Phase B, with no lock held: walk up to 8 argv slots, skip argv[0] and
+     * any option ("-c", "-mm", ...). The first non-option slot is the command
+     * string; take its first whitespace-delimited token. No non-option slot
+     * found (interactive su) => denied, and argv read errors => denied (fail
+     * closed).
      */
     command[0] = '\0';
     for (i = 0; i < 8; i++) {
@@ -134,6 +145,17 @@ bool ksu_exec_policy_allows_argv(uid_t uid, const char __user *const __user *arg
         break;
     }
 
+    /*
+     * Phase C: the entry may have been replaced while phase B slept, so look
+     * the uid up again and decide against the current policy. A uid that is
+     * no longer restricted is allowed, mirroring the phase A early return.
+     */
+    rcu_read_lock();
+    entry = lookup_entry(uid);
+    if (!entry || !entry->restricted || entry->count == 0) {
+        rcu_read_unlock();
+        return true;
+    }
     if (command[0]) {
         u32 k;
         for (k = 0; k < entry->count && k < KSU_EXEC_POLICY_MAX; k++) {
@@ -160,7 +182,7 @@ static void free_entry_rcu(struct rcu_head *rcu)
 int ksu_exec_policy_set(const void __user *arg)
 {
     struct ksu_exec_policy_cmd cmd;
-    struct exec_policy_entry *entry, *old;
+    struct exec_policy_entry *entry = NULL, *old;
     u32 i;
 
     if (copy_from_user(&cmd, arg, sizeof(cmd)))
@@ -182,6 +204,23 @@ int ksu_exec_policy_set(const void __user *arg)
     if (cmd.count > KSU_EXEC_POLICY_MAX)
         return -EINVAL;
 
+    /*
+     * Allocate the replacement before touching the hash table. The old entry
+     * must stay linked until the new one is ready: unlinking it first would
+     * fail open, because an allocation failure would leave the uid with no
+     * entry at all -- which readers treat as "unrestricted".
+     */
+    if (cmd.restricted && cmd.count > 0) {
+        entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+        if (!entry)
+            return -ENOMEM;
+        entry->uid = cmd.uid;
+        entry->restricted = true;
+        entry->count = cmd.count;
+        for (i = 0; i < cmd.count; i++)
+            copy_path_row((u8 *)entry->paths[i], cmd.paths[i]);
+    }
+
     mutex_lock(&policy_lock);
     old = lookup_entry(cmd.uid);
     if (old) {
@@ -189,17 +228,7 @@ int ksu_exec_policy_set(const void __user *arg)
         call_rcu(&old->rcu, free_entry_rcu);
     }
 
-    if (cmd.restricted && cmd.count > 0) {
-        entry = kzalloc(sizeof(*entry), GFP_KERNEL);
-        if (!entry) {
-            mutex_unlock(&policy_lock);
-            return -ENOMEM;
-        }
-        entry->uid = cmd.uid;
-        entry->restricted = true;
-        entry->count = cmd.count;
-        for (i = 0; i < cmd.count; i++)
-            copy_path_row((u8 *)entry->paths[i], cmd.paths[i]);
+    if (entry) {
         hash_add_rcu(policy_ht, &entry->node, cmd.uid);
         pr_info("exec_policy: uid %u restricted to %u command(s)\n", cmd.uid, cmd.count);
     } else {

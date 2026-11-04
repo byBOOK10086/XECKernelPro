@@ -316,8 +316,24 @@ static loff_t ksu_wrapper_remap_file_range(struct file *file_in, loff_t pos_in, 
         struct file *orig = data->orig;
         return orig->f_op->remap_file_range(file_in, pos_in, orig, pos_out, len, remap_flags);
     } else {
-        struct ksu_file_wrapper *data = file_in->private_data;
-        struct file *orig = data->orig;
+        struct ksu_file_wrapper *data;
+        struct file *orig;
+
+        /*
+         * file_in is not necessarily one of our wrappers: the VFS picks the
+         * callback from file_out's f_op, and clone/reflink accepts any file as
+         * the source. An ordinary file's private_data belongs to its
+         * filesystem (usually NULL), so casting it to struct ksu_file_wrapper
+         * * and reading ->orig dereferences a wild pointer. Wrapper f_ops are
+         * per-instance copies, so the stable identity is the callback they
+         * install: a wrapper whose original supports remapping always routes
+         * ->remap_file_range here.
+         */
+        if (file_in->f_op->remap_file_range != ksu_wrapper_remap_file_range)
+            return -EXDEV;
+
+        data = file_in->private_data;
+        orig = data->orig;
         return orig->f_op->remap_file_range(orig, pos_in, file_out, pos_out, len, remap_flags);
     }
 }

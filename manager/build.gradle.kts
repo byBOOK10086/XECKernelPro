@@ -33,7 +33,11 @@ fun getVersionCode(): Int {
     val commitCount = getGitCommitCount()
     // 30000 基数随旧仓库（byBOOK10086/xecpro）废弃：新仓库提交数从 1 重新起算，
     // 基数改为 31000 以保证首版 v31001 大于旧仓库最后一个版本 v30153。
-    return 31000 + commitCount
+    //
+    // ×10：把个位数留给构建变体（debug 占 +1，见 app/build.gradle.kts 的
+    // onVariants）。这样 debug 件才能和正式版互相覆盖安装而不必卸载丢数据，
+    // 同时 debug 永远低于下一个正式版。历史上发出去的版本码都不受影响地单调递增。
+    return (31000 + commitCount) * 10
 }
 
 fun getVersionName(): String {

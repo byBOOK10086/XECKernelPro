@@ -26,7 +26,10 @@ u32 ksu_file_sid __read_mostly = 0;
 
 static int transive_to_domain(const char *domain, struct cred *cred, bool clear_exec_sid)
 {
-    u32 sid;
+    /* security_secctx_to_secid() leaves *sid untouched on failure, and the
+     * error path below logs it; a zero-initialised value keeps uninitialised
+     * stack content out of dmesg (and out of KMSAN's reports). */
+    u32 sid = 0;
     int error;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 18, 0)
     struct task_security_struct *tsec;
@@ -54,12 +57,15 @@ static int transive_to_domain(const char *domain, struct cred *cred, bool clear_
     return error;
 }
 
-void setup_selinux(const char *domain, struct cred *cred)
+int setup_selinux(const char *domain, struct cred *cred)
 {
-    if (transive_to_domain(domain, cred, false)) {
+    int ret = transive_to_domain(domain, cred, false);
+
+    if (ret) {
         pr_err("transive domain failed.\n");
-        return;
+        return ret;
     }
+    return 0;
 }
 
 void setup_ksu_cred(void)

@@ -184,6 +184,19 @@ androidComponents {
     onVariants(selector().withBuildType("release")) {
         it.packaging.resources.excludes.addAll(listOf("META-INF/**", "kotlin/**", "**.bin"))
     }
+    // Debug 与 release 同 applicationId、同一次构建，versionCode 会撞在一起：装了 debug
+    // 之后就再也装不回**同一个提交**的正式版（PackageManager 拒绝同码覆盖），用户只能
+    // 卸载——数据全丢，正好是"用同一把钥匙签名以便覆盖安装"想避免的事。
+    //
+    // 所以把正式版码放大十倍、debug 占 +1：debug 永远落在相邻两个正式版之间，既能被
+    // 当前正式版覆盖，也能被下一个正式版覆盖。绝对不要改成 +1000 之类的加法偏移——那会
+    // 让 debug 高过下一个正式版，反过来把正式版堵死。
+    onVariants { variant ->
+        val offset = if (variant.buildType == "debug") 1 else 0
+        variant.outputs.forEach { output ->
+            output.versionCode.set(managerVersionCode + offset)
+        }
+    }
 }
 
 base {

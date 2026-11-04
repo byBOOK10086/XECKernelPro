@@ -225,7 +225,11 @@ struct kp_su_task_work {
 static void kp_su_task_work_fn(struct callback_head *cb)
 {
 	struct kp_su_task_work *w = container_of(cb, struct kp_su_task_work, cb);
-	int rc = commit_common_su(w->to_uid, w->sctx);
+	/* An empty scontext means the default all-allow domain: kp_commit_su()
+	 * already maps it to the magisk domain (as KP initializes
+	 * all_allow_sctx), so both su channels must agree here. */
+	const char *sctx = w->sctx[0] ? w->sctx : ALL_ALLOW_SCONTEXT_MAGISK;
+	int rc = commit_common_su(w->to_uid, sctx);
 
 	if (rc) {
 		/* Cross-task su must never fall back to kernel creds. The target is a

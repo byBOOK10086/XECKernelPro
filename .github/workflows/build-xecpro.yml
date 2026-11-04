@@ -314,11 +314,14 @@ jobs:
           KEY_PASSWORD: ${{ secrets.SIGN_KEY_PASS }}
         run: |
           set -euo pipefail
+          # 这个 job 有 defaults.run.working-directory: ./manager，所以 run 里的相对
+          # 路径都是相对 manager/ 的；而 upload-artifact 的 path 相对的是工作区根，
+          # 两者差一层，别照抄。
           BT="$(ls -d "${ANDROID_HOME}"/build-tools/* 2>/dev/null | sort -V | tail -n 1)"
           [ -n "$BT" ] || { echo "::error::no build-tools under ${ANDROID_HOME}"; exit 1; }
-          IN="$(find manager/app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' | head -n 1)"
+          IN="$(find app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' | head -n 1)"
           [ -n "$IN" ] || { echo "::error::no debug apk produced"; exit 1; }
-          OUT="manager/app/build/outputs/apk/debug/XECKernelPro-debug-signed.apk"
+          OUT="app/build/outputs/apk/debug/XECKernelPro-debug-TESTONLY-signed.apk"
           echo "signing $IN -> $OUT"
           "${BT}/zipalign" -f -p 4 "$IN" "${OUT}.aligned"
           "${BT}/apksigner" sign \
@@ -328,7 +331,7 @@ jobs:
           "${BT}/apksigner" verify "$OUT"
           # 未签名原件别跟着上传，否则产物里两个同名 APK 分不清哪个能装。
           rm -f "$IN" "${OUT}.aligned"
-          ls -la manager/app/build/outputs/apk/debug/
+          ls -la app/build/outputs/apk/debug/
 
       - name: Upload gradle artifact
         uses: actions/upload-artifact@v7
@@ -341,6 +344,25 @@ jobs:
         with:
           name: manager-debug
           path: manager/app/build/outputs/apk/debug/*.apk
+
+      # debug 件与正式版同包名、同签名、可双向覆盖，而 debug buildType 默认
+      # debuggable=true：任何拿到这个包的人插上电脑，adb run-as 就能进 app uid 读
+      # 私有数据（superkey 存储、策略缓存）。这是 debug 构建的固有属性，但它现在披着
+      # 正式签名、能平滑盖掉正式版，边界比以前模糊，所以必须写明。
+      - name: Note that the debug APK is test-only
+        shell: bash
+        run: |
+          {
+            echo '### Debug APK — TEST DEVICES ONLY'
+            echo ''
+            echo '`manager-debug` is a **debuggable** build signed with the brand key.'
+            echo 'It can be installed over the release app and vice versa.'
+            echo 'Because it is debuggable, an `adb` session can `run-as` into the app'
+            echo 'uid and read private data (superkey storage, policy caches).'
+            echo ''
+            echo 'Use it on test devices only. Do not use it as a daily driver and do'
+            echo 'not redistribute it.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   repack:
     needs: [build-manager, build-ksud, generate-key]
