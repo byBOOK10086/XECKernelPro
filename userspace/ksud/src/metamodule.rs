@@ -4,7 +4,7 @@
 //! Metamodules are special modules that manage how regular modules are mounted
 //! and provide hooks for module installation/uninstallation.
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, anyhow, ensure};
 use log::{info, warn};
 use std::{
     collections::HashMap,
