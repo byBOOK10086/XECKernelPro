@@ -1,7 +1,11 @@
 # 修改版（GPL-3.0 §5(a)）：本文件由 XECKernel Pro 修改，非上游原样；改动清单与日期见
 # 同目录 NOTICE.md「本地修改」。上游：Enginex0/tricky-addon-enhanced（GPL-3.0）。
 MODPATH=${0%/*}
-TS="/dev/.xudc_hidden/tricky_store"
+# 2026-11-05 本地修改：内置引擎改回随管理器分发，安装位置是正常的
+# /data/adb/modules/tricky_store，不再是当年那个隐藏的 /dev/.xudc_hidden 布局。
+# 这个变量是下面判「TrickyStore 在不在」的唯一依据，指错就会在第 33 行把自己标记
+# 成 remove（下次开机被 prune 删掉），所以必须跟着新的安装位置走。
+TS="/data/adb/modules/tricky_store"
 LOG_BASE_DIR="/data/adb/.xudc_secure/ta-enhanced/logs"
 BOOT_LOG="$LOG_BASE_DIR/boot.log"
 
@@ -18,8 +22,8 @@ _pfd_log() {
 
 _pfd_log "post-fs-data started"
 
-# Wait for the built-in TrickyStore engine dir. Built-in modules are
-# materialized under /dev/.xudc_hidden BEFORE this stage runs, so this
+# Wait for the TrickyStore module dir. It is installed by the manager itself
+# (ksud builtin installer) in the same boot, before this stage runs, so this
 # normally returns immediately; short cap just in case.
 _wait_count=0
 while [ ! -d "$TS" ]; do

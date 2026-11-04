@@ -50,9 +50,16 @@ label_data_path() {
     return 0
 }
 
+# 2026-11-05 本地修改：内置引擎现在自己就装在 /data/adb/modules/tricky_store，
+# 不再是隐藏目录里的那份。所以「外部模块占位」的判定必须排除 $MODPATH，否则它会把
+# 自己当成外部 TrickyStore、直接 stand down，引擎永远不启动（原来的隐藏布局下这个
+# 判定成立，因为内置引擎跑在 /dev/.xudc_hidden 里）。
+SELF_DIR="${MODPATH%/}"
+
 external_engine_active() {
     local dir
     for dir in /data/adb/modules/tricky_store /data/adb/modules/.tricky_store; do
+        [ "$dir" = "$SELF_DIR" ] && continue
         [ -f "$dir/module.prop" ] || continue
         [ -f "$dir/disable" ] && continue
         [ -f "$dir/remove" ] && continue
@@ -68,12 +75,7 @@ label_data_path "$RUNTIME"
 
 # Any active external module owns the same injection surface. Do not start a
 # second engine or overwrite its files.
-if [ -f /data/adb/modules/tricky_store/module.prop ] && \
-   [ ! -f /data/adb/modules/tricky_store/disable ] && \
-   [ ! -f /data/adb/modules/tricky_store/remove ] || \
-   [ -f /data/adb/modules/.tricky_store/module.prop ] && \
-   [ ! -f /data/adb/modules/.tricky_store/disable ] && \
-   [ ! -f /data/adb/modules/.tricky_store/remove ]; then
+if external_engine_active; then
     log_line "INFO builtin TEERS stand down: external module directory is present"
     exit 0
 fi
