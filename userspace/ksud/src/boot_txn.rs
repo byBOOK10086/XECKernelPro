@@ -199,9 +199,7 @@ fn parse_state(data: &str) -> Result<BootTxn> {
         .context("boot transaction version missing")?;
     let legacy_v1 = version == STATE_VERSION_V1;
     ensure!(
-        version == STATE_VERSION
-            || legacy_v1
-            || version == STATE_VERSION_V2,
+        version == STATE_VERSION || legacy_v1 || version == STATE_VERSION_V2,
         "unsupported boot transaction version: {version}"
     );
     let phase = Phase::parse(

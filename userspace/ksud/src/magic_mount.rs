@@ -130,7 +130,12 @@ mod imp {
         /// 每个分支都以 `Ok(())` 结尾是刻意的：这里做的是**副作用**（挂载/建目录），
         /// 把尾表达式提出来反而看不出每个分支各自成功/跳过的语义，故显式放行该 lint。
         #[allow(clippy::branches_sharing_code)]
-        fn commit(&mut self, paths: &Paths, is_root_dir: bool) -> Result<()> {
+        fn commit(
+            &mut self,
+            paths: &Paths,
+            is_root_dir: bool,
+            mounted: &mut Vec<PathBuf>,
+        ) -> Result<()> {
             match self {
                 Self::Directory { children } => {
                     let mut need_tmpfs = false;
@@ -168,9 +173,13 @@ mod imp {
                             )
                         })?;
                         info!("magic mount: {} <- tmpfs(worker)", paths.real.display());
+                        // 只有真正落到真实树上的 bind 才进 try-umount 表：worker 里的
+                        // staging 叶子（mirror/replace/module -> worker）不算挂载点，
+                        // 它们随这棵递归 bind 一起走。
+                        mounted.push(paths.real.clone());
                     } else {
                         for (name, node) in children.iter_mut() {
-                            node.commit(&paths.join(name), false)?;
+                            node.commit(&paths.join(name), false, mounted)?;
                         }
                     }
                     Ok(())
@@ -180,6 +189,7 @@ mod imp {
                         format!("mount {} <- {}", paths.real.display(), src.display())
                     })?;
                     info!("magic mount: {} <- {}", paths.real.display(), src.display());
+                    mounted.push(paths.real.clone());
                     Ok(())
                 }
                 Self::Symlink { .. } | Self::Whiteout => {
@@ -416,7 +426,18 @@ mod imp {
         }
     }
 
-    /// 挂载所有启用模块。返回参与挂载的模块名（按处理顺序）。
+    /// 一次 magic mount 的结果。
+    ///
+    /// `mount_points` 是**真实树上的挂载点**，必须逐个登记进内核的 try-umount 表：
+    /// 内核的 `kernel_umount` 在 setuid 时只遍历那张表（`kernel/feature/kernel_umount.c`），
+    /// 表空就等于"非 root 应用的卸载逻辑认为没有任何模块被挂载"。内置兜底路径没有
+    /// metamodule 脚本替我们登记，所以只能在这里自己交出来。
+    pub struct MountOutcome {
+        pub modules: Vec<String>,
+        pub mount_points: Vec<PathBuf>,
+    }
+
+    /// 挂载所有启用模块：返回参与挂载的模块名（按处理顺序）与真实树上的挂载点。
     ///
     /// `work_root` 必须在 tmpfs 上（默认 `/dev/.xecpro_magic`）。
     ///
@@ -424,8 +445,9 @@ mod imp {
     ///
     /// 模块目录读不了、worker 目录建不出来、或任一次 bind/mount 系统调用失败时返回错误；
     /// 单个模块内部的问题（读不到的条目等）只跳过并记日志，不影响其它模块。
-    pub fn mount_modules(work_root: &Path) -> Result<Vec<String>> {
+    pub fn mount_modules(work_root: &Path) -> Result<MountOutcome> {
         let mut modules = Vec::new();
+        let mut mount_points = Vec::new();
         let mut root = FsNode::new_dir();
 
         crate::module::foreach_module(crate::module::ModuleType::Active, |module_dir| {
@@ -444,7 +466,10 @@ mod imp {
 
         if modules.is_empty() {
             info!("magic mount: 没有启用中的模块");
-            return Ok(modules);
+            return Ok(MountOutcome {
+                modules,
+                mount_points,
+            });
         }
 
         // 模块把文件放在 system/vendor/... 时，若 /vendor 是独立分区要挪到根上。
@@ -484,13 +509,16 @@ mod imp {
             real: PathBuf::from("/"),
             worker: work_root.to_path_buf(),
         };
-        root.commit(&paths, true)?;
-        Ok(modules)
+        root.commit(&paths, true, &mut mount_points)?;
+        Ok(MountOutcome {
+            modules,
+            mount_points,
+        })
     }
 }
 
 #[cfg(target_os = "android")]
-pub use imp::mount_modules;
+pub use imp::{MountOutcome, mount_modules};
 
 /// 调试/内部入口：`xudc magic-mount [--work DIR] [--dry-run]`。
 ///
@@ -518,14 +546,18 @@ pub fn cli_magic_mount(work: Option<PathBuf>, dry_run: bool) -> Result<()> {
             println!("worker: {}", work_root.display());
             return Ok(());
         }
-        let mounted = imp::mount_modules(&work_root)?;
+        let outcome = imp::mount_modules(&work_root)?;
         println!(
-            "magic mount 完成：{} 个模块，worker={}",
-            mounted.len(),
+            "magic mount 完成：{} 个模块，{} 个挂载点，worker={}",
+            outcome.modules.len(),
+            outcome.mount_points.len(),
             work_root.display()
         );
-        for name in mounted {
+        for name in outcome.modules {
             println!("  - {name}");
+        }
+        for point in outcome.mount_points {
+            println!("  挂载点 {point:?}（需登记 try-umount）");
         }
         Ok(())
     }
