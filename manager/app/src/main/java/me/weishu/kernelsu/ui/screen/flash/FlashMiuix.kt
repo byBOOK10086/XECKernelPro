@@ -24,6 +24,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -91,7 +92,27 @@ fun FlashScreenMiuix(
                 )
             },
             floatingActionButton = {
-                if (state.showRebootAction) {
+                if (state.showStuckBootTxn) {
+                    // 事务卡住时刷写闸门是永久关的，必须给一个显式的解除动作。
+                    FloatingActionButton(
+                        modifier = Modifier
+                            .padding(
+                                bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+                                end = 20.dp,
+                            )
+                            .border(0.05.dp, colorScheme.error.copy(alpha = 0.6f), CircleShape),
+                        onClick = actions.onClearStuckBootTxn,
+                        shadowElevation = 0.dp,
+                        content = {
+                            Icon(
+                                Icons.Rounded.Delete,
+                                stringResource(id = R.string.flash_boot_txn_clear),
+                                Modifier.size(40.dp),
+                                tint = colorScheme.onPrimary,
+                            )
+                        },
+                    )
+                } else if (state.showRebootAction) {
                     val reboot = stringResource(id = state.rebootLabelRes)
                     FloatingActionButton(
                         modifier = Modifier

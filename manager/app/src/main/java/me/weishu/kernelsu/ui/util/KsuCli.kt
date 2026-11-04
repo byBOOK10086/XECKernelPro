@@ -218,6 +218,12 @@ private fun flashWithIO(
     }
 }
 
+/**
+ * 清掉 ksud 侧卡住的引导事务。刷写被 "a boot transaction is already pending"
+ * 拒绝时，这是唯一的用户侧逃生门（等价于 `xudc boot-txn clear`）。
+ */
+fun clearStuckBootTxn(): Boolean = execKsud("boot-txn clear", true)
+
 fun flashModule(
     uri: Uri,
     onStdout: (String) -> Unit,

@@ -1039,4 +1039,7 @@ See the log below for details.</string>
     <string name="store_source_reset">Use built-in</string>
     <string name="store_notice_source_saved">Catalog source saved</string>
     <string name="store_notice_source_reset">Back to the built-in catalog</string>
+    <string name="flash_boot_txn_clear">Clear stuck boot transaction</string>
+    <string name="flash_boot_txn_cleared">Boot transaction cleared</string>
+    <string name="flash_boot_txn_clear_failed">Failed to clear the boot transaction</string>
 </resources>

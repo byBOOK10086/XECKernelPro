@@ -1041,4 +1041,7 @@ XEC 项目组
     <string name="store_source_reset">恢复内置</string>
     <string name="store_notice_source_saved">数据源已保存</string>
     <string name="store_notice_source_reset">已恢复内置数据源</string>
+    <string name="flash_boot_txn_clear">清除卡住的引导事务</string>
+    <string name="flash_boot_txn_cleared">引导事务已清除</string>
+    <string name="flash_boot_txn_clear_failed">清除引导事务失败</string>
 </resources>
