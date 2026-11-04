@@ -259,13 +259,31 @@ pub fn on_services() {
 }
 
 pub fn on_boot_completed() {
+    run_boot_completed(true);
+}
+
+/// 软重启（`stop` → `start`）收尾用的入口：**不碰引导事务**。
+///
+/// 软重启不换 boot_id，`sys.boot_completed` 也不会回到 0，而且 zygote 这时候多半
+/// 还没起来——这三条正好把 `commit_boot_success()` 的双条件判死。硬按真重启那条路
+/// 走，commit 会失败、函数提前 return，于是 UAPI 校验、`report_boot_complete` 和
+/// 模块的 boot-completed 脚本全被跳过，软重启就"看着成功、实际什么都没做"。
+/// 引导事务本来就是用来确认"真重启之后新镜像起得来"的，软重启既没有新镜像、也没有
+/// 新的 boot_id，不该参与这个判定。
+pub fn on_boot_completed_soft() {
+    run_boot_completed(false);
+}
+
+fn run_boot_completed(commit_boot_txn: bool) {
     // 挂载态没有内核驱动：boot 事务与 UAPI 校验都跳过，但 boot-completed 阶段
     // 脚本必须照跑（模块靠它收尾）。
     let mount_state = utils::is_mount_state();
     if !mount_state {
-        if let Err(e) = crate::boot_txn::commit_boot_success() {
-            error!("boot transaction commit failed: {e:#}; refusing boot-completed stages");
-            return;
+        if commit_boot_txn {
+            if let Err(e) = crate::boot_txn::commit_boot_success() {
+                error!("boot transaction commit failed: {e:#}; refusing boot-completed stages");
+                return;
+            }
         }
 
         if let Err(e) = ksucalls::ensure_uapi_version_matched() {

@@ -20,7 +20,7 @@ use rustix::{
 
 use crate::{
     assets, defs,
-    init_event::{on_boot_completed, on_post_fs_data, on_services, run_stage},
+    init_event::{on_boot_completed_soft, on_post_fs_data, on_services, run_stage},
     ksucalls,
     module::ScriptWait,
     utils::{self, switch_mnt_ns},
@@ -217,7 +217,7 @@ pub fn soft_reboot() -> Result<()> {
     if let Err(e) = wait_for_boot_completed() {
         warn!("wait for boot completed failed: {e}");
     }
-    on_boot_completed();
+    on_boot_completed_soft();
 
     unsafe {
         _exit(0);
