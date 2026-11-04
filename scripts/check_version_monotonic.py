@@ -42,25 +42,39 @@ def read_version_code(path: pathlib.Path) -> int | None:
     return None
 
 
+def _git(root: pathlib.Path, *args: str) -> str:
+    return subprocess.run(
+        ['git', *args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
 def tagged_version_codes(root: pathlib.Path) -> tuple[dict[int, str], str | None]:
-    """Return every `v<code>-*` tag's code -> tag name, plus an error string on failure."""
+    """Return every `v<code>-*` tag's code -> tag name, plus an error string on failure.
+
+    Tags pointing at the current commit are excluded on purpose: publishing a
+    release creates `v<code>-<sha>` on the commit that is already checked out,
+    and that tag's code *is* the one in version.properties. Counting it would
+    make every tag-triggered run fail the "must strictly increase" rule, which is
+    exactly what happened the first time this guard shipped.
+    """
     try:
-        out = subprocess.run(
-            ['git', 'tag', '--list'],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout
+        listed = _git(root, 'tag', '--list')
+        at_head = set(_git(root, 'tag', '--points-at', 'HEAD').split())
     except (OSError, subprocess.CalledProcessError) as exc:
         return {}, str(exc)
 
     codes: dict[int, str] = {}
-    for tag in out.splitlines():
-        m = TAG_RE.match(tag.strip())
+    for tag in listed.splitlines():
+        name = tag.strip()
+        if not name or name in at_head:
+            continue
+        m = TAG_RE.match(name)
         if m:
-            code = int(m.group(1))
-            codes[code] = tag.strip()
+            codes[int(m.group(1))] = name
     return codes, None
 
 
