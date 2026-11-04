@@ -7,9 +7,12 @@
 //! runs them from the very first boot after an xudc update.
 //!
 //! This is deliberately *not* the removed encrypted store: no blob under
-//! `/data/adb/ksu/cfg`, no `/dev/.xudc_hidden` runtime dir, no repair/status
-//! JSON. The installed module is a plain module directory the user can inspect,
-//! disable or edit like any other module.
+//! `/data/adb/ksu/cfg` and no repair/status JSON. `/dev/.xudc_hidden` is not used
+//! for the module trees either — note that the TA_enhanced payload still keeps a
+//! live `/dev/.xudc_hidden/bootparams` overlay of its own (see `bootstate.rs`),
+//! which is unrelated to how the module gets installed. The installed module is a
+//! plain module directory the user can inspect, disable or edit like any other
+//! module.
 
 use anyhow::{Context, Result, anyhow, ensure};
 use log::{debug, info, warn};

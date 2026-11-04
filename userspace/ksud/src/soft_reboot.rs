@@ -143,7 +143,11 @@ fn wait_for_boot_completed() -> Result<()> {
     sys_prop::init().context("Failed to initialize system property API")?;
     let rp = resetprop();
     info!("waiting for boot complete");
-    rp.wait("sys.boot_completed", Some("0"), None)
+    // 第三参是超时。原来是 None，而 `wait(.., Some("0"), ..)` 的语义是**阻塞到属性
+    // 等于 "0"**：软重启并不会把 sys.boot_completed 归零，于是这里会无限等下去，
+    // 调用方的 warn 容错（`if let Err(e) = wait_for_boot_completed()`）根本轮不到执行，
+    // 整个软重启 daemon 就挂死在这儿。给个上限，超时由调用方降级处理即可。
+    rp.wait("sys.boot_completed", Some("0"), Some(Duration::from_secs(30)))
         .context("wait for sys.boot_completed failed")?;
     Ok(())
 }
