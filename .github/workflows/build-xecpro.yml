@@ -304,6 +304,32 @@ jobs:
             -PKSU_PACKAGE_NAME=${{ env.BRAND_PACKAGE }} \
             -PKSU_NAME=${{ env.BRAND_NAME }}
 
+      # 本工程没有 debug signingConfig，Gradle 出的 debug 件是**未签名**的，装不上。
+      # 而且必须用与正式版同一个 key 签：签名不同的包无法覆盖安装，用户得先卸载、
+      # 数据全丢。所以这里直接用 brand keystore 走 zipalign + apksigner。
+      - name: Sign the debug APK with the brand key
+        shell: bash
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.SIGN_STORE_PASS }}
+          KEY_PASSWORD: ${{ secrets.SIGN_KEY_PASS }}
+        run: |
+          set -euo pipefail
+          BT="$(ls -d "${ANDROID_HOME}"/build-tools/* 2>/dev/null | sort -V | tail -n 1)"
+          [ -n "$BT" ] || { echo "::error::no build-tools under ${ANDROID_HOME}"; exit 1; }
+          IN="$(find manager/app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' | head -n 1)"
+          [ -n "$IN" ] || { echo "::error::no debug apk produced"; exit 1; }
+          OUT="manager/app/build/outputs/apk/debug/XECKernelPro-debug-signed.apk"
+          echo "signing $IN -> $OUT"
+          "${BT}/zipalign" -f -p 4 "$IN" "${OUT}.aligned"
+          "${BT}/apksigner" sign \
+            --ks xecpro-key.jks --ks-key-alias xecpro-key \
+            --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD \
+            --out "$OUT" "${OUT}.aligned"
+          "${BT}/apksigner" verify "$OUT"
+          # 未签名原件别跟着上传，否则产物里两个同名 APK 分不清哪个能装。
+          rm -f "$IN" "${OUT}.aligned"
+          ls -la manager/app/build/outputs/apk/debug/
+
       - name: Upload gradle artifact
         uses: actions/upload-artifact@v7
         with:
