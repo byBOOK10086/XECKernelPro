@@ -23,8 +23,9 @@ on:
         # 语义化版本（SemVer）：v主.次.修订[-alpha.N|-beta.N|-rc.N]。
         # MAJOR=不向后兼容的 API/行为变更；MINOR=向后兼容的新功能；PATCH=向后兼容的修复。
         # 含 alpha/beta/rc 预发布段的 tag 自动标记 GitHub Pre-Release；干净版本=正式 Release。
-        # 内部 versionCode（31000+提交数）与 APK 文件名尾部的 _<versionCode> 不受影响——
-        # 那仍是管理器"检查更新"的版本比较依据，SemVer 只作用于 tag 与发布通道。
+        # 内部 versionCode（仓库根 version.properties，唯一真源）与 APK 文件名尾部的
+        # <versionCode> 不受影响——那仍是管理器"检查更新"的版本比较依据，SemVer 只作用于
+        # tag 与发布通道。
         description: 'SemVer 版本号（发版用，如 2.0.0 / 2.1.0-rc.1）。留空=沿用 v<版本号>-<短哈希>'
         type: string
         required: false
@@ -55,6 +56,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # 版本号护栏要拿 version.properties 跟仓库里所有 v<码>-* 标签比对，
+          # 浅克隆只有 1 个提交、也没有 tag，护栏会静默失效。
+          fetch-depth: 0
+          fetch-tags: true
+
+      # 公开版本码只许前进。它曾经从提交数推导：从 kpm-integration(346 提交) 切到
+      # fresh-main(279 提交) 时，31346 倒退成 31279，装了 31346 的用户永远收不到更新。
+      - name: Public version code moves forward only
+        run: python3 scripts/check_version_monotonic.py
 
       # Reverse guard: the KernelPatch module-loading plane was removed on
       # 2026-11-04. This fails the build if any of it (or its payloads) comes
@@ -684,7 +695,13 @@ jobs:
             echo "tag_name=v$SEMVER" >> "$GITHUB_OUTPUT"
             if is_pre "$SEMVER"; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; fi
           else
-            VCODE=$((31000 + $(git rev-list --count HEAD)))
+            # 版本码不认识提交数：单一真源是仓库根的 version.properties。
+            # 从提交数推过一次（31000+count），切分支时把公开版本号从 31346 倒退成 31279，
+            # 已安装的用户永远收不到更新；所以这里也直接读文件，读不到就失败。
+            VCODE=$(sed -n 's/^versionCode[[:space:]]*=[[:space:]]*//p' version.properties | head -n 1)
+            if ! printf '%s' "$VCODE" | grep -Eq '^[0-9]+$'; then
+              echo "::error::version.properties 里没有合法的 versionCode（读到 '$VCODE'）"; exit 1
+            fi
             SHA=$(git rev-parse --short=8 HEAD)
             echo "tag_name=v${VCODE}-${SHA}" >> "$GITHUB_OUTPUT"
           fi
