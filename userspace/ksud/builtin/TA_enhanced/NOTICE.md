@@ -46,27 +46,6 @@ vbhash 提取功能由源码构建的 ta-enhanced 守护进程（`rust/src/vbhas
   `/data/adb/.xudc_secure`、二进制 staging 到 `/data` 后运行）。
 - **2026-10-07**：`service.sh` 增加 keybox 自动拉取配置下发（yurikey、3 分钟周期）、
   开机后维护任务的超时上限；`common/common.sh` 增加 `resetprop` 解析阶梯。
-- **2026-10-15（用户可选 + 不再删用户的模块）**：
-  1) 内置 TA 从"开机必然运行"改成**用户可选**：开关落在
-     `/data/adb/.xudc_secure/builtin.conf`（`ta=1`），由管理器「检测」页或
-     `ksud builtin enable|disable ta` 维护，**默认关闭**；关闭时 ksud 既不解密本模块
-     进 tmpfs，也不执行任何阶段脚本，运行目录同时被清掉。`post-fs-data.sh` /
-     `service.sh` 各自再复查一次开关，`common/keybox.sh` 的 keybox 看护与
-     `common/bootstate.sh` 的回锁看护在下一次 tick 看到 `ta=0` 后自行退出。
-  2) 新增 `service.sh --stop`：`ksud builtin disable ta` 会调用它——按可执行文件路径
-     收掉 staging 到 `/data` 的 `ta-enhanced` daemon 与其子进程，并按 `$MODPATH`
-     收掉本模块的后台看护子 shell。**绝不再碰 `/data/adb/modules` 下的任何目录**。
-  3) **修掉"用户刷入的 TA_enhanced 重启后消失"**的两条自毁路径：
-     - `post-fs-data.sh` 过去在找不到 TrickyStore 时 `rm -rf /data/adb/modules/TA_enhanced`
-       再建一个带 `remove` 的目录（Magisk 隐藏模块形态），或者 `touch "$MODPATH/remove"`
-       —— 两条路都会让模块从管理器的列表里消失。现在只记日志：没有可用 TEE 引擎时
-       继续做回锁属性部分，keybox/名单维护跳过。
-     - `service.sh` 的"Magisk Module Hiding"过去只看 `action.sh` 在不在，而 KernelSU /
-       APatch 的模块同样有 `action.sh`，于是内核态设备上它会把自己拷成
-       `/data/adb/modules/.TA_enhanced` 再删掉可见目录。现在隐藏只在
-       `MANAGER=MAGISK` **且**脚本确实从 `/data/adb/modules/` 下执行时才做。
-  4) 用户自己刷了 TA_enhanced 时内置那份主动让位（`builtin_external_ta_active`）：
-     两个 daemon 同时改 keybox/target/回锁属性只会互相覆盖。
 - **2026-10-08**：`common/common.sh` 的 `resetprop` 兜底重写为四级阶梯（绝对路径
   `/data/adb/ksu/bin/resetprop` → PATH → `resetprop-rs` → 只读包装），并把 `-w/--wait`
   改为自实现的 getprop 轮询（此前缺 `-w` 的档位会把 `resetprop -w sys.boot_completed 0`
@@ -118,71 +97,6 @@ vbhash 提取功能由源码构建的 ta-enhanced 守护进程（`rust/src/vbhas
   锁态 + vbmeta + 身份三组属性并复核（判定只看"ZeroMount 生效且窗口未打开"，
   不依赖跨进程传递的标记）；`bootstate_verify` 相应改为"窗口未关则推迟"，
   `post-fs-data.sh` 的计数行打印 `DEFERRED (ZeroMount mount window)`。
-- **2026-10-08（boot_hash 读取的静默失效：`od` 重复行折叠）**：`common/bootstate.sh`
-  读引擎落盘的 `boot_hash.bin` 时改为 `od -v`，并在读到 `*` 或失败时回退 `hexdump -v`。
-  原因：`od`（GNU / toybox / busybox 都是这个行为）默认把**重复行折叠成一行 `*`**，
-  32 字节全同的哈希会被读成 `abab…ab*`，于是 `^[a-f0-9]{64}$` 校验不过、属性回写被
-  **静默跳过**——检测方 `getprop ro.boot.vbmeta.digest` 与证书里的 `VerifiedBootHash`
-  对不上，就会被判成"证书链由模块生成"。这是本次"检测到 TrickyStore 或类似模块"
-  修复里同源的第一环（第二环见 tricky_store/NOTICE.md 的 `consistency.sh`）。
-
-- **2026-10-12（"bootloader 已锁定，但密钥认证仍报未知根证书"：可信级别口径改为链末根）**：
-  新增 `common/keybox_roots.txt`（Google 证明根证书指纹表），`common/keybox.sh` 的
-  `kb_trust_level` 从"链里含 Google **中间**证书"改为"**链末**证书是已知 Google 根"，
-  并新增 `kb_root_hashes` / `kb_trust_hits` / `kb_write_root_status`。
-  1. **为什么改口径**：设备上的验机工具（内置的 `wu.keyChain.test`）判的是链末那张证书
-     ——反编译 `assets/util.dex` 可见 `identifyRootCertificateType()` 把链末证书的公钥与
-     硬编码常量 `GOOGLE_ROOT_PUBLIC_KEY` / `GOOGLE_RKP_ROOT_PUBLIC_KEY` /
-     `AOSP_ROOT_EC_PUBLIC_KEY` / `AOSP_ROOT_RSA_PUBLIC_KEY` /
-     `KNOX_SAKV1|SAKV2|SAKMV1_ROOT_PUBLIC_KEY` 逐一比对，对不上就是 `UNKNOWN_ROOT`
-     （界面"未知根证书 —— 根证书不是已知可信的证书颁发机构"）。它**不**看中间证书。
-     旧口径把"中间证书已轮换的可信箱"和"链末是自签根/软件根"混成同一个"级别 1"，
-     于是前者被误判、后者没人管。改后：级别 0 = 每条带证书的链的链末都命中根表。
-     （已核对：出厂 yurikey 盒子的根 SPKI sha256 = `feb2ea75…`，与验机工具里那份
-     `GOOGLE_ROOT_PUBLIC_KEY` 常量逐字节相同。）
-  2. **为什么会出现"已锁定 + 未知根证书"并存**：链是**能签**的——`ta-enhanced keybox
-     generate`（自签 `CN=Android Keybox`，DeviceID="sw"）、TA WebUI 的 AOSP 按钮
-     （`common/.default`）、vendor 自己的第三方源（`rust/src/keybox/sources.rs` 的
-     upstream=`KOWX712/…/.extra`、integritybox=`MeowDump/…/ShockWave.tar`）都能提供
-     "有私钥、能签叶证书"的箱子。引擎用它们签出来的链，RootOfTrust 是伪造过的
-     （所以 bootloader 行是"已锁定"），但根不是 Google 的（所以根证书行是"未知"）。
-     `keybox/mod.rs::build_source_order` 的兜底顺序是 yurikey→upstream→integritybox→custom，
-     所以只要我们给的 URL 失败一次，vendor 就可能装进第三方箱子。
-  3. **修复**：级别 1（链末非 Google 根）时，看护循环/开机流程立刻用"上次可信副本"
-     （`KB_GOOD`）或模块内置副本顶回去；vendor 拉回的箱子**不再因为 DeviceID 里的
-     代次更高就被采纳**（代次只是个字符串，谁都写得出来，而根骗不了检测方）；
-     `service.sh` 把 vendor 的 `upstream` / `integritybox` 源改回本项目可信源；
-     结论写入 `/data/adb/tricky_store/.keybox_root`（`google|other|missing|unknown 命中/总数`）
-     供管理器"检测"页的「根证书」一行直接展示。
-  4. **兼容性**：`kb_cert_hashes` 由"多字符 RS 的 awk"改为逐行状态机——POSIX awk 只
-     规定 RS 是单字符，toybox/busybox awk 上多字符 RS 会把整份输入当成一条记录，
-     导致指纹永远不命中、级别永远判成 1 这类**静默降级**。
-     `kb_check_live` 里"级别 1 只提示不处置"的旧行为已删除（它正是靠"中间证书轮换也
-     会表现为级别 1"这条推断写下的，改口径后该推断不再成立）。
-  5. **第三方源可用性的实测结论（2026-10-12 离线复核，脚本见交接文档）**：vendor 的
-     `fetch_upstream()` 指向 KOWX712 的 `.extra`，实测 **HTTP 404**；
-     `fetch_integritybox()` 指向 MeowDump 的 `ShockWave.tar`，按 vendor 自己的解码链
-     （base64 ×10 → hex → rot13 → 去 5 个过滤词）解出来是 **`NICE TRY DIDDY`** 的占位
-     内容，不是 keybox（`validate::validate` 会拒）。也就是说：**"链末不是 Google 根"
-     的实时副本不可能来自这两个源**，剩下的现实来源只有两个都由本项目/本模块 UI 触发：
-     - TA WebUI 的「未知」按钮 → `ta-enhanced keybox generate`：自签 `CN=Android Keybox`，
-       DeviceID=`sw`，EC 只有 1 张证书、RSA 连证书都没有（`kb_trust_level` 直接判级别 2：
-       连"≥2 张证书"的结构底线都不到）；
-     - TA WebUI 的「AOSP」按钮 → `common/.default`（同一份 AOSP 软件认证箱子，
-       DeviceID 也是 `sw`，每把钥匙 2 张证书：叶 + AOSP 软件根）。
-     两者都会被验机工具判成"非 Google 硬件根"（前者 UNKNOWN_ROOT、后者
-     AOSP_SOFTWARE_ROOT），而链都能签 —— 这正是"bootloader 已锁定 + 未知根证书"的来源。
-  6. **两个按钮的文案改为如实描述**（`webui/locales/strings/{zh-CN,en}.xml`）：
-     菜单项改成「AOSP（软件根）」「未知（自签根）」，并把成功提示改成
-     "检测方会报「软件认证根证书」/「未知根证书」……本项目开机会把非 Google 根的密钥
-     换回内置可信副本"。原因：旧文案「未知」+「成功设置未知密钥」只说了"未知"两个字，
-     用户看不出这一步的后果，而它恰好制造了本次故障的形态。WebUI 直接 fetch
-     `locales/strings/<lang>.xml`（`assets/index-migrated.min.js::dl/xi`，无版本缓存），
-     所以改文案不需要动 `locales/version`。
-  7. **看护窗口从 15s 压到 ≤1s**：`kb_guardian_loop` 每秒比对实时副本内容指纹，一变就
-     复核 + 重写 `.keybox_root`。起因：vendor 的 daemon 自带 keybox 任务
-     （`keybox.enabled` / `keybox.interval` 默认 180s）会**直接写实时路径**，而检测方
-     可能一两秒后就来取证；只按 15s 周期巡检会留下"能签链、根不认"的窗口。
 
 许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
 一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。

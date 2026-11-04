@@ -133,16 +133,14 @@ class KeyMintSecurityLevelInterceptor(
             val keyDescriptor =
                 data.readTypedObject(KeyDescriptor.CREATOR)
                     ?: return TransactionResult.SkipTransaction
-            // The alias now names the imported key, so every cached artefact of the key that was
-            // stored there before the import - software key material, the cached KeyEntryResponse and
-            // the patched chain - describes a key that no longer exists. Evicting only the generated
-            // key left the cached response behind, and the Keystore2 interceptor then answered later
-            // getKeyEntry calls with the pre-import generated chain and its ORIGIN=GENERATED
-            // authorizations: the "stale generated after import" narrative an overwrite probe looks
-            // for. Drop the whole entry instead; the imported chain is cached fresh below when it is
-            // worth patching.
+            // Evict generated key data but retain patched chains so detectors
+            // can't use importKey to force unpatched getKeyEntry responses.
             val keyId = KeyIdentifier(callingUid, keyDescriptor.alias)
-            cleanupKeyData(keyId)
+            if (generatedKeys.remove(keyId) != null) {
+                SystemLogger.debug("Remove generated key on importKey $keyId")
+                GeneratedKeyPersistence.delete(keyId)
+            }
+            attestationKeys.remove(keyId)
             importedKeys.add(keyId)
             SystemLogger.trace { "[TRACE-$txId] post-importKey $keyId: added to importedKeys, skipUid=${ConfigurationManager.shouldSkipUid(callingUid)}" }
 
@@ -990,39 +988,7 @@ class KeyMintSecurityLevelInterceptor(
                 ?.value
         }
 
-        /**
-         * Resolves a `Domain.KEY_ID` namespace back to the key it names. Software keys keep the
-         * namespace this interceptor assigned; hardware keys keep the namespace the real service
-         * reported in the metadata it returned, which is the one the framework reuses for later
-         * `Domain.KEY_ID` calls.
-         */
-        fun findKeyIdentifierByNspace(nspace: Long): KeyIdentifier? {
-            if (nspace == 0L) return null
-            generatedKeys.entries.firstOrNull { it.value.nspace == nspace }?.let { return it.key }
-            return teeResponses.entries
-                .firstOrNull { it.value.metadata?.key?.nspace == nspace }
-                ?.key
-        }
-
         fun getPatchedChain(keyId: KeyIdentifier): Array<Certificate>? = patchedChains[keyId]
-
-        /**
-         * Forgets the certificate narrative cached for a key whose certificate or chain the platform
-         * has just replaced - an `importKey` or an `updateSubcomponent` naming that key.
-         *
-         * The chain in question was issued for the key that used to live under the alias, so serving
-         * it for the replacement key reports a certificate that no longer exists. Key material is
-         * deliberately left alone here: a software key stays usable, only the stale certificate and
-         * the stale response around it are dropped.
-         */
-        fun forgetCachedChain(keyId: KeyIdentifier) {
-            if (teeResponses.remove(keyId) != null) {
-                SystemLogger.debug("Remove cached response for ${keyId}")
-            }
-            if (patchedChains.remove(keyId) != null) {
-                SystemLogger.debug("Remove patched chain for ${keyId}")
-            }
-        }
 
         fun isAttestationKey(keyId: KeyIdentifier): Boolean = attestationKeys.contains(keyId)
 
@@ -1154,7 +1120,6 @@ private fun KeyMintAttestation.toAuthorizations(
     // Omitting it (as this list used to) left the characteristics inconsistent with the forged
     // certificate; and for keys that came back from the hardware the characteristics carry the
     // *real* unlocked boot state, which is exactly what boot-state detectors read.
-    // Note: this list is re-ordered by tag before it is returned — see the end of this function.
     authList.add(
         createAuth(
             Tag.ROOT_OF_TRUST,
@@ -1193,14 +1158,5 @@ private fun KeyMintAttestation.toAuthorizations(
 
     authList.add(createSwAuth(Tag.USER_ID, KeyParameterValue.integer(callingUid / 100000)))
 
-    // Real KeyMint walks an *ordered* authorization list when it serialises characteristics or
-    // the attestation extension, so every tag shows up in ascending order (RootOfTrust 704 sits
-    // between Origin 702 and OsVersion 705). Building this list by hand put 704 after the patch
-    // levels (718/719), and "authorizations are not in hardware order" is exactly one of the
-    // fingerprints that module-detectors look for — the bundled 密钥认证 checker ships a
-    // `checkTagOrderMisordered()` for it. Emit both security levels sorted by tag instead;
-    // grouping (TEE entries first, then software-level ones) is preserved.
-    val teeLevel = authList.filter { it.securityLevel == securityLevel }.sortedBy { it.keyParameter.tag }
-    val softwareLevel = authList.filter { it.securityLevel != securityLevel }.sortedBy { it.keyParameter.tag }
-    return (teeLevel + softwareLevel).toTypedArray()
+    return authList.toTypedArray()
 }

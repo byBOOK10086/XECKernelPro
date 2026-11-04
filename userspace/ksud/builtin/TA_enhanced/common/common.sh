@@ -89,57 +89,6 @@ TS_DIR="/data/adb/.xudc_secure"
 # Unified log directory -- shell and Rust daemon both log here
 LOG_BASE_DIR="/data/adb/.xudc_secure/ta-enhanced/logs"
 
-# ---------------------------------------------------------------------------
-# 用户开关（管理器「检测」页 / `ksud builtin enable|disable ta`）
-# ---------------------------------------------------------------------------
-# 2026-10-15 用户裁决：内置 TA 与内置 TEE 一样，从"开机必然运行"改成**用户可选**；
-# 2026-10-16 追加裁决：v31121 那版最正常 ⇒ 默认值改回"开"（缺文件 = 开），只有显式关闭
-# 才关。两个开关仍然互相独立，ksud 在开机时按开关决定要不要把本模块解密进 tmpfs；
-# 这里复查一次是为了运行期被关掉的情况：常驻看护循环必须随之停下，
-# 否则用户关了它、下一轮它又把自己拉起来。
-BUILTIN_FLAG="/data/adb/.xudc_secure/builtin.conf"
-builtin_flag_on() {
-    # 外部模块形态（用户自己刷进来的 zip，MODPATH 在 /data/adb/modules 下）
-    # 不受"内置开关"约束：刷了就是要它跑。
-    case "${MODPATH:-}" in /data/adb/modules/*) return 0 ;; esac
-    # 内置形态：**缺文件 / 缺键 = 开启**（v31121 的行为），只有明确的 0/false/off/no 才算关闭。
-    [ -f "$BUILTIN_FLAG" ] || return 0
-    grep -qiE "^[[:space:]]*$1[[:space:]]*=[[:space:]]*(0|false|off|no|disable|disabled)[[:space:]]*$" \
-        "$BUILTIN_FLAG" 2>/dev/null && return 1
-    return 0
-}
-
-# 用户自己刷入的 TA_enhanced 模块在不在位？
-#
-# 两个 daemon 会同时改 keybox / target.txt / 回锁属性，表现为互相覆盖、日志各写一半。
-# 判据：/data/adb/modules 下有同名模块目录，而且**当前脚本不是从那里执行的**
-#（外部那份自己当然要继续跑）。
-builtin_external_ta_active() {
-    local _d _self="${MODPATH:-${MODDIR:-}}"
-    for _d in /data/adb/modules/TA_enhanced /data/adb/modules/.TA_enhanced; do
-        [ -f "$_d/module.prop" ] || continue
-        [ -f "$_d/disable" ] && continue
-        [ -f "$_d/remove" ] && continue
-        [ -n "$_self" ] && [ "$_self" = "$_d" ] && return 1
-        return 0
-    done
-    return 1
-}
-
-# TEE 引擎在不在位（本项目的 tmpfs 运行目录，或用户自己装的上游模块）。
-# TA 的 keybox / target 维护是给引擎用的；一个引擎都没有时启动它只会空转，
-# 还会在 /data/adb/tricky_store 下写出没人读的文件。
-builtin_tee_present() {
-    [ -d "$TS" ] && return 0
-    local _d
-    for _d in /data/adb/modules/tricky_store /data/adb/modules/.tricky_store \
-              /data/adb/modules/TEESimulator; do
-        [ -f "$_d/module.prop" ] && [ ! -f "$_d/disable" ] && [ ! -f "$_d/remove" ] && return 0
-    done
-    [ -d /data/adb/tricky_store ] && [ -f /data/adb/tricky_store/keybox.xml ] && return 0
-    return 1
-}
-
 # Simple Logger
 # Writes to log file + logcat tag "TA_enhanced"
 _log() {
