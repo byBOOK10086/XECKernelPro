@@ -78,6 +78,13 @@ fun XecBootSplash(visible: Boolean, onFinished: () -> Unit) {
                             player.setVideoScalingMode(
                                 MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
                             )
+                            // VideoView only auto-starts on prepare when its
+                            // internal target state is already PLAYING, and
+                            // setVideoURI() leaves it IDLE. Without this the
+                            // clip never plays, onCompletion never fires, and
+                            // every cold start just sits on the first frame
+                            // until the MainActivity timeout kicks in.
+                            player.start()
                         }
                         setOnCompletionListener { finished.value() }
                         // A broken asset must not trap the user behind a black

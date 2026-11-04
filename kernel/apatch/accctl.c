@@ -201,12 +201,20 @@ int kp_commit_su(uid_t to_uid, const char *sctx)
  * commit_creds(), and prepare_creds() here copies the target's creds (not the
  * caller's), which is also the semantically correct base.
  *
- * Because the callback runs in the target task, `current` is the target, which
- * is exactly what kp_commit_su() expects -- so the deferred path reuses it
- * verbatim instead of duplicating the cred/SELinux logic. The scontext the
- * supercall carries therefore has to be copied into the work item: dropping it
- * would hand out uid 0 with full caps while leaving the target in its old
- * domain, which is the broken state commit_common_su() refuses to commit.
+ * Because the callback runs in the target task, `current` is the target, so the
+ * deferred path can prepare and commit creds in the right context without any
+ * adaptation. It calls commit_common_su() rather than the kp_commit_su()
+ * convenience wrapper on purpose: that wrapper falls back to
+ * prepare_kernel_cred(NULL) (uid 0, u:r:kernel:s0, returns 0) when the SELinux
+ * translabel fails, which is only defensible when the *caller* asked for root
+ * synchronously and can notice the result. A cross-task grant is silent, so the
+ * deferred path keeps commit_common_su()'s abort semantics: translabel failure
+ * means no credential change at all.
+ *
+ * The scontext the supercall carries therefore has to be copied into the work
+ * item: dropping it would hand out uid 0 with full caps while leaving the
+ * target in its old domain, which is the broken state commit_common_su()
+ * refuses to commit.
  */
 struct kp_su_task_work {
 	struct callback_head cb;
@@ -217,10 +225,19 @@ struct kp_su_task_work {
 static void kp_su_task_work_fn(struct callback_head *cb)
 {
 	struct kp_su_task_work *w = container_of(cb, struct kp_su_task_work, cb);
-	int rc = kp_commit_su(w->to_uid, w->sctx);
+	int rc = commit_common_su(w->to_uid, w->sctx);
 
-	if (rc)
-		logke("task_su: commit failed for pid %d: %d\n", current->pid, rc);
+	if (rc) {
+		/* Cross-task su must never fall back to kernel creds. The target is a
+		 * passive process: it cannot tell that it was dropped into
+		 * u:r:kernel:s0, and that domain is wider than the magisk one, so a
+		 * silent fallback here would turn a translabel failure into a
+		 * privilege escalation nobody observes. commit_common_su() aborts the
+		 * prepared creds on failure, so the target simply keeps its previous
+		 * privileges and the caller sees the queued work fail in the log. */
+		logkw("task_su: translabel failed for pid %d: %d, creds aborted\n",
+		      current->pid, rc);
+	}
 	kfree(w);
 }
 
