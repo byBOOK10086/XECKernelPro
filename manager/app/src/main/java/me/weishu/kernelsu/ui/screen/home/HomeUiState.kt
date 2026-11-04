@@ -66,11 +66,10 @@ data class HomeUiState(
         get() = isManager &&
                 lkmMode == true &&
                 isLkmBundled &&
-                // 必须拿内核报的 KERNEL_SU_VERSION（= 31000+提交数，见 kernel/Kbuild）
-                // 跟同样口径的 baseVersionCode 比。以前这里比的是 APK 的
-                // currentManagerVersionCode —— 那个号为了区分 debug/release 乘了十倍，
-                // 跟内核不在一个数域，一比就永远不等：首页永远挂"有 LKM 更新"，
-                // 刷完还是挂着。
+                // 内核报的 KERNEL_SU_VERSION 和这里的 baseVersionCode 现在取自同一个
+                // 文件（仓库根 version.properties），必须相等才算"内置 LKM 是最新的"。
+                // 历史上这两边各自独立算（内核 31000+提交数、管理器再乘十），不在一个
+                // 数域，一比就永远不等：首页永远挂"有 LKM 更新"，刷完还是挂着。
                 ksuVersion?.toLong() != baseVersionCode &&
                 !requiresNewKernel &&
                 !requiresNewManager

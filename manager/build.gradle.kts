@@ -13,15 +13,10 @@ extra["androidCompileNdkVersion"] = libs.versions.ndk.get()
 extra["androidSourceCompatibility"] = JavaVersion.VERSION_21
 extra["androidTargetCompatibility"] = JavaVersion.VERSION_21
 extra["managerVersionCode"] = getVersionCode()
-// 首页判断内置 LKM 是否落后时，必须拿内核的 KERNEL_SU_VERSION（= 31000+提交数）
-// 跟这个基准码比；APK 的 versionCode 是它的十倍，属于另一个数域。
+// 首页判断内置 LKM 是否落后时，拿内核的 KERNEL_SU_VERSION 跟这个基准码比。
+// 两者现在取自同一个文件（仓库根 version.properties），是同一个数字，不再是两个数域。
 extra["managerBaseVersionCode"] = getBaseVersionCode()
 extra["managerVersionName"] = getVersionName()
-
-fun getGitCommitCount(): Int {
-    val process = Runtime.getRuntime().exec(arrayOf("git", "rev-list", "--count", "HEAD"))
-    return process.inputStream.bufferedReader().use { it.readText().trim().toInt() }
-}
 
 fun getGitDescribe(): String {
     // `--exclude 'gki-*'`：gki-* 是内核预发布标签（build-susfs-gki.yml 打的），
@@ -33,26 +28,39 @@ fun getGitDescribe(): String {
 }
 
 fun getVersionCode(): Int {
-    // 版本码就是「31000 + 提交数」，**不乘任何系数**：这是对外公开、用户能在关于页
-    // 和更新日志里看到的号，必须和历史上发出去的那条序列连贯（v31248 → v31277 → …）。
-    // 曾经为了给 debug 变体留个 +1 而整体乘十（得到 312770 这种六位数），用户看到
-    // 就是"版本号乱跳"，已被要求改回。
+    // 公开版本码，**不乘任何系数、不加偏移**：这是用户在关于页和更新日志里看到的号，
+    // 必须和历史上发出去的那条序列连贯（… → v31261 → v31346 → v31347）。
     return getBaseVersionCode()
 }
 
 /**
- * 与内核 `KERNEL_SU_VERSION` 同一口径的版本码（`31000 + 提交数`，见 kernel/Kbuild）。
+ * 公开版本码的唯一真源：仓库根的 `version.properties`。
  *
- * 首页用「内核上报的版本 == 管理器版本」来判断内置 LKM 是否落后，所以这两边必须
- * 永远相等；现在 APK 的 versionCode 也取这个值，三项天然同源。**不要再给其中任何
- * 一项加偏移或乘系数**——之前乘十导致过两个问题：更新提示永远清不掉、公开发版号
- * 变成六位数。
+ * 内核 `KERNEL_SU_VERSION`（kernel/Kbuild）、CI 的 release tag（build-xecpro.yml）
+ * 和 APK 的 versionCode 都读这一个文件，所以三项天然相等。
+ *
+ * **不要改回从 `git rev-list --count HEAD` 推导。** 提交数会随分支、合并和 CI 的
+ * clone 深度变化，这个思路已经造成过两次对外事故：
+ *   1) 给 debug 变体留 +1 而整体乘十 → 公开号变成 312770 六位数，内核报 31277、
+ *      管理器报 312770，首页「LKM 可更新」提示永远清不掉；
+ *   2) 31000 + 提交数，从 kpm-integration(346 提交) 切回 fresh-main(279 提交)
+ *      → 31346 倒退成 31279，已安装 31346 的用户永远收不到更新。
+ * 改动前先跑 scripts/check_version_monotonic.py。
  */
 fun getBaseVersionCode(): Int {
-    val commitCount = getGitCommitCount()
-    // 30000 基数随旧仓库（byBOOK10086/xecpro）废弃：新仓库提交数从 1 重新起算，
-    // 基数改为 31000 以保证首版 v31001 大于旧仓库最后一个版本 v30153。
-    return 31000 + commitCount
+    // manager/ 自己就是一个 Gradle root（settings.gradle.kts 在它下面），所以
+    // rootProject.file("version.properties") 会指向 manager/version.properties。
+    // 两个位置都认一下：CI 用 ./manager 作工作目录，本地直接开 manager 也一样。
+    val candidates = listOf(
+        rootProject.file("version.properties"),
+        rootProject.file("../version.properties"),
+    )
+    val file = candidates.firstOrNull { it.isFile }
+        ?: error("缺少 version.properties（找过 ${candidates.joinToString(" 和 ") { it.path }}）：公开版本码必须有唯一真源，不能从提交数推导")
+    val line = file.readLines().firstOrNull { it.trimStart().startsWith("versionCode") }
+        ?: error("${file.path} 里没有 versionCode 这一行")
+    return line.substringAfter('=').trim().toIntOrNull()
+        ?: error("${file.path} 的 versionCode 不是整数：$line")
 }
 
 fun getVersionName(): String {

@@ -454,7 +454,7 @@ jobs:
           BRANCH: ${{ github.ref_name }}
         run: |
           if [ ! -z "${{ secrets.BOT_TOKEN }}" ]; then
-            export VERSION=$(git rev-list --count HEAD)
+            export VERSION=$(sed -n 's/^versionCode[[:space:]]*=[[:space:]]*//p' version.properties | head -n 1)
             APK=$(find ./dist -name "*.apk")
             pip3 install telethon
             python3 $GITHUB_WORKSPACE/scripts/ksubot.py $APK
