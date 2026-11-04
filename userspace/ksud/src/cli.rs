@@ -208,6 +208,12 @@ enum Commands {
         args: Vec<String>,
     },
 
+    /// Inspect or clear the boot transaction left behind by a flash
+    BootTxn {
+        #[command(subcommand)]
+        command: BootTxnCmd,
+    },
+
     /// Manage initrc injection
     Initrc {
         #[command(subcommand)]
@@ -591,6 +597,13 @@ enum UmountOp {
 enum Initrc {
     /// Regenerate preinit rc file and preinit dirs
     Refresh,
+}
+
+#[derive(clap::Subcommand, Debug)]
+enum BootTxnCmd {
+    /// Clear a stuck boot transaction (root only). Use when every flash is
+    /// rejected with "a boot transaction is already pending".
+    Clear,
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -1209,6 +1222,15 @@ pub fn run() -> Result<()> {
                 ksucalls::report_module_mounted();
                 Ok(())
             }
+        },
+        Commands::BootTxn { command } => match command {
+            BootTxnCmd::Clear => crate::boot_txn::clear().map(|had| {
+                if had {
+                    println!("cleared the pending boot transaction");
+                } else {
+                    println!("no boot transaction was pending");
+                }
+            }),
         },
         Commands::Initrc { command } => match command {
             Initrc::Refresh => regenerate_preinit(),

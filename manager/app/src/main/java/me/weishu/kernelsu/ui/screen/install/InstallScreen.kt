@@ -75,18 +75,29 @@ fun InstallScreen() {
     // null = 用户还没显式设置过 → 一直算"自动"。用户改过就按用户的，不再被探测结果覆盖。
     var magiskLegacySar by rememberSaveable { mutableStateOf<Boolean?>(null) }
 
-    val currentKmi by produceState(initialValue = "") { value = getCurrentKmi() }
-    val partitions by produceState(initialValue = emptyList()) { value = getAvailablePartitions() }
-    val defaultPartition by produceState(initialValue = "") { value = getDefaultPartition() }
+    val currentKmi by produceState(initialValue = "") { value = withContext(Dispatchers.IO) { getCurrentKmi() } }
+    val partitions by produceState(initialValue = emptyList()) {
+        value = withContext(Dispatchers.IO) { getAvailablePartitions() }
+    }
+    val defaultPartition by produceState(initialValue = "") {
+        value = withContext(Dispatchers.IO) { getDefaultPartition() }
+    }
     // root 与 GKI 用 null 表示「尚未探测完成」：探测期间这几项按可用渲染，
     // 结果回来后再决定是否降级成「可见但不可用」，避免首帧闪一下灰态。
-    val rootAvailable by produceState<Boolean?>(initialValue = null) { value = rootAvailable() }
-    val isAbDevice by produceState(initialValue = false) { value = isAbDevice() }
+    val rootAvailable by produceState<Boolean?>(initialValue = null) {
+        value = withContext(Dispatchers.IO) { rootAvailable() }
+    }
+    val isAbDevice by produceState(initialValue = false) {
+        value = withContext(Dispatchers.IO) { isAbDevice() }
+    }
     val isGkiDevice by produceState<Boolean?>(initialValue = null) { value = getKernelVersion().isGKI() }
     // 路线判据只有一处（ui/util/RootRoute.kt 的 isMountState）：没有 KSU 驱动应答且内核
     // 低于 5.10。Magisk 官方修补只在挂载态出现；<5.10 但有 KSU 驱动（KPatch）是内核态，
     // 不能把挂载态那套 UI 露给它。remember 掉：不必每次重组都去问一遍驱动。
-    val isMountStateDevice = remember { isMountState }
+    // isMountState 会 netlink 读挂载环境，不能放在 remember 的合成线程上跑。
+    val isMountStateDevice by produceState(initialValue = false) {
+        value = withContext(Dispatchers.IO) { isMountState }
+    }
     // KernelPatch 载荷是否真的随这个 APK 打包（kptools 在 nativeLibraryDir 里）。
     // 发版工作流会下载并校验 sha256；管理器单独构建的工作流（build-manager.yml）不会。
     // 不探测就会在 5.10 以下设备上给出一个「点了必失败」的入口。
@@ -215,7 +226,8 @@ fun InstallScreen() {
                             lkm = lkmSelection,
                             allowShell = allowShell,
                             enableAdb = enableAdb,
-                            backup = forceBackup
+                            // 备份开关只对 SelectFile 展示；其它 method 不再偷偷带上它。
+                            backup = method is InstallMethod.SelectFile && forceBackup
                         )
                         is InstallMethod.AnyKernel -> FlashIt.FlashAnyKernel(
                             uri = method.uri ?: return@let
@@ -412,7 +424,14 @@ fun InstallScreen() {
             val method = installMethod
             if (method is InstallMethod.DownloadFile) {
                 remotePartitionSelectionIndex = index
-                installMethod = method.copy(partition = remotePartitions.getOrNull(index))
+                val picked = remotePartitions.getOrNull(index)
+                if (picked == null) {
+                    // 越界时旧代码把分区置空，随后安装被 `?: return@let` 静默吃掉，
+                    // 用户只看到什么都没发生。这里给出提示并保持原选择。
+                    scope.launch { miuixSnackbarHost.showSnackbar("分区列表已变化，请重新选择安装包") }
+                } else {
+                    installMethod = method.copy(partition = picked)
+                }
             } else {
                 partitionSelectionIndex = index
             }

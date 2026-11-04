@@ -52,6 +52,16 @@ object KsuCli {
     val GLOBAL_MNT_SHELL: Shell = createRootShell(true)
 }
 
+/**
+ * Partition names are interpolated into a root shell command, and the download
+ * flow derives them from a remote package's metadata -- i.e. from untrusted
+ * input. Only [A-Za-z0-9_.-] is accepted; anything else aborts the flash rather
+ * than being quietly dropped, so a crafted package cannot smuggle shell syntax
+ * into `boot-patch --partition`.
+ */
+private fun sanitizedPartition(partition: String): String? =
+    partition.takeIf { it.matches(Regex("^[A-Za-z0-9_.-]{1,32}$")) }
+
 fun getRootShell(globalMnt: Boolean = false): Shell {
     return if (globalMnt) KsuCli.GLOBAL_MNT_SHELL else {
         KsuCli.SHELL
@@ -452,7 +462,9 @@ fun installBoot(
     }
 
     partition?.let { part ->
-        cmd += " --partition $part"
+        val safe = sanitizedPartition(part)
+            ?: return FlashResult(-1, "refusing unsafe partition name: $part", false)
+        cmd += " --partition $safe"
     }
 
     val result = flashWithIO("${getKsuDaemonPath()} $cmd", onStdout, onStderr)
@@ -541,7 +553,9 @@ fun downloadBoot(
         cmd += " --kmi ${lkm.value}"
     }
     if (autoKmi != null) cmd += " --kmi $autoKmi"
-    cmd += " --partition $partition"
+    val safePartition = sanitizedPartition(partition)
+        ?: return FlashResult(-1, "refusing unsafe partition name: $partition", false)
+    cmd += " --partition $safePartition"
     // ksud defaults to cwd, which is read-only in the su session; use Downloads.
     val downloadsDir =
         Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)

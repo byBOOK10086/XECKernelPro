@@ -12,7 +12,12 @@ use std::path::{Path, PathBuf};
 
 use crate::{boot_patch, defs};
 
-const STATE_VERSION: &str = "1";
+const STATE_VERSION: &str = "2";
+/// v1 files (no rollback_attempts) stay readable; they are rewritten as v2.
+const STATE_VERSION_LEGACY: &str = "1";
+/// How many consecutive boots may fail to apply a rollback before the
+/// transaction is abandoned (fail open, backups kept for forensics).
+const MAX_ROLLBACK_ATTEMPTS: u32 = 3;
 const MAX_RECORDS: usize = 3;
 /// Boot, init_boot and vendor_boot images sit far below this on every shipping
 /// device. The state file is untrusted input: a bogus size field must abort
@@ -66,6 +71,8 @@ struct BootTxn {
     target_sha256: String,
     boot_id: String,
     ota: bool,
+    /// Consecutive failed rollback attempts for this transaction.
+    rollback_attempts: u32,
     records: Vec<BackupRecord>,
 }
 
@@ -139,6 +146,7 @@ fn serialize(state: &BootTxn) -> String {
         format!("target_sha256={}", state.target_sha256),
         format!("boot_id={}", state.boot_id),
         format!("ota={}", u8::from(state.ota)),
+        format!("rollback_attempts={}", state.rollback_attempts),
         format!("record_count={}", state.records.len()),
     ];
     for (index, record) in state.records.iter().enumerate() {
@@ -172,8 +180,9 @@ fn parse_state(data: &str) -> Result<BootTxn> {
     let version = fields
         .remove("version")
         .context("boot transaction version missing")?;
+    let legacy = version == STATE_VERSION_LEGACY;
     ensure!(
-        version == STATE_VERSION,
+        version == STATE_VERSION || legacy,
         "unsupported boot transaction version: {version}"
     );
     let phase = Phase::parse(
@@ -264,6 +273,11 @@ fn parse_state(data: &str) -> Result<BootTxn> {
             sha256,
         });
     }
+    let rollback_attempts = match fields.remove("rollback_attempts") {
+        Some(value) => value.parse::<u32>()?,
+        None if legacy => 0,
+        None => bail!("boot transaction rollback counter missing"),
+    };
     ensure!(
         fields.is_empty(),
         "unknown boot transaction fields: {:?}",
@@ -284,6 +298,7 @@ fn parse_state(data: &str) -> Result<BootTxn> {
         target_sha256,
         boot_id,
         ota,
+        rollback_attempts,
         records,
     })
 }
@@ -429,6 +444,7 @@ pub fn prepare(slot_suffix: &str, target_partition: &str, ota: bool) -> Result<(
         target_sha256: String::new(),
         boot_id,
         ota,
+        rollback_attempts: 0,
         records,
     })
 }
@@ -451,9 +467,46 @@ pub fn arm(patched_image: &[u8]) -> Result<()> {
     save_state(&state)
 }
 
+/// Slot suffix the *running* kernel booted from ("_a" / "_b" / "").
+///
+/// Read from the kernel command line instead of asking the bootloader: on an
+/// A/B device whose freshly flashed slot failed to boot, the bootloader falls
+/// back to the other slot, and only the cmdline tells us that happened.
+fn current_slot_suffix() -> String {
+    let Ok(cmdline) = std::fs::read_to_string("/proc/cmdline") else {
+        return String::new();
+    };
+    for token in cmdline.split_whitespace() {
+        if let Some(value) = token.strip_prefix("androidboot.slot_suffix=") {
+            return value.trim().to_string();
+        }
+    }
+    String::new()
+}
+
 fn restore(state: &BootTxn) -> Result<()> {
     let mut rolling = state.clone();
     rolling.phase = Phase::RollingBack;
+    rolling.rollback_attempts = state.rollback_attempts.saturating_add(1);
+    if rolling.rollback_attempts > MAX_ROLLBACK_ATTEMPTS {
+        // Fail open: the backups are unusable or the partition refuses the
+        // write, so retrying on every boot would brick the device into a
+        // permanent rollback loop and lock out every future flash. Drop the
+        // transaction, keep the backups for post-mortem, and say so loudly.
+        clear_state()?;
+        let kept: Vec<&str> = state
+            .records
+            .iter()
+            .map(|record| record.backup_name.as_str())
+            .collect();
+        bail!(
+            "boot transaction abandoned after {} failed rollback attempts; \
+             backups kept in {}: {}",
+            rolling.rollback_attempts,
+            defs::KSU_BACKUP_DIR,
+            kept.join(", ")
+        );
+    }
     save_state(&rolling)?;
     for record in &state.records {
         let backup = Path::new(defs::KSU_BACKUP_DIR).join(&record.backup_name);
@@ -510,6 +563,19 @@ pub fn on_post_fs_data() -> Result<bool> {
             if boot_id == state.boot_id {
                 return Ok(false);
             }
+            // A/B fallback check: if we are running from a different slot than
+            // the one we flashed, the new image never booted and the
+            // bootloader already switched away. The hash of the *target* slot
+            // still matches (nothing wrote to it), so trusting it would report
+            // a fake success and leave the broken image in place.
+            let running_suffix = current_slot_suffix();
+            if !state.slot_suffix.is_empty()
+                && !running_suffix.is_empty()
+                && running_suffix != state.slot_suffix
+            {
+                restore(&state)?;
+                return Ok(true);
+            }
             let target = partition_path(&state.target_partition, &state.slot_suffix);
             if state.target_size > 0
                 && read_prefix_hash(&target, state.target_size).ok().as_deref()
@@ -537,6 +603,23 @@ pub fn on_post_fs_data() -> Result<bool> {
             Ok(true)
         }
     }
+}
+
+/// Clear a stuck boot transaction (root only).
+///
+/// This is the escape hatch for a transaction whose rollback keeps failing:
+/// without it `prepare()` rejects every later flash with "already pending" and
+/// there is no way back short of editing /data/adb by hand.
+/// Returns whether a transaction was actually present.
+pub fn clear() -> Result<bool> {
+    #[cfg(target_os = "android")]
+    {
+        use rustix::process::getuid;
+        ensure!(getuid().as_raw() == 0, "boot-txn clear requires root");
+    }
+    let had = load_state()?.is_some();
+    clear_state()?;
+    Ok(had)
 }
 
 /// Commit a boot only after `sys.boot_completed` has reached the normal hook.

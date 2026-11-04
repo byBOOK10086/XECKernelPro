@@ -2130,7 +2130,6 @@ dependencies = [
  "clap",
  "const_format",
  "derive-new",
- "encoding_rs",
  "env_logger",
  "extattr",
  "getopts",
