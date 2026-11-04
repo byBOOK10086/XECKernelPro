@@ -2,27 +2,21 @@
 <resources>
 
     <!--
-      windowBackground 保持品牌深底 #0B0F10：splash 必须配深底，也避免 Compose
-      首帧前闪白。注意应用 UI 本身已改为「白色基础液态玻璃」默认档（见
-      SettingsRepositoryImpl 的 themeMode），所以这里是深色 splash → 浅色玻璃 UI
-      的过渡，属预期表现。
+      windowBackground 保持品牌深底 #0B0F10：启动图标 ic_logo_vector 是深色底的
+      品牌图形，splash 必须配深底，也避免 Compose 首帧前闪白。
+      注意应用 UI 本身已改为「白色基础液态玻璃」默认档（见 SettingsRepositoryImpl
+      的 themeMode），所以这里是深色 splash → 浅色玻璃 UI 的过渡，属预期表现。
     -->
     <style name="Theme.XecPro" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <item name="android:windowBackground">@color/ic_splash_background</item>
     </style>
 
-    <!--
-      2026-11-04：开屏改成一段视频（res/raw/xec_boot_intro.mp4），系统 splash
-      不再画图标。系统 splash 只接受静态图或有限帧动画，硬接视频会先闪一帧静止
-      logo 再跳进视频，所以这里把 AnimatedIcon 显式设成透明色：系统 splash 只是
-      一块品牌深底（也就顺便避免了 Compose 首帧前闪白），随后由 XecBootSplash 播视频。
-    -->
     <style name="Theme.XecPro.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/ic_splash_background</item>
         <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
-        <item name="windowSplashScreenAnimatedIcon">@android:color/transparent</item>
-        <item name="windowSplashScreenAnimationDuration">0</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_splash</item>
+        <item name="windowSplashScreenAnimationDuration">500</item>
         <item name="postSplashScreenTheme">@style/Theme.XecPro</item>
     </style>
 

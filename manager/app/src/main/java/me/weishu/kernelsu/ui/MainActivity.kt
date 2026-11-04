@@ -8,9 +8,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -33,7 +30,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.CompositionLocalProvider
@@ -163,20 +159,12 @@ private val BG_DARK_DRAWABLES = intArrayOf(
     R.drawable.bg_dark_4,
 )
 
-/**
- * 开屏视频的兜底上限。正常路径是视频播完自己回调关闭；这个值只在播放器起不来、
- * 素材比预期长、或者回调丢了的时候兜住，避免开屏变成挡住整个 App 的黑屏。
- */
-private const val BOOT_SPLASH_MAX_MS = 5_000L
-
 open class MainActivity : ComponentActivity() {
 
     private val intentChannel = Channel<Intent>(capacity = Channel.BUFFERED)
     private var contentReady = false
     private var splashStartedAt = 0L
-    // 系统 splash 现在只画品牌深底（图标已撤），没有必要再压着它等动画——
-    // contentReady 一到就放行，让开屏视频尽早开始。
-    private val splashAnimationDurationMs = 0L
+    private val splashAnimationDurationMs = 500L
 
 
     @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
@@ -202,28 +190,12 @@ open class MainActivity : ComponentActivity() {
 
         setContent {
             var showBootSplash by rememberSaveable { mutableStateOf(true) }
-            // 开屏视频由 XecBootSplash 播完自己回调关闭。这里的定时器只是兜底：
-            // 解码失败、视频比预期长、或者播放器压根没起来，都不能让开屏挡住 App。
             LaunchedEffect(Unit) {
                 if (showBootSplash) {
-                    delay(BOOT_SPLASH_MAX_MS)
+                    delay(900)
                     showBootSplash = false
                 }
             }
-            // 开屏退场时首页不能"啪"一下蹦出来。视频那侧是淡出 + 轻微放大，
-            // 这一侧就反过来：内容淡入 + 从 0.97 轻微放大到 1.0，两边叠在一起
-            // 就是一次交接。壁纸层不参与（它在 Scaffold 外面），所以一开场就能
-            // 看到背景，只有导航内容在浮上来——比整屏一起缩放干净。
-            val contentAlpha by animateFloatAsState(
-                targetValue = if (showBootSplash) 0f else 1f,
-                animationSpec = tween(durationMillis = 420, delayMillis = 120),
-                label = "boot-splash-content-alpha",
-            )
-            val contentScale by animateFloatAsState(
-                targetValue = if (showBootSplash) 0.97f else 1f,
-                animationSpec = tween(durationMillis = 520, easing = FastOutSlowInEasing),
-                label = "boot-splash-content-scale",
-            )
             val viewModel = viewModel<MainActivityViewModel>()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val selectedMainPage by viewModel.selectedMainPage.collectAsStateWithLifecycle()
@@ -476,14 +448,7 @@ open class MainActivity : ComponentActivity() {
                                             contentScale = ContentScale.Crop,
                                         )
                                     }
-                                    Scaffold(
-                                        modifier = Modifier.graphicsLayer {
-                                            alpha = contentAlpha
-                                            scaleX = contentScale
-                                            scaleY = contentScale
-                                        },
-                                        containerColor = Color.Transparent,
-                                    ) {
+                                    Scaffold(containerColor = Color.Transparent) {
                                         navDisplay()
                                     }
                                 }
@@ -530,10 +495,7 @@ open class MainActivity : ComponentActivity() {
                                     state = dialogHostState,
                                     backdrop = dialogBackdrop,
                                 )
-                                XecBootSplash(
-                                    visible = showBootSplash,
-                                    onFinished = { showBootSplash = false },
-                                )
+                                XecBootSplash(visible = showBootSplash)
                                 SideEffect { contentReady = true }
                             }
                         }
