@@ -479,6 +479,19 @@ pub struct BootPatchArgs {
     #[arg(long, default_value = None)]
     pub out_name: Option<String>,
 
+    /// Flash even when a previous boot transaction is still pending.
+    ///
+    /// A pending transaction means an earlier flash was armed and never
+    /// confirmed by a successful boot. Without this flag every later flash is
+    /// rejected, which is right for the automatic paths but leaves the user
+    /// stuck after, say, flashing twice in a row without rebooting. With the
+    /// flag the stale transaction is dropped (its backups stay on disk) and the
+    /// new one starts fresh, so the new flash is still protected. Only the
+    /// explicit "direct install" path in the manager sets it.
+    #[cfg(target_os = "android")]
+    #[arg(long, default_value = "false")]
+    pub force: bool,
+
     /// File name of the output.
     #[cfg(not(target_os = "android"))]
     #[arg(long, default_value = None)]
@@ -646,6 +659,8 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
             backup,
             #[cfg(target_os = "android")]
             partition,
+            #[cfg(target_os = "android")]
+            force,
             #[cfg(not(target_os = "android"))]
             arch,
             ramdisk,
@@ -924,7 +939,7 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
             if flashes_live_partition {
                 let slot_suffix = get_slot_suffix(ota);
                 let target_partition = choose_boot_partition(&kmi, is_replace_kernel, &partition);
-                crate::boot_txn::prepare(&slot_suffix, &target_partition, ota)?;
+                crate::boot_txn::prepare_with(&slot_suffix, &target_partition, ota, force)?;
                 crate::boot_txn::arm(&new_boot_bytes)?;
                 println!(
                     "- Boot transaction armed (rollback snapshot: {target_partition}{slot_suffix})"

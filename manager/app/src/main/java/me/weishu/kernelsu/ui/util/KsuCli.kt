@@ -420,10 +420,17 @@ private fun bootPatchFlags(
     allowShell: Boolean,
     enableAdb: Boolean,
     forceBackup: Boolean,
+    forceFlash: Boolean = false,
 ): String = buildString {
     if (allowShell) append(" --allow-shell")
     if (enableAdb) append(" --enable-adbd")
     if (forceBackup) append(" --backup")
+    // 直接安装一律强制：上一次刷写如果 arm 了事务却没重启确认，ksud 会拒绝之后所有
+    // 刷写（"a boot transaction is already pending"）——连着刷两次、或者刷完没重启，
+    // 用户就此卡死。--force 只丢掉那条陈旧事务（备份文件留在磁盘上不删），随后按当前
+    // 状态重建一份新事务，所以这次写的镜像照样有回滚网。
+    // OTA 与"只下载不刷写"不传：前者要保留上一次刷写的回滚凭证，后者根本不写分区。
+    if (forceFlash) append(" --force")
 }
 
 fun installBoot(
@@ -458,7 +465,8 @@ fun installBoot(
     } else {
         " -b ${bootFile.absolutePath}"
     }
-    cmd += bootPatchFlags(allowShell, enableAdb, forceBackup)
+    // 直接安装（写当前槽）强制；OTA 换槽刷写保留 fail-closed，理由见 bootPatchFlags。
+    cmd += bootPatchFlags(allowShell, enableAdb, forceBackup, forceFlash = !ota)
 
     if (ota) {
         cmd += " -u"

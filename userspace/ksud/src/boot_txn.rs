@@ -429,12 +429,38 @@ fn backup_name(partition: &str, suffix: &str) -> String {
 /// patched by an older release carry no stock marker, and requiring one would
 /// block the standard upgrade path.
 pub fn prepare(slot_suffix: &str, target_partition: &str, ota: bool) -> Result<()> {
+    prepare_with(slot_suffix, target_partition, ota, false)
+}
+
+/// Same as [`prepare`], but `force` discards a still-pending transaction first.
+///
+/// The pending state exists so an unconfirmed flash cannot be silently
+/// overwritten. That is the right default, but it also means a user who flashes
+/// twice without rebooting is locked out of flashing at all — the manager's
+/// "direct install" path therefore passes `force`. What force does *not* do is
+/// weaken the new flash: the stale transaction is dropped here and a fresh one
+/// (new backup, new hash, new arming) is built from the current state, so the
+/// image being written is fully protected. The discarded backups stay on disk
+/// for forensics.
+pub fn prepare_with(
+    slot_suffix: &str,
+    target_partition: &str,
+    ota: bool,
+    force: bool,
+) -> Result<()> {
     validate_suffix(slot_suffix)?;
     validate_partition(target_partition)?;
-    ensure!(
-        load_state()?.is_none(),
-        "a boot transaction is already pending"
-    );
+    if load_state()?.is_some() {
+        ensure!(
+            force,
+            "a boot transaction is already pending (reboot to confirm it, or flash with --force)"
+        );
+        warn!(
+            "boot transaction: discarding a pending transaction because --force was given; its backup files stay in {}",
+            defs::KSU_BACKUP_DIR
+        );
+        clear_state()?;
+    }
     let boot_id = current_boot_id()?;
     let mut partitions = vec!["boot", "init_boot"];
     if target_partition == "vendor_boot" {

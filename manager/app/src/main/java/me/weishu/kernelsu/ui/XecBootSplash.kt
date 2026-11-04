@@ -4,9 +4,11 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.widget.VideoView
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -45,7 +47,11 @@ fun XecBootSplash(visible: Boolean, onFinished: () -> Unit) {
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(tween(160)),
-        exit = fadeOut(tween(280)),
+        // 退出不只是淡出：视频定格在最后一帧时直接消失会很生硬。这里让它一边淡出
+        // 一边轻轻放大（1.0 → 1.08），视觉上像"幕布拉开"，和下面首页的淡入
+        // + 微缩放接上，中间不会有一帧突兀的硬切。
+        exit = fadeOut(tween(360, easing = FastOutSlowInEasing)) +
+            scaleOut(tween(360, easing = FastOutSlowInEasing), targetScale = 1.08f),
     ) {
         val context = LocalContext.current
         val finished = rememberUpdatedState(onFinished)
