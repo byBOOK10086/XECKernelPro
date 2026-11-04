@@ -86,46 +86,48 @@ fun XecBootSplash(visible: Boolean, onFinished: () -> Unit) {
                 factory = { ctx ->
                     val player = MediaPlayer()
                     playback.player = player
-                    TextureView(ctx).apply {
-                        surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                            override fun onSurfaceTextureAvailable(
-                                surfaceTexture: SurfaceTexture,
-                                width: Int,
-                                height: Int,
-                            ) {
-                                runCatching {
-                                    player.setDataSource(ctx, videoUri)
-                                    player.setSurface(Surface(surfaceTexture))
-                                    // Mute before the first frame so a stray
-                                    // audio frame never leaks out on cold start.
-                                    player.setVolume(0f, 0f)
-                                    player.isLooping = false
-                                    player.setOnPreparedListener { it.start() }
-                                    player.setOnCompletionListener { finished.value() }
-                                    player.setOnErrorListener { _, _, _ ->
-                                        finished.value()
-                                        true
-                                    }
-                                    player.setOnVideoSizeChangedListener { _, videoWidth, videoHeight ->
-                                        fitCenterCrop(this, videoWidth, videoHeight)
-                                    }
-                                    player.prepareAsync()
-                                }.onFailure { finished.value() }
-                            }
-
-                            override fun onSurfaceTextureSizeChanged(
-                                surfaceTexture: SurfaceTexture,
-                                width: Int,
-                                height: Int,
-                            ) = Unit
-
-                            override fun onSurfaceTextureDestroyed(
-                                surfaceTexture: SurfaceTexture,
-                            ): Boolean = true
-
-                            override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) = Unit
+                    // 必须先拿到视图引用：下面那个匿名 SurfaceTextureListener 里的
+                    // `this` 指的是监听器自己，不是 TextureView，直接传 `this` 会编不过。
+                    val texture = TextureView(ctx)
+                    texture.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                        override fun onSurfaceTextureAvailable(
+                            surfaceTexture: SurfaceTexture,
+                            width: Int,
+                            height: Int,
+                        ) {
+                            runCatching {
+                                player.setDataSource(ctx, videoUri)
+                                player.setSurface(Surface(surfaceTexture))
+                                // Mute before the first frame so a stray audio
+                                // frame never leaks out on cold start.
+                                player.setVolume(0f, 0f)
+                                player.isLooping = false
+                                player.setOnPreparedListener { it.start() }
+                                player.setOnCompletionListener { finished.value() }
+                                player.setOnErrorListener { _, _, _ ->
+                                    finished.value()
+                                    true
+                                }
+                                player.setOnVideoSizeChangedListener { _, videoWidth, videoHeight ->
+                                    fitCenterCrop(texture, videoWidth, videoHeight)
+                                }
+                                player.prepareAsync()
+                            }.onFailure { finished.value() }
                         }
+
+                        override fun onSurfaceTextureSizeChanged(
+                            surfaceTexture: SurfaceTexture,
+                            width: Int,
+                            height: Int,
+                        ) = Unit
+
+                        override fun onSurfaceTextureDestroyed(
+                            surfaceTexture: SurfaceTexture,
+                        ): Boolean = true
+
+                        override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) = Unit
                     }
+                    texture
                 },
                 onRelease = { view ->
                     view.surfaceTextureListener = null
