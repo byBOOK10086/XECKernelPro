@@ -62,8 +62,8 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      # 公开版本码只许前进。它曾经从提交数推导：从 kpm-integration(346 提交) 切到
-      # fresh-main(279 提交) 时，31346 倒退成 31279，装了 31346 的用户永远收不到更新。
+      # 公开版本码只许前进。它曾经从提交数推导：从另一个功能分支(346 提交) 切到
+      # 本分支(279 提交) 时，31346 倒退成 31279，装了 31346 的用户永远收不到更新。
       - name: Public version code moves forward only
         run: python3 scripts/check_version_monotonic.py
 
