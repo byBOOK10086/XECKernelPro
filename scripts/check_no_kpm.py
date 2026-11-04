@@ -44,6 +44,8 @@ ALLOW_PREFIXES = (
 # version of this guard waved through any XML, which is far too wide).
 ALLOW_FILES = (
     'userspace/ksud/builtin/tricky_store/keybox.xml',
+    # handover doc: has to name the working branch
+    'COLLAB-STATE.md',
 )
 
 SKIP_DIRS = {'.git', 'node_modules', 'target', 'build', '.gradle', '.idea'}

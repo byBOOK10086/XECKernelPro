@@ -698,7 +698,6 @@ XEC 项目组
     <!-- 主题系统（商城 / 编辑器 / 发布）：键必须两边成对，见 check_strings_parity.py -->
     <string name="settings_themes">主题</string>
     <string name="settings_themes_summary">主题商城、自己编辑、发布分享</string>
-    <string name="settings_themes_active">当前：%1$s</string>
     <string name="settings_themes_default">默认外观</string>
     <string name="themes_title">主题</string>
     <string name="themes_tab_store">商城</string>

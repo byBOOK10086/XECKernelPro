@@ -696,7 +696,6 @@ See the log below for details.</string>
     <!-- 主题系统（商城 / 编辑器 / 发布）：键必须两边成对，见 check_strings_parity.py -->
     <string name="settings_themes">Themes</string>
     <string name="settings_themes_summary">Theme store, editor and publishing</string>
-    <string name="settings_themes_active">Current: %1$s</string>
     <string name="settings_themes_default">Default look</string>
     <string name="themes_title">Themes</string>
     <string name="themes_tab_store">Store</string>

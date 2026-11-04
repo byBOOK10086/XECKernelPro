@@ -4,55 +4,11 @@ data class CpuPair(val primary: Int, val consumer: Int) {
     override fun toString(): String = "$primary,$consumer"
 }
 
-data class KernelSnapshot(
-    val deviceName: String,
-    val kernelRelease: String,
-    val socName: String = "",
-    val kernelSupported: Boolean,
-    val cpuPairs: List<CpuPair>,
-    val cpuPairLabels: List<String>,
-    val selectedCpuPair: Int,
-    val safeModeEnabled: Boolean,
-    /** Skip the pre-attack KernelSU check and run the exploit as a test. */
-    val forceAttackTest: Boolean = false,
-    /** Profile/imported offsets force the Shizuku path. */
-    val recommendShizuku: Boolean,
-    /** User-selected Shizuku path for kernels that do not require it. */
-    val shizukuEnabled: Boolean = false,
-    val shizukuStatus: ShizukuStatus,
-)
-
-enum class ShizukuStatus { NOT_REQUIRED, NOT_RUNNING, PERMISSION_REQUIRED, READY }
-
-enum class LogTone { Default, Error, Success, Warning, Progress, Kotlin, Shizuku }
-
-data class LogEntry(val text: String, val tone: LogTone)
-
-data class OffsetCandidate(val release: String, val document: String)
-
-/** One verbatim user-imported document in the user profile folder. */
-data class UserProfileFile(
-    val name: String,
-    val releases: List<String>,
-    val importedAt: Long,
-    val sizeBytes: Long,
-    val parseError: Boolean,
-    /** 1 = legacy layout (load only), 2 = current layout (editable). */
-    val version: Int = 2,
-)
-
 /** One editable advisory execution value (PROFILE-SUGGEST-01 / profile-ui). */
 data class ExecutionFieldValue(
     val path: String,
     val value: Long,
     val overridden: Boolean,
-)
-
-/** Debug-only export preferences shown by the hidden debug screen. */
-data class DebugSettings(
-    val exportEnabled: Boolean = true,
-    val exportLocation: String = "Download/ghostlock-debug-log",
-    val kernelLogEnabled: Boolean = true,
 )
 
 /** One node of the resolved profile tree: a JSON group or a numeric leaf. */
@@ -118,13 +74,6 @@ data class ProfileConfig(
         )
     }
 }
-
-data class KernelOffsets(
-    val release: String,
-    val scalars: Map<String, Long?>,
-    val symbols: Map<String, Long?>,
-    val structFields: Map<String, Long?>,
-)
 
 sealed interface OffsetImportResult {
     data class Imported(val releases: List<String>) : OffsetImportResult

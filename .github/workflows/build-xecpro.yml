@@ -54,6 +54,11 @@ jobs:
       - name: No residual loader references
         run: python3 scripts/check_no_kpm.py
 
+      # The three supercall.h mirrors are hand-synced; drift in the loader era shipped an
+      # ioctl the kernel no longer had. Assert they stay byte-identical.
+      - name: UAPI mirrors identical
+        run: python3 scripts/check_uapi_mirror.py
+
   generate-key:
     runs-on: ubuntu-latest
     steps:
