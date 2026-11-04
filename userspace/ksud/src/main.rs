@@ -31,6 +31,11 @@ mod boot_txn;
 // sepolicy engine, so the module is gated exactly like its call sites.
 #[cfg(target_os = "android")]
 mod bootstate;
+// Bundled module trees (builtin/) are installed into /data/adb/modules on the
+// kernel-state boot path; the whole module is Android-only because it uses the
+// Android module layout and unix permission bits.
+#[cfg(target_os = "android")]
+mod builtin;
 #[cfg(target_os = "android")]
 mod cli;
 #[cfg(not(target_os = "android"))]

@@ -109,6 +109,19 @@ pub fn on_post_fs_data() -> Result<()> {
         warn!("prune modules failed: {e}");
     }
 
+    // Install/refresh the modules this xudc build bundles (the TEE engine and
+    // the TA-enhancement module) before the module set is enumerated below.
+    // They land in the normal module dir, so sepolicy, preinit and the
+    // post-fs-data scripts all see them on the very boot they were installed.
+    // Kernel state only: in mount state Magisk owns /data/adb/modules. A
+    // failure is logged and must never abort the boot.
+    if !mount_state {
+        match crate::builtin::install_builtin_modules() {
+            Ok(()) => info!("built-in modules ready"),
+            Err(e) => warn!("install built-in modules failed: {e:#}"),
+        }
+    }
+
     // Refresh /metadata/watchdog/ksu/{modules.rc,preinit/} so the next boot's kernel hook sees the
     // current module set. Acts as a safety net when state was changed outside
     // of ksud's normal mutation commands.

@@ -107,6 +107,32 @@ pub fn get_asset(name: &str) -> Result<Box<dyn AsRef<[u8]>>> {
     Ok(Box::new(asset.data))
 }
 
+/// The module trees under `builtin/` shipped inside xudc itself.
+///
+/// One tree for every Android ABI: CI currently only builds aarch64 payloads
+/// (`build-builtin-modules.sh`), so the x86_64 build embeds the same files on
+/// purpose. A host build has no use for them and skips the embed entirely.
+#[cfg(target_os = "android")]
+#[derive(RustEmbed)]
+#[folder = "builtin/"]
+pub struct BuiltinAsset;
+
+#[cfg(target_os = "android")]
+pub fn list_builtin_assets() -> std::vec::Vec<std::string::String> {
+    let mut list = Vec::new();
+    for file in BuiltinAsset::iter() {
+        list.push(file.into_owned());
+    }
+    list
+}
+
+#[cfg(target_os = "android")]
+pub fn get_builtin_asset(name: &str) -> Result<std::vec::Vec<u8>> {
+    let asset = BuiltinAsset::get(name)
+        .ok_or_else(|| anyhow::anyhow!("builtin asset not found: {name}"))?;
+    Ok(asset.data.into_owned())
+}
+
 pub fn list_supported_kmi() -> std::vec::Vec<std::string::String> {
     let mut list = Vec::new();
     for file in Asset::iter() {
