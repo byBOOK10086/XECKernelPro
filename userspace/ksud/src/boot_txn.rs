@@ -5,6 +5,7 @@
 //! pre-init failure still requires fastboot/recovery rescue.
 
 use anyhow::{Context, Result, bail, ensure};
+use log::warn;
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
@@ -12,12 +13,22 @@ use std::path::{Path, PathBuf};
 
 use crate::{boot_patch, defs};
 
-const STATE_VERSION: &str = "2";
-/// v1 files (no rollback_attempts) stay readable; they are rewritten as v2.
-const STATE_VERSION_LEGACY: &str = "1";
+const STATE_VERSION: &str = "3";
+/// Older state files stay readable and are rewritten as the current version:
+/// v1 has no `rollback_attempts`, v2 has no `unhealthy_boots`.
+const STATE_VERSION_V1: &str = "1";
+const STATE_VERSION_V2: &str = "2";
 /// How many consecutive boots may fail to apply a rollback before the
 /// transaction is abandoned (fail open, backups kept for forensics).
 const MAX_ROLLBACK_ATTEMPTS: u32 = 3;
+/// How many consecutive boot cycles may reach post-fs-data with the new image
+/// but never reach the commit point before we conclude the flash is bad.
+///
+/// One is deliberately not enough: a forced reboot, a ROM whose boot-completed
+/// hook never fires, or a very slow first boot would otherwise roll back a
+/// perfectly good image. That false-positive class is exactly the "rescue mode
+/// fires too easily" report this constant exists to close.
+const MAX_UNHEALTHY_BOOTS: u32 = 2;
 const MAX_RECORDS: usize = 3;
 /// Boot, init_boot and vendor_boot images sit far below this on every shipping
 /// device. The state file is untrusted input: a bogus size field must abort
@@ -73,6 +84,11 @@ struct BootTxn {
     ota: bool,
     /// Consecutive failed rollback attempts for this transaction.
     rollback_attempts: u32,
+    /// Consecutive boot cycles that started with the new image and never
+    /// reached the commit point. Reset never happens: the counter is only
+    /// meaningful while the phase stays Observed, and a successful commit
+    /// clears the whole state file.
+    unhealthy_boots: u32,
     records: Vec<BackupRecord>,
 }
 
@@ -147,6 +163,7 @@ fn serialize(state: &BootTxn) -> String {
         format!("boot_id={}", state.boot_id),
         format!("ota={}", u8::from(state.ota)),
         format!("rollback_attempts={}", state.rollback_attempts),
+        format!("unhealthy_boots={}", state.unhealthy_boots),
         format!("record_count={}", state.records.len()),
     ];
     for (index, record) in state.records.iter().enumerate() {
@@ -180,9 +197,11 @@ fn parse_state(data: &str) -> Result<BootTxn> {
     let version = fields
         .remove("version")
         .context("boot transaction version missing")?;
-    let legacy = version == STATE_VERSION_LEGACY;
+    let legacy_v1 = version == STATE_VERSION_V1;
     ensure!(
-        version == STATE_VERSION || legacy,
+        version == STATE_VERSION
+            || legacy_v1
+            || version == STATE_VERSION_V2,
         "unsupported boot transaction version: {version}"
     );
     let phase = Phase::parse(
@@ -275,8 +294,14 @@ fn parse_state(data: &str) -> Result<BootTxn> {
     }
     let rollback_attempts = match fields.remove("rollback_attempts") {
         Some(value) => value.parse::<u32>()?,
-        None if legacy => 0,
+        None if legacy_v1 => 0,
         None => bail!("boot transaction rollback counter missing"),
+    };
+    // Absent in v1/v2 files: those transactions never tolerated a missed commit,
+    // so they start at zero and get the new behaviour from here on.
+    let unhealthy_boots = match fields.remove("unhealthy_boots") {
+        Some(value) => value.parse::<u32>()?,
+        None => 0,
     };
     ensure!(
         fields.is_empty(),
@@ -299,6 +324,7 @@ fn parse_state(data: &str) -> Result<BootTxn> {
         boot_id,
         ota,
         rollback_attempts,
+        unhealthy_boots,
         records,
     })
 }
@@ -445,6 +471,7 @@ pub fn prepare(slot_suffix: &str, target_partition: &str, ota: bool) -> Result<(
         boot_id,
         ota,
         rollback_attempts: 0,
+        unhealthy_boots: 0,
         records,
     })
 }
@@ -592,11 +619,29 @@ pub fn on_post_fs_data() -> Result<bool> {
         }
         Phase::Observed => {
             if boot_id == state.boot_id {
-                Ok(false)
-            } else {
-                restore(&state)?;
-                Ok(true)
+                return Ok(false);
             }
+            // The previous boot started on the new image and never reached the
+            // commit point. That is a warning, not yet a verdict: a forced
+            // reboot, a slow first boot or a ROM whose boot-completed hook
+            // never fires all land here with a perfectly good image installed.
+            // Roll back only after MAX_UNHEALTHY_BOOTS consecutive such cycles.
+            state.unhealthy_boots = state.unhealthy_boots.saturating_add(1);
+            if state.unhealthy_boots >= MAX_UNHEALTHY_BOOTS {
+                warn!(
+                    "boot transaction: {} consecutive boots never reached the commit point, rolling back",
+                    state.unhealthy_boots
+                );
+                restore(&state)?;
+                return Ok(true);
+            }
+            warn!(
+                "boot transaction: boot {} never reached the commit point ({}/{} before rollback)",
+                state.boot_id, state.unhealthy_boots, MAX_UNHEALTHY_BOOTS
+            );
+            state.boot_id = boot_id;
+            save_state(&state)?;
+            Ok(false)
         }
         Phase::RollingBack => {
             restore(&state)?;
@@ -622,6 +667,37 @@ pub fn clear() -> Result<bool> {
     Ok(had)
 }
 
+/// `sys.boot_completed` is the property init sets immediately before it fires
+/// the `boot_completed` trigger, so reading it here is a cheap cross-check that
+/// we really are at the end of a boot rather than racing an early event.
+fn boot_completed_property() -> bool {
+    crate::utils::getprop("sys.boot_completed").is_some_and(|value| value.trim() == "1")
+}
+
+/// A boot that reaches `boot_completed` with no zygote running has no Android
+/// userspace at all: the flash "worked" far enough for init to finish while the
+/// system server never came up. `comm` is capped at 15 bytes by the kernel, so
+/// an exact match on the two shipping names is enough -- no /proc parsing edge
+/// cases and no dependence on a shell.
+fn zygote_alive() -> bool {
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        let name = entry.file_name();
+        if !name
+            .to_str()
+            .is_some_and(|name| name.bytes().all(|byte| byte.is_ascii_digit()))
+        {
+            return false;
+        }
+        std::fs::read_to_string(entry.path().join("comm")).is_ok_and(|comm| {
+            let comm = comm.trim_end();
+            comm == "zygote" || comm == "zygote64"
+        })
+    })
+}
+
 /// Commit a boot only after `sys.boot_completed` has reached the normal hook.
 pub fn commit_boot_success() -> Result<()> {
     let Some(state) = load_state()? else {
@@ -635,6 +711,20 @@ pub fn commit_boot_success() -> Result<()> {
     ensure!(
         state.boot_id == boot_id,
         "boot transaction belongs to another boot"
+    );
+    // Committing is what makes an armed flash permanent, so it demands two
+    // independent signals instead of the single hook that fired. If either is
+    // missing we deliberately leave the transaction in Observed: the next boot
+    // counts it as an unhealthy cycle and, after MAX_UNHEALTHY_BOOTS of them,
+    // rolls back. Committing on a boot that never produced a usable system
+    // would strand the user with a broken image and no way back.
+    ensure!(
+        boot_completed_property(),
+        "sys.boot_completed is not set; refusing to commit"
+    );
+    ensure!(
+        zygote_alive(),
+        "no zygote process; system server never started, refusing to commit"
     );
     if state.ota {
         let status = std::process::Command::new(crate::assets::BOOTCTL_PATH)
