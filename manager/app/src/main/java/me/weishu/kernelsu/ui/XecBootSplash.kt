@@ -1,8 +1,11 @@
 package me.weishu.kernelsu.ui
 
+import android.graphics.Matrix
+import android.graphics.SurfaceTexture
 import android.media.MediaPlayer
 import android.net.Uri
-import android.widget.VideoView
+import android.view.Surface
+import android.view.TextureView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -23,38 +26,44 @@ import androidx.compose.ui.viewinterop.AndroidView
 import me.weishu.kernelsu.R
 
 /**
- * 开屏动画：播一遍 `res/raw/xec_boot_intro.mp4`，播完淡出交给首页。
+ * 开屏动画：播一遍 `res/raw/xec_boot_intro.mp4`，播完缩小淡出交给首页。
  *
- * 2026-11-04 起取代原来的「图标脉冲 + 扫描环」自绘动画。系统 splash 那侧的静止
- * 图标也一起撤了（见 `res/values/themes.xml`），否则会先闪一帧静止 logo 再跳进
- * 视频，接缝很明显。
+ * 为什么用 [TextureView] + [MediaPlayer] 而不是 `VideoView`：
+ * `VideoView` 内部是 `SurfaceView`，画面在独立的合成层上，**Compose 的
+ * `graphicsLayer`（alpha / scale）对它不起作用**。之前用 VideoView 配 `fadeOut`
+ * 时，背景层能淡、视频层却一直是不透明的一整块，直到视图被移除才"啪"地消失——
+ * 看起来就是结尾一下黑边再硬切。TextureView 是普通视图，走正常视图合成，
+ * 缩放和淡出才真正作用在画面上。
  *
- * 几条刻意的行为：
- * - **静音**：开屏带声音会跟用户当时的媒体播放打架，启动画面不该抢音频焦点。
- * - **centerCrop**：素材比例和屏幕比例基本不会一致，留边会露出背景色，所以用
- *   `VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING` 裁切填满。
- * - **任何失败都算播完**：素材解码失败、URI 打不开、设备没有播放器，统统立刻回调
+ * 结束动画按用户要求做成**缓慢缩小 + 淡出**（1.0 → 0.92），不是放大：放大到超过
+ * 屏幕时边缘反而会露出背景色。
+ *
+ * 其余刻意的行为：
+ * - **静音**：开屏带声音会跟用户当时的媒体播放打架。
+ * - **centerCrop**：素材比例和屏幕比例基本不会一致，留边会露出黑底，所以用
+ *   `TextureView.setTransform()` 按 `max(scale)` 裁切填满。
+ * - **任何失败都算播完**：解码失败、URI 打不开、没有播放器，统统立刻回调
  *   `onFinished`，绝不能让开屏变成一块挡住整个 App 的黑屏。
- * - **离开组合就停播**：`onRelease` 里 `stopPlayback()`，否则淡出后播放器还在后台跑。
- * - **吃点击**：开屏期间用户误触不应该穿透到下面的首页。
+ * - **离开组合就 release**：否则播放器会在后台继续持有画面。
+ * - **吃点击**：开屏期间误触不应该穿透到下面的首页。
  *
- * 素材必须保持**未压缩**进包：`android.resource://` 走的是 AssetFileDescriptor，
+ * 素材必须**未压缩**进包：`android.resource://` 走的是 AssetFileDescriptor，
  * 压缩过的 raw 资源没有它，MediaPlayer 会直接打不开。aapt2 的默认不压缩扩展名
- * 列表本来就含 `.mp4`，所以这里不额外声明 `noCompress`，靠默认即可。
+ * 列表本来就含 `.mp4`，所以这里不额外声明 `noCompress`。
  */
 @Composable
 fun XecBootSplash(visible: Boolean, onFinished: () -> Unit) {
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(tween(160)),
-        // 退出不只是淡出：视频定格在最后一帧时直接消失会很生硬。这里让它一边淡出
-        // 一边轻轻放大（1.0 → 1.08），视觉上像"幕布拉开"，和下面首页的淡入
-        // + 微缩放接上，中间不会有一帧突兀的硬切。
-        exit = fadeOut(tween(360, easing = FastOutSlowInEasing)) +
-            scaleOut(tween(360, easing = FastOutSlowInEasing), targetScale = 1.08f),
+        exit = fadeOut(tween(420, easing = FastOutSlowInEasing)) +
+            scaleOut(tween(420, easing = FastOutSlowInEasing), targetScale = 0.92f),
     ) {
         val context = LocalContext.current
         val finished = rememberUpdatedState(onFinished)
+        // 播放器活在视图之外：surface 回调拿不到组合作用域的局部变量，而
+        // onRelease 必须能把它彻底 release 掉，否则每进一次开屏就漏一个解码器。
+        val playback = remember { PlaybackHolder() }
         val videoUri = remember(context) {
             Uri.parse("android.resource://${context.packageName}/${R.raw.xec_boot_intro}")
         }
@@ -75,35 +84,90 @@ fun XecBootSplash(visible: Boolean, onFinished: () -> Unit) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
-                    VideoView(ctx).apply {
-                        setOnPreparedListener { player ->
-                            // Mute before the first frame so a stray audio frame
-                            // never leaks out during a cold start.
-                            player.setVolume(0f, 0f)
-                            player.isLooping = false
-                            player.setVideoScalingMode(
-                                MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
-                            )
-                            // VideoView only auto-starts on prepare when its
-                            // internal target state is already PLAYING, and
-                            // setVideoURI() leaves it IDLE. Without this the
-                            // clip never plays, onCompletion never fires, and
-                            // every cold start just sits on the first frame
-                            // until the MainActivity timeout kicks in.
-                            player.start()
+                    val player = MediaPlayer()
+                    playback.player = player
+                    TextureView(ctx).apply {
+                        surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                            override fun onSurfaceTextureAvailable(
+                                surfaceTexture: SurfaceTexture,
+                                width: Int,
+                                height: Int,
+                            ) {
+                                runCatching {
+                                    player.setDataSource(ctx, videoUri)
+                                    player.setSurface(Surface(surfaceTexture))
+                                    // Mute before the first frame so a stray
+                                    // audio frame never leaks out on cold start.
+                                    player.setVolume(0f, 0f)
+                                    player.isLooping = false
+                                    player.setOnPreparedListener { it.start() }
+                                    player.setOnCompletionListener { finished.value() }
+                                    player.setOnErrorListener { _, _, _ ->
+                                        finished.value()
+                                        true
+                                    }
+                                    player.setOnVideoSizeChangedListener { _, videoWidth, videoHeight ->
+                                        fitCenterCrop(this, videoWidth, videoHeight)
+                                    }
+                                    player.prepareAsync()
+                                }.onFailure { finished.value() }
+                            }
+
+                            override fun onSurfaceTextureSizeChanged(
+                                surfaceTexture: SurfaceTexture,
+                                width: Int,
+                                height: Int,
+                            ) = Unit
+
+                            override fun onSurfaceTextureDestroyed(
+                                surfaceTexture: SurfaceTexture,
+                            ): Boolean = true
+
+                            override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) = Unit
                         }
-                        setOnCompletionListener { finished.value() }
-                        // A broken asset must not trap the user behind a black
-                        // screen: treat every error as "intro over".
-                        setOnErrorListener { _, _, _ ->
-                            finished.value()
-                            true
-                        }
-                        setVideoURI(videoUri)
                     }
                 },
-                onRelease = { view -> view.stopPlayback() },
+                onRelease = { view ->
+                    view.surfaceTextureListener = null
+                    playback.release()
+                },
             )
         }
     }
+}
+
+/**
+ * 持有开屏播放器，让组合作用域之外的回调（surface 生命周期、onRelease）都能拿到它。
+ * 只被一个协程/一个 UI 线程访问，不需要同步。
+ */
+private class PlaybackHolder {
+    var player: MediaPlayer? = null
+
+    fun release() {
+        val current = player ?: return
+        player = null
+        runCatching {
+            current.setSurface(null)
+            current.reset()
+            current.release()
+        }
+    }
+}
+
+/**
+ * 把画面按 `max(scale)` 放大并居中，等价于 `centerCrop`：宁可裁掉两侧也不留黑边。
+ */
+private fun fitCenterCrop(view: TextureView, videoWidth: Int, videoHeight: Int) {
+    val viewWidth = view.width.toFloat()
+    val viewHeight = view.height.toFloat()
+    if (viewWidth <= 0f || viewHeight <= 0f || videoWidth <= 0 || videoHeight <= 0) return
+    val scale = maxOf(viewWidth / videoWidth, viewHeight / videoHeight)
+    val offsetX = (viewWidth - videoWidth * scale) / 2f
+    val offsetY = (viewHeight - videoHeight * scale) / 2f
+    view.setTransform(
+        Matrix().apply {
+            setScale(scale, scale)
+            postTranslate(offsetX, offsetY)
+        }
+    )
 }
