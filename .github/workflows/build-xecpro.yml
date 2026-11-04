@@ -29,6 +29,14 @@ on:
         type: string
         required: false
         default: ''
+      draft:
+        # 只有在 publish=true（会创建 Release）时才有意义。
+        # true（默认）= 建草稿：资产齐全、可以下载来测，但局外人、公开 API、检查更新
+        # 和官网全都看不到，直到有人在 Releases 页面手动点发布。
+        # 关掉它才叫"推给用户"，那一步必须是有意识的操作。
+        description: 'Release 建成草稿（不公开给用户）'
+        type: boolean
+        default: true
   push:
     tags:
       - "v*"
@@ -686,6 +694,11 @@ jobs:
         with:
           tag_name: ${{ steps.tag.outputs.tag_name }}
           generate_release_notes: true
+          # 草稿：Release 和全部资产照常生成、可下载，但**不对用户公开**——
+          # 公开 API、检查更新、官网都看不到，只有仓库管理员在 Releases 页面里能看见
+          # 并手动发布。默认 true，因为"构建一个候选正式版"和"把它推给用户"是两件事，
+          # 后者必须显式关掉草稿才算数。
+          draft: ${{ inputs.draft }}
           prerelease: ${{ steps.tag.outputs.prerelease == 'true' }}
           # 只上传 aarch64 的 xudc / ksuinit。
           # 此前同时列出 x86_64 目录，而两个目录里的文件名都是 xudc / ksuinit，
