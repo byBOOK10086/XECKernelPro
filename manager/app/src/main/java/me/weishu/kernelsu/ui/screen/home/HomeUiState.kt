@@ -31,6 +31,13 @@ data class HomeUiState(
     val checkUpdateEnabled: Boolean,
     val latestVersionInfo: LatestVersionInfo,
     val currentManagerVersionCode: Long,
+    /**
+     * 与内核 `KERNEL_SU_VERSION` 同口径的基准码（`31000 + 提交数`）。
+     *
+     * 只用于"内置 LKM 是否落后"的比较。[currentManagerVersionCode] 是 APK 的产物号
+     * （为区分 debug/release 乘了十倍），拿它跟内核比会永远不相等。
+     */
+    val baseVersionCode: Long,
     val systemInfo: SystemInfo,
     /**
      * 挂载态下正在跑的 magiskd 版本（`magisk -v`）；其它形态恒为 null。
@@ -59,7 +66,12 @@ data class HomeUiState(
         get() = isManager &&
                 lkmMode == true &&
                 isLkmBundled &&
-                ksuVersion?.toLong() != currentManagerVersionCode &&
+                // 必须拿内核报的 KERNEL_SU_VERSION（= 31000+提交数，见 kernel/Kbuild）
+                // 跟同样口径的 baseVersionCode 比。以前这里比的是 APK 的
+                // currentManagerVersionCode —— 那个号为了区分 debug/release 乘了十倍，
+                // 跟内核不在一个数域，一比就永远不等：首页永远挂"有 LKM 更新"，
+                // 刷完还是挂着。
+                ksuVersion?.toLong() != baseVersionCode &&
                 !requiresNewKernel &&
                 !requiresNewManager
 

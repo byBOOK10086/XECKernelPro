@@ -20,6 +20,8 @@ val androidTargetSdkVersion = rootProject.extra["androidTargetSdkVersion"] as In
 val androidSourceCompatibility = rootProject.extra["androidSourceCompatibility"] as JavaVersion
 val androidTargetCompatibility = rootProject.extra["androidTargetCompatibility"] as JavaVersion
 val managerVersionCode = rootProject.extra["managerVersionCode"] as Int
+// 与内核 KERNEL_SU_VERSION 同口径的基准码，只用于"内置 LKM 是否落后"的比较。
+val managerBaseVersionCode = rootProject.extra["managerBaseVersionCode"] as Int
 val managerVersionName = rootProject.extra["managerVersionName"] as String
 
 val isPrBuild = project.findProperty("IS_PR_BUILD")?.toString()?.toBoolean() ?: false
@@ -149,6 +151,9 @@ android {
         applicationId = managerPackageName
 
         buildConfigField("boolean", "IS_PR_BUILD", isPrBuild.toString())
+        // 内核 KERNEL_SU_VERSION 同口径的基准码：首页用它判断内置 LKM 是否落后。
+        // 不能用 versionCode 代替——那是十倍后的产物号，跟内核永远对不上。
+        buildConfigField("int", "BASE_VERSION_CODE", managerBaseVersionCode.toString())
         resValue("string", "app_name", managerName)
 
         // 应用本身只有 en / zh-rCN 两套文案；依赖库自带的四十多种语言表纯占体积，

@@ -13,6 +13,9 @@ extra["androidCompileNdkVersion"] = libs.versions.ndk.get()
 extra["androidSourceCompatibility"] = JavaVersion.VERSION_21
 extra["androidTargetCompatibility"] = JavaVersion.VERSION_21
 extra["managerVersionCode"] = getVersionCode()
+// 首页判断内置 LKM 是否落后时，必须拿内核的 KERNEL_SU_VERSION（= 31000+提交数）
+// 跟这个基准码比；APK 的 versionCode 是它的十倍，属于另一个数域。
+extra["managerBaseVersionCode"] = getBaseVersionCode()
 extra["managerVersionName"] = getVersionName()
 
 fun getGitCommitCount(): Int {
@@ -30,14 +33,25 @@ fun getGitDescribe(): String {
 }
 
 fun getVersionCode(): Int {
-    val commitCount = getGitCommitCount()
-    // 30000 基数随旧仓库（byBOOK10086/xecpro）废弃：新仓库提交数从 1 重新起算，
-    // 基数改为 31000 以保证首版 v31001 大于旧仓库最后一个版本 v30153。
-    //
     // ×10：把个位数留给构建变体（debug 占 +1，见 app/build.gradle.kts 的
     // onVariants）。这样 debug 件才能和正式版互相覆盖安装而不必卸载丢数据，
     // 同时 debug 永远低于下一个正式版。历史上发出去的版本码都不受影响地单调递增。
-    return (31000 + commitCount) * 10
+    return getBaseVersionCode() * 10
+}
+
+/**
+ * 与内核 `KERNEL_SU_VERSION` 同一口径的版本码（`31000 + 提交数`，见 kernel/Kbuild）。
+ *
+ * 首页用「内核上报的版本 == 管理器版本」来判断内置 LKM 是否落后。APK 的
+ * versionCode 为了区分构建变体乘了十倍，跟内核不是同一个数域，**不能拿去比**——
+ * 一比就永远不等、永远提示"有 LKM 更新"，更新完照样提示。所以那个比较必须用这个
+ * 基准值。
+ */
+fun getBaseVersionCode(): Int {
+    val commitCount = getGitCommitCount()
+    // 30000 基数随旧仓库（byBOOK10086/xecpro）废弃：新仓库提交数从 1 重新起算，
+    // 基数改为 31000 以保证首版 v31001 大于旧仓库最后一个版本 v30153。
+    return 31000 + commitCount
 }
 
 fun getVersionName(): String {

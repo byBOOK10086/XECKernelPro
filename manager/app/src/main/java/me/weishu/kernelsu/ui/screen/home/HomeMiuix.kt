@@ -1242,6 +1242,7 @@ private fun previewHomeScreenState(
     checkUpdateEnabled = false,
     latestVersionInfo = LatestVersionInfo(),
     currentManagerVersionCode = 10000,
+    baseVersionCode = 31271,
     systemInfo = previewSystemInfo.copy(selinuxStatus = selinuxStatus),
     kernelUAPIVersion = 1,
     managerUAPIVersion = 1,
