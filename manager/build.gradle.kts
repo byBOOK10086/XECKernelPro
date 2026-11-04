@@ -33,19 +33,20 @@ fun getGitDescribe(): String {
 }
 
 fun getVersionCode(): Int {
-    // ×10：把个位数留给构建变体（debug 占 +1，见 app/build.gradle.kts 的
-    // onVariants）。这样 debug 件才能和正式版互相覆盖安装而不必卸载丢数据，
-    // 同时 debug 永远低于下一个正式版。历史上发出去的版本码都不受影响地单调递增。
-    return getBaseVersionCode() * 10
+    // 版本码就是「31000 + 提交数」，**不乘任何系数**：这是对外公开、用户能在关于页
+    // 和更新日志里看到的号，必须和历史上发出去的那条序列连贯（v31248 → v31277 → …）。
+    // 曾经为了给 debug 变体留个 +1 而整体乘十（得到 312770 这种六位数），用户看到
+    // 就是"版本号乱跳"，已被要求改回。
+    return getBaseVersionCode()
 }
 
 /**
  * 与内核 `KERNEL_SU_VERSION` 同一口径的版本码（`31000 + 提交数`，见 kernel/Kbuild）。
  *
- * 首页用「内核上报的版本 == 管理器版本」来判断内置 LKM 是否落后。APK 的
- * versionCode 为了区分构建变体乘了十倍，跟内核不是同一个数域，**不能拿去比**——
- * 一比就永远不等、永远提示"有 LKM 更新"，更新完照样提示。所以那个比较必须用这个
- * 基准值。
+ * 首页用「内核上报的版本 == 管理器版本」来判断内置 LKM 是否落后，所以这两边必须
+ * 永远相等；现在 APK 的 versionCode 也取这个值，三项天然同源。**不要再给其中任何
+ * 一项加偏移或乘系数**——之前乘十导致过两个问题：更新提示永远清不掉、公开发版号
+ * 变成六位数。
  */
 fun getBaseVersionCode(): Int {
     val commitCount = getGitCommitCount()
