@@ -200,23 +200,27 @@ int kp_commit_su(uid_t to_uid, const char *sctx)
  * callbacks run in that task, so this cannot overlap with its own
  * commit_creds(), and prepare_creds() here copies the target's creds (not the
  * caller's), which is also the semantically correct base.
+ *
+ * Because the callback runs in the target task, `current` is the target, which
+ * is exactly what kp_commit_su() expects -- so the deferred path reuses it
+ * verbatim instead of duplicating the cred/SELinux logic. The scontext the
+ * supercall carries therefore has to be copied into the work item: dropping it
+ * would hand out uid 0 with full caps while leaving the target in its old
+ * domain, which is the broken state commit_common_su() refuses to commit.
  */
 struct kp_su_task_work {
 	struct callback_head cb;
 	uid_t to_uid;
+	char sctx[SUPERCALL_SCONTEXT_LEN];
 };
 
 static void kp_su_task_work_fn(struct callback_head *cb)
 {
 	struct kp_su_task_work *w = container_of(cb, struct kp_su_task_work, cb);
-	struct cred *new = prepare_creds();
+	int rc = kp_commit_su(w->to_uid, w->sctx);
 
-	if (new) {
-		su_cred(new, w->to_uid);
-		commit_creds(new);
-	} else {
-		logke("task_su: no memory to prepare creds for pid %d\n", current->pid);
-	}
+	if (rc)
+		logke("task_su: commit failed for pid %d: %d\n", current->pid, rc);
 	kfree(w);
 }
 
@@ -225,8 +229,6 @@ int kp_task_su(pid_t pid, uid_t to_uid, const char *sctx)
 	struct task_struct *task;
 	struct kp_su_task_work *w;
 	int rc;
-
-	(void)sctx;
 
 	task = find_get_task_by_vpid(pid);
 	if (!task) {
@@ -241,6 +243,10 @@ int kp_task_su(pid_t pid, uid_t to_uid, const char *sctx)
 	}
 	init_task_work(&w->cb, kp_su_task_work_fn);
 	w->to_uid = to_uid;
+	/* Callers free their scontext as soon as this returns; the work item must
+	 * own a copy. strscpy() truncates rather than overflows, and anything that
+	 * long was already rejected as E2BIG by the supercall layer. */
+	strscpy(w->sctx, sctx ? sctx : "", sizeof(w->sctx));
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0)
 	rc = task_work_add(task, &w->cb, TWA_RESUME);

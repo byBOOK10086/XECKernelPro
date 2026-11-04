@@ -62,6 +62,16 @@ object KsuCli {
 private fun sanitizedPartition(partition: String): String? =
     partition.takeIf { it.matches(Regex("^[A-Za-z0-9_.-]{1,32}$")) }
 
+/**
+ * KMI strings reach the same root shell as partition names. Every producer
+ * today is charset-constrained (our own `boot-info supported-kmis` output, or a
+ * `(\d+\.\d+)...(android\d+)` regex capture), so this is defense in depth
+ * rather than a live fix -- but it keeps both sinks uniform, and a future
+ * unconstrained producer now fails loudly instead of silently.
+ */
+private fun sanitizedKmi(kmi: String): String? =
+    kmi.takeIf { it.matches(Regex("^[A-Za-z0-9_.-]{1,32}$")) }
+
 fun getRootShell(globalMnt: Boolean = false): Shell {
     return if (globalMnt) KsuCli.GLOBAL_MNT_SHELL else {
         KsuCli.SHELL
@@ -458,7 +468,9 @@ fun installBoot(
     if (lkmFile != null) {
         cmd += " -m ${lkmFile.absolutePath}"
     } else if (lkm is LkmSelection.KmiString) {
-        cmd += " --kmi ${lkm.value}"
+        val safeKmi = sanitizedKmi(lkm.value)
+            ?: return FlashResult(-1, "refusing unsafe KMI name: ${lkm.value}", false)
+        cmd += " --kmi $safeKmi"
     }
 
     if (bootFile != null) {
@@ -556,9 +568,15 @@ fun downloadBoot(
     if (lkmFile != null) {
         cmd += " -m ${lkmFile.absolutePath}"
     } else if (lkm is LkmSelection.KmiString) {
-        cmd += " --kmi ${lkm.value}"
+        val safeKmi = sanitizedKmi(lkm.value)
+            ?: return FlashResult(-1, "refusing unsafe KMI name: ${lkm.value}", false)
+        cmd += " --kmi $safeKmi"
     }
-    if (autoKmi != null) cmd += " --kmi $autoKmi"
+    if (autoKmi != null) {
+        val safeAutoKmi = sanitizedKmi(autoKmi)
+            ?: return FlashResult(-1, "refusing unsafe KMI name: $autoKmi", false)
+        cmd += " --kmi $safeAutoKmi"
+    }
     val safePartition = sanitizedPartition(partition)
         ?: return FlashResult(-1, "refusing unsafe partition name: $partition", false)
     cmd += " --partition $safePartition"
