@@ -5,7 +5,7 @@ use crate::{
     utils::{self},
 };
 use anyhow::{Context, Result};
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use std::{path::Path, time::Instant};
 
 pub fn on_post_fs_data() -> Result<()> {
@@ -185,22 +185,56 @@ pub fn on_post_fs_data() -> Result<()> {
 }
 
 /// 没有 metamodule 时的兜底：用内置 magic mount 引擎把 `/data/adb/modules/*` 映射到真实根
-/// （Magisk 同款算法，见 `magic_mount.rs`）。挂上之后要通知内核，否则非 root 应用的
-/// umount 逻辑不知道模块已经挂载 —— metamodule 的 mount 脚本做的也是这一句。
+/// （Magisk 同款算法，见 `magic_mount.rs`）。
+///
+/// 挂上之后要做两件事，缺一不可：
+/// 1. 把**每个真实树挂载点**登记进内核的 try-umount 表；
+/// 2. 通知内核"模块已挂载"。
+///
+/// 第 1 步以前只有 metamodule 的 mount 脚本在做（`xudc umount add`），走的这条内置兜底
+/// 路径没有脚本，于是内核 `kernel_umount` 在 setuid 时遍历的是一张空表 —— 非 root 应用
+/// 永远不会被卸载掉这些 bind，模块挂了等于没做到"只对 root 可见"。
 #[cfg(target_os = "android")]
 fn mount_modules_magic_fallback() -> Result<()> {
-    let mounted = crate::magic_mount::mount_modules(Path::new(defs::MAGIC_WORK_DIR))?;
-    if mounted.is_empty() {
+    let outcome = crate::magic_mount::mount_modules(Path::new(defs::MAGIC_WORK_DIR))?;
+    if outcome.modules.is_empty() {
         info!("magic mount: 没有需要挂载的模块");
         return Ok(());
     }
     info!(
         "magic mount: 已挂载 {} 个模块: {}",
-        mounted.len(),
-        mounted.join(", ")
+        outcome.modules.len(),
+        outcome.modules.join(", ")
     );
+    // MNT_DETACH：允许 busy / 有嵌套挂载时惰性 detach，与 `xudc umount add --flags 2` 同义。
+    const MNT_DETACH: u32 = 2;
+    let mut failed = 0usize;
+    for point in &outcome.mount_points {
+        let path = point.to_string_lossy();
+        match ksucalls::umount_list_add(&path, MNT_DETACH) {
+            Ok(()) => {}
+            Err(e) if is_already_registered(&e) => {
+                debug!("magic mount: {path} 已经在 try-umount 表里");
+            }
+            Err(e) => {
+                failed += 1;
+                warn!("magic mount: 把 {path} 登记进 try-umount 表失败: {e}");
+            }
+        }
+    }
+    if failed > 0 {
+        warn!("magic mount: {failed} 个挂载点没能登记，这些模块对非 root 应用不会被卸载");
+    }
     ksucalls::report_module_mounted();
     Ok(())
+}
+
+/// 内核 `add_try_umount` 对已登记的同一路径返回 `-EEXIST`，`ksuctl` 会把它转成错误串。
+/// 重复登记不是失败：表里已经有这个路径，正是我们要的状态。
+#[cfg(target_os = "android")]
+fn is_already_registered(e: &anyhow::Error) -> bool {
+    let text = format!("{e:#}").to_ascii_lowercase();
+    text.contains("file exists") || text.contains("eexist")
 }
 
 #[cfg(not(target_os = "android"))]
