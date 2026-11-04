@@ -294,11 +294,27 @@ jobs:
             -PKSU_PACKAGE_NAME=${{ env.BRAND_PACKAGE }} \
             -PKSU_NAME=${{ env.BRAND_NAME }}
 
+      # Debug 版：内部测试用的可调式包，与正式产物同一套源码、同一套前置载荷。
+      # 这里刻意跳过 lint —— debug 变体默认会跑它（release 侧 checkReleaseBuilds=false
+      # 已经关掉），一条与本次改动无关的既有告警就会让这个 job 红掉，而这道闸门不该
+      # 卡在内部测试包上。
+      - name: Build debug manager
+        run: |
+          ./gradlew :app:assembleDebug -x lint -x lintDebug \
+            -PKSU_PACKAGE_NAME=${{ env.BRAND_PACKAGE }} \
+            -PKSU_NAME=${{ env.BRAND_NAME }}
+
       - name: Upload gradle artifact
         uses: actions/upload-artifact@v7
         with:
           name: manager-gradle
           path: manager/app/build/outputs/apk/release/*.apk
+
+      - name: Upload debug artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: manager-debug
+          path: manager/app/build/outputs/apk/debug/*.apk
 
   repack:
     needs: [build-manager, build-ksud, generate-key]
