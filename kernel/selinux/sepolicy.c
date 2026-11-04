@@ -698,16 +698,15 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
      * or db->type_* would keep pointing at freed memory.
      */
     new_type_attr_map_array =
-        ksu_kvrealloc(db->type_attr_map_array, value * sizeof(struct ebitmap),
-                      (value - 1) * sizeof(struct ebitmap));
+        ksu_kvrealloc(db->type_attr_map_array, value * sizeof(struct ebitmap), (value - 1) * sizeof(struct ebitmap));
     if (!new_type_attr_map_array) {
         pr_err("add_type: alloc type_attr_map_array failed\n");
         goto out_free_key;
     }
     db->type_attr_map_array = new_type_attr_map_array;
 
-    new_type_val_to_struct = ksu_kvrealloc(
-        db->type_val_to_struct, sizeof(*db->type_val_to_struct) * value, sizeof(*db->type_val_to_struct) * (value - 1));
+    new_type_val_to_struct = ksu_kvrealloc(db->type_val_to_struct, sizeof(*db->type_val_to_struct) * value,
+                                           sizeof(*db->type_val_to_struct) * (value - 1));
     if (!new_type_val_to_struct) {
         pr_err("add_type: alloc type_val_to_struct failed\n");
         goto out_free_key;
