@@ -1044,4 +1044,34 @@ XEC 项目组
     <string name="flash_boot_txn_clear">清除卡住的引导事务</string>
     <string name="flash_boot_txn_cleared">引导事务已清除</string>
     <string name="flash_boot_txn_clear_failed">清除引导事务失败</string>
+
+    <!-- 扩展模块（工具箱 -> 扩展模块） -->
+    <string name="tools_external_modules_title">扩展模块</string>
+    <string name="tools_external_modules_summary">可选扩展：TEE 引擎、TA 增强，以及 Zygisk 跳转入口</string>
+    <string name="ext_modules_title">扩展模块</string>
+    <string name="ext_modules_intro">可选扩展。本项目的模块从我们自己的 Releases 下载并由管理器安装；第三方条目只提供跳转链接，本应用不内置、不编译、也不转发它的代码。</string>
+    <string name="ext_modules_section_own">本项目提供</string>
+    <string name="ext_modules_section_third_party">第三方（仅跳转）</string>
+    <string name="ext_modules_kind_install">在此安装</string>
+    <string name="ext_modules_kind_link">浏览器打开</string>
+    <string name="ext_modules_tee_title">TEE 引擎</string>
+    <string name="ext_modules_tee_summary">安装内核模块用于密钥处理的 TEE 引擎模块，与管理器一起构建和分发。</string>
+    <string name="ext_modules_ta_title">TA 增强</string>
+    <string name="ext_modules_ta_summary">安装与 TEE 引擎配合使用的可信应用（TA）增强模块，与管理器一起构建和分发。</string>
+    <string name="ext_modules_zygisk_title">Zygisk（ReZygisk）</string>
+    <string name="ext_modules_zygisk_summary">ReZygisk 是由其作者自行维护的 Zygisk 实现，属于第三方软件，使用 AGPL-3.0-or-later 许可；本应用不分发它。按钮会在浏览器中打开其上游 Releases 页面。</string>
+    <string name="ext_modules_source_own">由本项目构建并分发（GPL-3.0）</string>
+    <string name="ext_modules_source_third_party">第三方 · AGPL-3.0-or-later · 由其作者维护 · 本应用不分发</string>
+    <string name="ext_modules_download_and_install">下载并安装</string>
+    <string name="ext_modules_install_again">重新安装</string>
+    <string name="ext_modules_open_releases">打开 Releases 页面</string>
+    <string name="ext_modules_checking_root">正在检查 Root 权限…</string>
+    <string name="ext_modules_downloading">正在下载… %1$d%%</string>
+    <string name="ext_modules_installing">正在安装…</string>
+    <string name="ext_modules_download_failed">下载失败，请检查网络后重试。</string>
+    <string name="ext_modules_install_failed">安装失败。</string>
+    <string name="ext_modules_install_failed_detail">安装失败：%1$s</string>
+    <string name="ext_modules_install_ok">安装完成，重启设备后生效。</string>
+    <string name="ext_modules_root_required">当前没有可用的 Root，无法安装模块。请确认本管理器已获得 Root 授权。</string>
+    <string name="ext_modules_no_browser">没有可以打开该页面的应用。</string>
 </resources>

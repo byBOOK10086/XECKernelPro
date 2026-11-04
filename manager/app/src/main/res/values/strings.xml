@@ -1042,4 +1042,34 @@ See the log below for details.</string>
     <string name="flash_boot_txn_clear">Clear stuck boot transaction</string>
     <string name="flash_boot_txn_cleared">Boot transaction cleared</string>
     <string name="flash_boot_txn_clear_failed">Failed to clear the boot transaction</string>
+
+    <!-- External modules (Toolbox -> External modules) -->
+    <string name="tools_external_modules_title">External modules</string>
+    <string name="tools_external_modules_summary">Optional add-ons: TEE engine, TA enhancements and a Zygisk link-out</string>
+    <string name="ext_modules_title">External modules</string>
+    <string name="ext_modules_intro">Optional add-ons. Our modules are downloaded from our own release page and installed by the manager. The third-party entry is a link-out only: nothing from it is bundled, compiled or redistributed in this app.</string>
+    <string name="ext_modules_section_own">From this project</string>
+    <string name="ext_modules_section_third_party">Third-party (link-out only)</string>
+    <string name="ext_modules_kind_install">Install here</string>
+    <string name="ext_modules_kind_link">Opens browser</string>
+    <string name="ext_modules_tee_title">TEE engine</string>
+    <string name="ext_modules_tee_summary">Installs the TEE engine module used by the kernel module for key handling. Built and distributed together with the manager.</string>
+    <string name="ext_modules_ta_title">TA enhancement</string>
+    <string name="ext_modules_ta_summary">Installs the trusted-application enhancement module used together with the TEE engine. Built and distributed together with the manager.</string>
+    <string name="ext_modules_zygisk_title">Zygisk (ReZygisk)</string>
+    <string name="ext_modules_zygisk_summary">ReZygisk is a Zygisk implementation maintained by its own authors. It is third-party software licensed AGPL-3.0-or-later and is not distributed by this app. The button opens its upstream releases page in your browser.</string>
+    <string name="ext_modules_source_own">Built and distributed by this project (GPL-3.0)</string>
+    <string name="ext_modules_source_third_party">Third-party - AGPL-3.0-or-later - maintained by its authors - not distributed by this app</string>
+    <string name="ext_modules_download_and_install">Download and install</string>
+    <string name="ext_modules_install_again">Install again</string>
+    <string name="ext_modules_open_releases">Open releases page</string>
+    <string name="ext_modules_checking_root">Checking root access...</string>
+    <string name="ext_modules_downloading">Downloading... %1$d%%</string>
+    <string name="ext_modules_installing">Installing...</string>
+    <string name="ext_modules_download_failed">Download failed. Check your connection and try again.</string>
+    <string name="ext_modules_install_failed">Install failed.</string>
+    <string name="ext_modules_install_failed_detail">Install failed: %1$s</string>
+    <string name="ext_modules_install_ok">Installed. Reboot the device to activate it.</string>
+    <string name="ext_modules_root_required">Root is not available right now, so the module cannot be installed. Check that this manager is granted root.</string>
+    <string name="ext_modules_no_browser">No app is available to open the releases page.</string>
 </resources>

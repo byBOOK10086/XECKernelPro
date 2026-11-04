@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.runtime.Composable
@@ -134,6 +135,13 @@ fun ToolsScreen() {
                         summary = stringResource(id = R.string.tools_terminal_summary),
                         icon = { Icon(Icons.Rounded.Code, modifier = Modifier.padding(end = 6.dp), contentDescription = null, tint = colorScheme.onBackground) },
                         onClick = { navigator.push(Route.Terminal) },
+                    )
+                    ToolCard(
+                        backdrop = backdrop,
+                        title = stringResource(id = R.string.tools_external_modules_title),
+                        summary = stringResource(id = R.string.tools_external_modules_summary),
+                        icon = { Icon(Icons.Rounded.Extension, modifier = Modifier.padding(end = 6.dp), contentDescription = null, tint = colorScheme.onBackground) },
+                        onClick = { navigator.push(Route.ExternalModules) },
                     )
                     SuperkeyCard(backdrop)
                     StealthCard(backdrop)

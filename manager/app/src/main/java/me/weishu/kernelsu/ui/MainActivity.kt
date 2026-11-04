@@ -92,6 +92,7 @@ import me.weishu.kernelsu.ui.screen.about.AboutScreen
 import me.weishu.kernelsu.ui.screen.appprofile.AppProfileScreen
 import me.weishu.kernelsu.ui.screen.colorpalette.ColorPaletteScreen
 import me.weishu.kernelsu.ui.screen.executemoduleaction.ExecuteModuleActionScreen
+import me.weishu.kernelsu.ui.screen.extmodules.ExternalModulesScreen
 import me.weishu.kernelsu.ui.screen.flash.FlashScreen
 import me.weishu.kernelsu.ui.screen.home.HomePager
 import me.weishu.kernelsu.ui.screen.hidepack.HideEnvListScreen
@@ -158,12 +159,20 @@ private val BG_DARK_DRAWABLES = intArrayOf(
     R.drawable.bg_dark_4,
 )
 
+/**
+ * 开屏视频的兜底上限。正常路径是视频播完自己回调关闭；这个值只在播放器起不来、
+ * 素材比预期长、或者回调丢了的时候兜住，避免开屏变成挡住整个 App 的黑屏。
+ */
+private const val BOOT_SPLASH_MAX_MS = 5_000L
+
 open class MainActivity : ComponentActivity() {
 
     private val intentChannel = Channel<Intent>(capacity = Channel.BUFFERED)
     private var contentReady = false
     private var splashStartedAt = 0L
-    private val splashAnimationDurationMs = 500L
+    // 系统 splash 现在只画品牌深底（图标已撤），没有必要再压着它等动画——
+    // contentReady 一到就放行，让开屏视频尽早开始。
+    private val splashAnimationDurationMs = 0L
 
 
     @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
@@ -189,9 +198,11 @@ open class MainActivity : ComponentActivity() {
 
         setContent {
             var showBootSplash by rememberSaveable { mutableStateOf(true) }
+            // 开屏视频由 XecBootSplash 播完自己回调关闭。这里的定时器只是兜底：
+            // 解码失败、视频比预期长、或者播放器压根没起来，都不能让开屏挡住 App。
             LaunchedEffect(Unit) {
                 if (showBootSplash) {
-                    delay(900)
+                    delay(BOOT_SPLASH_MAX_MS)
                     showBootSplash = false
                 }
             }
@@ -376,6 +387,7 @@ open class MainActivity : ComponentActivity() {
                                             entry<Route.RemoteAssistant> { RemoteAssistantScreen() }
                                             entry<Route.Terminal> { TerminalScreen() }
                                             entry<Route.Tools> { ToolsScreen() }
+                                            entry<Route.ExternalModules> { ExternalModulesScreen() }
                                             entry<Route.Privilege> { key -> PrivilegeScreen(key.updateMode) }
                                             entry<Route.Home> { mainScreenEntry() }
                                             entry<Route.SuperUser> { mainScreenEntry() }
@@ -493,7 +505,10 @@ open class MainActivity : ComponentActivity() {
                                     state = dialogHostState,
                                     backdrop = dialogBackdrop,
                                 )
-                                XecBootSplash(visible = showBootSplash)
+                                XecBootSplash(
+                                    visible = showBootSplash,
+                                    onFinished = { showBootSplash = false },
+                                )
                                 SideEffect { contentReady = true }
                             }
                         }
