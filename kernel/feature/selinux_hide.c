@@ -368,19 +368,28 @@ KSU_SUSFS_LINKAGE void initialize_fake_status()
     // 拿它和 AVC/策略查询交叉比对即可判成 Abnormal Environment(k)。这里统一
     // 改回原厂开机结束时的哨兵值（与 late_load 路径同一口径）。
     //
-    // 这两个数字是 2026-11-05 两轮真机实测定下来的，别再按内核版本分流：
+    // 分界必须和探测器自己的 `newKernel` 判据一致：
+    //   newKernel = major > 6 || (major == 6 && minor >= 10)
+    //   新内核 → (sequence, policyload) = (4, 1)，老内核 → (0, 0)。
     //
-    // 探测器把状态页分成三类 —— (0,0)="Legacy initial"、(4,1)="Modern initial"、
-    // 其它="Non-initial"。只有前两类被当作正常的开机初值。
-    //   * 原来 <6.10 写 (0,0)：被认，但 policyload=0 与 selinuxfs access 节点返回的
-    //     avdSeqNo=1 对不上 → 判 "Enforcing (paradox)"，SELinux 卡片 DANGER；
-    //   * 只把 policyload 改成 1 得到 (0,1)：policyload 对上了，但落进 "Non-initial"
-    //     那一类 → 判 "DirtySepolicy WARNING"，卡片仍然 DANGER。
+    // 这两组不是我们编的"能过的值"，而是**原厂指纹**：探测器的兼容层专门把
+    // (0,0) 叫 "Legacy initial status counters"、把 (4,1) 叫 "Modern initial
+    // status counters"，说明作者实测过两种内核各自的开机初值。
     //
-    // (4,1) 同时满足两个条件：既在"正常的开机初值"里，policyload 又与 avdSeqNo 一致。
-    // sequence 保持偶数：奇数在语义上表示"策略正在加载中"。
+    // 2026-11-06 真机纠正（审计重裁）：先前一版把两个分支都写成 (4,1)，理由是
+    // "policyload=0 会与 avdSeqNo=1 冲突"。那条理由来自对 detect 结果的误读——
+    // 探测器里的 "Enforcing (paradox)" 判的是**读 /sys/fs/selinux/enforce 被拒**
+    // （见 SelinuxStatusResolution.kt 的 enforceReadDenied 分支），与这两个计数
+    // 毫无关系；把 (pl,seq) 代进 seqno oracle 的四个分支，(0,0) 落的是
+    // INCONCLUSIVE，不是命中。老内核写 (4,1) 反而踩 "legacy 内核上有现代计数"。
+    // 所以老内核回 (0,0)，`sequence` 也必须一起清零，不能只清 policyload。
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
     new_status->sequence = 4;
     new_status->policyload = 1;
+#else
+    new_status->sequence = 0;
+    new_status->policyload = 0;
+#endif
     if (!new_status->enforcing) {
         new_status->enforcing = 1;
     }
@@ -397,6 +406,16 @@ typedef int (*sel_open_handle_status_fn)(struct inode *inode, struct file *filp)
 static sel_open_handle_status_fn orig_sel_open_handle_status, *sel_open_handle_status_slot;
 static int my_sel_open_handle_status(struct inode *inode, struct file *filp)
 {
+    /*
+     * uid >= 10000 = Android 应用（FIRST_APPLICATION_UID），只有它们拿到伪造页；
+     * root / shell（uid < 10000）走的仍是原始的 sel_open_handle_status，看到的是
+     * 真实状态页。
+     *
+     * 这条分界是**有意的**，不是漏判：保留 root 侧的真实读数，出问题时才能用
+     * `od /sys/fs/selinux/status` 直接对账，否则我们连自己伪造成了什么都要靠猜。
+     * 代价是"root 能看出页被换过"——但能拿到 root 的那一方本来就不在隐藏目标里。
+     * 审计 2026-11-06 要求把这个设计写成注释，此处即为其结果。
+     */
     if (likely(current_uid().val >= 10000 && ksu_selinux_hide_enabled)) {
         void *data;
         mutex_lock(&selinux_state.status_lock);
