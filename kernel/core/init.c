@@ -37,6 +37,18 @@
 #include <linux/susfs.h>
 #endif
 
+#ifdef MODULE
+#ifndef CONFIG_KSU_DEBUG
+/*
+ * 内核可见面（/proc/modules、lsmod、kallsyms 模块段）上展示用的中性名字。
+ * 真名会和 root 工具的特征词直接撞上，属于"不用探测就能认出来"的那一类暴露。
+ */
+#define KSU_LKM_SAFE_NAME "xeccore"
+/* modules 链表的保护锁，内核里 EXPORT_SYMBOL_GPL；用于安全地把本模块摘出可见链表。 */
+extern struct mutex module_mutex;
+#endif
+#endif
+
 #if defined(__x86_64__) && !defined(CONFIG_KSU_X86_PATCH_SYSCALL_DISPATCHER)
 #include <asm/cpufeature.h>
 #include <linux/version.h>
@@ -230,22 +242,41 @@ int __init kernelsu_init(void)
 #ifdef MODULE
 #ifndef CONFIG_KSU_DEBUG
     /*
-     * 把模块自己从内核的可见面里摘掉，两条路都要走：
+     * 把模块自己从内核的可见面里摘掉。分两步，每一步都可以单独站住：
      *
-     * - kobject_del() 只影响 /sys/module（sysfs 是按 kobject 树列出来的）；
-     * - /proc/modules 不是 kobject 生成的，它遍历的是内核的 `modules` 链表
-     *   （kernel/module/procfs.c: m_show -> list_for_each_entry(mod, &modules, list)），
-     *   所以还必须有一步 list_del。
+     * 第一步，改名。`/proc/modules`、`/proc/kallsyms` 的模块段、`lsmod` 全是按
+     * `mod->name` 打印的，把名字换成中性串之后，即使第二步失败，任何人读到的也
+     * 只是一个不认识的模块名，而不是 "kernelsu"。这一步只写自己对象里的 char 数组，
+     * 不碰任何共享结构，不需要锁。
      *
-     * 少了第二步，任何应用 `cat /proc/modules` 就能直接读到 "kernelsu" 这个名字，
-     * 连探测都不需要 —— Duck Detector 的 nativeroot「内核痕迹」正是查这一步。
+     * 第二步，摘链。`kobject_del()` 只影响 /sys/module（sysfs 按 kobject 树列出来），
+     * 而 /proc/modules 遍历的是内核的 `modules` 链表（kernel/module/procfs.c 的
+     * m_show），所以还需要 list_del。
      *
-     * 用 list_del_init 而不是 list_del：后者把 prev/next 写成 LIST_POISON，
-     * 之后若有别的路径再碰 THIS_MODULE->list 会直接崩；list_del_init 让它指向
-     * 自己，重复摘除也安全。代价是这个模块再也不能 rmmod —— 我们本来也不卸载它。
+     * **摘链表必须在 module_mutex 下做**（审计裁决，2026-11-05）：`modules` 由
+     * RCU + module_mutex 保护，/proc/modules、kallsyms 的模块符号遍历、find_module_all()
+     * 都会并发走它；裸 list_del 与这些读者撞上就是链表损坏。module_mutex 是
+     * EXPORT_SYMBOL_GPL。
+     *
+     * 用 mutex_trylock 而不是 mutex_lock：模块 ->init() 是在 do_init_module() 里调的、
+     * 而 module_mutex 在那之后才被取，正常情况一定拿得到；但万一某个 KMI 的语义不是
+     * 这样，trylock 只是让第二步降级，不会在开机路径上死锁。
+     *
+     * 用 list_del_init 而不是 list_del：后者把 prev/next 写成 LIST_POISON，之后任何
+     * 路径再碰 THIS_MODULE->list 都会崩；list_del_init 让它指向自己，重复摘除也安全。
+     * 代价是模块再也不能 rmmod —— 我们本来也不卸载它。
+     *
+     * 不跟 synchronize_rcu()：摘链后仍在读临界区里的读者拿到的还是有效对象（我们从不
+     * 释放这个 module），宽限期只在真正释放内存时才必要。
      */
     kobject_del(&THIS_MODULE->mkobj.kobj);
-    list_del_init(&THIS_MODULE->list);
+    strscpy(THIS_MODULE->name, KSU_LKM_SAFE_NAME, MODULE_NAME_LEN);
+    if (mutex_trylock(&module_mutex)) {
+        list_del_init(&THIS_MODULE->list);
+        mutex_unlock(&module_mutex);
+    } else {
+        pr_warn("kernelsu: module_mutex is busy; module stays on the list under a neutral name\n");
+    }
 #endif
 #endif
     return 0;
