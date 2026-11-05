@@ -290,7 +290,14 @@ static int ksu_backup_type_absent(const char *value, size_t size)
     size_t len;
     int colons = 0;
 
-    if (!value || !size || !backup_sepolicy)
+    /*
+     * backup_sepolicy 的生命期：它只在 ksu_selinux_hide_enable() 里建立，唯一的释放点是
+     * ksu_selinux_hide_drop_backup_if_unused()——那个函数只从 on_boot_completed() 调用
+     * （kernel/runtime/boot_event.c:73），而且只在 !ksu_selinux_hide_running 时释放，也就是
+     * 只在 hook 根本没挂上的时候释放。下面这个 running 判断把这个不变量写进代码：功能没在跑
+     * 就绝不碰这个指针，而不是靠"hook 没挂上"这个隐含事实。
+     */
+    if (!value || !size || !backup_sepolicy || !ksu_selinux_hide_running)
         return -EAGAIN;
 
     end = value + size;
