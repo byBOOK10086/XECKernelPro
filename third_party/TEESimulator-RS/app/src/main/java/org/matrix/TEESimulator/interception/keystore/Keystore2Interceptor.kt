@@ -244,6 +244,8 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
                 KeyMintParameterLogger.logParameter(it.keyParameter)
             }
             return InterceptorUtils.createTypedObjectReply(response)
+        } else if (code == GRANT_TRANSACTION) {
+            return handleGrant(txId, callingUid, callingPid, data)
         } else {
             logTransaction(
                 txId,
@@ -460,8 +462,6 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
                     )
                     return TransactionResult.SkipTransaction
                 }
-        } else if (code == GRANT_TRANSACTION) {
-            return handleGrant(txId, callingUid, callingPid, data)
         }
         return TransactionResult.SkipTransaction
     }
@@ -490,7 +490,7 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
             return TransactionResult.ContinueAndSkipPost
         }
 
-        logTransaction(txId, "grant ${key.alias ?: key.domain.name}", callingUid, callingPid)
+        logTransaction(txId, "grant ${key.alias ?: key.domain}", callingUid, callingPid)
         if (Build.VERSION.SDK_INT < GRANT_PUBLIC_API_SDK) {
             return InterceptorUtils.createErrorReply(RESPONSE_PERMISSION_DENIED)
         }

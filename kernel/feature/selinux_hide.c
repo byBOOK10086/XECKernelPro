@@ -520,7 +520,7 @@ static int my_sel_open_handle_status(struct inode *inode, struct file *filp)
 }
 
 static void hook_selinux_status_open();
-static void ksu_selinux_hide_unhook();
+static int ksu_selinux_hide_unhook();
 static int ksu_selinux_hide_enable()
 {
     int ret;
@@ -578,7 +578,15 @@ unhook:
     return -ENOSYS;
 }
 
-static void ksu_selinux_hide_unhook()
+/*
+ * 返回值只有一个含义：setprocattr 这个 LSM hook 是不是真的摘掉了。
+ *
+ * ksu_lsm_unhook() 是 void，而且槽位恢复失败时会提前返回——那次提前返回发生在
+ * synchronize_rcu() 之前，也不清 hook->entry。所以 entry 非空就是"还在挂着"。
+ * 调用方必须据此决定能不能把 ksu_selinux_hide_running 清掉：清早了，
+ * on_boot_completed() 那条 drop 就会在 hook 还活着的时候把 backup_sepolicy 释放掉。
+ */
+static int ksu_selinux_hide_unhook()
 {
     int ret;
     if (orig_context_write) {
@@ -605,12 +613,17 @@ static void ksu_selinux_hide_unhook()
         }
     }
     ksu_lsm_unhook(&selinux_setprocattr_hook);
+    if (selinux_setprocattr_hook.entry) {
+        pr_err("selinux_hide: exit: setprocattr hook is still installed, keeping backup_sepolicy\n");
+        return -EBUSY;
+    }
+    return 0;
 }
 
-static void ksu_selinux_hide_disable()
+static int ksu_selinux_hide_disable()
 {
     pr_info("selinux_hide: exit selinux hide\n");
-    ksu_selinux_hide_unhook();
+    return ksu_selinux_hide_unhook();
 }
 
 static int selinux_hide_feature_get(u64 *value)
@@ -635,8 +648,13 @@ static int selinux_hide_feature_set(u64 value)
         }
     } else {
         if (ksu_selinux_hide_running) {
-            ksu_selinux_hide_disable();
-            ksu_selinux_hide_running = false;
+            ret = ksu_selinux_hide_disable();
+            if (ret) {
+                /* hook 没摘掉：keep running so nothing frees the policy under it */
+                pr_err("selinux_hide: disable failed (%d), hook stays installed\n", ret);
+            } else {
+                ksu_selinux_hide_running = false;
+            }
         }
     }
     mutex_unlock(&selinux_hide_mutex);
@@ -718,8 +736,11 @@ void __exit ksu_selinux_hide_exit()
 {
     mutex_lock(&selinux_hide_mutex);
     if (ksu_selinux_hide_running) {
-        ksu_selinux_hide_disable();
-        ksu_selinux_hide_running = false;
+        if (ksu_selinux_hide_disable() == 0) {
+            ksu_selinux_hide_running = false;
+        } else {
+            pr_err("selinux_hide: exit: hook still installed, leaving the policy alone\n");
+        }
     }
     mutex_unlock(&selinux_hide_mutex);
     ksu_unregister_feature_handler(KSU_FEATURE_SELINUX_HIDE);
@@ -733,7 +754,7 @@ void __exit ksu_selinux_hide_exit()
 void ksu_selinux_hide_drop_backup_if_unused()
 {
     mutex_lock(&selinux_hide_mutex);
-    if (!ksu_selinux_hide_running && backup_sepolicy) {
+    if (!ksu_selinux_hide_running && !selinux_setprocattr_hook.entry && backup_sepolicy) {
         pr_info("selinux_hide is not enabled - drop backup_sepolicy\n");
         sidtab_destroy(backup_sepolicy->sidtab);
         kfree(backup_sepolicy->sidtab);
