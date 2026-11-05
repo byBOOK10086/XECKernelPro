@@ -176,6 +176,13 @@ jobs:
           cp -a "$GITHUB_WORKSPACE" "$KDIR/KernelSU"
           git config --global --add safe.directory "$KDIR/KernelSU" || true
 
+          # 版本号单一真源必须在 GKI 自己的 git 根上也能被找到（审计 P3）：
+          # kernel/Kbuild 先试 $(GIT_ROOT)/version.properties，而这里的 GIT_ROOT
+          # 是 $KDIR（common 自己的仓库根，不是我们这份拷贝），所以那份不存在；
+          # 回退路径 $(MDIR)/.. 落在 common/drivers/ 也不存在 → KSU_VERSION 静默
+          # 变成 16，首页拿内核的 16 跟管理器的 313xx 比，永远提示有更新。
+          cp "$GITHUB_WORKSPACE/version.properties" "$KDIR/version.properties"
+
           cd "$KDIR"
           # 与 kernel/setup.sh 相同的接线：drivers/kernelsu 符号链接 +
           # drivers 侧 Makefile/Kconfig 挂载，使 CONFIG_KSU=y 时整棵 kernel/

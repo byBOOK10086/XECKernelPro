@@ -88,10 +88,13 @@ private fun checkNewVersionFromSite(): LatestVersionInfo {
             if (!response.isSuccessful) return LatestVersionInfo()
             val json = org.json.JSONObject(response.body.string())
             val versionCode = json.optInt("versionCode")
-            if (versionCode <= 0) return LatestVersionInfo()
+            // 光有版本号不够：apkUrl 空串时会提示"有更新"、点下载却必然失败（审计 P3）。
+            // 两者都在才算一条可用的更新信息。
+            val apkUrl = json.optString("apkUrl").trim()
+            if (versionCode <= 0 || apkUrl.isEmpty()) return LatestVersionInfo()
             return LatestVersionInfo(
                 versionCode = versionCode,
-                downloadUrl = json.optString("apkUrl"),
+                downloadUrl = apkUrl,
                 changelog = json.optString("changelog"),
             )
         }
