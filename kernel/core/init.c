@@ -229,7 +229,23 @@ int __init kernelsu_init(void)
 
 #ifdef MODULE
 #ifndef CONFIG_KSU_DEBUG
+    /*
+     * 把模块自己从内核的可见面里摘掉，两条路都要走：
+     *
+     * - kobject_del() 只影响 /sys/module（sysfs 是按 kobject 树列出来的）；
+     * - /proc/modules 不是 kobject 生成的，它遍历的是内核的 `modules` 链表
+     *   （kernel/module/procfs.c: m_show -> list_for_each_entry(mod, &modules, list)），
+     *   所以还必须有一步 list_del。
+     *
+     * 少了第二步，任何应用 `cat /proc/modules` 就能直接读到 "kernelsu" 这个名字，
+     * 连探测都不需要 —— Duck Detector 的 nativeroot「内核痕迹」正是查这一步。
+     *
+     * 用 list_del_init 而不是 list_del：后者把 prev/next 写成 LIST_POISON，
+     * 之后若有别的路径再碰 THIS_MODULE->list 会直接崩；list_del_init 让它指向
+     * 自己，重复摘除也安全。代价是这个模块再也不能 rmmod —— 我们本来也不卸载它。
+     */
     kobject_del(&THIS_MODULE->mkobj.kobj);
+    list_del_init(&THIS_MODULE->list);
 #endif
 #endif
     return 0;
