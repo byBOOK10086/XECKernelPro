@@ -258,39 +258,46 @@ static u32 ptrace_parent_sid(void)
 typedef int (*setprocattr_fn)(const char *name, void *value, size_t size);
 
 /*
- * 便宜的预判：这个 context 的类型符号在 **live 策略**里存不存在。
+ * 便宜的预判：这个 context 的类型符号在 **隐藏（backup）策略**里存不存在。
  *
- * 只做一件事——跳过两遍策略解析。`security_context_to_sid_with_policy()` 会同时
- * 解析隐藏策略和 live 策略（见 string_to_context_struct 里的 pol/orig_pol 双路），
- * 而类型符号不存在时它必然在 type 查找那一步（第 739 行）返回 -EINVAL。我们先用
- * 一次 symtab_search 把这种注定失败的输入挡掉，答案一个字都不变，只是不用为它付
- * 两遍解析的钱。
+ * 只做一件事——跳过两遍策略解析，答案一个字都不变。判据直接取自原解析器的门槛：
+ * string_to_context_struct() 里
+ *     typdatum = symtab_search(&pol->p_types, scontextp);
+ *     if (!typdatum || typdatum->attribute) goto out;
+ * 这里的 pol 就是 backup_sepolicy。所以"backup 里没有这个 type（或它是 attribute）"
+ * 与"双库解析返回 -EINVAL"是同一件事，提前返回同一个错误不会改变任何语义。
  *
- * 为什么需要：Duck 的 app_zygote 探针往 attr/current 写两种同长度 payload，A 是
+ * 为什么不用 live 策略：live 侧在那段解析里只是 `if (orig_typdatum && ...)` 的可选
+ * 同步，真正的门槛在 backup；而且策略 reload 之后 live 与 backup 未必同代，用 live
+ * 判断会引入"live 缺、backup 有"的误拒风险。用 backup 则完全不需要任何同代假设。
+ *
+ * 为什么需要它：Duck 的 app_zygote 探针往 attr/current 写两种同长度 payload，A 是
  * 语法合法但类型不存在的 context，B 是换行开头。B 在下面 str[0] != '\n' 处就短路了，
  * A 却要进双库解析，于是 A 比 B 慢约 300ns，被判成 "Positive A-B timing asymmetry"。
  * 真机对照：把 selinux_hide 关掉后 A-B 立刻从 +308ns 变成 -1ns，可复现。
  *
  * 返回值三态，调用方只认 -EINVAL：
- *   -EINVAL  类型符号不存在（或它是 attribute）→ 原路径也一定拒绝
- *   -EAGAIN  判不了（没 live 策略 / 布局不合预期 / 类型名过长）→ 保持原路径
+ *   -EINVAL  类型符号不在 backup 策略里（或是 attribute）→ 原路径也一定拒绝
+ *   -EAGAIN  判不了 → 保持原路径。包括：没有 backup 策略、段数不够、类型名过长、
+ *            以及 **payload 里出现 NUL**（原解析器按 C 字符串在 NUL 处截断，结论不可比）
  * 只读：一次 symtab 查找，不碰任何 sidtab，也不改调用方缓冲区。
  */
-static int ksu_live_type_absent(const char *value, size_t size)
+static int ksu_backup_type_absent(const char *value, size_t size)
 {
     const char *p, *end, *type_start, *type_end;
-    struct selinux_policy *policy;
     struct type_datum *typdatum;
     char type_name[96];
     size_t len;
     int colons = 0;
 
-    if (!value || !size)
+    if (!value || !size || !backup_sepolicy)
         return -EAGAIN;
 
     end = value + size;
     type_start = NULL;
     for (p = value; p < end; p++) {
+        if (*p == '\0')
+            return -EAGAIN;
         if (*p != ':')
             continue;
         if (++colons == 2) {
@@ -301,8 +308,10 @@ static int ksu_live_type_absent(const char *value, size_t size)
     if (!type_start)
         return -EAGAIN;
 
-    for (p = type_start; p < end && *p != ':'; p++)
-        ;
+    for (p = type_start; p < end && *p != ':'; p++) {
+        if (*p == '\0')
+            return -EAGAIN;
+    }
     type_end = p;
     len = (size_t)(type_end - type_start);
     if (!len || len >= sizeof(type_name))
@@ -311,16 +320,9 @@ static int ksu_live_type_absent(const char *value, size_t size)
     memcpy(type_name, type_start, len);
     type_name[len] = '\0';
 
-    rcu_read_lock();
-    policy = rcu_dereference(selinux_state.policy);
-    if (!policy) {
-        rcu_read_unlock();
-        return -EAGAIN;
-    }
-    typdatum = symtab_search(&policy->policydb.p_types, type_name);
+    typdatum = symtab_search(&backup_sepolicy->policydb.p_types, type_name);
     if (typdatum && typdatum->attribute)
         typdatum = NULL;
-    rcu_read_unlock();
 
     return typdatum ? -EAGAIN : -EINVAL;
 }
@@ -348,11 +350,11 @@ static int __nocfi my_setprocattr(const char *name, void *value, size_t size)
     /* Obtain a SID for the context, if one was specified. */
     if (size && str[0] && str[0] != '\n') {
         /*
-         * 类型符号在 live 策略里不存在时，下面那条双库解析必然也是 -EINVAL，
-         * 所以这里提前返回同一个错误，只省掉两遍解析的代价（原因见
-         * ksu_live_type_absent 的注释）。判不了就照原样往下走。
+         * 类型符号不在隐藏策略里时，下面那条双库解析必然也是 -EINVAL，所以这里
+         * 提前返回同一个错误，只省掉两遍解析的代价（见 ksu_backup_type_absent）。
+         * 判不了一律照原样往下走。
          */
-        if (ksu_live_type_absent(value, size) == -EINVAL)
+        if (ksu_backup_type_absent(value, size) == -EINVAL)
             return -EINVAL;
         if (str[size - 1] == '\n') {
             str[size - 1] = 0;
