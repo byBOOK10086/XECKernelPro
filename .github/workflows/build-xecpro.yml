@@ -555,7 +555,7 @@ jobs:
     # 发布的 Release 里追加资产。2026-11-05 就这么发生过两次 —— v31347 与 v31348
     # 各被塞进第二个 APK（重跑产物与首发**不是逐字节一致**），用户会看到同一版本
     # 两个不同的安装包。守卫存在的前提是它能挡住下游，不能只是报红。
-    needs: [guards, repack, build-ksud, build-ksuinit]
+    needs: [guards, repack, build-ksud, build-ksuinit, build-manager]
     if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.publish)
     runs-on: ubuntu-latest
     permissions:

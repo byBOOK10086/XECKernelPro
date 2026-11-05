@@ -114,6 +114,13 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
 
     struct mount_entry *entry;
     down_read(&mount_list_lock);
+    /*
+     * 注意遍历顺序：add_try_umount() 用的是 list_add（**头插**），所以这里先看到
+     * 最后登记的那条。magic mount 的登记是父路径先、子路径后，于是实际卸载序是
+     * 子先父后 —— 正是嵌套挂载需要的那一序。
+     * 谁要是"顺手"把头插改成尾插，卸载序会反过来：父路径的 MNT_DETACH 会先把子树
+     * 连根摘掉，子条目随后变成 no-op，看起来还能跑，但 busy 场景下的行为会变。
+     */
     list_for_each_entry (entry, &mount_list, list) {
         pr_info("%s: unmounting: %s flags: 0x%x\n", __func__, entry->umountable, entry->flags);
         try_umount(entry->umountable, entry->flags);
