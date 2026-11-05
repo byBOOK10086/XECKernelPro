@@ -240,6 +240,11 @@ vendored 源码树（`third_party/`）始终**零修改**：上述修复全部�
   | `assets/{boot_patch.sh,util_functions.sh,stub.apk}` | `manager/app/src/main/assets/magisk/` |
   | `lib/<abi>/{libmagiskboot,libmagiskinit,libmagisk,libinit-ld,libbusybox,libmagiskpolicy}.so` | `manager/app/src/main/jniLibs/<abi>/`（ABI：arm64-v8a、x86_64） |
 
+  > **落地文件名与上游不同**：`libmagisk.so` → `libxeccoresu.so`、
+  > `libmagiskinit.so` → `libxecbootinit.so`（`libkptools.so` → `libxecimgtool.so`，见 KhanPatch 段落）。
+  > 只改文件名，内容与下表的 sha256 完全一致 —— 保留上游原名等于把"本机装了 Magisk 系载荷"
+  > 变成一条任何应用都能 `stat` 到的特征。上游出处、版本与许可证不受影响。
+
   **固定的 sha256**（值逐字取自 `.github/workflows/build-xecpro.yml` 的
   *Fetch Magisk payload* 步骤，那里下载后逐个 `sha256sum -c -` 校验，
   打包/重签之后再由 *Verify Magisk payload survived repack + sign* 步骤复核一遍）：
