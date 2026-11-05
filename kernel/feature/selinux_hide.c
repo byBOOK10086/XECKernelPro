@@ -256,6 +256,75 @@ static u32 ptrace_parent_sid(void)
 }
 
 typedef int (*setprocattr_fn)(const char *name, void *value, size_t size);
+
+/*
+ * 便宜的预判：这个 context 的类型符号在 **live 策略**里存不存在。
+ *
+ * 只做一件事——跳过两遍策略解析。`security_context_to_sid_with_policy()` 会同时
+ * 解析隐藏策略和 live 策略（见 string_to_context_struct 里的 pol/orig_pol 双路），
+ * 而类型符号不存在时它必然在 type 查找那一步（第 739 行）返回 -EINVAL。我们先用
+ * 一次 symtab_search 把这种注定失败的输入挡掉，答案一个字都不变，只是不用为它付
+ * 两遍解析的钱。
+ *
+ * 为什么需要：Duck 的 app_zygote 探针往 attr/current 写两种同长度 payload，A 是
+ * 语法合法但类型不存在的 context，B 是换行开头。B 在下面 str[0] != '\n' 处就短路了，
+ * A 却要进双库解析，于是 A 比 B 慢约 300ns，被判成 "Positive A-B timing asymmetry"。
+ * 真机对照：把 selinux_hide 关掉后 A-B 立刻从 +308ns 变成 -1ns，可复现。
+ *
+ * 返回值三态，调用方只认 -EINVAL：
+ *   -EINVAL  类型符号不存在（或它是 attribute）→ 原路径也一定拒绝
+ *   -EAGAIN  判不了（没 live 策略 / 布局不合预期 / 类型名过长）→ 保持原路径
+ * 只读：一次 symtab 查找，不碰任何 sidtab，也不改调用方缓冲区。
+ */
+static int ksu_live_type_absent(const char *value, size_t size)
+{
+    const char *p, *end, *type_start, *type_end;
+    struct selinux_policy *policy;
+    struct type_datum *typdatum;
+    char type_name[96];
+    size_t len;
+    int colons = 0;
+
+    if (!value || !size)
+        return -EAGAIN;
+
+    end = value + size;
+    type_start = NULL;
+    for (p = value; p < end; p++) {
+        if (*p != ':')
+            continue;
+        if (++colons == 2) {
+            type_start = p + 1;
+            break;
+        }
+    }
+    if (!type_start)
+        return -EAGAIN;
+
+    for (p = type_start; p < end && *p != ':'; p++)
+        ;
+    type_end = p;
+    len = (size_t)(type_end - type_start);
+    if (!len || len >= sizeof(type_name))
+        return -EAGAIN;
+
+    memcpy(type_name, type_start, len);
+    type_name[len] = '\0';
+
+    rcu_read_lock();
+    policy = rcu_dereference(selinux_state.policy);
+    if (!policy) {
+        rcu_read_unlock();
+        return -EAGAIN;
+    }
+    typdatum = symtab_search(&policy->policydb.p_types, type_name);
+    if (typdatum && typdatum->attribute)
+        typdatum = NULL;
+    rcu_read_unlock();
+
+    return typdatum ? -EAGAIN : -EINVAL;
+}
+
 static int __nocfi my_setprocattr(const char *name, void *value, size_t size)
 {
     if (likely(current_uid().val < 10000)) {
@@ -278,6 +347,13 @@ static int __nocfi my_setprocattr(const char *name, void *value, size_t size)
 
     /* Obtain a SID for the context, if one was specified. */
     if (size && str[0] && str[0] != '\n') {
+        /*
+         * 类型符号在 live 策略里不存在时，下面那条双库解析必然也是 -EINVAL，
+         * 所以这里提前返回同一个错误，只省掉两遍解析的代价（原因见
+         * ksu_live_type_absent 的注释）。判不了就照原样往下走。
+         */
+        if (ksu_live_type_absent(value, size) == -EINVAL)
+            return -EINVAL;
         if (str[size - 1] == '\n') {
             str[size - 1] = 0;
             size--;
