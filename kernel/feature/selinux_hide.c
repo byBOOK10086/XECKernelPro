@@ -256,6 +256,11 @@ static u32 ptrace_parent_sid(void)
 }
 
 typedef int (*setprocattr_fn)(const char *name, void *value, size_t size);
+
+/* security_context_to_sid() 没有 EXPORT_SYMBOL，只能从 kallsyms 取地址。 */
+typedef int (*context_to_sid_fn)(const char *scontext, u32 scontext_len, u32 *out_sid, gfp_t gfp);
+static context_to_sid_fn live_context_to_sid;
+
 static int __nocfi my_setprocattr(const char *name, void *value, size_t size)
 {
     if (likely(current_uid().val < 10000)) {
@@ -281,6 +286,23 @@ static int __nocfi my_setprocattr(const char *name, void *value, size_t size)
         if (str[size - 1] == '\n') {
             str[size - 1] = 0;
             size--;
+        }
+        /*
+         * 先让 live 策略判一次，再问 backup（隐藏）策略。
+         *
+         * backup 是 live 的子集，live 都不认的 context 不可能被 backup 认，
+         * 所以这一步只是提前短路，答案不变；但它把「语法合法、类型不存在」
+         * 的拒绝成本压回 stock 的水平。以前这里直接进双库解析，比同一长度
+         * 但以换行开头的畸形 payload 多花约 300ns —— Duck 的 app_zygote
+         * A/B 探针就是靠这 300ns 判成 Positive asymmetry 的：把本特性关掉
+         * 后 A−B 立刻从 +307ns 回落成 -1ns，可复现。live 解析本来也是
+         * stock 处理这条路径必做的一步，所以这不是为了对表而凭空加的耗时。
+         */
+        if (live_context_to_sid) {
+            u32 live_sid = SECSID_NULL;
+            error2 = live_context_to_sid(value, size, &live_sid, GFP_KERNEL);
+            if (error2)
+                return error2;
         }
         error2 = security_context_to_sid_with_policy(backup_sepolicy, value, size, &tmp_sid, SECSID_NULL, GFP_KERNEL,
                                                      &sid, &error);
@@ -458,6 +480,12 @@ static int ksu_selinux_hide_enable()
     context_struct_compute_av_fn = find_kernel_symbol_exact("context_struct_compute_av");
     if (!context_struct_compute_av_fn) {
         pr_warn("context_struct_compute_av not found!\n");
+    }
+
+    /* 用来把 attr/current 的拒绝路径压回 stock 成本；取不到就退回双库解析。 */
+    live_context_to_sid = find_kernel_symbol_exact("security_context_to_sid");
+    if (!live_context_to_sid) {
+        pr_warn("security_context_to_sid not found, attr/current keeps the double policy parse\n");
     }
 
     context_write = &selinux_write_op[SEL_CONTEXT];
