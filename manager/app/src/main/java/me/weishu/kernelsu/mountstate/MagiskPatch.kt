@@ -61,8 +61,8 @@ object MagiskPatch {
     /** 载荷文件名（jniLibs 里的名字）→ 脚本要求的名字。 */
     private val NATIVE_PAYLOAD = mapOf(
         "libmagiskboot.so" to "magiskboot",
-        "libmagiskinit.so" to "magiskinit",
-        "libmagisk.so" to "magisk",
+        "libxecbootinit.so" to "magiskinit",
+        "libxeccoresu.so" to "magisk",
         "libinit-ld.so" to "init-ld",
         "libbusybox.so" to "busybox",
     )

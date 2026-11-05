@@ -12,7 +12,7 @@ import me.weishu.kernelsu.privilege.SuperkeyStore
  * 劫持作为 supercall 通道），产物由用户手动 fastboot/recovery 刷入。
  *
  * 二进制来源（CI 固定下载并校验 sha256，见 .github/workflows/build-xecpro.yml）：
- *  - kptools-android 0.13.5-2 → jniLibs/arm64-v8a/libkptools.so（GPL-2.0，
+ *  - kptools-android 0.13.5-2 → jniLibs/arm64-v8a/libxecimgtool.so（GPL-2.0，
  *    KernelSU-Next/KPatch-Next，从 nativeLibraryDir 直接 exec）
  *  - kpimg-linux 0.13.5-2 → assets/kpatch/kpimg（内核侧 blob，arm64）
  *
@@ -51,7 +51,7 @@ object KPatch {
     /** kptools 是否已随包安装（CI 缺位时降级为不可用，界面给提示）。 */
     fun available(context: Context): Boolean {
         val dir = context.applicationInfo.nativeLibraryDir ?: return false
-        return File(dir, "libkptools.so").isFile
+        return File(dir, "libxecimgtool.so").isFile
     }
 
     /**
@@ -60,9 +60,9 @@ object KPatch {
      */
     fun patch(context: Context, bootImage: File, onLog: (String) -> Unit): PatchResult {
         val nativeDir = context.applicationInfo.nativeLibraryDir
-        val kptools = File(nativeDir, "libkptools.so")
+        val kptools = File(nativeDir, "libxecimgtool.so")
         if (!kptools.isFile) {
-            return PatchResult(false, null, "libkptools.so missing from ${nativeDir}")
+            return PatchResult(false, null, "libxecimgtool.so missing from ${nativeDir}")
         }
         val kpimg = File(context.cacheDir, "kpatch_kpimg")
         runCatching {
