@@ -367,13 +367,19 @@ KSU_SUSFS_LINKAGE void initialize_fake_status()
     // 早已把 sequence/policyload 顶高——原样返回就是一份非原厂状态页，探测器
     // 拿它和 AVC/策略查询交叉比对即可判成 Abnormal Environment(k)。这里统一
     // 改回原厂开机结束时的哨兵值（与 late_load 路径同一口径）。
+    //
+    // policyload **必须写成 1**，两个分支都一样（2026-11-05 真机改判）：
+    // 探测器拿 status.policyload 跟 selinuxfs access 节点返回的 avdSeqNo 比，
+    // 后者就是开机以来的策略加载次数，标准设备上是 1。以前 <6.10 分支写 0，
+    // 于是 0 != 1 被判成 "Enforcing (paradox)" —— 真机实测 SELinux 卡片直接
+    // 落到 DANGER，整个告警只由这一个数字造成。
+    // sequence 保持偶数（0 或 4）：奇数在语义上表示"策略正在加载中"。
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
     new_status->sequence = 4;
-    new_status->policyload = 1;
 #else
     new_status->sequence = 0;
-    new_status->policyload = 0;
 #endif
+    new_status->policyload = 1;
     if (!new_status->enforcing) {
         new_status->enforcing = 1;
     }
