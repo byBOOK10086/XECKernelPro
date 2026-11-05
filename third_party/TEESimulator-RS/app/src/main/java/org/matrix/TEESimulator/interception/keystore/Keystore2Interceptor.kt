@@ -49,6 +49,10 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
     private val GET_NUMBER_OF_ENTRIES_TRANSACTION =
         InterceptorUtils.getTransactCode(stubBinderClass, "getNumberOfEntries")
 
+    // -1 (method absent) is filtered out so an old platform never registers a bogus code.
+    private val GRANT_TRANSACTION: Int? =
+        InterceptorUtils.getTransactCode(stubBinderClass, "grant").takeIf { it >= 0 }
+
     private val transactionNames: Map<Int, String> by lazy {
         stubBinderClass.declaredFields
             .filter {
@@ -59,6 +63,14 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
     }
 
     private const val RESPONSE_KEY_NOT_FOUND = 7
+    private const val RESPONSE_PERMISSION_DENIED = 6
+
+    // KeyStoreManager.grantKeyAccess() became a public app API in Android 16 (API 36). Before
+    // that grant is a hidden API that SELinux denies to untrusted_app, so a stock keystore2
+    // answers PERMISSION_DENIED. A key this engine owns must answer the same thing instead of
+    // falling through to the real daemon, whose legacy-database path answers KEY_NOT_FOUND -
+    // that string is what detectors fingerprint as a keystore-interception module.
+    private const val GRANT_PUBLIC_API_SDK = 36
     private val deletedSoftwareKeys: MutableSet<KeyIdentifier> = ConcurrentHashMap.newKeySet()
     private val userUpdatedKeys = ConcurrentHashMap.newKeySet<KeyIdentifier>()
 
@@ -74,6 +86,7 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
                 LIST_ENTRIES_TRANSACTION,
                 LIST_ENTRIES_BATCHED_TRANSACTION,
                 GET_NUMBER_OF_ENTRIES_TRANSACTION,
+                GRANT_TRANSACTION,
             )
             .toIntArray()
     }
@@ -447,9 +460,66 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
                     )
                     return TransactionResult.SkipTransaction
                 }
+        } else if (code == GRANT_TRANSACTION) {
+            return handleGrant(txId, callingUid, callingPid, data)
         }
         return TransactionResult.SkipTransaction
     }
+
+    /**
+     * Answers `IKeystoreService.grant` the way a stock daemon would.
+     *
+     * Only keys this engine owns are handled. A stock Android 14 device denies this hidden API to
+     * ordinary apps, so PERMISSION_DENIED (code 6) is the shape a detector expects; letting the
+     * call reach the real keystore2 for a key it never stored produces the legacy-database
+     * KEY_NOT_FOUND stack instead, which is a detection fingerprint. Real hardware keys are not
+     * ours and keep falling through so the platform applies its own SELinux gate.
+     */
+    private fun handleGrant(txId: Long, callingUid: Int, callingPid: Int, data: Parcel): TransactionResult {
+        data.enforceInterface(IKeystoreService.DESCRIPTOR)
+        val key =
+            data.readTypedObject(KeyDescriptor.CREATOR)
+                ?: return TransactionResult.ContinueAndSkipPost
+        val granteeUid = data.readInt()
+        val accessVector = data.readInt()
+
+        val ownerKeyId = resolveOwnerKeyId(key, callingUid)
+        if (ownerKeyId == null ||
+            KeyMintSecurityLevelInterceptor.getGeneratedKeyResponse(ownerKeyId) == null
+        ) {
+            return TransactionResult.ContinueAndSkipPost
+        }
+
+        logTransaction(txId, "grant ${key.alias ?: key.domain.name}", callingUid, callingPid)
+        if (Build.VERSION.SDK_INT < GRANT_PUBLIC_API_SDK) {
+            return InterceptorUtils.createErrorReply(RESPONSE_PERMISSION_DENIED)
+        }
+
+        // API 36+ turned grant into a supported public API and upstream virtualizes it through a
+        // grant table this engine version does not have. Leave that path to the real service
+        // rather than inventing a half-implemented grant here.
+        SystemLogger.debug(
+            "[TX_ID: $txId] grant for owned key on SDK ${Build.VERSION.SDK_INT}: " +
+                "no virtualized grant in this engine, deferring (grantee=$granteeUid, vector=$accessVector)"
+        )
+        return TransactionResult.ContinueAndSkipPost
+    }
+
+    /** Maps an APP/alias or KEY_ID/nspace descriptor to the KeyIdentifier this engine indexes. */
+    private fun resolveOwnerKeyId(descriptor: KeyDescriptor, callingUid: Int): KeyIdentifier? =
+        when {
+            descriptor.alias != null -> KeyIdentifier(callingUid, descriptor.alias)
+            descriptor.domain == Domain.KEY_ID ->
+                KeyMintSecurityLevelInterceptor.findGeneratedKeyByKeyId(callingUid, descriptor.nspace)
+                    ?.let { info ->
+                        KeyMintSecurityLevelInterceptor.generatedKeys.entries
+                            .firstOrNull {
+                                it.value.nspace == info.nspace && it.key.uid == callingUid
+                            }
+                            ?.key
+                    }
+            else -> null
+        }
 
     private fun handleUpdateSubcomponent(callingUid: Int, data: Parcel): TransactionResult {
         data.enforceInterface(IKeystoreService.DESCRIPTOR)
