@@ -38,9 +38,13 @@ on:
         description: 'Release 建成草稿（不公开给用户）'
         type: boolean
         default: true
-  push:
-    tags:
-      - "v*"
+  # 刻意不再监听 `push: tags`。发布 Release 本身就会创建 `v<码>-<短哈希>` 标签，而那次
+  # 推送会把整条流水线（18 个 job、约 40 分钟）再跑一遍：产物与刚构建的完全重复，而且
+  # tag 触发时 `publish`/`draft` 两个输入是空的（draft 回落成默认 true），理论上足以把
+  # 刚发布的 Release 打回草稿。发版统一走 workflow_dispatch。
+  #
+  # 2026-11-05 实测过一次：发布 v31347 后触发的重跑里，guards 因为"当前版本号 == 刚切出
+  # 的 tag 号"判成没有前进而变红（护栏已同步改成排除指向 HEAD 的 tag）。
 
 permissions:
   contents: read
