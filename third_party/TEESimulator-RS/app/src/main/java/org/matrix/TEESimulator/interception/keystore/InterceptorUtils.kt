@@ -27,45 +27,124 @@ object InterceptorUtils {
     private const val HIGH_MODTIME = 4_999_999_999L
 
     /**
-     * The text keystore2 itself would have produced for this code.
+     * The message keystore2 itself would have attached to this code.
      *
-     * Positive codes are `ResponseCode` from android/security/keystore2, negative ones are KeyMint
-     * `ErrorCode`. keystore2 formats them from Rust, which is why the names carry the `r#` raw
-     * identifier prefix; a reply whose message reads differently from the daemon's own wording is
-     * a needless difference the client can see.
+     * Positive values are `ResponseCode`, negative ones KeyMint `ErrorCode`, both as of
+     * Android 14. keystore2 formats them with `Error::Rc({0:?})` / `Error::Km({0:?})` over the
+     * AIDL-generated Rust enum, whose Debug prints the bare name - no `r#` raw-identifier
+     * prefix. The ` (code N)` suffix seen in a caught exception is appended by Java's
+     * ServiceSpecificException.toString(), not written here.
+     *
+     * Values AIDL reserves (1, 5, 9-16) or omits from `ErrorCode` have no name; they stay
+     * numeric, which is what the daemon prints for them as well.
      */
     private fun synthesizeSseMessage(errorCode: Int): String =
         when (errorCode) {
-            2 -> "Error::Rc(r#LOCKED)"
-            3 -> "Error::Rc(r#UNINITIALIZED)"
-            4 -> "Error::Rc(r#SYSTEM_ERROR)"
-            6 -> "Error::Rc(r#PERMISSION_DENIED)"
-            7 -> "Error::Rc(r#KEY_NOT_FOUND)"
-            8 -> "Error::Rc(r#VALUE_CORRUPTED)"
-            17 -> "Error::Rc(r#KEY_PERMANENTLY_INVALIDATED)"
-            18 -> "Error::Rc(r#BACKEND_BUSY)"
-            19 -> "Error::Rc(r#OPERATION_BUSY)"
-            20 -> "Error::Rc(r#INVALID_ARGUMENT)"
-            21 -> "Error::Rc(r#TOO_MUCH_DATA)"
-            22 -> "Error::Rc(r#OUT_OF_KEYS)"
-            -3 -> "Error::Km(r#INCOMPATIBLE_PURPOSE)"
-            -6 -> "Error::Km(r#UNSUPPORTED_KEY_SIZE)"
-            -7 -> "Error::Km(r#UNSUPPORTED_BLOCK_MODE)"
-            -29 -> "Error::Km(r#TOO_MANY_OPERATIONS)"
-            -49 -> "Error::Km(r#UNSUPPORTED_TAG)"
-            -75 -> "Error::Km(r#INVALID_INPUT_LENGTH)"
-            -76 -> "Error::Km(r#INVALID_TAG)"
-            else -> if (errorCode > 0) "Error::Rc(r#$errorCode)" else "Error::Km(r#$errorCode)"
+            2 -> "Error::Rc(LOCKED)"
+            3 -> "Error::Rc(UNINITIALIZED)"
+            4 -> "Error::Rc(SYSTEM_ERROR)"
+            6 -> "Error::Rc(PERMISSION_DENIED)"
+            7 -> "Error::Rc(KEY_NOT_FOUND)"
+            8 -> "Error::Rc(VALUE_CORRUPTED)"
+            17 -> "Error::Rc(KEY_PERMANENTLY_INVALIDATED)"
+            18 -> "Error::Rc(BACKEND_BUSY)"
+            19 -> "Error::Rc(OPERATION_BUSY)"
+            20 -> "Error::Rc(INVALID_ARGUMENT)"
+            21 -> "Error::Rc(TOO_MUCH_DATA)"
+            22 -> "Error::Rc(OUT_OF_KEYS)"
+            23 -> "Error::Rc(OUT_OF_KEYS_REQUIRES_SYSTEM_UPGRADE)"
+            24 -> "Error::Rc(OUT_OF_KEYS_PENDING_INTERNET_CONNECTIVITY)"
+            25 -> "Error::Rc(OUT_OF_KEYS_TRANSIENT_ERROR)"
+            26 -> "Error::Rc(OUT_OF_KEYS_PERMANENT_ERROR)"
+            -1 -> "Error::Km(ROOT_OF_TRUST_ALREADY_SET)"
+            -2 -> "Error::Km(UNSUPPORTED_PURPOSE)"
+            -3 -> "Error::Km(INCOMPATIBLE_PURPOSE)"
+            -4 -> "Error::Km(UNSUPPORTED_ALGORITHM)"
+            -5 -> "Error::Km(INCOMPATIBLE_ALGORITHM)"
+            -6 -> "Error::Km(UNSUPPORTED_KEY_SIZE)"
+            -7 -> "Error::Km(UNSUPPORTED_BLOCK_MODE)"
+            -8 -> "Error::Km(INCOMPATIBLE_BLOCK_MODE)"
+            -9 -> "Error::Km(UNSUPPORTED_MAC_LENGTH)"
+            -10 -> "Error::Km(UNSUPPORTED_PADDING_MODE)"
+            -11 -> "Error::Km(INCOMPATIBLE_PADDING_MODE)"
+            -12 -> "Error::Km(UNSUPPORTED_DIGEST)"
+            -13 -> "Error::Km(INCOMPATIBLE_DIGEST)"
+            -14 -> "Error::Km(INVALID_EXPIRATION_TIME)"
+            -15 -> "Error::Km(INVALID_USER_ID)"
+            -16 -> "Error::Km(INVALID_AUTHORIZATION_TIMEOUT)"
+            -17 -> "Error::Km(UNSUPPORTED_KEY_FORMAT)"
+            -18 -> "Error::Km(INCOMPATIBLE_KEY_FORMAT)"
+            -19 -> "Error::Km(UNSUPPORTED_KEY_ENCRYPTION_ALGORITHM)"
+            -20 -> "Error::Km(UNSUPPORTED_KEY_VERIFICATION_ALGORITHM)"
+            -21 -> "Error::Km(INVALID_INPUT_LENGTH)"
+            -22 -> "Error::Km(KEY_EXPORT_OPTIONS_INVALID)"
+            -23 -> "Error::Km(DELEGATION_NOT_ALLOWED)"
+            -24 -> "Error::Km(KEY_NOT_YET_VALID)"
+            -25 -> "Error::Km(KEY_EXPIRED)"
+            -26 -> "Error::Km(KEY_USER_NOT_AUTHENTICATED)"
+            -27 -> "Error::Km(OUTPUT_PARAMETER_NULL)"
+            -28 -> "Error::Km(INVALID_OPERATION_HANDLE)"
+            -29 -> "Error::Km(INSUFFICIENT_BUFFER_SPACE)"
+            -30 -> "Error::Km(VERIFICATION_FAILED)"
+            -31 -> "Error::Km(TOO_MANY_OPERATIONS)"
+            -32 -> "Error::Km(UNEXPECTED_NULL_POINTER)"
+            -33 -> "Error::Km(INVALID_KEY_BLOB)"
+            -34 -> "Error::Km(IMPORTED_KEY_NOT_ENCRYPTED)"
+            -35 -> "Error::Km(IMPORTED_KEY_DECRYPTION_FAILED)"
+            -36 -> "Error::Km(IMPORTED_KEY_NOT_SIGNED)"
+            -37 -> "Error::Km(IMPORTED_KEY_VERIFICATION_FAILED)"
+            -38 -> "Error::Km(INVALID_ARGUMENT)"
+            -39 -> "Error::Km(UNSUPPORTED_TAG)"
+            -40 -> "Error::Km(INVALID_TAG)"
+            -41 -> "Error::Km(MEMORY_ALLOCATION_FAILED)"
+            -44 -> "Error::Km(IMPORT_PARAMETER_MISMATCH)"
+            -45 -> "Error::Km(SECURE_HW_ACCESS_DENIED)"
+            -46 -> "Error::Km(OPERATION_CANCELLED)"
+            -47 -> "Error::Km(CONCURRENT_ACCESS_CONFLICT)"
+            -48 -> "Error::Km(SECURE_HW_BUSY)"
+            -49 -> "Error::Km(SECURE_HW_COMMUNICATION_FAILED)"
+            -50 -> "Error::Km(UNSUPPORTED_EC_FIELD)"
+            -51 -> "Error::Km(MISSING_NONCE)"
+            -52 -> "Error::Km(INVALID_NONCE)"
+            -53 -> "Error::Km(MISSING_MAC_LENGTH)"
+            -54 -> "Error::Km(KEY_RATE_LIMIT_EXCEEDED)"
+            -55 -> "Error::Km(CALLER_NONCE_PROHIBITED)"
+            -56 -> "Error::Km(KEY_MAX_OPS_EXCEEDED)"
+            -57 -> "Error::Km(INVALID_MAC_LENGTH)"
+            -58 -> "Error::Km(MISSING_MIN_MAC_LENGTH)"
+            -59 -> "Error::Km(UNSUPPORTED_MIN_MAC_LENGTH)"
+            -60 -> "Error::Km(UNSUPPORTED_KDF)"
+            -61 -> "Error::Km(UNSUPPORTED_EC_CURVE)"
+            -62 -> "Error::Km(KEY_REQUIRES_UPGRADE)"
+            -63 -> "Error::Km(ATTESTATION_CHALLENGE_MISSING)"
+            -64 -> "Error::Km(KEYMINT_NOT_CONFIGURED)"
+            -65 -> "Error::Km(ATTESTATION_APPLICATION_ID_MISSING)"
+            -66 -> "Error::Km(CANNOT_ATTEST_IDS)"
+            -67 -> "Error::Km(ROLLBACK_RESISTANCE_UNAVAILABLE)"
+            -68 -> "Error::Km(HARDWARE_TYPE_UNAVAILABLE)"
+            -69 -> "Error::Km(PROOF_OF_PRESENCE_REQUIRED)"
+            -70 -> "Error::Km(CONCURRENT_PROOF_OF_PRESENCE_REQUESTED)"
+            -71 -> "Error::Km(NO_USER_CONFIRMATION)"
+            -72 -> "Error::Km(DEVICE_LOCKED)"
+            -73 -> "Error::Km(EARLY_BOOT_ENDED)"
+            -74 -> "Error::Km(ATTESTATION_KEYS_NOT_PROVISIONED)"
+            -75 -> "Error::Km(ATTESTATION_IDS_NOT_PROVISIONED)"
+            -76 -> "Error::Km(INVALID_OPERATION)"
+            -77 -> "Error::Km(STORAGE_KEY_UNSUPPORTED)"
+            -78 -> "Error::Km(INCOMPATIBLE_MGF_DIGEST)"
+            -79 -> "Error::Km(UNSUPPORTED_MGF_DIGEST)"
+            -80 -> "Error::Km(MISSING_NOT_BEFORE)"
+            -81 -> "Error::Km(MISSING_NOT_AFTER)"
+            -82 -> "Error::Km(MISSING_ISSUER_SUBJECT)"
+            -83 -> "Error::Km(INVALID_ISSUER_SUBJECT)"
+            -84 -> "Error::Km(BOOT_LEVEL_EXCEEDED)"
+            -85 -> "Error::Km(HARDWARE_NOT_YET_AVAILABLE)"
+            -100 -> "Error::Km(UNIMPLEMENTED)"
+            -101 -> "Error::Km(VERSION_MISMATCH)"
+            -1000 -> "Error::Km(UNKNOWN_ERROR)"
+            else -> if (errorCode > 0) "Error::Rc($errorCode)" else "Error::Km($errorCode)"
         }
 
-    /**
-     * Field order is `marker, message, empty remote-stack header, code`.
-     *
-     * Parcel.readException reads the marker, then the message string, then an int stack payload
-     * size, and only then the service-specific code - the same order Parcel.writeException and
-     * native Status::writeToParcel produce. `normalizeServiceSpecificReply` below relies on it
-     * too, so changing it here would break both ends.
-     */
     fun createErrorReply(errorCode: Int): BinderInterceptor.TransactionResult.OverrideReply {
         val parcel =
             Parcel.obtain().apply {
