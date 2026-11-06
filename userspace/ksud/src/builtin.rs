@@ -140,14 +140,6 @@ fn install_module(module_id: &str, files: &[BuiltinFile]) -> Result<()> {
         }
     }
 
-    // Respect an uninstall: the stamp cannot distinguish "deleted by the user"
-    // from "never installed", so a tombstone written by the uninstall path is the
-    // only thing that keeps a removed bundled module removed.
-    if removed_by_user(module_id) {
-        info!("built-in module {module_id} was removed by the user, skip");
-        return Ok(());
-    }
-
     let stamp_body = builtin_stamp(files.len());
     let stamp_path = module_dir.join(STAMP_FILE_NAME);
 

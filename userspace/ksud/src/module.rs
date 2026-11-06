@@ -1013,14 +1013,6 @@ pub fn uninstall_module(id: &str) -> Result<()> {
 
     info!("Module {id} marked for removal");
 
-    // A module this build ships would be rebuilt on the next boot, because a missing
-    // tree looks identical to a never-installed one. Remember the decision instead.
-    if crate::builtin::is_builtin_module(id) {
-        if let Err(e) = crate::builtin::mark_removed(id) {
-            warn!("failed to remember the removal of built-in module {id}: {e:#}");
-        }
-    }
-
     if let Err(e) = regenerate_preinit() {
         warn!("regenerate preinit failed: {e:#}");
     }
