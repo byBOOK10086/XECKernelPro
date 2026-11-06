@@ -134,7 +134,8 @@ class KeyMintSecurityLevelInterceptor(
             // onPreTransact cannot know the HAL will fail.
             if (
                 code == GENERATE_KEY_TRANSACTION &&
-                    !ConfigurationManager.shouldSkipUid(callingUid)
+                    !ConfigurationManager.shouldSkipUid(callingUid) &&
+                    isCapabilityFailure(InterceptorUtils.readServiceSpecificCode(reply))
             ) {
                 return forgeRejectedGenerateKey(txId, callingUid, callingPid, data)
             }
@@ -547,6 +548,31 @@ class KeyMintSecurityLevelInterceptor(
             }
 
     /**
+     * Whether a KeyMint refusal means "this device cannot serve the request" rather than
+     * "you are not allowed" or "not now".
+     *
+     * A locked device, a missing authorization or an exhausted key quota must stay refused:
+     * fabricating a key there would hide real state from the caller. Only the capability and
+     * environment failures below justify answering with a software key.
+     */
+    private fun isCapabilityFailure(errorCode: Int): Boolean =
+        when (errorCode) {
+            // KeyMint ErrorCode: capability / provisioning / environment gaps.
+            -41, // MEMORY_ALLOCATION_FAILED
+            -49, // SECURE_HW_COMMUNICATION_FAILED
+            -64, // KEYMINT_NOT_CONFIGURED
+            -66, // CANNOT_ATTEST_IDS
+            -67, // ROLLBACK_RESISTANCE_UNAVAILABLE
+            -68, // HARDWARE_TYPE_UNAVAILABLE
+            -74, // ATTESTATION_KEYS_NOT_PROVISIONED
+            -75, // ATTESTATION_IDS_NOT_PROVISIONED
+            -100, // UNIMPLEMENTED
+            -1000, // UNKNOWN_ERROR
+            -> true
+            else -> false
+        }
+
+    /**
      * Last-resort forge for a generateKey the real KeyMint rejected.
      *
      * [handleGenerateKey] must not be reused here: it re-runs the very dispatch that selected
@@ -579,7 +605,28 @@ class KeyMintSecurityLevelInterceptor(
                 val rawParams =
                     data.createTypedArray(KeyParameter.CREATOR)
                         ?: return TransactionResult.SkipTransaction
-                val parsedParams = KeyMintAttestation(rawParams)
+                // Same policy the pre-transact path applies: a caller without the unique-id
+                // attestation permission gets the key without INCLUDE_UNIQUE_ID. Skipping this
+                // here would hand a refused caller a unique_id through the fallback.
+                val params =
+                    if (
+                        rawParams.any { it.tag == Tag.INCLUDE_UNIQUE_ID } &&
+                            !ConfigurationManager.checkSELinuxPermission(
+                                callingPid,
+                                "keystore_key",
+                                "gen_unique_id",
+                            ) &&
+                            !ConfigurationManager.hasPermissionForUid(
+                                callingUid,
+                                "android.permission.REQUEST_UNIQUE_ID_ATTESTATION",
+                            )
+                    ) {
+                        SystemLogger.debug(
+                            "[TX_ID: $txId] Fallback: stripping INCLUDE_UNIQUE_ID for uid=$callingUid pid=$callingPid (no permission)"
+                        )
+                        rawParams.filter { it.tag != Tag.INCLUDE_UNIQUE_ID }.toTypedArray()
+                    } else rawParams
+                val parsedParams = KeyMintAttestation(params)
                 val keyId = KeyIdentifier(callingUid, keyDescriptor.alias)
 
                 SystemLogger.info(

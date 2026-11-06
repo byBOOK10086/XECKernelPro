@@ -271,6 +271,31 @@ object InterceptorUtils {
         errorCode: Int
     ): BinderInterceptor.TransactionResult.OverrideReply = createErrorReply(errorCode)
 
+    /**
+     * The service-specific code carried by [reply], or [Int.MIN_VALUE] when the reply is not a
+     * service-specific exception.
+     *
+     * Mirrors the field order [normalizeServiceSpecificReply] relies on: exception marker,
+     * message, remote-stack size, then the code.
+     */
+    fun readServiceSpecificCode(reply: Parcel): Int {
+        val position = reply.dataPosition()
+        return try {
+            reply.setDataPosition(0)
+            if (reply.readInt() != EX_SERVICE_SPECIFIC) {
+                Int.MIN_VALUE
+            } else {
+                reply.readString()
+                reply.readInt()
+                reply.readInt()
+            }
+        } catch (e: Exception) {
+            Int.MIN_VALUE
+        } finally {
+            runCatching { reply.setDataPosition(position) }
+        }
+    }
+
     fun normalizeServiceSpecificReply(reply: Parcel): Parcel? {
         reply.setDataPosition(0)
         if (reply.readInt() != EX_SERVICE_SPECIFIC) {
