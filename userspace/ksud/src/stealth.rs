@@ -56,7 +56,7 @@ pub enum StealthCli {
         #[arg(long, default_value_t = 3000)]
         window_ms: u64,
         /// 允许触发的前台包列表（逗号分隔）
-        #[arg(long, default_value = "com.android.settings,com.xiaomi.misettings")]
+        #[arg(long, default_value = "com.android.settings,com.xiaomi.misettings,com.hihonor.settings,com.coloros.settings,com.oplus.settings,com.vivo.settings,com.bbk.settings,com.samsung.android.settings,com.oneplus.settings")]
         focus_pkgs: String,
     },
     /// 停止守卫并清除配置
