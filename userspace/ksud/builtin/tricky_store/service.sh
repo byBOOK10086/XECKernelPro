@@ -94,8 +94,9 @@ done
 if [ "$same_content" != 1 ]; then
     log_line "INFO engine files differ from the bundled tree, restaging"
     rm -f "$RUNTIME/.engine_version"
+    CUR=""
 fi
-if [ "$VER" != "$CUR" ] || [ ! -f "$RUNTIME/daemon" ] || \
+if [ "$same_content" != 1 ] || [ "$VER" != "$CUR" ] || [ ! -f "$RUNTIME/daemon" ] || \
    [ ! -f "$RUNTIME/classes.dex" ] || [ ! -x "$RUNTIME/inject" ]; then
     STAGE_DIR="$RUNTIME/.engine.$$.tmp"
     rm -rf "$STAGE_DIR"

@@ -61,7 +61,9 @@ object App {
             Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME)
             Security.addProvider(BouncyCastleProvider())
 
-            NativeCertGen.initialize("/data/adb/modules/tricky_store/libcertgen.so")
+            // service.sh stages libcertgen.so into the runtime directory on every boot;
+            // the module directory this used to name no longer exists.
+            NativeCertGen.initialize("/data/adb/tricky_store/libcertgen.so")
 
             // Mount the SOTER forge on the on-demand soterserver process. The supervisor
             // binds and (re)injects on its own thread, returning at once so it never blocks the loop.
