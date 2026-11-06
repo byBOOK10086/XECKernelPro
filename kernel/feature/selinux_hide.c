@@ -574,7 +574,19 @@ static int ksu_selinux_hide_enable()
     return 0;
 
 unhook:
-    ksu_selinux_hide_unhook();
+    ret = ksu_selinux_hide_unhook();
+    if (ret) {
+        /*
+         * Part of the surface is still patched and still reads backup_sepolicy.
+         * The caller will not set running, and on_boot_completed() frees the
+         * policy whenever running is false - so flag the feature as live here to
+         * keep the policy alive. This is a failed enable, not an enabled feature:
+         * the feature getter reports the requested state, not this flag.
+         */
+        pr_err("selinux_hide: enable failed and the surface is still patched (%d),"
+               " keeping backup_sepolicy\n", ret);
+        ksu_selinux_hide_running = true;
+    }
     return -ENOSYS;
 }
 
