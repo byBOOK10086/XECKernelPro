@@ -59,17 +59,20 @@ object InterceptorUtils {
         }
 
     /**
-     * The reply layout has to match what `Parcel.readException()` consumes, which is the same
-     * order the framework's own `writeException()` uses for a service-specific failure:
-     * the exception marker, then the code, then the message. Writing the message before the code
-     * makes the client read the string length as the error code.
+     * Field order is `marker, message, empty remote-stack header, code`.
+     *
+     * Parcel.readException reads the marker, then the message string, then an int stack payload
+     * size, and only then the service-specific code - the same order Parcel.writeException and
+     * native Status::writeToParcel produce. `normalizeServiceSpecificReply` below relies on it
+     * too, so changing it here would break both ends.
      */
     fun createErrorReply(errorCode: Int): BinderInterceptor.TransactionResult.OverrideReply {
         val parcel =
             Parcel.obtain().apply {
                 writeInt(EX_SERVICE_SPECIFIC)
-                writeInt(errorCode)
                 writeString(synthesizeSseMessage(errorCode))
+                writeInt(0) // empty remote stack trace header
+                writeInt(errorCode)
             }
         return BinderInterceptor.TransactionResult.OverrideReply(parcel)
     }
