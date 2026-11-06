@@ -762,9 +762,19 @@ void __exit ksu_selinux_hide_exit()
     mutex_unlock(&selinux_hide_mutex);
     ksu_unregister_feature_handler(KSU_FEATURE_SELINUX_HIDE);
     mutex_lock(&selinux_state.status_lock);
-    if (fake_status)
+    /*
+     * Only release the page when nothing can reach it any more: the hide surface
+     * must be fully restored (no patched call site, no setprocattr hook). A
+     * half-restored surface still hands this page out to every opener, and a
+     * caller may hold a mapping of it - freeing here would be a use-after-free.
+     * Leaking one page at module exit is the cheaper failure.
+     */
+    if (fake_status && !ksu_selinux_hide_running && !selinux_setprocattr_hook.entry) {
         __free_page(fake_status);
-    fake_status = NULL;
+        fake_status = NULL;
+    } else if (fake_status) {
+        pr_err("selinux_hide: exit: hiding still reachable, keeping the status page\n");
+    }
     mutex_unlock(&selinux_state.status_lock);
 }
 
