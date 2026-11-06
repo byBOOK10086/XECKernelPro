@@ -119,8 +119,27 @@ class KeyMintSecurityLevelInterceptor(
         reply: Parcel?,
         resultCode: Int,
     ): TransactionResult {
-        if (resultCode != 0 || reply == null || InterceptorUtils.hasException(reply))
+        if (reply == null) return TransactionResult.SkipTransaction
+
+        val failed = resultCode != 0 || InterceptorUtils.hasException(reply)
+        if (failed) {
+            // A generateKey we chose to forward was refused by the real KeyMint. We forward when
+            // the request looks attestable (PATCH) or carries no attestation challenge at all
+            // (PASSTHROUGH), so a caller that pairs an attested key with a plain one ends up with
+            // half its keys forged here and half living in the daemon -- and on a device whose
+            // KeyMint cannot serve that plain key the caller gets a ServiceSpecificException for
+            // a key we could have made ourselves. Answer with a software key instead: nothing was
+            // created in keystore2's database, so there is no real state to stay in sync with.
+            // The post hook is the only place that can turn a failed reply into a successful one;
+            // onPreTransact cannot know the HAL will fail.
+            if (
+                code == GENERATE_KEY_TRANSACTION &&
+                    !ConfigurationManager.shouldSkipUid(callingUid)
+            ) {
+                return forgeRejectedGenerateKey(txId, callingUid, callingPid, data)
+            }
             return TransactionResult.SkipTransaction
+        }
 
         if (code == IMPORT_KEY_TRANSACTION) {
             logTransaction(txId, "post-${transactionNames[code]!!}", callingUid, callingPid)
@@ -525,6 +544,70 @@ class KeyMintSecurityLevelInterceptor(
             .getOrElse {
                 SystemLogger.error("Error during createOperation for UID $callingUid.", it)
                 InterceptorUtils.createServiceSpecificErrorReply(KEYMINT_UNKNOWN_ERROR)
+            }
+
+    /**
+     * Last-resort forge for a generateKey the real KeyMint rejected.
+     *
+     * [handleGenerateKey] must not be reused here: it re-runs the very dispatch that selected
+     * forwarding (PATCH because the algorithm looks attestable, PASSTHROUGH because the request
+     * carries no attestation challenge), so it would answer [TransactionResult.Continue] again and
+     * the caller would still see the daemon's exception. Parse the request and go straight to
+     * [doSoftwareKeyGen]. Returning anything but an [TransactionResult.OverrideReply] leaves the
+     * original error reply in place.
+     *
+     * Scope: only requests the engine chose to forward get here. The rejections the engine answers
+     * itself (oversized challenge, CREATION_DATETIME, device-ID permission, StrongBox capability)
+     * never reach the post hook because onPreTransact overrides them, so a caller probing for
+     * those keeps seeing the stock error.
+     */
+    private fun forgeRejectedGenerateKey(
+        txId: Long,
+        callingUid: Int,
+        callingPid: Int,
+        data: Parcel,
+    ): TransactionResult =
+        runCatching {
+                // A post hook gets a fresh parcel holding the request, positioned at 0
+                // (BinderInterceptor.handlePostTransact), so re-parse from scratch.
+                data.setDataPosition(0)
+                data.enforceInterface(IKeystoreSecurityLevel.DESCRIPTOR)
+                val keyDescriptor =
+                    data.readTypedObject(KeyDescriptor.CREATOR)
+                        ?: return TransactionResult.SkipTransaction
+                val attestationKey = data.readTypedObject(KeyDescriptor.CREATOR)
+                val rawParams =
+                    data.createTypedArray(KeyParameter.CREATOR)
+                        ?: return TransactionResult.SkipTransaction
+                val parsedParams = KeyMintAttestation(rawParams)
+                val keyId = KeyIdentifier(callingUid, keyDescriptor.alias)
+
+                SystemLogger.info(
+                    "[TX_ID: $txId] generateKey ${keyDescriptor.alias} was refused by the HAL; " +
+                        "forging a software key instead (uid=$callingUid pid=$callingPid)"
+                )
+                SystemLogger.uidLog(callingUid, txId, "forge-fallback") {
+                    "alias=${keyDescriptor.alias} purpose=${parsedParams.purpose} " +
+                        "attestKey=${attestationKey?.alias} " +
+                        "challenge=${parsedParams.attestationChallenge != null}"
+                }
+
+                doSoftwareKeyGen(
+                    txId,
+                    callingUid,
+                    keyDescriptor,
+                    attestationKey,
+                    parsedParams,
+                    keyId,
+                    parsedParams.isAttestKey(),
+                )
+            }
+            .getOrElse { ex ->
+                SystemLogger.error(
+                    "Fallback software keygen failed for uid $callingUid; keeping the HAL error.",
+                    ex,
+                )
+                TransactionResult.SkipTransaction
             }
 
     private fun handleGenerateKey(
