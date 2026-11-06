@@ -536,11 +536,11 @@ static int ksu_selinux_hide_enable()
     }
     hook_selinux_status_open();
 
-    security_dump_masked_av_fn = find_kernel_symbol_exact("security_dump_masked_av");
+    security_dump_masked_av_fn = (void *)ksu_resolve_symbol_for_functable_hook("security_dump_masked_av");
     if (!security_dump_masked_av_fn) {
         pr_warn("security_dump_masked_av not found!\n");
     }
-    context_struct_compute_av_fn = find_kernel_symbol_exact("context_struct_compute_av");
+    context_struct_compute_av_fn = (void *)ksu_resolve_symbol_for_functable_hook("context_struct_compute_av");
     if (!context_struct_compute_av_fn) {
         pr_warn("context_struct_compute_av not found!\n");
     }
@@ -589,33 +589,50 @@ unhook:
 static int ksu_selinux_hide_unhook()
 {
     int ret;
+    int restore_failed = 0;
     if (orig_context_write) {
         ret =
             ksu_patch_text(context_write, &orig_context_write, sizeof(orig_context_write), KSU_PATCH_TEXT_FLUSH_DCACHE);
-        orig_context_write = NULL;
         if (ret) {
+            /*
+             * The call site is still redirected at our replacement, and that replacement
+             * calls orig_context_write. Clearing the pointer here would turn the next write
+             * to this node into a jump through NULL, so keep it and report the failure.
+             */
             pr_err("selinux_hide: exit: patch_text context_write err: %d\n", ret);
+            restore_failed = 1;
+        } else {
+            orig_context_write = NULL;
         }
     }
     if (orig_access_write) {
         ret = ksu_patch_text(access_write, &orig_access_write, sizeof(orig_access_write), KSU_PATCH_TEXT_FLUSH_DCACHE);
-        orig_access_write = NULL;
         if (ret) {
             pr_err("selinux_hide: exit: patch_text access_write err: %d\n", ret);
+            restore_failed = 1;
+        } else {
+            orig_access_write = NULL;
         }
     }
     if (sel_open_handle_status_slot && orig_sel_open_handle_status) {
         ret = ksu_patch_text(sel_open_handle_status_slot, &orig_sel_open_handle_status,
                              sizeof(orig_sel_open_handle_status), KSU_PATCH_TEXT_FLUSH_DCACHE);
-        orig_sel_open_handle_status = NULL;
         if (ret) {
             pr_err("selinux_hide: exit: patch_text sel_open_handle_status err: %d\n", ret);
+            restore_failed = 1;
+        } else {
+            orig_sel_open_handle_status = NULL;
         }
     }
     ksu_lsm_unhook(&selinux_setprocattr_hook);
     if (selinux_setprocattr_hook.entry) {
         pr_err("selinux_hide: exit: setprocattr hook is still installed, keeping backup_sepolicy\n");
         return -EBUSY;
+    }
+    if (restore_failed) {
+        /* Part of the surface could not be restored; stay "running" so nothing frees state
+         * the remaining patch still depends on. */
+        return -EIO;
     }
     return 0;
 }
