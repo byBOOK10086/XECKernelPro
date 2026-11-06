@@ -26,30 +26,50 @@ object InterceptorUtils {
     private const val SENTINEL_MODTIME = 4_294_967_297L
     private const val HIGH_MODTIME = 4_999_999_999L
 
+    /**
+     * The text keystore2 itself would have produced for this code.
+     *
+     * Positive codes are `ResponseCode` from android/security/keystore2, negative ones are KeyMint
+     * `ErrorCode`. keystore2 formats them from Rust, which is why the names carry the `r#` raw
+     * identifier prefix; a reply whose message reads differently from the daemon's own wording is
+     * a needless difference the client can see.
+     */
     private fun synthesizeSseMessage(errorCode: Int): String =
         when (errorCode) {
-            2 -> "Error::Rc(SYSTEM_ERROR)"
-            4 -> "Error::Rc(PERMISSION_DENIED)"
-            6 -> "Error::Rc(VALUE_CORRUPTED)"
-            7 -> "Error::Rc(KEY_NOT_FOUND)"
-            10 -> "Error::Rc(BACKEND_BUSY)"
-            -3 -> "Error::Km(UNSUPPORTED_KEY_SIZE)"
-            -6 -> "Error::Km(INCOMPATIBLE_PURPOSE)"
-            -7 -> "Error::Km(INCOMPATIBLE_ALGORITHM)"
-            -29 -> "Error::Km(TOO_MANY_OPERATIONS)"
-            -49 -> "Error::Km(UNSUPPORTED_TAG)"
-            -75 -> "Error::Km(INVALID_INPUT_LENGTH)"
-            -76 -> "Error::Km(INVALID_TAG)"
-            else -> if (errorCode > 0) "Error::Rc($errorCode)" else "Error::Km($errorCode)"
+            2 -> "Error::Rc(r#LOCKED)"
+            3 -> "Error::Rc(r#UNINITIALIZED)"
+            4 -> "Error::Rc(r#SYSTEM_ERROR)"
+            6 -> "Error::Rc(r#PERMISSION_DENIED)"
+            7 -> "Error::Rc(r#KEY_NOT_FOUND)"
+            8 -> "Error::Rc(r#VALUE_CORRUPTED)"
+            17 -> "Error::Rc(r#KEY_PERMANENTLY_INVALIDATED)"
+            18 -> "Error::Rc(r#BACKEND_BUSY)"
+            19 -> "Error::Rc(r#OPERATION_BUSY)"
+            20 -> "Error::Rc(r#INVALID_ARGUMENT)"
+            21 -> "Error::Rc(r#TOO_MUCH_DATA)"
+            22 -> "Error::Rc(r#OUT_OF_KEYS)"
+            -3 -> "Error::Km(r#INCOMPATIBLE_PURPOSE)"
+            -6 -> "Error::Km(r#UNSUPPORTED_KEY_SIZE)"
+            -7 -> "Error::Km(r#UNSUPPORTED_BLOCK_MODE)"
+            -29 -> "Error::Km(r#TOO_MANY_OPERATIONS)"
+            -49 -> "Error::Km(r#UNSUPPORTED_TAG)"
+            -75 -> "Error::Km(r#INVALID_INPUT_LENGTH)"
+            -76 -> "Error::Km(r#INVALID_TAG)"
+            else -> if (errorCode > 0) "Error::Rc(r#$errorCode)" else "Error::Km(r#$errorCode)"
         }
 
+    /**
+     * The reply layout has to match what `Parcel.readException()` consumes, which is the same
+     * order the framework's own `writeException()` uses for a service-specific failure:
+     * the exception marker, then the code, then the message. Writing the message before the code
+     * makes the client read the string length as the error code.
+     */
     fun createErrorReply(errorCode: Int): BinderInterceptor.TransactionResult.OverrideReply {
         val parcel =
             Parcel.obtain().apply {
                 writeInt(EX_SERVICE_SPECIFIC)
-                writeString(synthesizeSseMessage(errorCode))
-                writeInt(0) // empty remote stack trace header (AOSP Status.cpp:196)
                 writeInt(errorCode)
+                writeString(synthesizeSseMessage(errorCode))
             }
         return BinderInterceptor.TransactionResult.OverrideReply(parcel)
     }
