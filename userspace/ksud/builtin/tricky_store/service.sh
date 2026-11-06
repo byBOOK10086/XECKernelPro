@@ -83,6 +83,18 @@ fi
 VER=$(sed -n 's/^versionCode=//p' "$MODPATH/module.prop" 2>/dev/null)
 [ -n "$VER" ] || VER=0
 CUR=$(cat "$RUNTIME/.engine_version" 2>/dev/null)
+# versionCode 由人手维护，引擎重建而它没变时运行时会一直留着旧的 classes.dex
+# （真机上就是 2395448 vs 2396480，新引擎从没部署过）。再比一次内容大小，
+# 任何一侧变化都重新 stage。
+same_content=1
+for _f in daemon inject supervisor classes.dex libTEESimulator.so libcertgen.so; do
+    [ -f "$RUNTIME/$_f" ] || { same_content=0; break; }
+    [ "$(wc -c < "$MODPATH/$_f")" = "$(wc -c < "$RUNTIME/$_f")" ] || { same_content=0; break; }
+done
+if [ "$same_content" != 1 ]; then
+    log_line "INFO engine files differ from the bundled tree, restaging"
+    rm -f "$RUNTIME/.engine_version"
+fi
 if [ "$VER" != "$CUR" ] || [ ! -f "$RUNTIME/daemon" ] || \
    [ ! -f "$RUNTIME/classes.dex" ] || [ ! -x "$RUNTIME/inject" ]; then
     STAGE_DIR="$RUNTIME/.engine.$$.tmp"
