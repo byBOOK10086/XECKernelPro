@@ -1,7 +1,0 @@
-out
-.gradle
-.kotlin
-app/build
-build
-native-certgen/target
-app/src/main/jniLibs

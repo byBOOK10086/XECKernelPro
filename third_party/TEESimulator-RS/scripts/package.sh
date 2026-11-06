@@ -10,6 +10,12 @@
 #   ./scripts/package.sh --rust --release             # build Rust crate first, then release
 set -euo pipefail
 
+# Gradle's buildRustCertgen resolves `cargo` against the daemon's inherited PATH,
+# not the env we inject via gradle's Exec.environment(). Prepend the per-user
+# rustup install so non-login shells (CI, IDE-launched terminals, fresh tmux)
+# still find it without sourcing /etc/profile.d/cargo-path.sh.
+[ -d "$HOME/.cargo/bin" ] && PATH="$HOME/.cargo/bin:$PATH"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUT_DIR="$PROJECT_ROOT/out"
@@ -21,6 +27,7 @@ REBOOT=false
 VERIFY=false
 BUILD_RUST=false
 CLEAR_KEYS=false
+CLEAR_LOGS=false
 TRACE=false
 ROOT_PROVIDER="ksu"
 
@@ -46,6 +53,7 @@ Deploy options:
   --deploy           Push ZIP to device and install
   --reboot           Reboot device after install
   --clear-keys       Clear persistent_keys before deploy
+  --clear-logs       Clear per-UID diagnostic logs before deploy
   --verify           Run logcat verification after deploy
   --root PROVIDER    Root provider: ksu (default), magisk, apatch
 
@@ -67,6 +75,7 @@ while [[ $# -gt 0 ]]; do
         --verify)     VERIFY=true; shift ;;
         --rust)       BUILD_RUST=true; shift ;;
         --clear-keys) CLEAR_KEYS=true; shift ;;
+        --clear-logs) CLEAR_LOGS=true; shift ;;
         -v|--verbose) TRACE=true; shift ;;
         --root)       ROOT_PROVIDER="$2"; shift 2 ;;
         --help|-h)    usage ;;
@@ -145,6 +154,11 @@ deploy_zip() {
     if [[ "$CLEAR_KEYS" == true ]]; then
         bold "==> Clearing persistent_keys"
         adb shell "rm -rf /data/adb/tricky_store/persistent_keys/*" 2>/dev/null || true
+    fi
+
+    if [[ "$CLEAR_LOGS" == true ]]; then
+        bold "==> Clearing per-UID diagnostic logs"
+        adb shell "rm -rf /data/media/0/TEESimulator /data/local/tmp/teesim" 2>/dev/null || true
     fi
 
     bold "==> Deploying $name"

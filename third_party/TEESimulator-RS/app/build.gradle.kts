@@ -2,6 +2,7 @@ import com.android.build.api.artifact.SingleArtifact
 import java.io.ByteArrayOutputStream
 import javax.inject.Inject
 import org.gradle.process.ExecOperations
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
@@ -27,9 +28,16 @@ abstract class GitExecutor @Inject constructor(private val execOperations: ExecO
 // Instantiate the helper class using Gradle's object factory
 val gitExecutor = objects.newInstance(GitExecutor::class.java)
 
-val gitCommitCount = gitExecutor.execute("git rev-list HEAD --count", rootDir).toInt()
+// versionCode = git commit count + floor offset. The 2026-07-08 public-release
+// history scrub (0f1143a) rewrote history and dropped the raw commit count below
+// the build number already shipped to testers (298), so post-scrub counts read as
+// downgrades. The floor offset lifts versionCode back above that peak and keeps it
+// monotonic across the rewrite; each later commit still bumps it by one.
+val versionCodeFloorOffset = 5
+val gitCommitCount =
+    gitExecutor.execute("git rev-list HEAD --count", rootDir).toInt() + versionCodeFloorOffset
 val gitCommitHash = gitExecutor.execute("git rev-parse --verify --short HEAD", rootDir)
-val verName = "v6.0.0"
+val verName = "v6.0.1"
 
 android {
     namespace = "org.matrix.TEESimulator"
@@ -65,6 +73,8 @@ android {
     }
 }
 
+kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_21) } }
+
 dependencies {
     compileOnly(project(":stub"))
     compileOnly(libs.annotation)
@@ -72,26 +82,35 @@ dependencies {
 }
 
 // --- Rust native cert gen build task ---
-val buildRustCertgen by tasks.registering(Exec::class) {
-    group = "TEESimulator-RS Native Build"
-    description = "Builds libcertgen.so via cargo-ndk for arm64-v8a."
+val buildRustCertgen by
+    tasks.registering(Exec::class) {
+        group = "TEESimulator-RS Native Build"
+        description = "Builds libcertgen.so via cargo-ndk for arm64-v8a."
 
-    workingDir = rootProject.projectDir.resolve("native-certgen")
+        workingDir = rootProject.projectDir.resolve("native-certgen")
 
-    commandLine(
-        "cargo", "ndk",
-        "-t", "arm64-v8a",
-        "-o", rootProject.projectDir.resolve("app/src/main/jniLibs").absolutePath,
-        "build", "--release"
-    )
+        commandLine(
+            "cargo",
+            "ndk",
+            "-t",
+            "arm64-v8a",
+            "-o",
+            rootProject.projectDir.resolve("app/src/main/jniLibs").absolutePath,
+            "build",
+            "--release",
+        )
 
-    inputs.dir(rootProject.projectDir.resolve("native-certgen/src"))
-    inputs.file(rootProject.projectDir.resolve("native-certgen/Cargo.toml"))
-    inputs.file(rootProject.projectDir.resolve("native-certgen/Cargo.lock"))
-    outputs.dir(rootProject.projectDir.resolve("app/src/main/jniLibs"))
+        inputs.dir(rootProject.projectDir.resolve("native-certgen/src"))
+        inputs.file(rootProject.projectDir.resolve("native-certgen/Cargo.toml"))
+        inputs.file(rootProject.projectDir.resolve("native-certgen/Cargo.lock"))
+        outputs.dir(rootProject.projectDir.resolve("app/src/main/jniLibs"))
 
-    environment("ANDROID_NDK_HOME", android.ndkDirectory.absolutePath)
-}
+        environment("ANDROID_NDK_HOME", android.ndkDirectory.absolutePath)
+        environment(
+            "PATH",
+            "${System.getProperty("user.home")}/.cargo/bin:${System.getenv("PATH") ?: ""}",
+        )
+    }
 
 // AGP auto-detects jniLibs/ as an input to mergeJniLibFolders — wire the dependency
 tasks.configureEach {
@@ -99,6 +118,35 @@ tasks.configureEach {
         dependsOn(buildRustCertgen)
     }
 }
+
+// Auto-rewrite module/update.json on every packaging build so versionCode and
+// zipUrl track gitCommitCount automatically, matching module.prop.
+val refreshUpdateJson by
+    tasks.registering {
+        group = "TEESimulator-RS Module Packaging"
+        description = "Rewrite module/update.json to match current verName and gitCommitCount."
+
+        val updateJsonFile = rootProject.projectDir.resolve("module/update.json")
+        val capturedVerName = verName
+        val capturedCount = gitCommitCount
+
+        inputs.property("verName", capturedVerName)
+        inputs.property("gitCommitCount", capturedCount)
+        outputs.file(updateJsonFile)
+
+        doLast {
+            val fullVer = "$capturedVerName-$capturedCount"
+            updateJsonFile.writeText(
+                """{
+  "version": "$fullVer",
+  "versionCode": $capturedCount,
+  "zipUrl": "https://github.com/Enginex0/TEESimulator-RS/releases/download/$fullVer/TEESimulator-RS-$fullVer-Release.zip",
+  "changelog": "https://raw.githubusercontent.com/Enginex0/TEESimulator-RS/main/module/changelog.md"
+}
+"""
+            )
+        }
+    }
 
 androidComponents {
     onVariants(selector().all()) { variant ->
@@ -124,6 +172,7 @@ androidComponents {
                     dependsOn("strip${capitalized}DebugSymbols")
                 }
                 dependsOn(buildRustCertgen)
+                dependsOn(refreshUpdateJson)
 
                 if (isDebug) {
                     from(variant.artifacts.get(SingleArtifact.APK)) {
@@ -140,20 +189,27 @@ androidComponents {
                     }
                 }
 
-                val nativeLibsDir = if (isDebug) {
-                    "intermediates/merged_native_libs/${variant.name}/merge${capitalized}NativeLibs/out/lib"
-                } else {
-                    "intermediates/stripped_native_libs/${variant.name}/strip${capitalized}DebugSymbols/out/lib"
-                }
+                val nativeLibsDir =
+                    if (isDebug) {
+                        "intermediates/merged_native_libs/${variant.name}/merge${capitalized}NativeLibs/out/lib"
+                    } else {
+                        "intermediates/stripped_native_libs/${variant.name}/strip${capitalized}DebugSymbols/out/lib"
+                    }
                 from(project.layout.buildDirectory.dir(nativeLibsDir)) {
                     into("lib")
-                    include("**/libinject.so", "**/libTEESimulator.so", "**/libsupervisor.so", "**/libcertgen.so")
+                    include(
+                        "**/libinject.so",
+                        "**/libTEESimulator.so",
+                        "**/libsupervisor.so",
+                        "**/libcertgen.so",
+                    )
                 }
 
                 // Now, copy and process the files from 'module' directory.
                 val sourceModuleDir = rootProject.projectDir.resolve("module")
                 from(sourceModuleDir) {
                     exclude("module.prop") // Exclude the template file.
+                    exclude("diag.sh") // Debug-only diagnostic plane; included for debug below.
                 }
 
                 // Copy and filter the module.prop template separately.
@@ -166,8 +222,25 @@ androidComponents {
                     )
                 }
 
+                if (isDebug) {
+                    from(sourceModuleDir) { include("diag.sh") }
+                }
+
                 // The destination for all the above 'from' operations.
                 into(tempModuleDir)
+
+                if (isDebug) {
+                    doLast {
+                        // Debug-only: grant the keystore + soterserver (platform_app) domains
+                        // external-storage access for the per-UID NDJSON sink. diag.sh (shipped
+                        // only in debug) carries the shell side of the diagnostic plane.
+                        tempModuleDir.get().asFile.resolve("sepolicy.rule")
+                            .appendText(
+                                "\nallow keystore media_rw_data_file { dir file } *" +
+                                    "\nallow platform_app media_rw_data_file { dir file } *\n",
+                            )
+                    }
+                }
             }
 
         // Task 2: Zip the prepared files from the temporary directory.

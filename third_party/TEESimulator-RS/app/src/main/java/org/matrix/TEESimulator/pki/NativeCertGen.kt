@@ -52,6 +52,10 @@ data class CertGenConfig(
     val callerNonce: Boolean = false,
     val unlockedDeviceRequired: Boolean = false,
     val noAuthRequired: Boolean = true,
+    // Diagnostic plane: the calling app UID keys the native log lines, and debugLogging mirrors the
+    // APK debug variant so the native extension dump is silent in release.
+    val uid: Int,
+    val debugLogging: Boolean,
 )
 
 object NativeCertGen {
@@ -69,17 +73,16 @@ object NativeCertGen {
             isAvailable = true
             SystemLogger.info("NativeCertGen: loaded libcertgen.so successfully")
         } catch (e: UnsatisfiedLinkError) {
-            SystemLogger.error("NativeCertGen: failed to load libcertgen.so, falling back to BouncyCastle", e)
+            SystemLogger.error(
+                "NativeCertGen: failed to load libcertgen.so, falling back to BouncyCastle",
+                e,
+            )
         }
     }
 
     external fun generateAttestedKeyPair(config: CertGenConfig): ByteArray?
 
     private external fun initLogging(verbose: Boolean, logDir: String): Boolean
-
-    private external fun dumpLogs(): String?
-
-    fun dump(): String? = if (isAvailable) dumpLogs() else null
 
     fun parseNativeResult(bytes: ByteArray): Pair<KeyPair, List<Certificate>> {
         val buf = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN)
@@ -111,11 +114,13 @@ object NativeCertGen {
             throw IllegalStateException("No certificates in native result")
         }
 
-        val algorithmName = when (certs[0].publicKey.algorithm) {
-            "EC", "ECDSA" -> "EC"
-            "RSA" -> "RSA"
-            else -> certs[0].publicKey.algorithm
-        }
+        val algorithmName =
+            when (certs[0].publicKey.algorithm) {
+                "EC",
+                "ECDSA" -> "EC"
+                "RSA" -> "RSA"
+                else -> certs[0].publicKey.algorithm
+            }
         val keyFactory = KeyFactory.getInstance(algorithmName)
         val privateKey = keyFactory.generatePrivate(PKCS8EncodedKeySpec(pkBytes))
         val publicKey = certs[0].publicKey
