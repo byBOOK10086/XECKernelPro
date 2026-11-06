@@ -83,11 +83,11 @@ resetprop() {
 }
 
 # TrickyStore Paths
-# 2026-11-05：内置引擎现在装在正常的 /data/adb/modules/tricky_store，不再是当年那个
+# 2026-11-05：内置引擎现在装在正常的 /data/adb/ksu/builtin/tricky_store，不再是当年那个
 # 隐藏的 /dev/.xudc_hidden 布局。**这里是 TS 的唯一事实源**：post-fs-data.sh 在
 # source 本文件之前就要用 TS，所以它自己先写了一份同样的值，本文件这里再覆盖一次，
 # 两处必须保持一致——写错任何一处都会让模块把自己判成“TrickyStore 不在”然后自毁。
-TS="/data/adb/modules/tricky_store"
+TS="/data/adb/ksu/builtin/tricky_store"
 TS_DIR="/data/adb/.xudc_secure"
 
 # Unified log directory -- shell and Rust daemon both log here

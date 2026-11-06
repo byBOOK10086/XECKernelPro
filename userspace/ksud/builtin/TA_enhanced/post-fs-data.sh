@@ -2,10 +2,10 @@
 # 同目录 NOTICE.md「本地修改」。上游：Enginex0/tricky-addon-enhanced（GPL-3.0）。
 MODPATH=${0%/*}
 # 2026-11-05 本地修改：内置引擎改回随管理器分发，安装位置是正常的
-# /data/adb/modules/tricky_store，不再是当年那个隐藏的 /dev/.xudc_hidden 布局。
+# /data/adb/ksu/builtin/tricky_store，不再是当年那个隐藏的 /dev/.xudc_hidden 布局。
 # 这个变量是下面判「TrickyStore 在不在」的唯一依据，指错就会在第 33 行把自己标记
 # 成 remove（下次开机被 prune 删掉），所以必须跟着新的安装位置走。
-TS="/data/adb/modules/tricky_store"
+TS="/data/adb/ksu/builtin/tricky_store"
 LOG_BASE_DIR="/data/adb/.xudc_secure/ta-enhanced/logs"
 BOOT_LOG="$LOG_BASE_DIR/boot.log"
 
@@ -36,14 +36,8 @@ _pfd_log "TrickyStore engine dir ready (waited ${_wait_count} iterations)"
 # Self-removal if TrickyStore missing
 if [ ! -d "$TS" ] || [ -f "$TS/remove" ]; then
     _pfd_log "TrickyStore missing or removing - marking self for removal"
-    if [ -f "$MODPATH/action.sh" ]; then
-        # Magisk hidden module: recreate stub at real ID
-        rm -rf "/data/adb/modules/TA_enhanced" 2>/dev/null
-        mkdir -p "/data/adb/modules/TA_enhanced"
-        touch "/data/adb/modules/TA_enhanced/remove"
-    else
-        touch "$MODPATH/remove"
-    fi
+    # (module-era block removed: the engine is no longer a module)
+
 fi
 
 # Clean stale symlinks

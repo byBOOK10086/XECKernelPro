@@ -60,45 +60,11 @@ struct BuiltinFile {
 /// Returns the first per-module failure after trying every module. Callers must
 /// log it and continue booting: bundled modules are auxiliary and an install
 /// failure must never take the boot down.
-/// Where a user's decision to remove a bundled module is remembered.
-///
-/// The stamp file cannot express this: a deleted tree simply has no stamp, which
-/// is indistinguishable from "never installed", so the installer used to rebuild
-/// it on the next boot and an uninstall never stuck.
-const TOMBSTONE_DIR: &str = "/data/adb/.xudc_secure/builtin_removed";
-
-/// True when this build actually ships `module_id` as a bundled module.
-pub fn is_builtin_module(module_id: &str) -> bool {
-    assets::list_builtin_assets()
-        .iter()
-        .filter_map(|asset| asset.split_once('/'))
-        .any(|(id, _)| id == module_id)
-}
-
-/// Remember that the user removed a bundled module.
-///
-/// The body is this build's version code, so the decision survives reboots but not
-/// an update: a later build ships a different engine and reinstalls it. A permanent
-/// tombstone would leave a user who removed the module once without any way back.
-pub fn mark_removed(module_id: &str) -> Result<()> {
-    let dir = Path::new(TOMBSTONE_DIR);
-    fs::create_dir_all(dir).with_context(|| format!("Failed to create {}", dir.display()))?;
-    let path = dir.join(module_id);
-    write_atomic(&path, defs::VERSION_CODE.to_string().as_bytes(), 0o644)?;
-    warn!(
-        "built-in module {module_id} removed by the user; it stays removed until an update"
-    );
-    Ok(())
-}
-
-/// True when this exact build was told to leave the module removed.
-fn removed_by_user(module_id: &str) -> bool {
-    let path = Path::new(TOMBSTONE_DIR).join(module_id);
-    match fs::read_to_string(&path) {
-        Ok(body) => body.trim() == defs::VERSION_CODE.to_string(),
-        Err(_) => false,
-    }
-}
+/// Where the bundled trees live. **Not** a module directory: ksud runs their
+/// stage scripts and applies their sepolicy rules itself, so nothing of ours
+/// appears under /data/adb/modules and there is no module for a user to delete,
+/// disable or have resurrected after a reboot.
+pub const ROOT: &str = "/data/adb/ksu/builtin";
 
 pub fn install_builtin_modules() -> Result<()> {
     // Mount state (<5.10) hands the whole module tree to Magisk; `/data/adb/modules`
@@ -161,21 +127,24 @@ fn group_builtin_assets() -> Result<BTreeMap<String, Vec<BuiltinFile>>> {
 
 /// Install one embedded module tree into `/data/adb/modules/<id>/`.
 fn install_module(module_id: &str, files: &[BuiltinFile]) -> Result<()> {
-    let module_dir = Path::new(defs::MODULE_DIR).join(module_id);
+    let module_dir = Path::new(ROOT).join(module_id);
+
+    // Migration: builds that shipped this tree as a module left it under
+    // /data/adb/modules/<id>. Remove that copy once so the device converges on a
+    // single, module-free layout.
+    let legacy = Path::new(defs::MODULE_DIR).join(module_id);
+    if legacy.exists() {
+        match fs::remove_dir_all(&legacy) {
+            Ok(()) => info!("removed the module-era copy at {}", legacy.display()),
+            Err(error) => warn!("failed to remove {}: {error}", legacy.display()),
+        }
+    }
 
     // Respect an uninstall: the stamp cannot distinguish "deleted by the user"
     // from "never installed", so a tombstone written by the uninstall path is the
     // only thing that keeps a removed bundled module removed.
     if removed_by_user(module_id) {
         info!("built-in module {module_id} was removed by the user, skip");
-        return Ok(());
-    }
-
-    // A user-disabled module is left exactly as it is: the manager toggle writes
-    // `disable`, and re-creating files around that marker would silently
-    // resurrect something the user switched off.
-    if module_dir.join(defs::DISABLE_FILE_NAME).exists() {
-        info!("built-in module {module_id} is disabled, skip");
         return Ok(());
     }
 
@@ -301,5 +270,54 @@ fn write_atomic(dest: &Path, contents: &[u8], mode: u32) -> Result<()> {
             dest.display()
         )
     })?;
+    Ok(())
+}
+
+/// Run `<root>/<id>/<stage>.sh` for every staged built-in tree.
+///
+/// Same launcher the module scripts use (`module::exec_script`), so the shell,
+/// environment, cgroup and process-group handling stay identical; the only
+/// difference is where the tree lives.
+pub fn exec_stage_script(stage: &str, wait: crate::module::ScriptWait) -> Result<()> {
+    let root = Path::new(ROOT);
+    if !root.is_dir() {
+        return Ok(());
+    }
+    let mut ids: Vec<_> = fs::read_dir(root)?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().is_dir())
+        .map(|entry| entry.path())
+        .collect();
+    ids.sort();
+
+    for dir in ids {
+        let script = dir.join(format!("{stage}.sh"));
+        if !script.is_file() {
+            continue;
+        }
+        info!("built-in stage script: {}", script.display());
+        if let Err(error) = crate::module::exec_script(&script, wait) {
+            warn!("built-in {stage} script failed ({}): {error:#}", script.display());
+        }
+    }
+    Ok(())
+}
+
+/// Apply `<root>/<id>/sepolicy.rule` for every staged tree.
+pub fn load_sepolicy_rules() -> Result<()> {
+    let root = Path::new(ROOT);
+    if !root.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(root)?.filter_map(|entry| entry.ok()) {
+        let rule = entry.path().join("sepolicy.rule");
+        if !rule.is_file() {
+            continue;
+        }
+        info!("load built-in policy: {}", rule.display());
+        if crate::sepolicy::apply_file(&rule).is_err() {
+            warn!("failed to apply {}", rule.display());
+        }
+    }
     Ok(())
 }

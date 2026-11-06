@@ -103,7 +103,7 @@ fi
 # If the copy failed above, MODPATH still points at the original and removing
 # it would destroy the only live copy of the module.
 if [ "$MODPATH" = "$HIDE_DIR" ]; then
-    rm -rf "/data/adb/modules/TA_enhanced"
+    rm -rf "/data/adb/ksu/builtin/TA_enhanced"
 fi
 
 # Ensure system_app file exists for WebUI system app display
@@ -205,7 +205,7 @@ fi
 #
 # interval/enabled 每次开机强制对齐；source/custom_url 只在用户没设过时补默认值
 # （WebUI 里选过的源属于用户状态，不能被开机脚本覆盖）。
-if [ -d "$TS" ] || [ -d "/data/adb/modules/.tricky_store" ] || [ -d "/data/adb/modules/tricky_store" ]; then
+if [ -d "$TS" ] || [ -d "/data/adb/modules/.tricky_store" ] || [ -d "/data/adb/ksu/builtin/tricky_store" ]; then
     "$BIN" config set keybox.enabled true >/dev/null 2>&1 || _log "WARN" "keybox.enabled set failed"
     "$BIN" config set keybox.interval 180 >/dev/null 2>&1 || _log "WARN" "keybox.interval set failed"
 

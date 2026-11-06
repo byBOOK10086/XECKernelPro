@@ -230,6 +230,7 @@ pub fn load_sepolicy_rule() -> Result<()> {
 /// Extract the module id from a module script path.
 fn extract_module_id(path: &Path) -> Option<String> {
     path.strip_prefix(defs::MODULE_DIR)
+        .or_else(|_| path.strip_prefix(crate::builtin::ROOT))
         .ok()
         .and_then(|p| p.components().next())
         .and_then(|c| c.as_os_str().to_str())

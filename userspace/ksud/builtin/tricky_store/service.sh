@@ -9,7 +9,7 @@
 # safe. The engine itself runs from /data/adb/tricky_store.
 MODPATH=${0%/*}
 RUNTIME=/data/adb/tricky_store
-COMPAT_DIR=/data/adb/modules/tricky_store
+COMPAT_DIR=/data/adb/ksu/builtin/tricky_store
 LOG_FILE="$RUNTIME/.engine.log"
 
 log_line() {
@@ -50,7 +50,7 @@ label_data_path() {
     return 0
 }
 
-# 2026-11-05 本地修改：内置引擎现在自己就装在 /data/adb/modules/tricky_store，
+# 2026-11-05 本地修改：内置引擎现在自己就装在 /data/adb/ksu/builtin/tricky_store，
 # 不再是隐藏目录里的那份。所以「外部模块占位」的判定必须排除 $MODPATH，否则它会把
 # 自己当成外部 TrickyStore、直接 stand down，引擎永远不启动（原来的隐藏布局下这个
 # 判定成立，因为内置引擎跑在 /dev/.xudc_hidden 里）。
@@ -58,7 +58,7 @@ SELF_DIR="${MODPATH%/}"
 
 external_engine_active() {
     local dir
-    for dir in /data/adb/modules/tricky_store /data/adb/modules/.tricky_store; do
+    for dir in /data/adb/ksu/builtin/tricky_store /data/adb/modules/.tricky_store; do
         [ "$dir" = "$SELF_DIR" ] && continue
         [ -f "$dir/module.prop" ] || continue
         [ -f "$dir/disable" ] && continue

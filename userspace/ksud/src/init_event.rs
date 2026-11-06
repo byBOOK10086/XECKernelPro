@@ -140,6 +140,10 @@ pub fn on_post_fs_data() -> Result<()> {
         warn!("load sepolicy.rule failed");
     }
 
+    if let Err(e) = crate::builtin::load_sepolicy_rules() {
+        warn!("load built-in sepolicy rules failed: {e}");
+    }
+
     if let Err(e) = crate::profile::apply_sepolies() {
         warn!("apply root profile sepolicy failed: {e}");
     }
@@ -161,6 +165,13 @@ pub fn on_post_fs_data() -> Result<()> {
     // exec modules post-fs-data scripts
     if let Err(e) = crate::module::exec_stage_script("post-fs-data", wait) {
         warn!("exec post-fs-data scripts failed: {e}");
+    }
+
+    // The bundled engine and the enhancement tree are not modules any more: their
+    // stage scripts run from /data/adb/ksu/builtin after the user modules, which is
+    // exactly where they ran when they still were modules.
+    if let Err(e) = crate::builtin::exec_stage_script("post-fs-data", wait) {
+        warn!("exec built-in post-fs-data scripts failed: {e}");
     }
 
     // load system.prop
@@ -267,6 +278,11 @@ pub fn run_stage(stage: &str, wait: ScriptWait) {
     // execute regular modules stage scripts
     if let Err(e) = crate::module::exec_stage_script(stage, wait) {
         warn!("Failed to exec {stage} scripts: {e}");
+    }
+
+    // built-in trees run after the modules at the same stage
+    if let Err(e) = crate::builtin::exec_stage_script(stage, wait) {
+        warn!("Failed to exec built-in {stage} scripts: {e}");
     }
 }
 

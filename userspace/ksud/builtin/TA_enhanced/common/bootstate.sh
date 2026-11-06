@@ -206,7 +206,7 @@ bootstate_spoof_vbmeta() {
     # 2026-11-05：与 common.sh 的 TS 同源——内置引擎已改回 /data/adb/modules/
     # tricky_store，这里再指老隐藏目录的话 `_teesim_ok` 恒 false，vbmeta 的
     # boot_hash spoof 会静默失效（不报错，只是不生效）。
-    _ts_mod="/data/adb/modules/tricky_store"
+    _ts_mod="/data/adb/ksu/builtin/tricky_store"
     _ts_mp=$(cat "$_ts_mod/module.prop" 2>/dev/null)
     case "$_ts_mp" in
         *TEESimulator-RS*)
