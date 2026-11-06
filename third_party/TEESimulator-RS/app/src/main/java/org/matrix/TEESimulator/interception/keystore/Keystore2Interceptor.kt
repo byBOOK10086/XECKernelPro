@@ -71,6 +71,9 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
     // falling through to the real daemon, whose legacy-database path answers KEY_NOT_FOUND -
     // that string is what detectors fingerprint as a keystore-interception module.
     private const val GRANT_PUBLIC_API_SDK = 36
+
+    /** First uid that is an ordinary app rather than framework/system. */
+    private const val FIRST_APP_UID = 10000
     private val deletedSoftwareKeys: MutableSet<KeyIdentifier> = ConcurrentHashMap.newKeySet()
     private val userUpdatedKeys = ConcurrentHashMap.newKeySet<KeyIdentifier>()
 
@@ -484,15 +487,32 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
         val accessVector = data.readInt()
 
         val ownerKeyId = resolveOwnerKeyId(key, callingUid)
-        if (ownerKeyId == null ||
-            KeyMintSecurityLevelInterceptor.getGeneratedKeyResponse(ownerKeyId) == null
-        ) {
-            return TransactionResult.ContinueAndSkipPost
+        val ownsKey =
+            ownerKeyId != null &&
+                KeyMintSecurityLevelInterceptor.getGeneratedKeyResponse(ownerKeyId) != null
+
+        logTransaction(
+            txId,
+            "grant ${key.alias ?: key.domain} owns=$ownsKey",
+            callingUid,
+            callingPid,
+        )
+
+        if (Build.VERSION.SDK_INT < GRANT_PUBLIC_API_SDK) {
+            // Stock answer for every app on this API level: the hidden grant call is denied by
+            // SELinux at the keystore2 boundary before key ownership matters. Ownership is only
+            // used for the log line, not as a gate - gating on it left the attest-key probe
+            // falling through to keystore2's legacy database, whose KEY_NOT_FOUND text is the
+            // fingerprint a detector matches. Root/system callers keep the stock path.
+            return if (callingUid >= FIRST_APP_UID) {
+                InterceptorUtils.createErrorReply(RESPONSE_PERMISSION_DENIED)
+            } else {
+                TransactionResult.ContinueAndSkipPost
+            }
         }
 
-        logTransaction(txId, "grant ${key.alias ?: key.domain}", callingUid, callingPid)
-        if (Build.VERSION.SDK_INT < GRANT_PUBLIC_API_SDK) {
-            return InterceptorUtils.createErrorReply(RESPONSE_PERMISSION_DENIED)
+        if (!ownsKey) {
+            return TransactionResult.ContinueAndSkipPost
         }
 
         // API 36+ turned grant into a supported public API and upstream virtualizes it through a
