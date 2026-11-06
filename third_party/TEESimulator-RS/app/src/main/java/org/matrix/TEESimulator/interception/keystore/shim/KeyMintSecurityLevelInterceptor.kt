@@ -557,8 +557,14 @@ class KeyMintSecurityLevelInterceptor(
      */
     private fun isCapabilityFailure(errorCode: Int): Boolean =
         when (errorCode) {
-            // KeyMint ErrorCode: capability / provisioning / environment gaps.
-            -41, // MEMORY_ALLOCATION_FAILED
+            // KeyMint ErrorCode: a capability the device does not have, or attestation
+            // material it was never provisioned with. No valid request could have succeeded,
+            // so a software key is the only way to serve it.
+            //
+            // Deliberately excluded: UNKNOWN_ERROR (-1000) and MEMORY_ALLOCATION_FAILED (-41).
+            // The first is the HAL's catch-all and is also returned for parameters it rejects;
+            // whitelisting it would turn invalid requests into successes. The second is a
+            // transient system condition, not a missing capability.
             -49, // SECURE_HW_COMMUNICATION_FAILED
             -64, // KEYMINT_NOT_CONFIGURED
             -66, // CANNOT_ATTEST_IDS
@@ -567,7 +573,6 @@ class KeyMintSecurityLevelInterceptor(
             -74, // ATTESTATION_KEYS_NOT_PROVISIONED
             -75, // ATTESTATION_IDS_NOT_PROVISIONED
             -100, // UNIMPLEMENTED
-            -1000, // UNKNOWN_ERROR
             -> true
             else -> false
         }
@@ -647,6 +652,9 @@ class KeyMintSecurityLevelInterceptor(
                     parsedParams,
                     keyId,
                     parsedParams.isAttestKey(),
+                    // This runs after the daemon refused, so a second failure must not delete
+                    // the previous key: clean up only once the replacement exists.
+                    deferReplacementCleanup = true,
                 )
             }
             .getOrElse { ex ->
@@ -912,6 +920,15 @@ class KeyMintSecurityLevelInterceptor(
         parsedParams: KeyMintAttestation,
         keyId: KeyIdentifier,
         isAttestKeyRequest: Boolean,
+        /**
+         * Skip the up-front replacement cleanup and run it just before the put instead.
+         *
+         * The normal path clears the old key first, which is right when a successful
+         * generateKey is replacing it. The post-hook fallback runs only after the daemon
+         * already refused, so a failure while building the replacement must leave the
+         * previous key usable rather than deleting it and putting nothing back.
+         */
+        deferReplacementCleanup: Boolean = false,
     ): TransactionResult {
         val genStartNanos = System.nanoTime()
         keyDescriptor.nspace = secureRandom.nextLong()
@@ -919,7 +936,7 @@ class KeyMintSecurityLevelInterceptor(
             "Generating software key for ${keyDescriptor.alias}[${keyDescriptor.nspace}]."
         )
 
-        cleanupKeyData(keyId)
+        if (!deferReplacementCleanup) cleanupKeyData(keyId)
 
         val isSymmetric =
             parsedParams.algorithm != Algorithm.EC && parsedParams.algorithm != Algorithm.RSA
@@ -1081,6 +1098,7 @@ class KeyMintSecurityLevelInterceptor(
         val response =
             buildKeyEntryResponse(callingUid, keyData.second, parsedParams, keyDescriptor)
         AttestationDossier.logAuthShape(callingUid, txId, response.metadata?.authorizations)
+        if (deferReplacementCleanup) cleanupKeyData(keyId)
         generatedKeys[keyId] =
             GeneratedKeyInfo(keyData.first, null, keyDescriptor.nspace, response, parsedParams)
         Keystore2Interceptor.forgetDeletedKey(keyId)
