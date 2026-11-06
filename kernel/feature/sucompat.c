@@ -276,10 +276,23 @@ static long ksu_handle_execve_sucompat_common(const char __user **filename_user,
     PT_REGS_SYSCALL_PARM1(regs) = tmp_fd;
 
     ret = escape_with_root_profile();
-    if (ret) {
-        pr_err("escape_with_root_profile failed: %ld\n", ret);
-    }
     ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
+    if (ret) {
+        /*
+         * The SUSFS branch below returns here instead of continuing. Executing
+         * anyway would launch the caller through the rewritten registers with no
+         * profile applied - neither root nor the normal identity it asked to
+         * keep - so undo the rewrite and report the failure.
+         */
+        pr_err("escape_with_root_profile failed: %ld\n", ret);
+        ksu_close_fd(tmp_fd);
+        PT_REGS_SYSCALL_PARM1(regs) = orig_regs[0];
+        regs->__PT_PARM2_REG = orig_regs[1];
+        regs->__PT_PARM3_REG = orig_regs[2];
+        regs->__PT_SYSCALL_PARM4_REG = orig_regs[3];
+        regs->__PT_PARM5_REG = orig_regs[4];
+        return ret;
+    }
 
     ret = ksu_syscall_table[__NR_execveat](regs);
     if (ret < 0) {
