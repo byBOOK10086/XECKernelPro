@@ -83,12 +83,7 @@ pub fn builtin_set_spoof(value: &str) -> Result<&'static str> {
     Ok(if on { "on" } else { "off" })
 }
 
-/// Validate module_id format and security
-/// Module ID must match: ^[a-zA-Z][a-zA-Z0-9._-]+$
-/// - Must start with a letter (a-zA-Z)
-/// - Followed by one or more alphanumeric, dot, underscore, or hyphen characters
-/// - Minimum length: 2 characters
-pub /// Find `<dir>/module.prop` inside the archive, for zips repacked with a wrapper folder.
+/// Find `<dir>/module.prop` inside the archive, for zips repacked with a wrapper folder.
 fn find_nested_module_prop(zip_path: &std::path::Path) -> Result<Option<String>> {
     let file = File::open(zip_path)?;
     let mut archive = zip::ZipArchive::new(file)?;
@@ -111,7 +106,12 @@ fn list_archive_entries(zip_path: &std::path::Path) -> Result<String> {
     Ok(names.into_iter().take(12).collect::<Vec<_>>().join(", "))
 }
 
-fn validate_module_id(module_id: &str) -> Result<()> {
+/// Validate module_id format and security
+/// Module ID must match: ^[a-zA-Z][a-zA-Z0-9._-]+$
+/// - Must start with a letter (a-zA-Z)
+/// - Followed by one or more alphanumeric, dot, underscore, or hyphen characters
+/// - Minimum length: 2 characters
+pub fn validate_module_id(module_id: &str) -> Result<()> {
     let re = Regex::new(r"^[a-zA-Z][a-zA-Z0-9._-]+$")?;
     if re.is_match(module_id) {
         Ok(())
