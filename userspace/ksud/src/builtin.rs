@@ -11,10 +11,8 @@
 //! for the module trees either — note that the TA_enhanced payload still keeps a
 //! live `/dev/.xudc_hidden/bootparams` overlay of its own (see `bootstate.rs`),
 //! which is unrelated to how the module gets installed. The installed module is a
-//! plain module directory the user can inspect and edit, but not one they can
-//! remove: the disable/remove/update markers are cleared on every boot and a
-//! deleted tree is rebuilt, because these modules carry the attestation engine
-//! and a single stray marker leaves the device attesting as unlocked.
+//! plain module directory the user can inspect, disable or edit like any other
+//! module.
 
 use anyhow::{Context, Result, anyhow, ensure};
 use log::{debug, info, warn};
@@ -62,6 +60,46 @@ struct BuiltinFile {
 /// Returns the first per-module failure after trying every module. Callers must
 /// log it and continue booting: bundled modules are auxiliary and an install
 /// failure must never take the boot down.
+/// Where a user's decision to remove a bundled module is remembered.
+///
+/// The stamp file cannot express this: a deleted tree simply has no stamp, which
+/// is indistinguishable from "never installed", so the installer used to rebuild
+/// it on the next boot and an uninstall never stuck.
+const TOMBSTONE_DIR: &str = "/data/adb/.xudc_secure/builtin_removed";
+
+/// True when this build actually ships `module_id` as a bundled module.
+pub fn is_builtin_module(module_id: &str) -> bool {
+    assets::list_builtin_assets()
+        .iter()
+        .filter_map(|asset| asset.split_once('/'))
+        .any(|(id, _)| id == module_id)
+}
+
+/// Remember that the user removed a bundled module.
+///
+/// The body is this build's version code, so the decision survives reboots but not
+/// an update: a later build ships a different engine and reinstalls it. A permanent
+/// tombstone would leave a user who removed the module once without any way back.
+pub fn mark_removed(module_id: &str) -> Result<()> {
+    let dir = Path::new(TOMBSTONE_DIR);
+    fs::create_dir_all(dir).with_context(|| format!("Failed to create {}", dir.display()))?;
+    let path = dir.join(module_id);
+    write_atomic(&path, defs::VERSION_CODE.to_string().as_bytes(), 0o644)?;
+    warn!(
+        "built-in module {module_id} removed by the user; it stays removed until an update"
+    );
+    Ok(())
+}
+
+/// True when this exact build was told to leave the module removed.
+fn removed_by_user(module_id: &str) -> bool {
+    let path = Path::new(TOMBSTONE_DIR).join(module_id);
+    match fs::read_to_string(&path) {
+        Ok(body) => body.trim() == defs::VERSION_CODE.to_string(),
+        Err(_) => false,
+    }
+}
+
 pub fn install_builtin_modules() -> Result<()> {
     // Mount state (<5.10) hands the whole module tree to Magisk; `/data/adb/modules`
     // there is not ours to populate.
@@ -125,21 +163,20 @@ fn group_builtin_assets() -> Result<BTreeMap<String, Vec<BuiltinFile>>> {
 fn install_module(module_id: &str, files: &[BuiltinFile]) -> Result<()> {
     let module_dir = Path::new(defs::MODULE_DIR).join(module_id);
 
-    // Bundled modules are part of the product, not something the user opted
-    // into, so they are neither disableable nor removable: a stale `disable`
-    // silently costs a whole boot without the TEE engine, and a `remove`
-    // marker deletes the tree that the next boot has to rebuild anyway.
-    //
-    // 2026-11-06 实测：02:02 有人往 /data/adb/modules/tricky_store 写了
-    // `disable`，下一轮开机 ksud 就地跳过它（旧代码在这里 return Ok），
-    // keystore2 没有被注入，整机以未锁定的真实证明对外应答 —— 检测器直接把
-    // Bootloader 卡从 CLEAR 打成 DANGER，直到手工删掉 marker 才恢复。
-    for marker in [
-        defs::DISABLE_FILE_NAME,
-        defs::REMOVE_FILE_NAME,
-        defs::UPDATE_FILE_NAME,
-    ] {
-        clear_state_marker(&module_dir, marker)?;
+    // Respect an uninstall: the stamp cannot distinguish "deleted by the user"
+    // from "never installed", so a tombstone written by the uninstall path is the
+    // only thing that keeps a removed bundled module removed.
+    if removed_by_user(module_id) {
+        info!("built-in module {module_id} was removed by the user, skip");
+        return Ok(());
+    }
+
+    // A user-disabled module is left exactly as it is: the manager toggle writes
+    // `disable`, and re-creating files around that marker would silently
+    // resurrect something the user switched off.
+    if module_dir.join(defs::DISABLE_FILE_NAME).exists() {
+        info!("built-in module {module_id} is disabled, skip");
+        return Ok(());
     }
 
     let stamp_body = builtin_stamp(files.len());
@@ -182,28 +219,6 @@ fn install_module(module_id: &str, files: &[BuiltinFile]) -> Result<()> {
     write_atomic(&stamp_path, stamp_body.as_bytes(), 0o644)?;
     info!("built-in module {module_id} installed");
     Ok(())
-}
-
-/// Delete one module state marker, treating "already gone" as success.
-///
-/// Only the markers that stop execution or delete the tree are cleared; a
-/// bundled module still gets the ordinary treatment everywhere else (no
-/// mounted files, no skip_mount special case).
-fn clear_state_marker(module_dir: &Path, name: &str) -> Result<()> {
-    let path = module_dir.join(name);
-    match fs::remove_file(&path) {
-        Ok(()) => {
-            warn!(
-                "built-in module {}: cleared the stray '{name}' marker",
-                module_dir.display()
-            );
-            Ok(())
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => {
-            Err(error).with_context(|| format!("failed to clear {}", path.display()))
-        }
-    }
 }
 
 /// Stamp body identifying the embedded tree of this build.
