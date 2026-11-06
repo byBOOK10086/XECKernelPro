@@ -81,7 +81,9 @@ fun HomePager(
         },
         onPrivilegeClick = { navigator.push(Route.Privilege(updateMode = false)) },
         onDetectClick = {
-            mainPagerState.animateToPage(MainPagerConfig.DETECT_PAGE_INDEX)
+            // The detect screen was retired with the 2026-10-26 rework; its capabilities live
+            // on in the Tools route. The old page index pointed at Settings.
+            navigator.push(Route.Tools)
         },
     )
 
