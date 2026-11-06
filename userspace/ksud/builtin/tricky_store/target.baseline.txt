@@ -36,3 +36,9 @@ krypton.tbsafetychecker
 # AOSP / GMS 侧的证明入口
 com.google.android.gsf
 com.android.keyattestation
+
+# Duck Detector（com.eltavine.duckdetector）。它的 TEE 卡片会用"同一把密钥
+# 的有证明/无证明两次 generateKey + 反复 getKeyEntry"做配对测时；只要其中一次
+# 落给真实 TEE，两次样本就来自不同代码路径，比值失去意义，测量建立不起来。
+# 不在名单里时它拿到的是"一半软件、一半真实"的混合结果。
+com.eltavine.duckdetector
