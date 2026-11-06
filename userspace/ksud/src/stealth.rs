@@ -533,13 +533,95 @@ fn run_watcher() -> Result<()> {
     }
 }
 
-/// 计数达标时才做一次前台校验：mCurrentFocus（Android 10-15）+
-/// topResumedActivity（新版本 window 服务拆分后的兜底）。
+/// 系统设置包的运行时发现结果（只探测一次）。
+static SETTINGS_PKGS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+/// 发现本机「系统设置」的包名。
+///
+/// 内置默认只写了 com.android.settings / com.xiaomi.misettings，而荣耀、OPPO、
+/// vivo、三星等 ROM 的设置包是 com.hihonor.settings / com.coloros.settings /
+/// com.vivo.settings / com.samsung.android.settings —— 白名单对不上，计数攒满后
+/// 前台校验必然失败并静默重置，用户看到的就是「点 OS 版本没用」。
+fn detect_settings_packages() -> &'static Vec<String> {
+    SETTINGS_PKGS.get_or_init(|| {
+        let mut found: Vec<String> = Vec::new();
+
+        // 1) 系统设置入口的解析结果（最权威，随 ROM 走）。
+        if let Ok(out) = Command::new("sh")
+            .arg("-c")
+            .arg(
+                "cmd package resolve-activity --brief \
+                   -a android.settings.SETTINGS 2>/dev/null \
+                 | tail -n 1",
+            )
+            .output()
+        {
+            let text = String::from_utf8_lossy(&out.stdout);
+            if let Some(pkg) = text.trim().split('/').next() {
+                let pkg = pkg.trim();
+                if !pkg.is_empty() && pkg.contains('.') {
+                    found.push(pkg.to_string());
+                }
+            }
+        }
+
+        // 2) 名字里带 settings 的系统包（覆盖 OEM 自有命名）。
+        if let Ok(out) = Command::new("sh")
+            .arg("-c")
+            .arg("pm list packages -s 2>/dev/null | grep -i settings | head -n 8")
+            .output()
+        {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                if let Some(pkg) = line.trim().strip_prefix("package:") {
+                    let pkg = pkg.trim();
+                    if !pkg.is_empty() && !found.iter().any(|f| f == pkg) {
+                        found.push(pkg.to_string());
+                    }
+                }
+            }
+        }
+
+        if !found.is_empty() {
+            info!("stealth: resolved settings packages: {}", found.join(", "));
+        } else {
+            warn!("stealth: could not resolve the settings package, relying on name match");
+        }
+        found
+    })
+}
+
+/// 从 dumpsys 文本里取出前台组件的 "pkg/activity" 片段。
+///
+/// 只做子串匹配会漏：新版本 window 服务的 dump 里已经没有 mCurrentFocus，
+/// 而 topResumedActivity 的格式在各 ROM 上也不统一。
+fn focused_components(text: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for line in text.lines() {
+        if !(line.contains("mCurrentFocus")
+            || line.contains("mFocusedWindow")
+            || line.contains("topResumedActivity"))
+        {
+            continue;
+        }
+        // "u0 com.android.settings/com.android.settings.Settings}"
+        for token in line.split_whitespace() {
+            if let Some((pkg, activity)) = token.split_once('/') {
+                let pkg = pkg.trim_start_matches("u0").trim();
+                if pkg.contains('.') && activity.chars().next().is_some_and(|c| c != '{') {
+                    out.push((pkg.to_string(), activity.trim_end_matches('}').to_string()));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// 计数达标时才做一次前台校验。
 fn focus_matches(pkgs: &[String]) -> bool {
     let out = Command::new("sh")
         .arg("-c")
         .arg(
-            "dumpsys window 2>/dev/null | grep -m1 mCurrentFocus; \
+            "dumpsys window 2>/dev/null | grep -E -m1 'mCurrentFocus|mFocusedWindow'; \
              dumpsys activity activities 2>/dev/null | grep -m1 topResumedActivity",
         )
         .output();
@@ -554,7 +636,25 @@ fn focus_matches(pkgs: &[String]) -> bool {
             return false;
         }
     };
-    pkgs.iter().any(|p| text.contains(p.as_str()))
+
+    let detected = detect_settings_packages();
+    let is_settings_pkg = |pkg: &str| -> bool {
+        pkgs.iter().any(|p| p == pkg) || detected.iter().any(|p| p == pkg)
+    };
+
+    let components = focused_components(&text);
+    if components.is_empty() {
+        // 解析不出组件时退回宽松匹配：既认配置/探测到的包，也认任何
+        // 包名或 Activity 名里带 settings 的前台窗口。
+        return pkgs.iter().any(|p| text.contains(p.as_str()))
+            || text.to_ascii_lowercase().contains("settings");
+    }
+
+    components.iter().any(|(pkg, activity)| {
+        is_settings_pkg(pkg)
+            || pkg.to_ascii_lowercase().contains("settings")
+            || activity.to_ascii_lowercase().contains("settings")
+    })
 }
 
 fn launch_manager(component: &str) {
