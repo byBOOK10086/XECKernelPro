@@ -88,7 +88,30 @@ pub fn builtin_set_spoof(value: &str) -> Result<&'static str> {
 /// - Must start with a letter (a-zA-Z)
 /// - Followed by one or more alphanumeric, dot, underscore, or hyphen characters
 /// - Minimum length: 2 characters
-pub fn validate_module_id(module_id: &str) -> Result<()> {
+pub /// Find `<dir>/module.prop` inside the archive, for zips repacked with a wrapper folder.
+fn find_nested_module_prop(zip_path: &std::path::Path) -> Result<Option<String>> {
+    let file = File::open(zip_path)?;
+    let mut archive = zip::ZipArchive::new(file)?;
+    for i in 0..archive.len() {
+        let name = archive.by_index(i)?.name().to_string();
+        if name.ends_with("/module.prop") && name.matches('/').count() == 1 {
+            return Ok(Some(name));
+        }
+    }
+    Ok(None)
+}
+
+/// The first few entry names, for an error message that can be acted on.
+fn list_archive_entries(zip_path: &std::path::Path) -> Result<String> {
+    let file = File::open(zip_path)?;
+    let mut archive = zip::ZipArchive::new(file)?;
+    let names: Vec<String> = (0..archive.len())
+        .map(|i| archive.by_index(i).map(|e| e.name().to_string()))
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(names.into_iter().take(12).collect::<Vec<_>>().join(", "))
+}
+
+fn validate_module_id(module_id: &str) -> Result<()> {
     let re = Regex::new(r"^[a-zA-Z][a-zA-Z0-9._-]+$")?;
     if re.is_match(module_id) {
         Ok(())
@@ -806,7 +829,27 @@ fn install_module_to_system(zip: &str) -> Result<String> {
     let entry_path = PathBuf::from_str("module.prop")?;
     let zip_path = PathBuf::from_str(zip)?;
     let zip_path = zip_path.canonicalize()?;
-    zip_extract_file_to_memory(&zip_path, &entry_path, &mut buffer)?;
+    if zip_extract_file_to_memory(&zip_path, &entry_path, &mut buffer).is_err() {
+        // A zip repacked with a wrapper folder keeps module.prop one level down; accept
+        // that before giving up. If it is genuinely absent, say which entries the archive
+        // does have - the bare "specified file not found in archive" is unactionable.
+        let nested = find_nested_module_prop(&zip_path)?;
+        match nested {
+            Some(found) => {
+                info!("module.prop is at {found}, not at the archive root");
+                let found_path = PathBuf::from_str(&found)?;
+                zip_extract_file_to_memory(&zip_path, &found_path, &mut buffer)?;
+            }
+            None => {
+                let listing = list_archive_entries(&zip_path).unwrap_or_default();
+                bail!(
+                    "this zip has no module.prop at its root, so it is not a module package\n\
+                     first entries: {}",
+                    listing
+                );
+            }
+        }
+    }
 
     let module_prop = parse_module_prop(&buffer);
     info!("module prop: {module_prop:?}");
