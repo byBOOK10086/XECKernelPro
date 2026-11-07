@@ -27,14 +27,17 @@ object AuthorizeCreate {
 
     private fun checkAlgorithmPurpose(keyParams: KeyMintAttestation, purpose: Int): Int? {
         val algo = keyParams.algorithm
-        if (
-            (algo == Algorithm.EC || algo == Algorithm.RSA) &&
-                (purpose == KeyPurpose.VERIFY || purpose == KeyPurpose.ENCRYPT)
+        // EC 只能签名/验签/协商，加密与解密确实不支持；RSA 四项都支持，只有密钥协商
+        // 不支持。以前这里写成"EC|RSA 一律拒 VERIFY 和 ENCRYPT"，会把合法的 ECDSA 验签
+        // 和 RSA 加密一起拒掉。过度拒绝也是可观测的差异：真实 TEE 不会拒绝自己钥匙
+        // 本来就能做的操作，一个"什么都拒"的实现本身就是特征。
+        if (algo == Algorithm.EC && (purpose == KeyPurpose.ENCRYPT || purpose == KeyPurpose.DECRYPT)
         ) {
             return KeystoreErrorCodes.unsupportedPurpose
         }
-        if (algo == Algorithm.RSA && purpose == KeyPurpose.AGREE_KEY)
+        if (algo == Algorithm.RSA && purpose == KeyPurpose.AGREE_KEY) {
             return KeystoreErrorCodes.unsupportedPurpose
+        }
         return null
     }
 

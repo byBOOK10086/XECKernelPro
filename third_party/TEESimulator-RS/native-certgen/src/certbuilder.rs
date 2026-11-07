@@ -25,7 +25,15 @@ pub fn build_self_signed_cert(
     let serial_bytes = if let Some(ref serial) = params.cert_serial {
         serial.clone()
     } else {
-        vec![1u8]
+        // 真实 TEE 给每张叶子一个随机序列号；以前这里恒为 1，是"批量伪造"最直白的
+        // 特征之一——两张不同设备/不同密钥的证书带着同一个序列号，只可能来自同一份
+        // 模板。这里用当前时间（纳秒）当序列号：单调、非零、不需要额外 RNG 依赖。
+        let mut bytes = OffsetDateTime::now_utc().unix_timestamp_nanos().to_be_bytes().to_vec();
+        // DER INTEGER 必须是正数：最高位为 1 时前面补一个 0x00。
+        if bytes.first().is_some_and(|byte| byte & 0x80 != 0) {
+            bytes.insert(0, 0);
+        }
+        bytes
     };
 
     let subject_dn_der = if let Some(ref subject) = params.cert_subject {
@@ -34,7 +42,13 @@ pub fn build_self_signed_cert(
         encode_simple_cn_dn("Android Keystore Key")
     };
 
-    let not_before = timestamp_to_datetime(params.cert_not_before)?;
+    let not_before = if params.cert_not_before < 0 {
+        // 以前 -1 会被当成 Unix epoch 传下去，于是每张伪造证书的有效期都从 1970 开始。
+        // 真实 TEE 从"生成的那一刻"开始（再往前留一点时钟偏差余量）。
+        OffsetDateTime::now_utc() - time::Duration::minutes(5)
+    } else {
+        timestamp_to_datetime(params.cert_not_before)?
+    };
     let not_after = if params.cert_not_after == -1 {
         // No keybox fallback available; use far-future (year 9999)
         OffsetDateTime::from_unix_timestamp(253402300799)
@@ -104,7 +118,15 @@ fn build_leaf_cert(
     let serial_bytes = if let Some(ref serial) = params.cert_serial {
         serial.clone()
     } else {
-        vec![1u8]
+        // 真实 TEE 给每张叶子一个随机序列号；以前这里恒为 1，是"批量伪造"最直白的
+        // 特征之一——两张不同设备/不同密钥的证书带着同一个序列号，只可能来自同一份
+        // 模板。这里用当前时间（纳秒）当序列号：单调、非零、不需要额外 RNG 依赖。
+        let mut bytes = OffsetDateTime::now_utc().unix_timestamp_nanos().to_be_bytes().to_vec();
+        // DER INTEGER 必须是正数：最高位为 1 时前面补一个 0x00。
+        if bytes.first().is_some_and(|byte| byte & 0x80 != 0) {
+            bytes.insert(0, 0);
+        }
+        bytes
     };
 
     // Subject DN
@@ -115,7 +137,13 @@ fn build_leaf_cert(
     };
 
     // Validity
-    let not_before = timestamp_to_datetime(params.cert_not_before)?;
+    let not_before = if params.cert_not_before < 0 {
+        // 以前 -1 会被当成 Unix epoch 传下去，于是每张伪造证书的有效期都从 1970 开始。
+        // 真实 TEE 从"生成的那一刻"开始（再往前留一点时钟偏差余量）。
+        OffsetDateTime::now_utc() - time::Duration::minutes(5)
+    } else {
+        timestamp_to_datetime(params.cert_not_before)?
+    };
     let not_after = if params.cert_not_after == -1 {
         OffsetDateTime::from_unix_timestamp(keybox.leaf_not_after)
             .unwrap_or_else(|_| OffsetDateTime::now_utc() + time::Duration::days(365))
