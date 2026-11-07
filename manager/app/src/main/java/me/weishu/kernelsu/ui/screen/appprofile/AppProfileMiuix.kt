@@ -57,6 +57,9 @@ import me.weishu.kernelsu.ui.component.profile.RootProfileConfig
 import me.weishu.kernelsu.ui.component.profile.TemplateConfig
 import me.weishu.kernelsu.ui.component.statustag.StatusTag
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
+import me.weishu.kernelsu.ui.design.panel.Xc8Panel
+import me.weishu.kernelsu.ui.design.panel.Xc8Row
+import me.weishu.kernelsu.ui.design.panel.Xc8Switch
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.util.BlurredBar
@@ -87,7 +90,6 @@ import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -327,26 +329,22 @@ private fun AppProfileInner(
         }
 
         if (!isSpecialApp) {
-            Card(cornerRadius = XcRadius.md, 
+            // root 授权是整页最重要的一行，独占一块面板；开关与整行都走同一个 profile 写回。
+            Xc8Panel(
                 modifier = Modifier
-                    .fillMaxWidth()
                     .padding(horizontal = 12.dp)
-                    .padding(bottom = 12.dp)
-                    .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-                colors = CardDefaults.defaultColors(color = Color.Transparent),
+                    .padding(bottom = 12.dp),
             ) {
-                SwitchPreference(
-                    startAction = {
-                        Icon(
-                            imageVector = Icons.Rounded.Security,
-                            contentDescription = null,
-                            modifier = Modifier.padding(end = 6.dp),
-                            tint = colorScheme.onBackground
+                Xc8Row(
+                    title = stringResource(id = R.string.superuser),
+                    leading = Icons.Rounded.Security,
+                    onClick = { onProfileChange(profile.copy(allowSu = !isRootGranted)) },
+                    trailing = {
+                        Xc8Switch(
+                            checked = isRootGranted,
+                            onCheckedChange = { onProfileChange(profile.copy(allowSu = it)) },
                         )
                     },
-                    title = stringResource(id = R.string.superuser),
-                    checked = isRootGranted,
-                    onCheckedChange = { onProfileChange(profile.copy(allowSu = it)) },
                 )
             }
         }
@@ -761,11 +759,18 @@ private fun ExecPolicyCard(
         colors = CardDefaults.defaultColors(color = Color.Transparent),
     ) {
         Column(Modifier.padding(vertical = 8.dp)) {
-            SwitchPreference(
+            // 只换开关这一行：同一张卡里还有白名单编辑区与按钮，Card 和编辑区保持原样，
+            // 避免把"开关 + 表单"这种混合卡片拆成两块。
+            Xc8Row(
                 title = stringResource(id = R.string.exec_policy_title),
-                summary = stringResource(id = R.string.exec_policy_summary),
-                checked = restricted,
-                onCheckedChange = { onChange(it, if (it) paths else paths) },
+                subtitle = stringResource(id = R.string.exec_policy_summary),
+                onClick = { onChange(!restricted, paths) },
+                trailing = {
+                    Xc8Switch(
+                        checked = restricted,
+                        onCheckedChange = { onChange(it, paths) },
+                    )
+                },
             )
             AnimatedVisibility(visible = restricted) {
                 Column(Modifier.padding(horizontal = 16.dp)) {

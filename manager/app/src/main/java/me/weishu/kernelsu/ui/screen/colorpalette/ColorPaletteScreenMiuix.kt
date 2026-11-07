@@ -43,6 +43,7 @@ import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -64,10 +65,15 @@ import androidx.compose.ui.unit.sp
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import com.materialkolor.rememberDynamicColorScheme
+import kotlinx.coroutines.delay
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.bottombar.useNavigationRail
 import me.weishu.kernelsu.ui.component.miuix.ScaleDialog
-import me.weishu.kernelsu.ui.design.glass.xGlassBody
+import me.weishu.kernelsu.ui.design.panel.Xc8Panel
+import me.weishu.kernelsu.ui.design.panel.Xc8Row
+import me.weishu.kernelsu.ui.design.panel.Xc8Seekbar
+import me.weishu.kernelsu.ui.design.panel.Xc8Switch
+import me.weishu.kernelsu.ui.design.panel.Xc8Value
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.design.token.XcRadius
 import me.weishu.kernelsu.ui.design.token.xcColorsFor
@@ -75,23 +81,17 @@ import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.theme.keyColorOptions
 import me.weishu.kernelsu.ui.util.BlurredBar
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.Slider
-import top.yukonga.miuix.kmp.basic.SliderDefaults
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -178,27 +178,19 @@ fun ColorPaletteScreenMiuix(
                         },
                     )
 
-                    Card(cornerRadius = XcRadius.md, 
-                        modifier = Modifier
-                            .padding(top = 12.dp)
-                            .fillMaxWidth()
-                            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-                        colors = CardDefaults.defaultColors(color = Color.Transparent),
-                    ) {
-                        SwitchPreference(
+                    // 配色卡：开关换成面板行，下面三个下拉（配色/风格/规范）没有面板族
+                    // 等价物，原样留在同一块面板里，避免拆成"开关一块、下拉一块"。
+                    Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
+                        Xc8Row(
                             title = stringResource(id = R.string.settings_monet),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.Wallpaper,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = stringResource(id = R.string.settings_monet),
-                                    tint = colorScheme.onBackground
+                            leading = Icons.Rounded.Wallpaper,
+                            onClick = { actions.onSetMiuixMonet(!uiState.miuixMonet) },
+                            trailing = {
+                                Xc8Switch(
+                                    checked = uiState.miuixMonet,
+                                    onCheckedChange = actions.onSetMiuixMonet,
                                 )
                             },
-                            checked = uiState.miuixMonet,
-                            onCheckedChange = {
-                                actions.onSetMiuixMonet(it)
-                            }
                         )
 
                         AnimatedVisibility(
@@ -286,155 +278,133 @@ fun ColorPaletteScreenMiuix(
                         }
                     }
 
-                    Card(cornerRadius = XcRadius.md, 
-                        modifier = Modifier
-                            .padding(top = 12.dp)
-                            .fillMaxWidth()
-                            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-                        colors = CardDefaults.defaultColors(color = Color.Transparent),
-                    ) {
+                    // 四个开关整卡换成一块面板；玻璃开关仍由 AnimatedVisibility 控制显隐，
+                    // 只是把它的内容从 miuix 开关换成了面板行。
+                    Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            SwitchPreference(
+                            Xc8Row(
                                 title = stringResource(id = R.string.settings_enable_blur),
-                                summary = stringResource(id = R.string.settings_enable_blur_summary),
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.BlurOn,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_enable_blur),
-                                        tint = colorScheme.onBackground
+                                subtitle = stringResource(id = R.string.settings_enable_blur_summary),
+                                leading = Icons.Rounded.BlurOn,
+                                onClick = { actions.onSetEnableBlur(!uiState.enableBlur) },
+                                trailing = {
+                                    Xc8Switch(
+                                        checked = uiState.enableBlur,
+                                        onCheckedChange = actions.onSetEnableBlur,
                                     )
                                 },
-                                checked = uiState.enableBlur,
-                                onCheckedChange = {
-                                    actions.onSetEnableBlur(it)
-                                }
                             )
                         }
-                        SwitchPreference(
+                        Xc8Row(
                             title = stringResource(id = R.string.settings_floating_bottom_bar),
-                            summary = stringResource(id = R.string.settings_floating_bottom_bar_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.CallToAction,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = stringResource(id = R.string.settings_floating_bottom_bar),
-                                    tint = colorScheme.onBackground
+                            subtitle = stringResource(id = R.string.settings_floating_bottom_bar_summary),
+                            leading = Icons.Rounded.CallToAction,
+                            onClick = {
+                                actions.onSetEnableFloatingBottomBar(!uiState.enableFloatingBottomBar)
+                            },
+                            trailing = {
+                                Xc8Switch(
+                                    checked = uiState.enableFloatingBottomBar,
+                                    onCheckedChange = actions.onSetEnableFloatingBottomBar,
                                 )
                             },
-                            checked = uiState.enableFloatingBottomBar,
-                            onCheckedChange = {
-                                actions.onSetEnableFloatingBottomBar(it)
-                            }
                         )
                         AnimatedVisibility(visible = uiState.enableFloatingBottomBar && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            SwitchPreference(
+                            Xc8Row(
                                 title = stringResource(id = R.string.settings_enable_glass),
-                                summary = stringResource(id = R.string.settings_enable_glass_summary),
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.WaterDrop,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_enable_glass),
-                                        tint = colorScheme.onBackground
+                                subtitle = stringResource(id = R.string.settings_enable_glass_summary),
+                                leading = Icons.Rounded.WaterDrop,
+                                onClick = {
+                                    actions.onSetEnableFloatingBottomBarBlur(!uiState.enableFloatingBottomBarBlur)
+                                },
+                                trailing = {
+                                    Xc8Switch(
+                                        checked = uiState.enableFloatingBottomBarBlur,
+                                        onCheckedChange = actions.onSetEnableFloatingBottomBarBlur,
                                     )
                                 },
-                                checked = uiState.enableFloatingBottomBarBlur,
-                                onCheckedChange = {
-                                    actions.onSetEnableFloatingBottomBarBlur(it)
-                                }
                             )
                         }
-                        SwitchPreference(
+                        Xc8Row(
                             title = stringResource(id = R.string.settings_navigation_badge),
-                            summary = stringResource(id = R.string.settings_navigation_badge_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.Pin,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = stringResource(id = R.string.settings_navigation_badge),
-                                    tint = colorScheme.onBackground
+                            subtitle = stringResource(id = R.string.settings_navigation_badge_summary),
+                            leading = Icons.Rounded.Pin,
+                            onClick = {
+                                actions.onSetEnableNavigationBadge(!uiState.enableNavigationBadge)
+                            },
+                            trailing = {
+                                Xc8Switch(
+                                    checked = uiState.enableNavigationBadge,
+                                    onCheckedChange = actions.onSetEnableNavigationBadge,
                                 )
                             },
-                            checked = uiState.enableNavigationBadge,
-                            onCheckedChange = {
-                                actions.onSetEnableNavigationBadge(it)
-                            }
                         )
                     }
 
-                    Card(cornerRadius = XcRadius.md, 
-                        modifier = Modifier
-                            .padding(top = 12.dp)
-                            .fillMaxWidth()
-                            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-                        colors = CardDefaults.defaultColors(color = Color.Transparent),
-                    ) {
+                    // 显示类设置：预测返回 + 页面缩放。页面缩放原来是"点行才展开滑杆"
+                    // （ArrowPreference.bottomAction），面板族没有展开插槽，改成同一块
+                    // 面板里常驻两行：标题/百分比 + 滑杆。
+                    Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                            SwitchPreference(
+                            Xc8Row(
                                 title = stringResource(id = R.string.settings_enable_predictive_back),
-                                summary = stringResource(id = R.string.settings_enable_predictive_back_summary),
-                                startAction = {
-                                    Icon(
-                                        Icons.AutoMirrored.Rounded.MenuOpen,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_enable_predictive_back),
-                                        tint = colorScheme.onBackground
+                                subtitle = stringResource(id = R.string.settings_enable_predictive_back_summary),
+                                leading = Icons.AutoMirrored.Rounded.MenuOpen,
+                                onClick = {
+                                    actions.onSetEnablePredictiveBack(!uiState.enablePredictiveBack)
+                                },
+                                trailing = {
+                                    Xc8Switch(
+                                        checked = uiState.enablePredictiveBack,
+                                        onCheckedChange = actions.onSetEnablePredictiveBack,
                                     )
                                 },
-                                checked = uiState.enablePredictiveBack,
-                                onCheckedChange = {
-                                    actions.onSetEnablePredictiveBack(it)
-                                }
                             )
                         }
 
                         var sliderValue by remember(uiState.pageScale) { mutableFloatStateOf(uiState.pageScale) }
-                        ArrowPreference(
+                        // 点行仍打开精确档位弹窗，滑杆负责快速调；两者写的是同一个 pageScale。
+                        Xc8Row(
                             title = stringResource(id = R.string.settings_page_scale),
-                            summary = stringResource(id = R.string.settings_page_scale_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.AspectRatio,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = stringResource(id = R.string.settings_page_scale),
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            endActions = {
-                                Text(
-                                    text = "${(sliderValue * 100).toInt()}%",
-                                    color = colorScheme.onSurfaceVariantActions,
-                                )
-                            },
+                            subtitle = stringResource(id = R.string.settings_page_scale_summary),
+                            leading = Icons.Rounded.AspectRatio,
                             onClick = { showScaleDialog.value = !showScaleDialog.value },
-                            holdDownState = showScaleDialog.value,
-                            bottomAction = {
-                                Slider(
-                                    value = sliderValue,
-                                    onValueChange = {
-                                        sliderValue = it
-                                    },
-                                    onValueChangeFinished = {
-                                        actions.onSetPageScale(sliderValue)
-                                    },
-                                    valueRange = 0.8f..1.1f,
-                                    showKeyPoints = true,
-                                    keyPoints = listOf(0.8f, 0.9f, 1f, 1.1f),
-                                    magnetThreshold = 0.01f,
-                                    hapticEffect = SliderDefaults.SliderHapticEffect.Step,
-                                )
+                            trailing = {
+                                Xc8Value(text = "${(sliderValue * 100).toInt()}%")
                             },
                         )
-                        ScaleDialog(
-                            show = showScaleDialog.value,
-                            onDismissRequest = { showScaleDialog.value = false },
-                            volumeState = { uiState.pageScale },
-                            onVolumeChange = {
-                                actions.onSetPageScale(it)
-                            }
-                        )
+                        // 第二行只放滑杆。Xc8Seekbar 只认 0..1，页面缩放的 0.8..1.1
+                        // 在这里做线性映射。它只有拖动回调、没有"松手"回调：拖动过程
+                        // 只改本地百分比，停手 120ms 后再写回，等价于原来的
+                        // Slider.onValueChangeFinished，避免整棵树按帧改 density。
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Xc.surface)
+                                .padding(horizontal = 15.dp, vertical = 6.dp),
+                        ) {
+                            Xc8Seekbar(
+                                value = ((sliderValue - 0.8f) / 0.3f).coerceIn(0f, 1f),
+                                onValueChange = { fraction ->
+                                    sliderValue = 0.8f + fraction * 0.3f
+                                },
+                            )
+                        }
+                        LaunchedEffect(sliderValue) {
+                            if (sliderValue == uiState.pageScale) return@LaunchedEffect
+                            delay(120)
+                            actions.onSetPageScale(sliderValue)
+                        }
                     }
+                    // 弹窗不是行，挪到面板外：面板会裁切内容，对话框需要自己的全屏遮罩。
+                    ScaleDialog(
+                        show = showScaleDialog.value,
+                        onDismissRequest = { showScaleDialog.value = false },
+                        volumeState = { uiState.pageScale },
+                        onVolumeChange = {
+                            actions.onSetPageScale(it)
+                        }
+                    )
                 }
                 item {
                     Spacer(

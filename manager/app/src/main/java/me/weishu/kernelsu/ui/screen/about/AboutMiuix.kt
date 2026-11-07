@@ -60,14 +60,14 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.onEach
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.miuix.effect.BgEffectBackground
-import me.weishu.kernelsu.ui.design.glass.xGlassBody
+import me.weishu.kernelsu.ui.design.panel.Xc8Chevron
+import me.weishu.kernelsu.ui.design.panel.Xc8Panel
+import me.weishu.kernelsu.ui.design.panel.Xc8Row
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.theme.isInDarkTheme
 import me.weishu.kernelsu.ui.util.BlurredBar
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
@@ -84,12 +84,10 @@ import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import androidx.compose.ui.graphics.BlendMode as ComposeBlendMode
-import me.weishu.kernelsu.ui.design.token.XcRadius
 
 @Composable
 fun AboutScreenMiuix(
@@ -187,18 +185,22 @@ private fun AboutContent(
     val effectBackground =
         remember(enableBlur) { isRuntimeShaderSupported() && enableBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM }
 
-    val logoBlend = remember(isInDark) {
+    // Logo 的模糊混色改用语义令牌：ColorDodge/ColorBurn 需要一深一浅两极灰，
+    // 取当前明暗档的 text/textSecondary 再保留原来的 alpha；绿色取 success。
+    // 故意不写死 ARGB——主题以后重开模糊时，这套混色要跟着明暗档和主题色走。
+    val colors = Xc.colors
+    val logoBlend = remember(isInDark, colors) {
         if (isInDark) {
             listOf(
-                BlendColorEntry(Color(0xe6a1a1a1), BlurBlendMode.ColorDodge),
-                BlendColorEntry(Color(0x4de6e6e6), BlurBlendMode.LinearLight),
-                BlendColorEntry(Color(0xff12b886), BlurBlendMode.Lab),
+                BlendColorEntry(colors.textSecondary.copy(alpha = 0.90f), BlurBlendMode.ColorDodge),
+                BlendColorEntry(colors.text.copy(alpha = 0.30f), BlurBlendMode.LinearLight),
+                BlendColorEntry(colors.success, BlurBlendMode.Lab),
             )
         } else {
             listOf(
-                BlendColorEntry(Color(0xcc4a4a4a), BlurBlendMode.ColorBurn),
-                BlendColorEntry(Color(0xff4f4f4f), BlurBlendMode.LinearLight),
-                BlendColorEntry(Color(0xff0e9e76), BlurBlendMode.Lab),
+                BlendColorEntry(colors.text.copy(alpha = 0.80f), BlurBlendMode.ColorBurn),
+                BlendColorEntry(colors.textSecondary, BlurBlendMode.LinearLight),
+                BlendColorEntry(colors.success, BlurBlendMode.Lab),
             )
         }
     }
@@ -414,18 +416,12 @@ private fun AboutContent(
                         .fillParentMaxHeight()
                         .padding(bottom = innerPadding.calculateBottomPadding() + 12.dp),
                 ) {
-                    Card(cornerRadius = XcRadius.md, 
-                        modifier = Modifier
-                            .padding(horizontal = 12.dp)
-                            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-                        colors = CardDefaults.defaultColors(color = Color.Transparent),
-                    ) {
+                    Xc8Panel(modifier = Modifier.padding(horizontal = 12.dp)) {
                         state.links.forEach {
-                            ArrowPreference(
+                            Xc8Row(
                                 title = it.fullText,
-                                onClick = {
-                                    actions.onOpenLink(it.url)
-                                }
+                                onClick = { actions.onOpenLink(it.url) },
+                                trailing = { Xc8Chevron() },
                             )
                         }
                     }

@@ -178,6 +178,11 @@ fun Xc8Seekbar(
     val clamped = value.coerceIn(0f, 1f)
     val thumbRadius = with(density) { 7.dp.toPx() }
     val trackHeight = with(density) { 3.dp.toPx() }
+    // 颜色必须在 Canvas 之外取：`Xc.colors` 是 @Composable 取值器，
+    // DrawScope 的 lambda 不是组合上下文，写在里面编译不过。
+    val trackColor = if (Xc.colors.isDark) Color(0xFF3A3A41) else Color(0xFFE5E5E5)
+    val accentColor = Xc.colors.accent
+    val activeColor = if (enabled) accentColor else accentColor.copy(alpha = 0.4f)
 
     Box(
         modifier = modifier
@@ -208,7 +213,7 @@ fun Xc8Seekbar(
         Canvas(modifier = Modifier.fillMaxWidth().height(24.dp)) {
             val centerY = size.height / 2f
             drawLine(
-                color = if (Xc.colors.isDark) Color(0xFF3A3A41) else Color(0xFFE5E5E5),
+                color = trackColor,
                 start = Offset(thumbRadius, centerY),
                 end = Offset(size.width - thumbRadius, centerY),
                 strokeWidth = trackHeight,
@@ -216,7 +221,7 @@ fun Xc8Seekbar(
             )
             val activeEnd = thumbRadius + (size.width - thumbRadius * 2f) * clamped
             drawLine(
-                color = if (enabled) Xc.colors.accent else Xc.colors.accent.copy(alpha = 0.4f),
+                color = activeColor,
                 start = Offset(thumbRadius, centerY),
                 end = Offset(activeEnd, centerY),
                 strokeWidth = trackHeight,
@@ -228,7 +233,7 @@ fun Xc8Seekbar(
                 center = Offset(activeEnd, centerY),
             )
             drawCircle(
-                color = if (enabled) Xc.colors.accent else Xc.colors.accent.copy(alpha = 0.4f),
+                color = activeColor,
                 radius = thumbRadius,
                 center = Offset(activeEnd, centerY),
                 style = Stroke(width = with(density) { 2.dp.toPx() }),
@@ -244,9 +249,12 @@ fun Xc8Progress(
     modifier: Modifier = Modifier,
 ) {
     val clamped = progress.coerceIn(0f, 1f)
+    // 同上：Canvas 里不能读 @Composable 的令牌。
+    val trackColor = if (Xc.colors.isDark) Color(0xFF3A3A41) else Color(0xFFE5E5E5)
+    val accentColor = Xc.colors.accent
     Canvas(modifier = modifier.fillMaxWidth().height(3.dp)) {
         drawLine(
-            color = if (Xc.colors.isDark) Color(0xFF3A3A41) else Color(0xFFE5E5E5),
+            color = trackColor,
             start = Offset(0f, size.height / 2f),
             end = Offset(size.width, size.height / 2f),
             strokeWidth = size.height,
@@ -254,7 +262,7 @@ fun Xc8Progress(
         )
         if (clamped > 0f) {
             drawLine(
-                color = Xc.colors.accent,
+                color = accentColor,
                 start = Offset(0f, size.height / 2f),
                 end = Offset(size.width * clamped, size.height / 2f),
                 strokeWidth = size.height,
@@ -282,6 +290,8 @@ fun Xc8Loading(
         animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
         label = "xc8LoadingAngle",
     )
+    // 同上：Canvas 的绘制 lambda 不是 @Composable。
+    val arcColor = Xc.colors.accent
     Canvas(
         modifier = modifier
             .size(size)
@@ -289,7 +299,7 @@ fun Xc8Loading(
     ) {
         val stroke = this.size.minDimension * 0.12f
         drawArc(
-            color = Xc.colors.accent,
+            color = arcColor,
             startAngle = 0f,
             sweepAngle = 300f,
             useCenter = false,

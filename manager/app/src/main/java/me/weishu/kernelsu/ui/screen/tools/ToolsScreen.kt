@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -50,17 +51,16 @@ import me.weishu.kernelsu.privilege.SuperkeyStore
 import me.weishu.kernelsu.ui.component.dialog.XDialog
 import me.weishu.kernelsu.ui.component.dialog.XDialogTitle
 import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
-import me.weishu.kernelsu.ui.design.glass.xGlassBody
-import me.weishu.kernelsu.ui.design.token.Xc
+import me.weishu.kernelsu.ui.design.panel.Xc8Chevron
+import me.weishu.kernelsu.ui.design.panel.Xc8Panel
+import me.weishu.kernelsu.ui.design.panel.Xc8Row
+import me.weishu.kernelsu.ui.design.panel.Xc8Switch
 import me.weishu.kernelsu.ui.navigation3.LocalNavigator
 import me.weishu.kernelsu.ui.navigation3.Navigator
 import me.weishu.kernelsu.ui.navigation3.Route
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.util.BlurredBar
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
-import top.yukonga.miuix.kmp.blur.LayerBackdrop
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
@@ -72,12 +72,9 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import me.weishu.kernelsu.ui.design.token.XcRadius
 
 @Composable
 fun ToolsScreen() {
@@ -131,76 +128,68 @@ fun ToolsScreen() {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     ToolCard(
-                        backdrop = backdrop,
                         title = stringResource(id = R.string.tools_terminal_title),
                         summary = stringResource(id = R.string.tools_terminal_summary),
-                        icon = { Icon(Icons.Rounded.Code, modifier = Modifier.padding(end = 6.dp), contentDescription = null, tint = colorScheme.onBackground) },
+                        icon = Icons.Rounded.Code,
                         onClick = { navigator.push(Route.Terminal) },
                     )
                     ToolCard(
-                        backdrop = backdrop,
                         title = stringResource(id = R.string.tools_external_modules_title),
                         summary = stringResource(id = R.string.tools_external_modules_summary),
-                        icon = { Icon(Icons.Rounded.Extension, modifier = Modifier.padding(end = 6.dp), contentDescription = null, tint = colorScheme.onBackground) },
+                        icon = Icons.Rounded.Extension,
                         onClick = { navigator.push(Route.ExternalModules) },
                     )
-                    SuperkeyCard(backdrop)
-                    StealthCard(backdrop)
+                    SuperkeyCard()
+                    StealthCard()
                 }
             }
         }
     }
 }
 
+/**
+ * 工具入口行。
+ *
+ * 原来外层 `Card(onClick)` 与内层 `ArrowPreference` 各挂一次同一个回调，
+ * 整张卡和行是两个重叠的点击面；换成面板族后只留 [Xc8Row] 这一个可点区域。
+ */
 @Composable
 private fun ToolCard(
-    backdrop: LayerBackdrop?,
     title: String,
     summary: String,
-    icon: @Composable () -> Unit,
+    icon: ImageVector,
     onClick: () -> Unit,
 ) {
-    Card(cornerRadius = XcRadius.md, 
-        modifier = Modifier
-            .fillMaxWidth()
-            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-        colors = CardDefaults.defaultColors(color = Color.Transparent),
-        onClick = onClick,
-    ) {
-        ArrowPreference(title = title, summary = summary, startAction = icon, onClick = onClick)
-    }
-}
-
-@Composable
-private fun SuperkeyCard(backdrop: LayerBackdrop?) {
-    val showSuperkeyDialog = rememberSaveable { mutableStateOf(false) }
-    if (showSuperkeyDialog.value) {
-        SuperkeyDialog(onDismiss = { showSuperkeyDialog.value = false })
-    }
-    Card(cornerRadius = XcRadius.md, 
-        modifier = Modifier
-            .fillMaxWidth()
-            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-        colors = CardDefaults.defaultColors(color = Color.Transparent),
-    ) {
-        ArrowPreference(
-            title = stringResource(id = R.string.superkey_settings_title),
-            summary = stringResource(id = R.string.superkey_settings_summary),
-            startAction = {
-                Icon(
-                    Icons.Rounded.Key,
-                    modifier = Modifier.padding(end = 6.dp),
-                    contentDescription = null,
-                    tint = colorScheme.onBackground,
-                )
-            },
-            onClick = { showSuperkeyDialog.value = true },
+    Xc8Panel {
+        Xc8Row(
+            title = title,
+            subtitle = summary,
+            leading = icon,
+            onClick = onClick,
+            trailing = { Xc8Chevron() },
         )
     }
 }
 
 @Composable
-private fun StealthCard(backdrop: LayerBackdrop?) {
+private fun SuperkeyCard() {
+    val showSuperkeyDialog = rememberSaveable { mutableStateOf(false) }
+    if (showSuperkeyDialog.value) {
+        SuperkeyDialog(onDismiss = { showSuperkeyDialog.value = false })
+    }
+    Xc8Panel {
+        Xc8Row(
+            title = stringResource(id = R.string.superkey_settings_title),
+            subtitle = stringResource(id = R.string.superkey_settings_summary),
+            leading = Icons.Rounded.Key,
+            onClick = { showSuperkeyDialog.value = true },
+            trailing = { Xc8Chevron() },
+        )
+    }
+}
+
+@Composable
+private fun StealthCard() {
     val context = LocalContext.current
     var stealthOn by rememberSaveable { mutableStateOf(false) }
     var stealthBusy by rememberSaveable { mutableStateOf(false) }
@@ -229,36 +218,31 @@ private fun StealthCard(backdrop: LayerBackdrop?) {
         )
         showStealthConfirm.value = false
     }
-    Card(cornerRadius = XcRadius.md, 
-        modifier = Modifier
-            .fillMaxWidth()
-            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-        colors = CardDefaults.defaultColors(color = Color.Transparent),
-    ) {
-        SwitchPreference(
+    // 行点击与开关共用同一入口：开 -> 先弹确认；关 -> 直接执行。
+    val onToggle: (Boolean) -> Unit = { want ->
+        if (want) {
+            showStealthConfirm.value = true
+        } else if (!stealthBusy) {
+            stealthBusy = true
+            Thread {
+                me.weishu.kernelsu.privilege.StealthEntrance.disable(context)
+                stealthOn = false
+                stealthBusy = false
+            }.start()
+        }
+    }
+    Xc8Panel {
+        Xc8Row(
             title = stringResource(id = R.string.stealth_title),
-            summary = stringResource(id = R.string.stealth_summary),
-            startAction = {
-                Icon(
-                    Icons.Rounded.VisibilityOff,
-                    modifier = Modifier.padding(end = 6.dp),
-                    contentDescription = null,
-                    tint = colorScheme.onBackground,
+            subtitle = stringResource(id = R.string.stealth_summary),
+            leading = Icons.Rounded.VisibilityOff,
+            onClick = { onToggle(!stealthOn) },
+            trailing = {
+                Xc8Switch(
+                    checked = stealthOn,
+                    onCheckedChange = onToggle,
                 )
             },
-            checked = stealthOn,
-            onCheckedChange = { want ->
-                if (want) {
-                    showStealthConfirm.value = true
-                } else if (!stealthBusy) {
-                    stealthBusy = true
-                    Thread {
-                        me.weishu.kernelsu.privilege.StealthEntrance.disable(context)
-                        stealthOn = false
-                        stealthBusy = false
-                    }.start()
-                }
-            }
         )
     }
 }

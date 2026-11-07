@@ -54,6 +54,7 @@ import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.component.uninstalldialog.UninstallDialog
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.island.IslandTopBar
+import me.weishu.kernelsu.ui.design.panel.Xc8Chevron
 import me.weishu.kernelsu.ui.design.panel.Xc8Panel
 import me.weishu.kernelsu.ui.design.panel.Xc8Row
 import me.weishu.kernelsu.ui.design.panel.Xc8Switch
@@ -67,7 +68,6 @@ import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
@@ -175,41 +175,25 @@ fun SettingPagerMiuix(
                         }
                     }
 
-                    Card(cornerRadius = XcRadius.md, 
-                        modifier = Modifier
-                            .padding(top = 12.dp)
-                            .fillMaxWidth()
-                            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-                        colors = CardDefaults.defaultColors(color = Color.Transparent),
-                    ) {
-                        ArrowPreference(
+                    // 主题 / 主题商城 / 壁纸都是"进去改外观"的入口，收进同一块面板，
+                    // 与上面的开关行保持同一种分组语言（原来是三张 miuix 卡里的箭头行）。
+                    Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
+                        Xc8Row(
                             title = stringResource(id = R.string.settings_theme),
-                            summary = stringResource(id = R.string.settings_theme_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.Palette,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = stringResource(id = R.string.settings_theme),
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            onClick = actions.onOpenTheme
+                            subtitle = stringResource(id = R.string.settings_theme_summary),
+                            leading = Icons.Rounded.Palette,
+                            onClick = actions.onOpenTheme,
+                            trailing = { Xc8Chevron() },
                         )
                         // 主题商城与编辑器：调色屏改的是"当前外观"，这里管整套皮肤
                         // （配色 + 圆角 + 玻璃 + 背景），可以下载别人的、也可以自己做完发布。
                         val themesTitle = stringResource(id = R.string.settings_themes)
-                        ArrowPreference(
+                        Xc8Row(
                             title = themesTitle,
-                            summary = stringResource(id = R.string.settings_themes_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.Style,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = themesTitle,
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            onClick = actions.onOpenThemes
+                            subtitle = stringResource(id = R.string.settings_themes_summary),
+                            leading = Icons.Rounded.Style,
+                            onClick = actions.onOpenThemes,
+                            trailing = { Xc8Chevron() },
                         )
                         // 自定义背景与主题是同一层的决定：主题决定玻璃令牌，背景决定玻璃折射谁。
                         // 摘要直接说清"哪几档被换掉了"，避免用户进去才发现只改了浅色档。
@@ -224,65 +208,35 @@ fun SettingPagerMiuix(
                             else -> stringResource(id = R.string.wallpaper_summary_builtin)
                         }
                         val wallpaperTitle = stringResource(id = R.string.settings_wallpaper)
-                        ArrowPreference(
+                        Xc8Row(
                             title = wallpaperTitle,
-                            summary = wallpaperSummary,
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.Wallpaper,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = wallpaperTitle,
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            onClick = actions.onOpenWallpaper
+                            subtitle = wallpaperSummary,
+                            leading = Icons.Rounded.Wallpaper,
+                            onClick = actions.onOpenWallpaper,
+                            trailing = { Xc8Chevron() },
                         )
                     }
 
-                    Card(cornerRadius = XcRadius.md, 
-                        modifier = Modifier
-                            .padding(top = 12.dp)
-                            .fillMaxWidth()
-                            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-                        colors = CardDefaults.defaultColors(color = Color.Transparent),
-                    ) {
+                    Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
                         val remoteAssistant = stringResource(id = R.string.remote_assistant_title)
-                        ArrowPreference(
+                        Xc8Row(
                             title = remoteAssistant,
-                            summary = stringResource(id = R.string.remote_assistant_subtitle),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.GetApp,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = remoteAssistant,
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            onClick = actions.onOpenRemoteAssistant
+                            subtitle = stringResource(id = R.string.remote_assistant_subtitle),
+                            leading = Icons.Rounded.GetApp,
+                            onClick = actions.onOpenRemoteAssistant,
+                            trailing = { Xc8Chevron() },
                         )
                     }
 
                     KsuIsValid {
-                        Card(cornerRadius = XcRadius.md, 
-                            modifier = Modifier
-                                .padding(top = 12.dp)
-                                .fillMaxWidth()
-                                .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-                            colors = CardDefaults.defaultColors(color = Color.Transparent),
-                        ) {
+                        Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
                             val profileTemplate = stringResource(id = R.string.settings_profile_template)
-                            ArrowPreference(
+                            Xc8Row(
                                 title = profileTemplate,
-                                summary = stringResource(id = R.string.settings_profile_template_summary),
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.Description,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = profileTemplate,
-                                        tint = colorScheme.onBackground
-                                    )
-                                },
-                                onClick = actions.onOpenProfileTemplate
+                                subtitle = stringResource(id = R.string.settings_profile_template_summary),
+                                leading = Icons.Rounded.Description,
+                                onClick = actions.onOpenProfileTemplate,
+                                trailing = { Xc8Chevron() },
                             )
                         }
                     }
@@ -341,6 +295,8 @@ fun SettingPagerMiuix(
                                 } else {
                                     null
                                 },
+                                // 不支持时整行置灰：只把开关变浅会留下"标题还能点"的假可用。
+                                enabled = umountSupported,
                                 trailing = {
                                     Xc8Switch(
                                         checked = uiState.isKernelUmountEnabled,
@@ -365,6 +321,8 @@ fun SettingPagerMiuix(
                                 } else {
                                     null
                                 },
+                                // 状态不是 supported 时内核侧没有这个特性，整行同步置灰。
+                                enabled = selinuxHideSupported,
                                 trailing = {
                                     Xc8Switch(
                                         checked = uiState.isSelinuxHideEnabled,
@@ -389,6 +347,8 @@ fun SettingPagerMiuix(
                                 } else {
                                     null
                                 },
+                                // 日志特性未就绪时标题/副标题/图标一起转灰，避免误以为可开。
+                                enabled = sulogSupported,
                                 trailing = {
                                     Xc8Switch(
                                         checked = uiState.isSulogEnabled,
@@ -413,6 +373,8 @@ fun SettingPagerMiuix(
                                 } else {
                                     null
                                 },
+                                // ADB root 由内核特性位决定，不支持时整行置灰。
+                                enabled = adbRootSupported,
                                 trailing = {
                                     Xc8Switch(
                                         checked = uiState.isAdbRootEnabled,
@@ -446,6 +408,7 @@ fun SettingPagerMiuix(
                                 } else {
                                     null
                                 },
+                                enabled = softRebootEnabled,
                                 trailing = {
                                     Xc8Switch(
                                         checked = uiState.isLateLoadMode || uiState.useSoftReboot,
@@ -494,6 +457,7 @@ fun SettingPagerMiuix(
                                 } else {
                                     null
                                 },
+                                enabled = autoJailbreakEnabled,
                                 trailing = {
                                     Xc8Switch(
                                         checked = uiState.autoJailbreak,
@@ -525,99 +489,59 @@ fun SettingPagerMiuix(
                     }
 
                     if (uiState.isLkmMode) {
-                        Card(cornerRadius = XcRadius.md, 
-                            modifier = Modifier
-                                .padding(top = 12.dp)
-                                .fillMaxWidth()
-                                .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-                            colors = CardDefaults.defaultColors(color = Color.Transparent),
-                        ) {
-                            val uninstall = stringResource(id = R.string.settings_uninstall)
-                            ArrowPreference(
-                                title = uninstall,
-                                enabled = !uiState.isLateLoadMode,
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.Delete,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = uninstall,
-                                        tint = colorScheme.onBackground,
-                                    )
-                                },
+                        Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
+                            Xc8Row(
+                                title = stringResource(id = R.string.settings_uninstall),
+                                leading = Icons.Rounded.Delete,
                                 onClick = { showUninstallDialog.value = true },
-                            )
-                            UninstallDialog(
-                                show = showUninstallDialog.value,
-                                onDismissRequest = { showUninstallDialog.value = false }
+                                // late-load 下内核还没接管，卸载入口必须整行看起来不可用。
+                                enabled = !uiState.isLateLoadMode,
+                                trailing = { Xc8Chevron() },
                             )
                         }
+                        // 对话框不是行，放在面板外：它自己就是一层浮层，塞进面板只会被裁切。
+                        UninstallDialog(
+                            show = showUninstallDialog.value,
+                            onDismissRequest = { showUninstallDialog.value = false }
+                        )
                     }
 
-                    Card(cornerRadius = XcRadius.md, 
-                        modifier = Modifier
-                            .padding(vertical = 12.dp)
-                            .fillMaxWidth()
-                            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-                        colors = CardDefaults.defaultColors(color = Color.Transparent),
-                    ) {
+                    Xc8Panel(modifier = Modifier.padding(vertical = 12.dp)) {
                         // 工具箱：终端 / 安全锁（超级密钥）/ 隐身入口 收进一个菜单（低频工具不再占设置一整屏）。
-                        ArrowPreference(
+                        Xc8Row(
                             title = stringResource(id = R.string.tools_title),
-                            summary = stringResource(id = R.string.tools_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.Handyman,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = null,
-                                    tint = colorScheme.onBackground
-                                )
-                            },
+                            subtitle = stringResource(id = R.string.tools_summary),
+                            leading = Icons.Rounded.Handyman,
                             onClick = actions.onOpenTools,
+                            trailing = { Xc8Chevron() },
                         )
-                        ArrowPreference(
+                        Xc8Row(
                             title = stringResource(id = R.string.settings_unload_title),
-                            summary = stringResource(id = R.string.settings_unload_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.Delete,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = null,
-                                    tint = colorScheme.onBackground
-                                )
-                            },
+                            subtitle = stringResource(id = R.string.settings_unload_summary),
+                            leading = Icons.Rounded.Delete,
                             onClick = { showUnloadConfirm.value = true },
+                            trailing = { Xc8Chevron() },
                         )
-                        ArrowPreference(
+                        Xc8Row(
                             title = stringResource(id = R.string.send_log),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.BugReport,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = stringResource(id = R.string.send_log),
-                                    tint = colorScheme.onBackground
-                                )
-                            },
+                            leading = Icons.Rounded.BugReport,
                             onClick = { showSendLogDialog.value = true },
-                        )
-                        SendLogDialog(
-                            show = showSendLogDialog.value,
-                            onDismissRequest = { showSendLogDialog.value = false },
-                            loadingDialog = loadingDialog
+                            trailing = { Xc8Chevron() },
                         )
                         val about = stringResource(id = R.string.about)
-                        ArrowPreference(
+                        Xc8Row(
                             title = about,
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.Info,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = about,
-                                    tint = colorScheme.onBackground
-                                )
-                            },
+                            leading = Icons.Rounded.Info,
                             onClick = actions.onOpenAbout,
+                            trailing = { Xc8Chevron() },
                         )
                     }
+                    // 发送日志对话框与面板同层：它需要自己的全屏遮罩，不能留在面板内容里。
+                    SendLogDialog(
+                        show = showSendLogDialog.value,
+                        onDismissRequest = { showSendLogDialog.value = false },
+                        loadingDialog = loadingDialog
+                    )
                     Spacer(Modifier.height(bottomInnerPadding))
                 }
             }
