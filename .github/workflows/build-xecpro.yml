@@ -82,6 +82,14 @@ jobs:
       - name: UAPI mirrors identical
         run: python3 scripts/check_uapi_mirror.py
 
+      # 包名是被"烘进产物"的身份，不是注释：ksud 的 KSU_PACKAGE_NAME 决定它在设备上
+      # 认哪个包是管理器。这条链曾经整条写着上游的 me.weishu.kernelsu —— 构建 18/18
+      # 全绿、设备上 su_daemon 的 is_manager_uid() 却永远返回 false（挂载态首授权
+      # bootstrap 因此从不触发），boot_patch 的 /data/user_de/<pkg>/ 备份目录也建不出来。
+      # 真源固定在 manager/app/build.gradle.kts 的 applicationId。
+      - name: App package identity agrees everywhere
+        run: python3 scripts/check_package_identity.py
+
       # GitHub 对坏掉的 workflow 是静默拒绝：run 照样建出来，但 jobs 为空、没有一行
       # shell 报错，看上去和普通变红没区别，所以没人会去点开。GKI 流水线就是这样从
       # 2026-10-31 死到 11-06 —— 一个反斜杠被写成了真换行。
@@ -142,7 +150,7 @@ jobs:
       pack_xecinit: true
 
   build-manager:
-    needs: [generate-key]
+    needs: [guards, generate-key]
     runs-on: ubuntu-latest
     defaults:
       run:

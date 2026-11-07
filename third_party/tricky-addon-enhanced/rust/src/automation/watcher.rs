@@ -77,7 +77,7 @@ pub fn cleanup_dead_apps() -> anyhow::Result<u32> {
 
 pub fn refresh_root_manager(manager: &str) {
     let pkg = match manager {
-        "KSU" => "me.weishu.kernelsu",
+        "KSU" => "com.xecpro.kernel",
         "APATCH" => "me.bmax.apatch",
         "MAGISK" => "com.topjohnwu.magisk",
         _ => return,
