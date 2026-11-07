@@ -254,11 +254,23 @@ private fun Modifier.xGlassLayer(
         // 直接 background 画上去会透出窗口底色，整块面板就塌成一块「黑框」——
         // 这正是"弹窗/栏变黑方块"的来源。把 tint 合成到不透明的 surface 上，
         // 色相保留、Alpha 归 1，与 `BlurredBar` 的无毛玻璃分支保持一致。
-        else ->
-            based
+        //
+        // 区块背景（主题里给某块卡片配的图/色）在这一支必须**画在底色之上**：
+        // 底色在这里是不透明的，挂在它前面（= 下面）等于被整块盖死。曾经的写法把
+        // `based`（含区块层）放在 `background(solidTint)` 之前，于是关掉模糊的设备上
+        // 主题区块背景全部静默失效 —— 2026-11-08 这轮全盘换装把 backdrop 恒置 null
+        // 之后，这条路径变成了**默认路径**，等于所有区块背景都失效。
+        else -> {
+            val solid = this
                 .background(color = solidTint, shape = shape)
                 .clipTo(shape)
-                .xGlassRim(shape, rimColor, rim)
+            val painted = if (block == null) {
+                solid
+            } else {
+                solid.then(Modifier.xcBlockBackground(block))
+            }
+            painted.xGlassRim(shape, rimColor, rim)
+        }
     }
 }
 

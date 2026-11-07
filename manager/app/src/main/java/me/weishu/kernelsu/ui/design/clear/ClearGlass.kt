@@ -201,10 +201,17 @@ internal fun Modifier.xClearGlassLayer(
             .xGlassRim(shape, effectiveRimColor, rim)
 
         // 没有 backdrop（用户关掉模糊 / 设备不支持 / 预览）：实色 + 描边
-        else -> based
-            .background(solidTint, shape)
-            .clip(shape)
-            .xGlassRim(shape, effectiveRimColor, rim)
+        //
+        // 区块背景必须画在**不透明底色之上**：底色在这一支是不透明的，挂在它前面
+        // （= 下面）等于被整块盖死。2026-11-08 全盘换装把 backdrop 恒置 null 之后，
+        // 这条分支成了卡体的**默认路径**，所以顺序写反就等于所有主题区块背景静默失效。
+        else -> {
+            val solid = sized
+                .background(solidTint, shape)
+                .clip(shape)
+            val painted = if (block == null) solid else solid.then(Modifier.xcBlockBackground(block))
+            painted.xGlassRim(shape, effectiveRimColor, rim)
+        }
     }
 }
 
