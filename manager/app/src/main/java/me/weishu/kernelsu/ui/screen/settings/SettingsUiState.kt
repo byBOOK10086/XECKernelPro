@@ -71,6 +71,8 @@ data class SettingsUiState(
 @Immutable
 data class SettingsScreenActions(
     val onSetCheckUpdate: (Boolean) -> Unit,
+    /** 组件透明（所有面板/行底色 alpha 归零，只留 1px 描边与文字）。 */
+    val onSetComponentTransparent: (Boolean) -> Unit,
     val onSetCheckModuleUpdate: (Boolean) -> Unit,
     val onOpenTheme: () -> Unit,
     /** 主题商城 / 我的主题 / 编辑器（换肤与分享）。 */

@@ -42,6 +42,7 @@ fun SettingPager(
 
     val actions = SettingsScreenActions(
         onSetCheckUpdate = viewModel::setCheckUpdate,
+        onSetComponentTransparent = viewModel::setComponentTransparent,
         onSetCheckModuleUpdate = viewModel::setCheckModuleUpdate,
         onOpenTheme = { navigator.push(Route.ColorPalette) },
         // 主题商城/编辑器是独立一屏：调色屏改的是"当前外观"，主题屏管的是"整套皮肤"。

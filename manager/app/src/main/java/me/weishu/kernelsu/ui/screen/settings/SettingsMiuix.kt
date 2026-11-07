@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DeveloperMode
+import androidx.compose.material.icons.rounded.Opacity
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Handyman
 import androidx.compose.material.icons.rounded.GetApp
@@ -53,6 +54,9 @@ import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.component.uninstalldialog.UninstallDialog
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.island.IslandTopBar
+import me.weishu.kernelsu.ui.design.panel.Xc8Panel
+import me.weishu.kernelsu.ui.design.panel.Xc8Row
+import me.weishu.kernelsu.ui.design.panel.Xc8Switch
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
@@ -65,7 +69,6 @@ import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -141,41 +144,33 @@ fun SettingPagerMiuix(
                 overscrollEffect = null,
             ) {
                 item {
-                    Card(cornerRadius = XcRadius.md, 
-                        modifier = Modifier
-                            .padding(top = 12.dp)
-                            .fillMaxWidth()
-                            .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-                        colors = CardDefaults.defaultColors(color = Color.Transparent),
-                    ) {
-                        SwitchPreference(
+                    // MIUI 8 白色分组面板：整行可点等价于原来 miuix 开关的"点行即切换"，
+                    // 开关本体仍单独响应，两者都走同一个 onSet 回调。
+                    Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
+                        Xc8Row(
                             title = stringResource(id = R.string.settings_check_update),
-                            summary = stringResource(id = R.string.settings_check_update_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.SystemUpdate,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = stringResource(id = R.string.settings_check_update),
-                                    tint = colorScheme.onBackground
+                            subtitle = stringResource(id = R.string.settings_check_update_summary),
+                            leading = Icons.Rounded.SystemUpdate,
+                            onClick = { actions.onSetCheckUpdate(!uiState.checkUpdate) },
+                            trailing = {
+                                Xc8Switch(
+                                    checked = uiState.checkUpdate,
+                                    onCheckedChange = actions.onSetCheckUpdate,
                                 )
                             },
-                            checked = uiState.checkUpdate,
-                            onCheckedChange = actions.onSetCheckUpdate
                         )
                         KsuIsValid {
-                            SwitchPreference(
+                            Xc8Row(
                                 title = stringResource(id = R.string.settings_module_check_update),
-                                summary = stringResource(id = R.string.settings_check_update_summary),
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.SystemUpdateAlt,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_check_update),
-                                        tint = colorScheme.onBackground
+                                subtitle = stringResource(id = R.string.settings_check_update_summary),
+                                leading = Icons.Rounded.SystemUpdateAlt,
+                                onClick = { actions.onSetCheckModuleUpdate(!uiState.checkModuleUpdate) },
+                                trailing = {
+                                    Xc8Switch(
+                                        checked = uiState.checkModuleUpdate,
+                                        onCheckedChange = actions.onSetCheckModuleUpdate,
                                     )
                                 },
-                                checked = uiState.checkModuleUpdate,
-                                onCheckedChange = actions.onSetCheckModuleUpdate
                             )
                         }
                     }
@@ -327,175 +322,206 @@ fun SettingPagerMiuix(
                                 selectedIndex = uiState.suCompatMode,
                                 onSelectedIndexChange = actions.onSetSuCompatMode
                             )
+                        }
 
+                        // 六个特性开关收进一块面板：sucompat 是下拉选择，语义不同，留在卡片里。
+                        Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
+                            val umountSupported = uiState.kernelUmountStatus == "supported"
                             val umountSummary = when (uiState.kernelUmountStatus) {
                                 "unsupported" -> stringResource(id = R.string.feature_status_unsupported_summary)
                                 "managed" -> stringResource(id = R.string.feature_status_managed_summary)
                                 else -> stringResource(id = R.string.settings_kernel_umount_summary)
                             }
-                            SwitchPreference(
+                            Xc8Row(
                                 title = stringResource(id = R.string.settings_kernel_umount),
-                                summary = umountSummary,
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.LayersClear,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_kernel_umount),
-                                        tint = colorScheme.onBackground
+                                subtitle = umountSummary,
+                                leading = Icons.Rounded.LayersClear,
+                                onClick = if (umountSupported) {
+                                    { actions.onSetKernelUmountEnabled(!uiState.isKernelUmountEnabled) }
+                                } else {
+                                    null
+                                },
+                                trailing = {
+                                    Xc8Switch(
+                                        checked = uiState.isKernelUmountEnabled,
+                                        onCheckedChange = actions.onSetKernelUmountEnabled,
+                                        enabled = umountSupported,
                                     )
                                 },
-                                enabled = uiState.kernelUmountStatus == "supported",
-                                checked = uiState.isKernelUmountEnabled,
-                                onCheckedChange = actions.onSetKernelUmountEnabled
                             )
 
+                            val selinuxHideSupported = uiState.selinuxHideStatus == "supported"
                             val selinuxHideSummary = when (uiState.selinuxHideStatus) {
                                 "unsupported" -> stringResource(id = R.string.feature_status_unsupported_summary)
                                 "managed" -> stringResource(id = R.string.feature_status_managed_summary)
                                 else -> stringResource(id = R.string.settings_selinux_hide_summary)
                             }
-                            SwitchPreference(
+                            Xc8Row(
                                 title = stringResource(id = R.string.settings_selinux_hide),
-                                summary = selinuxHideSummary,
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.Security,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_selinux_hide),
-                                        tint = colorScheme.onBackground
+                                subtitle = selinuxHideSummary,
+                                leading = Icons.Rounded.Security,
+                                onClick = if (selinuxHideSupported) {
+                                    { actions.onSetSelinuxHideEnabled(!uiState.isSelinuxHideEnabled) }
+                                } else {
+                                    null
+                                },
+                                trailing = {
+                                    Xc8Switch(
+                                        checked = uiState.isSelinuxHideEnabled,
+                                        onCheckedChange = actions.onSetSelinuxHideEnabled,
+                                        enabled = selinuxHideSupported,
                                     )
                                 },
-                                enabled = uiState.selinuxHideStatus == "supported",
-                                checked = uiState.isSelinuxHideEnabled,
-                                onCheckedChange = actions.onSetSelinuxHideEnabled
                             )
 
+                            val sulogSupported = uiState.sulogStatus == "supported"
                             val sulogSummary = when (uiState.sulogStatus) {
                                 "unsupported" -> stringResource(id = R.string.feature_status_unsupported_summary)
                                 "managed" -> stringResource(id = R.string.feature_status_managed_summary)
                                 else -> stringResource(id = R.string.settings_sulog_summary)
                             }
-                            SwitchPreference(
+                            Xc8Row(
                                 title = stringResource(id = R.string.settings_sulog),
-                                summary = sulogSummary,
-                                startAction = {
-                                    Icon(
-                                        Icons.AutoMirrored.Rounded.Article,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_sulog),
-                                        tint = if (uiState.sulogStatus == "supported") colorScheme.onBackground else colorScheme.disabledOnSecondaryVariant
+                                subtitle = sulogSummary,
+                                leading = Icons.AutoMirrored.Rounded.Article,
+                                onClick = if (sulogSupported) {
+                                    { actions.onSetSulogEnabled(!uiState.isSulogEnabled) }
+                                } else {
+                                    null
+                                },
+                                trailing = {
+                                    Xc8Switch(
+                                        checked = uiState.isSulogEnabled,
+                                        onCheckedChange = actions.onSetSulogEnabled,
+                                        enabled = sulogSupported,
                                     )
                                 },
-                                enabled = uiState.sulogStatus == "supported",
-                                checked = uiState.isSulogEnabled,
-                                onCheckedChange = actions.onSetSulogEnabled
                             )
 
+                            val adbRootSupported = uiState.adbRootStatus == "supported"
                             val adbRootSummary = when (uiState.adbRootStatus) {
                                 "unsupported" -> stringResource(id = R.string.feature_status_unsupported_summary)
                                 "managed" -> stringResource(id = R.string.feature_status_managed_summary)
                                 else -> stringResource(id = R.string.settings_adb_root_summary)
                             }
-                            SwitchPreference(
+                            Xc8Row(
                                 title = stringResource(id = R.string.settings_adb_root),
-                                summary = adbRootSummary,
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.Adb,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_adb_root),
-                                        tint = colorScheme.onBackground
+                                subtitle = adbRootSummary,
+                                leading = Icons.Rounded.Adb,
+                                onClick = if (adbRootSupported) {
+                                    { actions.onSetAdbRootEnabled(!uiState.isAdbRootEnabled) }
+                                } else {
+                                    null
+                                },
+                                trailing = {
+                                    Xc8Switch(
+                                        checked = uiState.isAdbRootEnabled,
+                                        onCheckedChange = actions.onSetAdbRootEnabled,
+                                        enabled = adbRootSupported,
                                     )
                                 },
-                                enabled = uiState.adbRootStatus == "supported",
-                                checked = uiState.isAdbRootEnabled,
-                                onCheckedChange = actions.onSetAdbRootEnabled
                             )
                             // 内置 TEE/TS 引擎总开关。只关伪造的证明链，不动 root：
                             // 引擎是纯用户态注入，LKM、su、模块、隐藏全部照常。
-                            SwitchPreference(
+                            Xc8Row(
                                 title = stringResource(id = R.string.settings_tee_engine),
-                                summary = stringResource(id = R.string.settings_tee_engine_summary),
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.AdminPanelSettings,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_tee_engine),
-                                        tint = colorScheme.onBackground
+                                subtitle = stringResource(id = R.string.settings_tee_engine_summary),
+                                leading = Icons.Rounded.AdminPanelSettings,
+                                onClick = { actions.onSetTeeEngineEnabled(!uiState.isTeeEngineEnabled) },
+                                trailing = {
+                                    Xc8Switch(
+                                        checked = uiState.isTeeEngineEnabled,
+                                        onCheckedChange = actions.onSetTeeEngineEnabled,
                                     )
                                 },
-                                checked = uiState.isTeeEngineEnabled,
-                                onCheckedChange = actions.onSetTeeEngineEnabled
                             )
-                            SwitchPreference(
+                            // late-load 下软重启不可用（内核还没接管），开关与整行一起禁用。
+                            val softRebootEnabled = !uiState.isLateLoadMode
+                            Xc8Row(
                                 title = stringResource(id = R.string.settings_soft_reboot),
-                                summary = stringResource(id = R.string.settings_soft_reboot_summary),
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.RestartAlt,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_soft_reboot),
-                                        tint = if (uiState.isLateLoadMode) colorScheme.disabledOnSecondaryVariant else colorScheme.onBackground
+                                subtitle = stringResource(id = R.string.settings_soft_reboot_summary),
+                                leading = Icons.Rounded.RestartAlt,
+                                onClick = if (softRebootEnabled) {
+                                    { actions.onSetUseSoftReboot(!(uiState.isLateLoadMode || uiState.useSoftReboot)) }
+                                } else {
+                                    null
+                                },
+                                trailing = {
+                                    Xc8Switch(
+                                        checked = uiState.isLateLoadMode || uiState.useSoftReboot,
+                                        onCheckedChange = actions.onSetUseSoftReboot,
+                                        enabled = softRebootEnabled,
                                     )
                                 },
-                                enabled = !uiState.isLateLoadMode,
-                                checked = uiState.isLateLoadMode || uiState.useSoftReboot,
-                                onCheckedChange = actions.onSetUseSoftReboot
                             )
                         }
 
-                        Card(cornerRadius = XcRadius.md, 
-                            modifier = Modifier
-                                .padding(top = 12.dp)
-                                .fillMaxWidth()
-                                .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-                            colors = CardDefaults.defaultColors(color = Color.Transparent),
-                        ) {
-                            SwitchPreference(
+                        Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
+                            Xc8Row(
                                 title = stringResource(id = R.string.settings_umount_modules_default),
-                                summary = stringResource(id = R.string.settings_umount_modules_default_summary),
-                                startAction = {
-                                    Icon(
-                                        Icons.AutoMirrored.Rounded.Rule,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_umount_modules_default),
-                                        tint = colorScheme.onBackground
+                                subtitle = stringResource(id = R.string.settings_umount_modules_default_summary),
+                                leading = Icons.AutoMirrored.Rounded.Rule,
+                                onClick = {
+                                    actions.onSetDefaultUmountModules(!uiState.isDefaultUmountModules)
+                                },
+                                trailing = {
+                                    Xc8Switch(
+                                        checked = uiState.isDefaultUmountModules,
+                                        onCheckedChange = actions.onSetDefaultUmountModules,
                                     )
                                 },
-                                checked = uiState.isDefaultUmountModules,
-                                onCheckedChange = actions.onSetDefaultUmountModules
                             )
-
-                            SwitchPreference(
+                            Xc8Row(
                                 title = stringResource(id = R.string.enable_web_debugging),
-                                summary = stringResource(id = R.string.enable_web_debugging_summary),
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.DeveloperMode,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.enable_web_debugging),
-                                        tint = colorScheme.onBackground
+                                subtitle = stringResource(id = R.string.enable_web_debugging_summary),
+                                leading = Icons.Rounded.DeveloperMode,
+                                onClick = { actions.onSetEnableWebDebugging(!uiState.enableWebDebugging) },
+                                trailing = {
+                                    Xc8Switch(
+                                        checked = uiState.enableWebDebugging,
+                                        onCheckedChange = actions.onSetEnableWebDebugging,
                                     )
                                 },
-                                checked = uiState.enableWebDebugging,
-                                onCheckedChange = actions.onSetEnableWebDebugging
                             )
-                            SwitchPreference(
+                            // 自动越狱只在 late-load 下有意义，其余形态整行与开关都禁用。
+                            val autoJailbreakEnabled = uiState.isLateLoadMode
+                            Xc8Row(
                                 title = stringResource(id = R.string.settings_auto_jailbreak),
-                                summary = stringResource(id = R.string.settings_auto_jailbreak_summary),
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.FlashOn,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_auto_jailbreak),
-                                        tint = if (uiState.isLateLoadMode) colorScheme.onBackground else colorScheme.disabledOnSecondaryVariant
+                                subtitle = stringResource(id = R.string.settings_auto_jailbreak_summary),
+                                leading = Icons.Rounded.FlashOn,
+                                onClick = if (autoJailbreakEnabled) {
+                                    { actions.onSetAutoJailbreak(!uiState.autoJailbreak) }
+                                } else {
+                                    null
+                                },
+                                trailing = {
+                                    Xc8Switch(
+                                        checked = uiState.autoJailbreak,
+                                        onCheckedChange = actions.onSetAutoJailbreak,
+                                        enabled = autoJailbreakEnabled,
                                     )
                                 },
-                                enabled = uiState.isLateLoadMode,
-                                checked = uiState.autoJailbreak,
-                                onCheckedChange = actions.onSetAutoJailbreak
                             )
                         }
+                    }
+
+                    // 外观：组件透明。单独一块而不是塞进上面的功能开关堆里 ——
+                    // 它改的是"所有面板的底色有多实"，属于外观，混在功能列表里没人会想到去找。
+                    Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
+                        Xc8Row(
+                            title = stringResource(id = R.string.settings8_component_transparent),
+                            subtitle = stringResource(id = R.string.settings8_component_transparent_summary),
+                            leading = Icons.Rounded.Opacity,
+                            onClick = {
+                                actions.onSetComponentTransparent(!uiState.componentTransparent)
+                            },
+                            trailing = {
+                                Xc8Switch(
+                                    checked = uiState.componentTransparent,
+                                    onCheckedChange = actions.onSetComponentTransparent,
+                                )
+                            },
+                        )
                     }
 
                     if (uiState.isLkmMode) {

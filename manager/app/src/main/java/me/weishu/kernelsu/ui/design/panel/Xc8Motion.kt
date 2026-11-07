@@ -212,14 +212,20 @@ fun Xc8Segmented(
  *
  * 单独开一个而不是让 [Xc8Row] 直接画裸图标：原型里每个可操作行的左图标都是
  * "砖"而不是"字形"，这是这套列表最容易一眼认出来的细节。
+ *
+ * [tint] 决定砖底：橙色（默认，可操作行）或 `surfaceMuted`（禁用行转淡，
+ * 与标题一起表达"这一行现在不能用"）。
  */
 @Composable
-fun Xc8IconTile(content: @Composable () -> Unit) {
+fun Xc8IconTile(
+    tint: Color = Xc.colors.accent,
+    content: @Composable () -> Unit,
+) {
     Box(
         modifier = Modifier
             .size(26.dp)
             .clip(Xc.shapes.xs)
-            .background(Xc.colors.accentSoft),
+            .background(if (tint == Xc.colors.accent) Xc.colors.accentSoft else Xc.colors.surfaceMuted),
         contentAlignment = Alignment.Center,
     ) {
         content()

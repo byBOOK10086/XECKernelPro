@@ -253,7 +253,9 @@ open class MainActivity : ComponentActivity() {
                         // 各页自己的 rememberBlurBackdrop 只覆盖那一页，而对话框宿主是
                         // 5 个 nav entry（Main / Home / SuperUser / Module / Settings）
                         // 共用的，拿不到任何单独一页的采样源。
-                        val dialogBackdrop = rememberBlurBackdrop(uiState.enableBlur)
+                        // MIUI 8 换装后玻璃消费方已全部置 null（`LocalXDialogBackdrop` / `LocalWallpaperBackdrop`），
+                        // 再按用户开关建 backdrop 只会白录一层帧。这里直接关掉，省掉每次重绘的录制开销。
+                        val dialogBackdrop = rememberBlurBackdrop(false)
                         // 壁纸：每次冷启动随机抽一张（rememberSaveable 保证转屏/重建
                         // Activity 不重抽）；深浅模式只决定取这张的亮色原版还是深色
                         // 适配版——"此次进入用哪张"与"该不该调色"是两个独立决定，
@@ -329,7 +331,9 @@ open class MainActivity : ComponentActivity() {
                         // 都通过 [LocalWallpaperBackdrop] 采它——壁纸的录制子树里只有壁纸，
                         // 谁采都不会自采样成环（页面级 backdrop 录的是滚动内容，卡体在里面，
                         // 采它会成环）。跟随同一个 enableBlur 开关，关模糊即全应用退实色档。
-                        val wallpaperBackdrop = rememberBlurBackdrop(uiState.enableBlur)
+                        // MIUI 8 换装后玻璃消费方已全部置 null（`LocalXDialogBackdrop` / `LocalWallpaperBackdrop`），
+                        // 再按用户开关建 backdrop 只会白录一层帧。这里直接关掉，省掉每次重绘的录制开销。
+                        val wallpaperBackdrop = rememberBlurBackdrop(false)
                         val dialogHostState = remember { XDialogHostState() }
 
                         CompositionLocalProvider(

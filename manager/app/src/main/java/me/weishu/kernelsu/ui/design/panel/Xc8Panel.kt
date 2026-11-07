@@ -134,16 +134,25 @@ fun Xc8Row(
     trailing: @Composable RowScope.() -> Unit = {},
     onClick: (() -> Unit)? = null,
     titleColor: Color = Xc.colors.text,
+    /**
+     * false = 整行**看起来就是不可用**：标题/副标题转 `textMuted`、图标砖转淡、点击摘掉。
+     *
+     * 只靠 `onClick = null` 是不够的——那会出现"看着能点却点不动"，是设置页里最容易踩的假可用。
+     */
+    enabled: Boolean = true,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val rim = Xc.colors.glassRim
+    val clickable = onClick != null && enabled
     // 按下=整行压暗，120ms 过渡（原型 `.row--action` 的 0.12s）；不是水波纹。
     val background by animateColorAsState(
-        targetValue = if (pressed && onClick != null) Xc.surfaceMuted else Xc.surface,
+        targetValue = if (pressed && clickable) Xc.surfaceMuted else Xc.surface,
         animationSpec = tween(Xc8Motion.press),
         label = "xc8RowBg",
     )
+    val effectiveTitleColor = if (enabled) titleColor else Xc.colors.textMuted
+    val subtitleColor = if (enabled) Xc.colors.textSecondary else Xc.colors.textMuted
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -157,13 +166,13 @@ fun Xc8Row(
                 )
             }
             .then(
-                if (onClick == null) {
+                if (!clickable) {
                     Modifier
                 } else {
                     Modifier.clickable(
                         interactionSource = interaction,
                         indication = null,
-                        onClick = onClick,
+                        onClick = { onClick?.invoke() },
                     )
                 }
             )
@@ -171,12 +180,12 @@ fun Xc8Row(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leading != null) {
-            // 26dp 橙色砖里的图标（原型 `.row__icon`）。
-            Xc8IconTile {
+            // 26dp 橙色砖里的图标（原型 `.row__icon`）；禁用时砖与图标一起转淡。
+            Xc8IconTile(tint = if (enabled) Xc.colors.accent else Xc.colors.textMuted) {
                 Icon(
                     imageVector = leading,
                     contentDescription = null,
-                    tint = Xc.colors.accent,
+                    tint = if (enabled) Xc.colors.accent else Xc.colors.textMuted,
                     modifier = Modifier.size(15.dp),
                 )
             }
@@ -186,7 +195,7 @@ fun Xc8Row(
             Text(
                 text = title,
                 fontSize = 15.sp,
-                color = titleColor,
+                color = effectiveTitleColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -196,7 +205,7 @@ fun Xc8Row(
                     text = subtitle,
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
-                    color = Xc.colors.textSecondary,
+                    color = subtitleColor,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
