@@ -16,7 +16,9 @@ import com.materialkolor.dynamiccolor.ColorSpec
 import com.materialkolor.rememberDynamicColorScheme
 import me.weishu.kernelsu.ui.design.liquid.XcIndication
 import me.weishu.kernelsu.ui.design.token.Xc
+import me.weishu.kernelsu.ui.design.token.XcRadius
 import me.weishu.kernelsu.ui.webui.MonetColorsProvider
+import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -252,14 +254,22 @@ fun MiuixKernelSUTheme(
                     val indicationColor = Xc.colors.text
                     val pressRadius = Xc.shapes.pressRadius
                     val indicationDark = Xc.colors.isDark
+                    // MIUI 8 的按下反馈只有"压暗一档"：没有液态高光（sheenAlpha = 0），
+                    // 阴影也压到很浅——之前在深色档给 0.34、浅色档给 0.17 是为了托住
+                    // 玻璃介质，现在面板是不透明的白/近黑实色，那么重的阴影会让每次点击
+                    // 都在行内糊出一块灰斑。
                     val indication = remember(indicationColor, pressRadius, indicationDark) {
                         XcIndication(
                             color = indicationColor,
                             radius = pressRadius,
-                            shadeAlpha = if (indicationDark) 0.34f else 0.17f,
-                            sheenAlpha = if (indicationDark) 0.30f else 0.22f,
+                            shadeAlpha = if (indicationDark) 0.22f else 0.12f,
+                            sheenAlpha = 0f,
                         )
                     }
+                    // miuix 的 Card 自带 16dp 圆角，而我们自己的面板族是 4dp。
+                    // 这一行把全站 miuix 卡片（模块仓、设置、日志、应用配置…共八十余处
+                    // 调用点）一次性压到同一档半径，不必逐个改调用参数。
+                    CardDefaults.CornerRadius = XcRadius.md
                     CompositionLocalProvider(
                         LocalIndication provides indication,
                         LocalContentColor provides MiuixTheme.colorScheme.onBackground,
