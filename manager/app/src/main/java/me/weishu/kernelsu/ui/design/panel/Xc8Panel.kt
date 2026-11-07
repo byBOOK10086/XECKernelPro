@@ -1,5 +1,7 @@
 package me.weishu.kernelsu.ui.design.panel
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -124,7 +126,12 @@ fun Xc8Row(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val rim = Xc.colors.glassRim
-    val background = if (pressed && onClick != null) Xc.colors.surfaceMuted else Xc.colors.surface
+    // 按下=整行压暗，120ms 过渡（原型 `.row--action` 的 0.12s）；不是水波纹。
+    val background by animateColorAsState(
+        targetValue = if (pressed && onClick != null) Xc.colors.surfaceMuted else Xc.colors.surface,
+        animationSpec = tween(Xc8Motion.press),
+        label = "xc8RowBg",
+    )
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -152,14 +159,16 @@ fun Xc8Row(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leading != null) {
-            Icon(
-                imageVector = leading,
-                contentDescription = null,
-                tint = Xc.colors.textSecondary,
-                modifier = Modifier
-                    .padding(end = 12.dp)
-                    .size(19.dp),
-            )
+            // 26dp 橙色砖里的图标（原型 `.row__icon`）。
+            Xc8IconTile {
+                Icon(
+                    imageVector = leading,
+                    contentDescription = null,
+                    tint = Xc.colors.accent,
+                    modifier = Modifier.size(15.dp),
+                )
+            }
+            Spacer(Modifier.width(12.dp))
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(

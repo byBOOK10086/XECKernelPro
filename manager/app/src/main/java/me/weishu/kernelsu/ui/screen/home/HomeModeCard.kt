@@ -1,6 +1,8 @@
 package me.weishu.kernelsu.ui.screen.home
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -21,7 +23,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -39,8 +41,10 @@ import androidx.compose.ui.unit.sp
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.getKernelVersion
 import me.weishu.kernelsu.ui.design.panel.Xc8KeyValueCell
+import me.weishu.kernelsu.ui.design.panel.Xc8Motion
 import me.weishu.kernelsu.ui.design.panel.Xc8Note
 import me.weishu.kernelsu.ui.design.panel.Xc8Panel
+import me.weishu.kernelsu.ui.design.panel.xc8Sheen
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.design.token.XcBlockBackground
 import top.yukonga.miuix.kmp.basic.Icon
@@ -180,11 +184,20 @@ fun HomeModeCard(
                     color = Xc.colors.textSecondary,
                     maxLines = 1,
                 )
+                // 箭头是同一个图标旋转 180°（原型 `.mode-card__chevron` 的 0.18s 旋转），
+                // 换图标会让两帧之间没有过渡，看起来像闪了一下。
+                val chevronAngle by animateFloatAsState(
+                    targetValue = if (expanded) 180f else 0f,
+                    animationSpec = tween(Xc8Motion.fade),
+                    label = "modeChevron",
+                )
                 Icon(
-                    imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    imageVector = Icons.Rounded.ExpandMore,
                     contentDescription = null,
                     tint = Xc.colors.textSecondary,
-                    modifier = Modifier.size(15.dp),
+                    modifier = Modifier
+                        .size(15.dp)
+                        .rotate(chevronAngle),
                 )
             }
         }
@@ -212,6 +225,10 @@ fun HomeModeCard(
                             .background(if (active) Xc.colors.accent else Xc.colors.surfaceMuted),
                         contentAlignment = Alignment.Center,
                     ) {
+                        // 光带在底色之上、文字之下（原型用 z-index:-1 达到同一效果）。
+                        if (active) {
+                            Box(modifier = Modifier.matchParentSize().xc8Sheen())
+                        }
                         Text(
                             text = badge,
                             fontSize = 15.sp,
