@@ -65,13 +65,19 @@ jobs:
           exit 1
         }
 
-        # 断言这个 .ko 真的把我们依赖的层编进去了。out-of-tree 构建会静默丢掉
-        # 没列进 obj-m 的对象，绿构建不能证明模块完整（kernelsu.ko 那边有同款检查）。
+        # 断言这个 .ko 真的把各层编进去了。out-of-tree 构建会静默丢掉没列进
+        # obj-m 的对象，绿构建不能证明模块完整（kernelsu.ko 那边有同款检查）。
+        #
+        # 不要按 `susfs_init`/`susfs_exit` 这两个名字断言：它们是 `static __init`，
+        # 进 .init.text 之后符号形态随编译器/kernel 版本变化，第一版就是这么误判的。
+        # 改为数 susfs 相关符号的总数——完整链进来的模块有几百个。
         NM=$(command -v llvm-nm || command -v nm)
-        SYMS=$($NM susfs_guard_lkm.ko | grep -E ' [Tt] (susfs_init|susfs_exit)$' || true)
-        echo "$SYMS"
-        if [ -z "$SYMS" ]; then
-          echo "::error title=${{ inputs.kmi }} susfs entrypoints missing::susfs_guard_lkm.ko has no susfs_init/susfs_exit; the module was not linked correctly."
+        echo "--- symbols (head) ---"
+        $NM susfs_guard_lkm.ko | head -n 15
+        SUSFS_SYMS=$($NM susfs_guard_lkm.ko 2>/dev/null | grep -ci 'susfs' || true)
+        echo "susfs-related symbols: ${SUSFS_SYMS:-0}"
+        if [ "${SUSFS_SYMS:-0}" -lt 20 ]; then
+          echo "::error title=${{ inputs.kmi }} susfs symbols missing::susfs_guard_lkm.ko has only ${SUSFS_SYMS:-0} susfs symbols; the module was not linked correctly."
           exit 1
         fi
 

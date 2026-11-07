@@ -6,6 +6,9 @@ on:
 jobs:
   build-susfs-lkm:
     strategy:
+      # 一个 KMI 编不过不等于别的也编不过；关掉 fail-fast 才能一次拿到 8 份结果，
+      # 而不是被第一条失败把其余 6 个取消掉（第一轮就是这样看不到全貌）。
+      fail-fast: false
       matrix:
         kmi:
           - android12-5.10
