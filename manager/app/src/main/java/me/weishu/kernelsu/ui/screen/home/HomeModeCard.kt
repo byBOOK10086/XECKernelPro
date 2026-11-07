@@ -49,7 +49,7 @@ import top.yukonga.miuix.kmp.basic.Text
 /** 徽标与说明里用到的品牌名：不翻译（LKM / GKI / Magisk 是术语，不是文案）。 */
 private const val MAGISK_BRAND = "Magisk"
 
-private const val MODE_CARD_PADDING_H = 15.dp
+private val MODE_CARD_PADDING_H = 15.dp
 
 /**
  * 首页模式卡（MIUI 8 版）。

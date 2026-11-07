@@ -245,7 +245,7 @@ fun HomePagerMiuix(
                             actions = actions,
                         )
                         Xc8SectionLabel(text = stringResource(R.string.home8_section_actions))
-                        ActionsPanel(state = state, actions = actions)
+                        ActionsPanel(actions = actions)
                         Xc8SectionLabel(text = stringResource(R.string.home8_section_support))
                         SupportPanel(
                             actions = actions,
