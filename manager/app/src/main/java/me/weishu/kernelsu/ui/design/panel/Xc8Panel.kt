@@ -100,18 +100,28 @@ fun Xc8Panel(
     block: XcBlockBackground? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(
-        modifier = modifier
+    val shape = Xc.shapes.lg
+    // 主题/设置把组件调成半透明或全透明时，不能再走 xGlassBody：它的实色兜底一定会画
+    // 不透明底色（那是"没有 backdrop 时别塌成黑框"的保险）。这一支改用直接描边 + 可调 alpha。
+    val translucent = Xc.surfaceAlpha < 0.999f
+    val container = if (translucent) {
+        modifier
             .fillMaxWidth()
-            .xGlassBody(backdrop = null, shape = Xc.shapes.lg, block = block),
-        content = content,
-    )
+            .clip(shape)
+            .background(Xc.surface)
+            .border(1.dp, Xc.colors.glassRim, shape)
+    } else {
+        modifier
+            .fillMaxWidth()
+            .xGlassBody(backdrop = null, shape = shape, block = block)
+    }
+    Column(modifier = container, content = content)
 }
 
 /**
  * 面板里的一行：可选左图标 + 标题/副标题 + 右侧插槽。
  *
- * [onClick] 为 null 时不可点（纯信息行）；不为 null 时按下整行转 [Xc.colors.surfaceMuted]。
+ * [onClick] 为 null 时不可点（纯信息行）；不为 null 时按下整行转 [Xc.surfaceMuted]。
  * 这里刻意不要水波纹：MIUI 8 的列表按下是"整行压暗"，而 Material 的圆形水波纹
  * 在这套方角面板里会显得既不像也不齐。
  */
@@ -130,7 +140,7 @@ fun Xc8Row(
     val rim = Xc.colors.glassRim
     // 按下=整行压暗，120ms 过渡（原型 `.row--action` 的 0.12s）；不是水波纹。
     val background by animateColorAsState(
-        targetValue = if (pressed && onClick != null) Xc.colors.surfaceMuted else Xc.colors.surface,
+        targetValue = if (pressed && onClick != null) Xc.surfaceMuted else Xc.surface,
         animationSpec = tween(Xc8Motion.press),
         label = "xc8RowBg",
     )
@@ -271,7 +281,7 @@ fun Xc8Note(text: String, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(Xc.colors.surface),
+            .background(Xc.surface),
     ) {
         Text(
             text = text,
@@ -322,7 +332,7 @@ fun Xc8Button(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val shape = Xc.shapes.sm
-    val base = if (primary) Xc.colors.accent else Xc.colors.surface
+    val base = if (primary) Xc.colors.accent else Xc.surface
     val pressedBackground = when {
         primary -> xc8PressedColor(Xc.colors.accent)
         else -> Xc.colors.accentSoft

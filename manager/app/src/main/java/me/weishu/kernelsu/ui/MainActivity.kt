@@ -82,6 +82,7 @@ import me.weishu.kernelsu.ui.component.dialog.XDialogHost
 import me.weishu.kernelsu.ui.component.dialog.XDialogHostState
 import me.weishu.kernelsu.ui.design.clear.LocalWallpaperBackdrop
 import me.weishu.kernelsu.ui.design.liquid.XDropletHost
+import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.design.token.XcTheme
 import me.weishu.kernelsu.ui.navigation3.IntentDispatcher
 import me.weishu.kernelsu.ui.navigation3.LocalNavigator
@@ -429,6 +430,15 @@ open class MainActivity : ComponentActivity() {
                                     val customWallpaperBitmap = customWallpaper
                                     val builtinWallpaperBitmap = builtinWallpaper
                                     when {
+                                        // MIUI 8 全盘换装（2026-11-08）：页面底色是平色 `#F3F3F3`，
+                                        // 不再是"壁纸 + 半透明玻璃"。所以**没有显式选过图/纯色**
+                                        // 的时候直接铺平色底，内置壁纸池不再随机接管整页。
+                                        // 用户自己挑过自定义图或纯色时仍然按他的选择画（下面三支），
+                                        // 那属于用户显式意图，不该被设计改版清掉。
+                                        currentSolid == null && customWallpaperName.isEmpty() -> Box(
+                                            modifier = wallpaperModifier.background(Xc.colors.backdrop)
+                                        )
+
                                         // 纯色档优先：它就是"这一档的最终答案"，内置池不再参与。
                                         currentSolid != null -> Box(
                                             modifier = wallpaperModifier.background(currentSolid)

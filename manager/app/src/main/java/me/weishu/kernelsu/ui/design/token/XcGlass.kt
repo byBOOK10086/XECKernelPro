@@ -38,6 +38,17 @@ data class XcGlass(
     val shadeAlpha: Float = 0.35f,
     /** 光泽扫过（sheen）强度倍率：0 = 没有扫光。 */
     val sheenAlpha: Float = 0f,
+    /**
+     * 组件底色的不透明度：1 = 不透明（默认），0 = 全透明。
+     *
+     * 这是"把所有组件设为透明"那条主题项的唯一开关：面板、行、按钮、文本域、分段控件
+     * 一律通过 `Xc.surface` / `Xc.surfaceMuted` 取底色，读到这里；描边与文字不受影响，
+     * 所以全透明时界面仍然有分组边界，靠 1px 线而不是靠色块。
+     *
+     * 为什么放在 [XcGlass] 而不是 [XcColors]：它不是一种颜色，是"介质有多实"，
+     * 和模糊/折射/扫光同一族；放在颜色里会被主题的明暗两档各复制一份，容易漂移。
+     */
+    val surfaceAlpha: Float = 1f,
 ) {
     companion object {
         val Default = XcGlass()

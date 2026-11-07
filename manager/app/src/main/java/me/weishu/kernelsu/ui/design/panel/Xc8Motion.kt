@@ -175,7 +175,7 @@ fun Xc8Segmented(
     Row(
         modifier = modifier
             .clip(Xc.shapes.sm)
-            .background(Xc.colors.surface),
+            .background(Xc.surface),
     ) {
         options.forEachIndexed { index, option ->
             val selected = index == selectedIndex

@@ -156,7 +156,7 @@ fun HomeModeCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Xc.colors.surface)
+                .background(Xc.surface)
                 .padding(start = MODE_CARD_PADDING_H, end = MODE_CARD_PADDING_H, top = 11.dp, bottom = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -206,7 +206,7 @@ fun HomeModeCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Xc.colors.surface)
+                .background(Xc.surface)
                 .padding(start = MODE_CARD_PADDING_H, end = MODE_CARD_PADDING_H, top = 4.dp, bottom = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -222,7 +222,7 @@ fun HomeModeCard(
                         modifier = Modifier
                             .size(56.dp)
                             .clip(Xc.shapes.md)
-                            .background(if (active) Xc.colors.accent else Xc.colors.surfaceMuted),
+                            .background(if (active) Xc.colors.accent else Xc.surfaceMuted),
                         contentAlignment = Alignment.Center,
                     ) {
                         // 光带在底色之上、文字之下（原型用 z-index:-1 达到同一效果）。
@@ -298,7 +298,7 @@ fun HomeModeCard(
             enter = fadeIn() + expandVertically(),
             exit = shrinkVertically() + fadeOut(),
         ) {
-            Column(modifier = Modifier.background(Xc.colors.surface)) {
+            Column(modifier = Modifier.background(Xc.surface)) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -313,7 +313,7 @@ fun HomeModeCard(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Xc.colors.surface),
+                            .background(Xc.surface),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         rowCells.forEachIndexed { cellIndex, cell ->

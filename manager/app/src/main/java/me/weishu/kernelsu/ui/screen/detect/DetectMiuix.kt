@@ -192,7 +192,7 @@ private fun ScorePanel(result: XecScoreResult) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Xc.colors.surface)
+                .background(Xc.surface)
                 .padding(horizontal = 15.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

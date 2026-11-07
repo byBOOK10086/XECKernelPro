@@ -25,12 +25,26 @@ fun XcTheme(
     isDark: Boolean,
     isAmoled: Boolean = false,
     theme: XcThemeData? = null,
+    /**
+     * 组件不透明度的**额外**乘数（默认 1 = 不叠加）。
+     *
+     * 设置里那个「组件透明」开关走这一条，而不是去改主题包：主题是用户自己导入的资产，
+     * 开关是运行期偏好，两者相乘才是"当前该有多透"。0 = 全透明。
+     */
+    componentAlpha: Float = 1f,
     content: @Composable () -> Unit,
 ) {
     val colors = remember(isDark, isAmoled, theme) { theme?.colorsFor(isDark, isAmoled) ?: xcColorsFor(isDark, isAmoled) }
     // 形状/玻璃/动效是全局的：主题给什么用什么，不给就用默认。
     val shapes = theme?.shapes ?: XcShapesDefault
-    val glass = theme?.glass ?: XcGlass.Default
+    val themeGlass = theme?.glass ?: XcGlass.Default
+    val glass = remember(themeGlass, componentAlpha) {
+        if (componentAlpha >= 1f) {
+            themeGlass
+        } else {
+            themeGlass.copy(surfaceAlpha = (themeGlass.surfaceAlpha * componentAlpha.coerceIn(0f, 1f)).coerceIn(0f, 1f))
+        }
+    }
     CompositionLocalProvider(
         LocalXcColors provides colors,
         LocalXcShapes provides shapes,
@@ -91,6 +105,23 @@ object Xc {
 
     val typography: XcTypography
         @Composable @ReadOnlyComposable get() = LocalXcTypography.current
+
+    /**
+     * 组件底色（面板 / 行 / 按钮 / 文本域 / 分段控件都用它）。
+     *
+     * 与 [colors] 里的 `surface` 的差别只有一个：这里乘上了"组件透明度"
+     * （[XcGlass.surfaceAlpha]）。全透明时描边与文字不变，分组边界靠 1px 线维持。
+     */
+    val surface: Color
+        @Composable @ReadOnlyComposable get() = colors.surface.copy(alpha = surfaceAlpha)
+
+    /** 次级组件底色（按下态、内嵌块），透明度规则同 [surface]。 */
+    val surfaceMuted: Color
+        @Composable @ReadOnlyComposable get() = colors.surfaceMuted.copy(alpha = surfaceAlpha)
+
+    /** 当前生效的组件不透明度（0~1），一次算好给上面两个属性与渲染分支共用。 */
+    val surfaceAlpha: Float
+        @Composable @ReadOnlyComposable get() = glass.surfaceAlpha.coerceIn(0f, 1f)
 
     /** 全部区块背景（默认空表）。按键取用 [block]。 */
     val blocks: Map<String, XcBlockBackground>
