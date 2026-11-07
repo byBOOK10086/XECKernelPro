@@ -40,17 +40,18 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
     info!("late-load command triggered!");
     dump_process_info("late-load start");
 
-    // 1. Check if KernelSU is already loaded
+    // 1. Detect the KMI once: both the KernelSU module and the optional SUSFS
+    // module are embedded per KMI, so the lookup key is shared.
+    let kmi = kmi.map_or_else(
+        || crate::boot_patch::get_current_kmi().context("Failed to detect current KMI version"),
+        Ok,
+    )?;
+    info!("Detected KMI: {kmi}");
+
+    // 2. Check if KernelSU is already loaded
     if ksuinit::has_kernelsu() {
         info!("KernelSU already loaded, skip loading ko");
     } else {
-        // 2. Detect current KMI version
-        let kmi = kmi.map_or_else(
-            || crate::boot_patch::get_current_kmi().context("Failed to detect current KMI version"),
-            Ok,
-        )?;
-        info!("Detected KMI: {kmi}");
-
         // 3. Get kernelsu.ko from embedded assets
         let ko_name = format!("{kmi}_kernelsu.ko");
         let ko_data = assets::get_asset_data(&ko_name)
@@ -68,6 +69,14 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
         info!("kernelsu.ko loaded successfully!");
         dump_process_info("after load_module");
     }
+
+    // 4b. SUSFS：随 xudc 发布的第三方 LKM（third_party/susfs4ksu-lkm）。
+    //
+    // 顺序是硬要求：必须排在 kernelsu.ko 之后。它的 susfs_hide_syms 会过滤
+    // /proc/kallsyms，而我们的符号解析是加载时做的；反过来先装会让后面的解析失败。
+    //
+    // 失败一律降级：SUSFS 是增强功能，装不上不能影响 root 通道。
+    load_susfs_lkm(&kmi);
 
     // We need to reset stdin/stdout/stderr; otherwise, sending file descriptors via cmd transactions
     // will be blocked by SELinux because its fsec->sid is still u:r:su:s0 instead of u:r:ksu:s0.
@@ -176,4 +185,41 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
         .status();
 
     Ok(())
+}
+
+/// 加载 SUSFS 的可加载内核模块（若这一 KMI 带了那份载荷）。
+///
+/// 它是 `third_party/susfs4ksu-lkm` 编出来的独立 .ko，由我们自己的内置装载器从
+/// xudc 的资源里取出并加载 —— 不走模块体系，设备上不会有可停用/可删除的模块。
+///
+/// **必须在 kernelsu.ko 之后**：它的 `susfs_hide_syms` 会过滤 `/proc/kallsyms`
+/// 和 `/proc/modules`，而我们的符号解析发生在内核模块初始化时。
+///
+/// 任何失败都只记日志：SUSFS 是增强能力，装不上不能影响 root 通道。
+fn load_susfs_lkm(kmi: &str) {
+    // 已经有人装过（内置内核，或这一轮已经加载）就不要叠第二份。
+    if std::path::Path::new("/proc/susfs_path").exists() {
+        info!("SUSFS already present, skip loading the bundled module");
+        return;
+    }
+
+    let name = format!("{kmi}_susfs_guard_lkm.ko");
+    let data = match assets::get_asset_data(&name) {
+        Ok(data) => data,
+        Err(_) => {
+            // x86_64 的 xudc 不带这份载荷，这是正常情况。
+            info!("no bundled {name}, skipping SUSFS");
+            return;
+        }
+    };
+
+    info!("Loading {name}...");
+    // expose_proc=1 才会建 /proc/susfs_* 控制节点，ksud 靠这些节点下发规则。
+    // avc_su_ctx 必须是我们自己的域：默认值是别的变体，填错会让 avc 伪造
+    // 直接 -EOPNOTSUPP（它要用 security_secctx_to_secid 解析这个串）。
+    let params = cstr!("expose_proc=1 avc_su_ctx=u:r:xecpro:s0");
+    match ksuinit::load_module(&data, params) {
+        Ok(()) => info!("{name} loaded successfully"),
+        Err(error) => warn!("failed to load {name}: {error:#}"),
+    }
 }

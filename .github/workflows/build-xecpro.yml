@@ -135,8 +135,15 @@ jobs:
     needs: [guards]
     uses: ./.github/workflows/xecinit.yml
 
+  # SUSFS 的可加载内核模块（third_party/susfs4ksu-lkm）。LKM 形态设备本来没有
+  # SUSFS —— 它只随自编译 GKI 内核提供——这个 job 把那份能力补进我们的发布链。
+  # 只编 aarch64，且必须和 kernelsu.ko 用同一份 DDK 头，否则内核拒绝加载。
+  build-susfs-lkm:
+    needs: [guards]
+    uses: ./.github/workflows/build-susfs-lkm.yml
+
   build-ksud:
-    needs: [build-lkm, build-ksuinit, build-xecinit]
+    needs: [build-lkm, build-ksuinit, build-xecinit, build-susfs-lkm]
     strategy:
       matrix:
         include:
@@ -148,6 +155,7 @@ jobs:
       pack_lkm: true
       pack_ksuinit: true
       pack_xecinit: true
+      pack_susfs: true
 
   build-manager:
     needs: [guards, generate-key]

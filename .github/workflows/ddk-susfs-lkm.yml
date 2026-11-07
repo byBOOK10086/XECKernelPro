@@ -1,0 +1,104 @@
+name: Build SUSFS LKM
+
+# 把 third_party/susfs4ksu-lkm 编成 susfs_guard_lkm.ko（每个 KMI 一份），
+# 由 build-ksud 打进 xudc 的内置资源，开机由 late_load 在 kernelsu.ko 之后加载。
+#
+# 只编 aarch64：真机全是 arm64；x86_64 那份 xudc 只是模拟器/调试用，
+# 没有 susfs .ko 时 late_load 会跳过它（fail-open，不影响 root）。
+#
+# 复用 ddK-min 容器，和 kernelsu.ko 用的是同一镜像、同一份 KDIR —— 这是刻意的：
+# 两个 .ko 必须用**同一个内核头**编，否则结构体/符号版本对不上。
+
+on:
+  workflow_call:
+    inputs:
+      kmi:
+        description: 'KMI version'
+        required: true
+        type: string
+      ddk_release:
+        description: 'DDK release version'
+        required: false
+        default: '20260828'
+        type: string
+
+jobs:
+  build-susfs-ko:
+    name: Build susfs_guard_lkm.ko for ${{ inputs.kmi }}
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ylarod/ddk-min:${{ inputs.kmi }}-${{ inputs.ddk_release }}
+      options: --privileged
+
+    steps:
+    - name: Checkout source code
+      uses: actions/checkout@v7
+
+    - name: Build susfs_guard_lkm.ko
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+        echo "=== Building susfs_guard_lkm.ko for KMI: ${{ inputs.kmi }} ==="
+        echo "KDIR=$KDIR"
+
+        # KDIR 由 ddk-min 镜像提供，和 kernelsu.ko 用的是同一份头文件。
+        # 直接走 kbuild（而不是上游 Makefile 的 all: 入口），这样 ——
+        #   * obj-m / susfs_guard_lkm-objs / ccflags-y 仍然生效（kbuild 会读 M= 下的 Makefile）
+        #   * srctree 被 kbuild 设好，上游的 -I$(srctree)/fs 才能解析到私有的 fs/mount.h
+        #   * 上游 all: 里的 srctree 缺失检查不会在解析期就 $(error) 退出
+        cd third_party/susfs4ksu-lkm/kernel
+
+        BUILD_LOG=$(mktemp)
+        set +e
+        make -C "$KDIR" M="$PWD" CC=clang modules >"$BUILD_LOG" 2>&1
+        BUILD_RC=$?
+        set -e
+        tail -n 20 "$BUILD_LOG"
+        if [ $BUILD_RC -ne 0 ]; then
+          MSG=$(tail -n 200 "$BUILD_LOG" | sed -e 's/%/%25/g' -e 's/\r//g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=${{ inputs.kmi }} susfs compiler output::$MSG"
+          exit $BUILD_RC
+        fi
+
+        test -f susfs_guard_lkm.ko || {
+          echo "::error title=${{ inputs.kmi }} susfs .ko missing::kbuild finished but susfs_guard_lkm.ko was not produced."
+          exit 1
+        }
+
+        # 断言这个 .ko 真的把我们依赖的层编进去了。out-of-tree 构建会静默丢掉
+        # 没列进 obj-m 的对象，绿构建不能证明模块完整（kernelsu.ko 那边有同款检查）。
+        NM=$(command -v llvm-nm || command -v nm)
+        SYMS=$($NM susfs_guard_lkm.ko | grep -E ' [Tt] (susfs_init|susfs_exit)$' || true)
+        echo "$SYMS"
+        if [ -z "$SYMS" ]; then
+          echo "::error title=${{ inputs.kmi }} susfs entrypoints missing::susfs_guard_lkm.ko has no susfs_init/susfs_exit; the module was not linked correctly."
+          exit 1
+        fi
+
+        # 5.10 上模块不能引用全局 __stack_chk_guard（ksud/我们的 loader 的 kallsyms
+        # 遍历解析不到它，加载会直接失败）。上游 Makefile 会按内核版本自动加
+        # -fno-stack-protector，这里断言它真的没被引用 —— 这是 5.10 设备能不能加载
+        # 的前提条件，必须失败在构建期而不是用户开机时。
+        UNDEF=$($NM -u susfs_guard_lkm.ko 2>/dev/null | grep -c '__stack_chk_guard' || true)
+        if [ "${UNDEF:-0}" -ne 0 ]; then
+          echo "::error title=${{ inputs.kmi }} stack guard referenced::susfs_guard_lkm.ko references __stack_chk_guard, which the loader cannot resolve on this kernel."
+          exit 1
+        fi
+
+        OUT_DIR=/github/workspace/out/aarch64
+        mkdir -p "$OUT_DIR"
+        OUTPUT_NAME="${{ inputs.kmi }}_susfs_guard_lkm.ko"
+        cp susfs_guard_lkm.ko "$OUT_DIR/$OUTPUT_NAME"
+
+        echo "Copied to: $OUT_DIR/$OUTPUT_NAME"
+        ls -la "$OUT_DIR/$OUTPUT_NAME"
+        echo "Size: $(du -h "$OUT_DIR/$OUTPUT_NAME" | cut -f1)"
+        llvm-strip -d "$OUT_DIR/$OUTPUT_NAME"
+        echo "Size after stripping: $(du -h "$OUT_DIR/$OUTPUT_NAME" | cut -f1)"
+        echo "NOTE: modinfo/vermagic 必须和 kernelsu.ko 同一份 KDIR，否则内核拒绝加载。"
+
+    - name: Upload susfs_guard_lkm.ko artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: aarch64-${{ inputs.kmi }}-susfs-lkm
+        path: /github/workspace/out/aarch64/${{ inputs.kmi }}_susfs_guard_lkm.ko
