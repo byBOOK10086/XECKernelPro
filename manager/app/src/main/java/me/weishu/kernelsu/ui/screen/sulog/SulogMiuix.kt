@@ -409,7 +409,8 @@ private fun SulogStatusSection(
                             text = stringResource(R.string.sulog_enable_action),
                             onClick = actions.onEnableSulog,
                             minHeight = 28.dp,
-                            cornerRadius = 50.dp,
+                            // MIUI 8 的按钮是方角（4dp），50dp 那种胶囊是上一版玻璃形态的遗留。
+                            cornerRadius = XcRadius.sm,
                             insideMargin = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
                             colors = ButtonDefaults.textButtonColors(
                                 // 这张告警卡的底已经是 dangerTint，按钮再用同色就糊成
