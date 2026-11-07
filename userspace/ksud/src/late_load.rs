@@ -187,6 +187,24 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
     Ok(())
 }
 
+/// 供开机路径（`init_event` 的 post-fs-data）调用。
+///
+/// late-load 只是"晚加载/jailbreak"那条路；绝大多数用户是刷了带 `kernelsu.ko` 的
+/// boot 镜像，开机时内核模块由 init 加载，ksud 跑的是 post-fs-data —— 那条路上
+/// 没人调 late-load，所以必须在 post-fs-data 里也接一次，否则 SUSFS 永远不会出现。
+///
+/// 已经加载过（`/proc/susfs_path` 存在）就直接返回，重复调用是安全的。
+pub fn load_susfs_lkm_for_current_kmi() {
+    if std::path::Path::new("/proc/susfs_path").exists() {
+        info!("SUSFS already present, skip the boot-path load");
+        return;
+    }
+    match crate::boot_patch::get_current_kmi() {
+        Ok(kmi) => load_susfs_lkm(&kmi),
+        Err(error) => warn!("cannot detect KMI for the SUSFS module: {error:#}"),
+    }
+}
+
 /// 加载 SUSFS 的可加载内核模块（若这一 KMI 带了那份载荷）。
 ///
 /// 它是 `third_party/susfs4ksu-lkm` 编出来的独立 .ko，由我们自己的内置装载器从
@@ -217,9 +235,33 @@ fn load_susfs_lkm(kmi: &str) {
     // expose_proc=1 才会建 /proc/susfs_* 控制节点，ksud 靠这些节点下发规则。
     // avc_su_ctx 必须是我们自己的域：默认值是别的变体，填错会让 avc 伪造
     // 直接 -EOPNOTSUPP（它要用 security_secctx_to_secid 解析这个串）。
-    let params = cstr!("expose_proc=1 avc_su_ctx=u:r:xecpro:s0");
-    match ksuinit::load_module(&data, params) {
-        Ok(()) => info!("{name} loaded successfully"),
+    let params = ["expose_proc=1".to_string(), "avc_su_ctx=u:r:xecpro:s0".to_string()];
+
+    // 主路径：落盘后走 ksud 自己的 insmod —— 它会用 KSU_IOCTL_LOOKUP_SYMBOLS
+    // （或 /proc/kallsyms 兜底）解析这个模块的未定义符号。susfs 引用了大量非导出
+    // 的内核符号，纯内存装载器不解析这些就会 `Unknown symbol`。
+    let path = std::path::Path::new(defs::BINARY_DIR).join(&name);
+    let written = (|| -> Result<()> {
+        std::fs::create_dir_all(defs::BINARY_DIR)?;
+        std::fs::write(&path, data.as_ref())?;
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+        Ok(())
+    })();
+
+    if let Err(error) = &written {
+        warn!("cannot stage {name} to {}: {error:#}", path.display());
+    }
+
+    if written.is_ok() && crate::debug::insmod(&path, &params).is_ok() {
+        info!("{name} loaded successfully (insmod)");
+        return;
+    }
+
+    // 兜底：内存装载。late-load 这条路上驱动刚起来、ksucalls 可能还没拿到 fd，
+    // 那时 insmod 会失败，但纯内存装载不需要驱动。
+    match ksuinit::load_module(&data, cstr!("expose_proc=1 avc_su_ctx=u:r:xecpro:s0")) {
+        Ok(()) => info!("{name} loaded successfully (in-memory)"),
         Err(error) => warn!("failed to load {name}: {error:#}"),
     }
 }

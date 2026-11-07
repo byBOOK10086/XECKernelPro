@@ -122,6 +122,14 @@ pub fn on_post_fs_data() -> Result<()> {
         }
     }
 
+    // SUSFS 的可加载内核模块。这条路径才是绝大多数设备走的那条：刷了带 kernelsu.ko
+    // 的 boot 镜像，模块由 init 加载，ksud 只跑 post-fs-data —— 没人在那里调
+    // late-load，所以 susfs .ko 必须在这里也接一次。它自己会先看 /proc/susfs_path，
+    // 已经装过就跳过；装不上只记日志，绝不影响 root。
+    if !mount_state {
+        crate::late_load::load_susfs_lkm_for_current_kmi();
+    }
+
     // Refresh /metadata/watchdog/ksu/{modules.rc,preinit/} so the next boot's kernel hook sees the
     // current module set. Acts as a safety net when state was changed outside
     // of ksud's normal mutation commands.
