@@ -1131,4 +1131,8 @@ XEC 项目组
     <string name="detect_item_weight">%1$d / %2$d 分</string>
     <string name="detect_tag_pass">通过</string>
     <string name="detect_tag_fail">未通过</string>
+
+    <!-- MIUI 8 控件与外观 -->
+    <string name="settings8_component_transparent">组件透明</string>
+    <string name="settings8_component_transparent_summary">把所有面板与行的底色设为全透明，只保留 1px 描边与文字</string>
 </resources>

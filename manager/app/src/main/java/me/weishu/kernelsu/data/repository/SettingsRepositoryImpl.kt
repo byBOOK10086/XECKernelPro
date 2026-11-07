@@ -105,6 +105,12 @@ class SettingsRepositoryImpl : SettingsRepository {
         get() = prefs.getBoolean("enable_floating_bottom_bar_blur", true)
         set(value) = prefs.edit { putBoolean("enable_floating_bottom_bar_blur", value) }
 
+    // 组件透明：默认关（不透明才是 MIUI 8 的默认观感）。开启后所有组件底色 alpha = 0，
+    // 只剩 1px 描边与文字，壁纸/平色底从面板之间透出来。
+    override var componentTransparent: Boolean
+        get() = prefs.getBoolean("component_transparent", false)
+        set(value) = prefs.edit { putBoolean("component_transparent", value) }
+
     override var enableNavigationBadge: Boolean
         get() = prefs.getBoolean("enable_navigation_badge", true)
         set(value) = prefs.edit { putBoolean("enable_navigation_badge", value) }

@@ -243,6 +243,10 @@ open class MainActivity : ComponentActivity() {
                     isDark = isInDarkTheme(),
                     isAmoled = appSettings.colorMode.isAmoled,
                     theme = uiState.theme,
+                    // 设置里的「组件透明」：0f = 全透明（只留 1px 描边与文字），
+                    // 1f = 不透明。它乘在主题 `XcGlass.surfaceAlpha` 上面，
+                    // 所以主题自带的不透明度不会被这个开关抹掉。
+                    componentAlpha = if (uiState.componentTransparent) 0f else 1f,
                 ) {
                     KernelSUTheme(appSettings = appSettings) {
                         // 对话框的玻璃要采"整个窗口"的图层，所以 backdrop 只能建在根层：

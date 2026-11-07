@@ -18,6 +18,9 @@ data class SettingsUiState(
     val enableFloatingBottomBar: Boolean = false,
     val enableFloatingBottomBarBlur: Boolean = false,
     val enableNavigationBadge: Boolean = true,
+
+    /** 组件透明：所有面板/行/按钮底色设为全透明，只留描边与文字。 */
+    val componentTransparent: Boolean = false,
     val pageScale: Float = 1.0f,
     val enableWebDebugging: Boolean = false,
 

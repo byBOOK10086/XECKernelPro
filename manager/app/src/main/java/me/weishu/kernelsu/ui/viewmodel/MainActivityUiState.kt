@@ -12,6 +12,8 @@ data class MainActivityUiState(
     val enableFloatingBottomBar: Boolean,
     val enableFloatingBottomBarBlur: Boolean,
     val enableNavigationBadge: Boolean,
+    /** 组件透明：交给 `XcTheme(componentAlpha = …)`，全透明时传 0f。 */
+    val componentTransparent: Boolean,
     /**
      * 自定义背景文件名（空串 = 内置随机池），按当前深浅档取其中之一。
      *

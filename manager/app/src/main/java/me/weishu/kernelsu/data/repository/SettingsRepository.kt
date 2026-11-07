@@ -13,6 +13,14 @@ interface SettingsRepository {
     var enableFloatingBottomBar: Boolean
     var enableFloatingBottomBarBlur: Boolean
     var enableNavigationBadge: Boolean
+
+    /**
+     * 组件透明：把所有面板/行/按钮的底色一起设成全透明（描边与文字保留）。
+     *
+     * 走 `XcGlass.surfaceAlpha`，与主题包里的值相乘，所以主题自带的不透明度仍然生效，
+     * 这里是用户侧的运行期开关。
+     */
+    var componentTransparent: Boolean
     var navigationRailExpanded: Boolean
     var pageScale: Float
 

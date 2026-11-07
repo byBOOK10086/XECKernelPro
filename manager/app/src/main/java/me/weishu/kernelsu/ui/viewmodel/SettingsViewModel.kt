@@ -58,6 +58,7 @@ class SettingsViewModel(
             val enableFloatingBottomBar = repo.enableFloatingBottomBar
             val enableFloatingBottomBarBlur = repo.enableFloatingBottomBarBlur
             val enableNavigationBadge = repo.enableNavigationBadge
+            val componentTransparent = repo.componentTransparent
             val pageScale = repo.pageScale
             val enableWebDebugging = repo.enableWebDebugging
             val wallpaperLight = repo.wallpaperLight
@@ -101,6 +102,7 @@ class SettingsViewModel(
                     enableFloatingBottomBar = enableFloatingBottomBar,
                     enableFloatingBottomBarBlur = enableFloatingBottomBarBlur,
                     enableNavigationBadge = enableNavigationBadge,
+                    componentTransparent = componentTransparent,
                     pageScale = pageScale,
                     enableWebDebugging = enableWebDebugging,
                     wallpaperLight = wallpaperLight,
@@ -206,6 +208,11 @@ class SettingsViewModel(
     fun setEnableNavigationBadge(enabled: Boolean) {
         repo.enableNavigationBadge = enabled
         _uiState.update { it.copy(enableNavigationBadge = enabled) }
+    }
+
+    fun setComponentTransparent(enabled: Boolean) {
+        repo.componentTransparent = enabled
+        _uiState.update { it.copy(componentTransparent = enabled) }
     }
 
     fun setPageScale(scale: Float) {

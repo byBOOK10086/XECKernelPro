@@ -1129,4 +1129,8 @@ See the log below for details.</string>
     <string name="detect_item_weight">%1$d of %2$d points</string>
     <string name="detect_tag_pass">Pass</string>
     <string name="detect_tag_fail">Fail</string>
+
+    <!-- MIUI 8 controls / appearance -->
+    <string name="settings8_component_transparent">Transparent components</string>
+    <string name="settings8_component_transparent_summary">Drop every panel and row background to fully transparent, keeping only the 1px outlines and text</string>
 </resources>
