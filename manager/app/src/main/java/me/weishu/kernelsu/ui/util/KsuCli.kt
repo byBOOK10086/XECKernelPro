@@ -47,9 +47,68 @@ data class FlashResult(val code: Int, val err: String, val showReboot: Boolean) 
     constructor(result: Shell.Result) : this(result, result.isSuccess)
 }
 
+private class RootShellSlot {
+    var shell: Shell? = null
+    var retryAtElapsedMs: Long = 0
+}
+
 object KsuCli {
-    val SHELL: Shell = createRootShell()
-    val GLOBAL_MNT_SHELL: Shell = createRootShell(true)
+    private const val NON_ROOT_RETRY_MS = 3_000L
+    private val shellLock = Any()
+    private val normalSlot = RootShellSlot()
+    private val globalMountSlot = RootShellSlot()
+
+    /**
+     * Lazily resolved so constructing this object never probes root before the
+     * app needs it - the manager can be started by a broadcast before the root
+     * provider is ready.
+     */
+    val SHELL: Shell
+        get() = getOrRetryShell(globalMnt = false)
+
+    val GLOBAL_MNT_SHELL: Shell
+        get() = getOrRetryShell(globalMnt = true)
+
+    /**
+     * libsu 6's builder checks `isRoot()` on the shell it just started: when `su`
+     * runs but has no root yet it discards that candidate and returns a plain
+     * `sh` instead of throwing. So a single early build can hand back a live
+     * non-root shell, and caching it forever means the manager keeps reporting
+     * "no root" even after the provider finishes loading.
+     *
+     * Reuse a live root shell; reuse a non-root one only until the cooldown
+     * expires, then probe again. A replacement is installed only once a root
+     * shell is actually obtained. Old shells are never closed here - an in-flight
+     * job may still be using one.
+     */
+    private fun getOrRetryShell(globalMnt: Boolean): Shell = synchronized(shellLock) {
+        val slot = if (globalMnt) globalMountSlot else normalSlot
+        val cached = slot.shell
+        val now = SystemClock.elapsedRealtime()
+
+        if (cached != null && cached.isAlive && cached.isRoot) return@synchronized cached
+        if (cached != null && cached.isAlive && now < slot.retryAtElapsedMs) {
+            return@synchronized cached
+        }
+
+        val candidate = createRootShell(globalMnt)
+        if (candidate.isAlive && candidate.isRoot) {
+            slot.shell = candidate
+            slot.retryAtElapsedMs = 0
+            candidate
+        } else {
+            slot.retryAtElapsedMs = now + NON_ROOT_RETRY_MS
+            if (cached == null || !cached.isAlive) {
+                slot.shell = candidate
+                candidate
+            } else {
+                // Keep the existing live fallback and drop only this unused probe,
+                // so retries do not accumulate `sh` processes.
+                runCatching { candidate.close() }
+                cached
+            }
+        }
+    }
 }
 
 /**

@@ -29,7 +29,8 @@ if 'commits' in GITHUB_EVENT:
             msg += ' [..]'
         if len(msg) > 100:
             msg = msg[:97] + '...'
-        msg += ' by ' + commit['author']['username']
+        author = commit.get('author') or {}
+        msg += ' by ' + (author.get('username') or author.get('name') or '?')
         if len(msg) + 1 + len(commit_message) > 600:
             commit_message = f'(other {i} commits)\n{commit_message}'
             break
@@ -38,7 +39,7 @@ if 'commits' in GITHUB_EVENT:
         i -= 1
     commit_message = f'```\n{commit_message.strip()}\n```'
 elif 'head_commit' in GITHUB_EVENT:
-    msg = GITHUB_EVENT["head_commt"]["msg"]
+    msg = (GITHUB_EVENT.get("head_commit") or {}).get("message") or ""
     if len(msg) > 256:
         msg = msg[:253] + '...'
     commit_message = f'```\n{msg.strip()}\n```\n'
@@ -73,7 +74,11 @@ def get_caption():
         run_url=RUN_URL,
     )
     if len(msg) > 1024:
-        msg = COMMIT_URL
+        # Telegram caps captions at 1024 characters. Keep the head of the message and
+        # append the compare line so the truncation still points at the change; the
+        # previous version assigned an undefined name here and raised after truncation.
+        keep = max(0, 1024 - len(commit_line) - 4)
+        msg = msg[:keep].rstrip() + '\n…\n' + commit_line
     if BRANCH == "dev":
         msg += "\n⚠️⚠️**DEV VERSION, PLEASE BACKUP BEFORE INSTALLATION**⚠️⚠️"
         msg += "\n⚠️⚠️**测试版，安装前请备份**⚠️⚠️"
@@ -141,4 +146,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except Exception as e:
-        print(f"[-] An error occurred: {e}")
+        # Printing and exiting 0 made a failed notification look like a successful
+        # step. Surface it on stderr and fail the step instead.
+        print(f"[-] An error occurred: {e}", file=sys.stderr)
+        raise SystemExit(1)

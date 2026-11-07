@@ -43,9 +43,23 @@ pub mod android {
         crate::root_mode::ensure_kernel_state("KernelSU 内核安装（内置 / LKM / 直接刷写）")
     }
 
+    /// 真实内核版本串。
+    ///
+    /// **不能只用 uname(2)**：SUSFS 的 `set-uname` 与 per-app UTS 伪装都会改写它，
+    /// 而 root 形态是内核的物理能力 —— 伪装成 6.1 不会让 4.19 长出 GKI 驱动。
+    /// 用 `/proc/sys/kernel/osrelease` 读真实 UTS；读不到才退回 uname，保持旧行为。
+    fn kernel_release_string() -> String {
+        if let Ok(text) = std::fs::read_to_string("/proc/sys/kernel/osrelease") {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+        rustix::system::uname().release().to_string_lossy().into_owned()
+    }
+
     pub fn get_kernel_version() -> Result<(i32, i32, i32)> {
-        let uname = rustix::system::uname();
-        let version = uname.release().to_string_lossy();
+        let version = kernel_release_string();
         let re = Regex::new(r"(\d+)\.(\d+)\.(\d+)")?;
         if let Some(captures) = re.captures(&version) {
             let major = captures
