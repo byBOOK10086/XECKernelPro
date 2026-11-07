@@ -19,6 +19,7 @@ import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 /**
  * 语义色告警卡。
@@ -37,7 +38,7 @@ fun WarningCard(
     backdrop: LayerBackdrop? = null,
     block: XcBlockBackground? = null,
 ) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         // 告警卡是全 App 复用最广的容器（首页 7 处、日志页 3 处）。
         // 卡底交给玻璃管线，但**语义色不能丢**：语义色改从 `tint` 走 —— 传同色相的
         // 低透明度版本，有模糊时是 13%~22% 的红/橙压在模糊画面上（是玻璃不是色块）；

@@ -16,9 +16,7 @@ import com.materialkolor.dynamiccolor.ColorSpec
 import com.materialkolor.rememberDynamicColorScheme
 import me.weishu.kernelsu.ui.design.liquid.XcIndication
 import me.weishu.kernelsu.ui.design.token.Xc
-import me.weishu.kernelsu.ui.design.token.XcRadius
 import me.weishu.kernelsu.ui.webui.MonetColorsProvider
-import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -267,9 +265,11 @@ fun MiuixKernelSUTheme(
                         )
                     }
                     // miuix 的 Card 自带 16dp 圆角，而我们自己的面板族是 4dp。
-                    // 这一行把全站 miuix 卡片（模块仓、设置、日志、应用配置…共八十余处
-                    // 调用点）一次性压到同一档半径，不必逐个改调用参数。
-                    CardDefaults.CornerRadius = XcRadius.md
+                    //
+                    // 这里**没法**像最初设想的那样一行压平全站：`CardDefaults.CornerRadius`
+                    // 是 `val`（0.9.3 实测，赋值得编译错 "'val' cannot be reassigned"），
+                    // 只能逐个调用点传 `cornerRadius = XcRadius.md`。八十多处调用点留给
+                    // 各页面的重排批次按需处理，全局默认值这条捷径不通。
                     CompositionLocalProvider(
                         LocalIndication provides indication,
                         LocalContentColor provides MiuixTheme.colorScheme.onBackground,

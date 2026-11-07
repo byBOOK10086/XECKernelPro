@@ -78,6 +78,7 @@ import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 /**
  * @author weishu
@@ -127,7 +128,7 @@ internal fun InstallScreenMiuix(
                 overscrollEffect = null,
             ) {
                 item {
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier.fillMaxWidth().xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
                         colors = CardDefaults.defaultColors(color = Color.Transparent),
                     ) {
@@ -162,7 +163,7 @@ internal fun InstallScreenMiuix(
                         } else {
                             uiState.partitionSelectionIndex
                         }
-                        Card(
+                        Card(cornerRadius = XcRadius.md, 
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(top = 12.dp)
@@ -194,7 +195,7 @@ internal fun InstallScreenMiuix(
                         enter = expandVertically(),
                         exit = shrinkVertically()
                     ) {
-                        Card(
+                        Card(cornerRadius = XcRadius.md, 
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(top = 12.dp)
@@ -209,7 +210,7 @@ internal fun InstallScreenMiuix(
                             )
                         }
                     }
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 12.dp)
@@ -257,7 +258,7 @@ internal fun InstallScreenMiuix(
                             }
                         )
                     }
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 12.dp)

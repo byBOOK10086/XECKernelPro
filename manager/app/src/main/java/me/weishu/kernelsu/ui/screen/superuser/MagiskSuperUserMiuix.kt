@@ -42,6 +42,7 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 /** 四个策略按钮的顺序：询问 / 允许 / 拒绝 / 受限（取值与 Magisk 的 SuPolicy 一致）。 */
 private val POLICY_CHOICES = listOf(
@@ -154,7 +155,7 @@ private fun SectionTitle(text: String) {
 
 @Composable
 private fun HintCard(text: String) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
@@ -175,7 +176,7 @@ private fun RouteCard(
     actions: MagiskSuperUserActions,
     onOpenMagisk: (() -> Unit)?,
 ) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
@@ -317,7 +318,7 @@ private fun PolicyCard(
     actions: MagiskSuperUserActions,
     enabled: Boolean,
 ) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)

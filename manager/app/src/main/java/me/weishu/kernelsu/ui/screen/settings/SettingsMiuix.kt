@@ -69,6 +69,7 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 /**
  * @author weishu
@@ -140,7 +141,7 @@ fun SettingPagerMiuix(
                 overscrollEffect = null,
             ) {
                 item {
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .padding(top = 12.dp)
                             .fillMaxWidth()
@@ -179,7 +180,7 @@ fun SettingPagerMiuix(
                         }
                     }
 
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .padding(top = 12.dp)
                             .fillMaxWidth()
@@ -243,7 +244,7 @@ fun SettingPagerMiuix(
                         )
                     }
 
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .padding(top = 12.dp)
                             .fillMaxWidth()
@@ -267,7 +268,7 @@ fun SettingPagerMiuix(
                     }
 
                     KsuIsValid {
-                        Card(
+                        Card(cornerRadius = XcRadius.md, 
                             modifier = Modifier
                                 .padding(top = 12.dp)
                                 .fillMaxWidth()
@@ -292,7 +293,7 @@ fun SettingPagerMiuix(
                     }
 
                     KsuIsValid {
-                        Card(
+                        Card(cornerRadius = XcRadius.md, 
                             modifier = Modifier
                                 .padding(top = 12.dp)
                                 .fillMaxWidth()
@@ -443,7 +444,7 @@ fun SettingPagerMiuix(
                             )
                         }
 
-                        Card(
+                        Card(cornerRadius = XcRadius.md, 
                             modifier = Modifier
                                 .padding(top = 12.dp)
                                 .fillMaxWidth()
@@ -498,7 +499,7 @@ fun SettingPagerMiuix(
                     }
 
                     if (uiState.isLkmMode) {
-                        Card(
+                        Card(cornerRadius = XcRadius.md, 
                             modifier = Modifier
                                 .padding(top = 12.dp)
                                 .fillMaxWidth()
@@ -526,7 +527,7 @@ fun SettingPagerMiuix(
                         }
                     }
 
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .padding(vertical = 12.dp)
                             .fillMaxWidth()

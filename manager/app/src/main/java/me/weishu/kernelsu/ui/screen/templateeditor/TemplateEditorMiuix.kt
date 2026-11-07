@@ -54,6 +54,7 @@ import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 /**
  * @author weishu
@@ -105,7 +106,7 @@ fun TemplateEditorScreenMiuix(
                 overscrollEffect = null
             ) {
                 item {
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(12.dp)

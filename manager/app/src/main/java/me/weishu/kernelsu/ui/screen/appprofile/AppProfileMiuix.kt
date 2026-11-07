@@ -91,6 +91,7 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 /**
  * @author weishu
@@ -215,7 +216,7 @@ private fun AppProfileInner(
     Column(
         modifier = modifier
     ) {
-        Card(
+        Card(cornerRadius = XcRadius.md, 
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp)
@@ -326,7 +327,7 @@ private fun AppProfileInner(
         }
 
         if (!isSpecialApp) {
-            Card(
+            Card(cornerRadius = XcRadius.md, 
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp)
@@ -432,7 +433,7 @@ private fun AppProfileInner(
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
-            Card(
+            Card(cornerRadius = XcRadius.md, 
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp)
@@ -471,7 +472,7 @@ private fun AppProfileInner(
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
-            Card(
+            Card(cornerRadius = XcRadius.md, 
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp)
@@ -499,7 +500,7 @@ private fun AppProfileInner(
                 text = stringResource(R.string.app_profile_affects_following_apps),
                 modifier = Modifier.padding(top = 4.dp)
             )
-            Card(
+            Card(cornerRadius = XcRadius.md, 
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp)
@@ -644,7 +645,7 @@ private fun ProfileBox(
         }
     }
     val selectedIndex = modesAndTitles.indexOfFirst { it.first == mode }
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
@@ -680,7 +681,7 @@ private fun UtsSpoofCard(
     version: String,
     onChange: (String, String) -> Unit,
 ) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
@@ -753,7 +754,7 @@ private fun ExecPolicyCard(
     paths: List<String>,
     onChange: (Boolean, List<String>) -> Unit,
 ) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp),

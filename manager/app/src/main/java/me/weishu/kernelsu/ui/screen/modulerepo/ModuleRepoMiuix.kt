@@ -139,6 +139,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 @SuppressLint("LocalContextGetResourceValueCall")
 @Composable
@@ -339,7 +340,7 @@ fun ModuleRepoScreenMiuix(
                         Spacer(Modifier.height(6.dp))
                     }
                     items(state.searchResults, key = { it.moduleId }, contentType = { "module" }) { module ->
-                        Card(
+                        Card(cornerRadius = XcRadius.md, 
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 12.dp)
@@ -537,7 +538,7 @@ fun ModuleRepoScreenMiuix(
                             items(items = state.modules, key = { it.moduleId }, contentType = { "module" }) { module ->
                                 val moduleAuthor = stringResource(id = R.string.module_author)
 
-                                Card(
+                                Card(cornerRadius = XcRadius.md, 
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(horizontal = 12.dp)
@@ -790,7 +791,7 @@ fun ReleasesPage(
                 }
                 items(items = detailReleases, key = { it.tagName }, contentType = { "release" }) { rel ->
                     val title = remember(rel.name, rel.tagName) { rel.name.ifBlank { rel.tagName } }
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp)
@@ -1092,7 +1093,7 @@ fun InfoPage(
                     SmallTitle(
                         text = stringResource(R.string.module_author), modifier = Modifier.padding(top = 6.dp)
                     )
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier.padding(horizontal = 12.dp).xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
                         colors = CardDefaults.defaultColors(color = Color.Transparent),
                         insideMargin = PaddingValues(16.dp)
@@ -1145,7 +1146,7 @@ fun InfoPage(
                     SmallTitle(
                         text = stringResource(R.string.module_repos_source_code), modifier = Modifier.padding(top = 6.dp)
                     )
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp)

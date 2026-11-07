@@ -71,6 +71,7 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 /*
  * 扩展模块：一份诚实的可选附件清单。
@@ -243,7 +244,7 @@ private fun InstallableModuleCard(
         colorScheme.onSurfaceVariantSummary
     }
 
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .fillMaxWidth()
             .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
@@ -300,7 +301,7 @@ private fun LinkOnlyModuleCard(
     val context = LocalContext.current
     var linkFailed by remember { mutableStateOf(false) }
 
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .fillMaxWidth()
             .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),

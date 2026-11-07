@@ -41,6 +41,7 @@ import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 /**
  * 「我的」页：下载管理 + 收藏 + 发布入口。
@@ -82,7 +83,7 @@ fun StoreLibraryPage(state: StoreState, actions: StoreActions) {
  */
 @Composable
 private fun SourceEntry(state: StoreState, onClick: () -> Unit) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp)
@@ -176,7 +177,7 @@ private fun SourceDialog(state: StoreState, actions: StoreActions) {
 /** 发布入口：入口必须长在商店里（用户原话是"根本没找到发布按钮"）。 */
 @Composable
 private fun PublishEntry(themeCount: Int, onClick: () -> Unit) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 6.dp)

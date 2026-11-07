@@ -71,6 +71,7 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 // --------------------------------------------------------------------------- 基础件
 
@@ -412,7 +413,7 @@ fun StoreThemeCard(
     modifier: Modifier = Modifier,
 ) {
     val running = downloadState as? StoreDownloadState.Running
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = modifier
             .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md)
             .clickable(onClick = onOpen),

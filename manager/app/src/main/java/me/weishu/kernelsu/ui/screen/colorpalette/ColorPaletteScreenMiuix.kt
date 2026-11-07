@@ -178,7 +178,7 @@ fun ColorPaletteScreenMiuix(
                         },
                     )
 
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .padding(top = 12.dp)
                             .fillMaxWidth()
@@ -286,7 +286,7 @@ fun ColorPaletteScreenMiuix(
                         }
                     }
 
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .padding(top = 12.dp)
                             .fillMaxWidth()
@@ -363,7 +363,7 @@ fun ColorPaletteScreenMiuix(
                         )
                     }
 
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .padding(top = 12.dp)
                             .fillMaxWidth()

@@ -54,6 +54,7 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.utils.overScrollVertical
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 /**
  * 「隐藏环境」列表：一键隐藏的总入口。每张卡片是一个可部署的环境，
@@ -128,7 +129,7 @@ fun HideEnvListScreen() {
             item { Spacer(Modifier.height(2.dp)) }
             items(count = ENVS.size) { i ->
                 val env = ENVS[i]
-                Card(
+                Card(cornerRadius = XcRadius.md, 
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { selected = env }

@@ -77,6 +77,7 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 @Composable
 fun ToolsScreen() {
@@ -159,7 +160,7 @@ private fun ToolCard(
     icon: @Composable () -> Unit,
     onClick: () -> Unit,
 ) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .fillMaxWidth()
             .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
@@ -176,7 +177,7 @@ private fun SuperkeyCard(backdrop: LayerBackdrop?) {
     if (showSuperkeyDialog.value) {
         SuperkeyDialog(onDismiss = { showSuperkeyDialog.value = false })
     }
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .fillMaxWidth()
             .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
@@ -228,7 +229,7 @@ private fun StealthCard(backdrop: LayerBackdrop?) {
         )
         showStealthConfirm.value = false
     }
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .fillMaxWidth()
             .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),

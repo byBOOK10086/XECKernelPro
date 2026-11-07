@@ -106,6 +106,7 @@ import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 @Composable
 fun SuperUserPagerMiuix(
@@ -517,7 +518,7 @@ private fun SimpleAppItem(
                 .clip(Xc.shapes.md)
                 .background(if (matched) colorScheme.primary else colorScheme.primaryContainer)
         )
-        Card(
+        Card(cornerRadius = XcRadius.md, 
             modifier = Modifier
                 .padding(start = 6.dp, end = 12.dp, bottom = 6.dp)
                 .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
@@ -565,7 +566,7 @@ private fun GroupItem(
             if (userId != 0) add(StatusMeta("USER $userId", bg, fg))
         }
     }
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .padding(horizontal = 12.dp)
             .padding(bottom = 12.dp)

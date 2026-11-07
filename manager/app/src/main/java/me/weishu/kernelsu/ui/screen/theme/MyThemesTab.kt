@@ -50,6 +50,7 @@ import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 /** 预览图的解码上限：卡片里只有几十 dp，没必要按原图解。 */
 private const val PREVIEW_MAX_EDGE = 256
@@ -114,7 +115,7 @@ private fun ActiveThemeCard(
     actions: ThemeActions,
     backdrop: LayerBackdrop?,
 ) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .fillMaxWidth()
             .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
@@ -210,7 +211,7 @@ private fun ThemeEntryCard(
     val spec = entry.spec
     var confirmDelete by remember { mutableStateOf(false) }
 
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .fillMaxWidth()
             .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),

@@ -57,6 +57,7 @@ import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import java.util.Locale
 import kotlin.math.roundToInt
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 // ------------------------------------------------------------------ 常量 / 纯函数
 
@@ -946,7 +947,7 @@ private fun SectionTitle(titleRes: Int, hintRes: Int? = null) {
 /** 玻璃卡片：本页所有分组的统一容器（内容自带 14dp 内边距）。 */
 @Composable
 private fun ThemeCard(backdrop: LayerBackdrop?, content: @Composable () -> Unit) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier.fillMaxWidth().xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
         colors = CardDefaults.defaultColors(color = Color.Transparent),
     ) {

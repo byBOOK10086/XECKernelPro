@@ -91,6 +91,7 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 /*
  * MT 管理器式可视化文件管理（替换原先只出名字的 ls -1Ap 列表）。
@@ -736,7 +737,7 @@ private fun FmDialogCard(onDismiss: () -> Unit, content: @Composable () -> Unit)
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Card(
+        Card(cornerRadius = XcRadius.md, 
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
@@ -1465,7 +1466,7 @@ internal fun FileManagerPanel(startDir: String, onOpenTerminal: (String) -> Unit
 
             Spacer(Modifier.height(8.dp))
 
-            Card(
+            Card(cornerRadius = XcRadius.md, 
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()

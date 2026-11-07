@@ -107,6 +107,7 @@ import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 @Composable
 fun SulogScreenMiuix(
@@ -324,7 +325,7 @@ fun SulogScreenMiuix(
                         }
 
                         item {
-                            Card(
+                            Card(cornerRadius = XcRadius.md, 
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 12.dp)
@@ -457,7 +458,7 @@ private fun SulogEntryCard(
     backdrop: LayerBackdrop? = null,
     onClick: () -> Unit,
 ) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)

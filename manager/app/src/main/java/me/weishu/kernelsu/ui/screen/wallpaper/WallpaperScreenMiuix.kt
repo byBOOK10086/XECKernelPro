@@ -75,6 +75,7 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 /**
  * 自定义背景页的界面层。
@@ -180,7 +181,7 @@ fun WallpaperScreenMiuix(
                         onChange = onBlurChange,
                     )
 
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .padding(top = 12.dp)
                             .fillMaxWidth()
@@ -204,7 +205,7 @@ fun WallpaperScreenMiuix(
                         }
                     }
 
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .padding(top = 12.dp)
                             .fillMaxWidth()
@@ -257,7 +258,7 @@ private fun WallpaperSlotCard(
     onClear: () -> Unit,
     backdrop: LayerBackdrop?,
 ) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .padding(top = 12.dp)
             .fillMaxWidth()
@@ -403,7 +404,7 @@ private fun WallpaperBlurCard(
 ) {
     var local by remember(percent) { mutableFloatStateOf(percent / 100f) }
 
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier
             .padding(top = 12.dp)
             .fillMaxWidth()

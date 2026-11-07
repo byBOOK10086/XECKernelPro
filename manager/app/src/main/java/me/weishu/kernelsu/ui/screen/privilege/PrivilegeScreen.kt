@@ -93,6 +93,7 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 /**
  * 提权控制台：GhostLock（CVE-2026-43499）一键提权 + 手动 profile 操作空间。
@@ -341,7 +342,7 @@ private fun DeviceCard(
     hasRoot: Boolean?,
 ) {
     val supported = snapshot?.supported == true
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier.fillMaxWidth().xGlassBody(backdrop = null, shape = Xc.shapes.md),
         colors = CardDefaults.defaultColors(color = Color.Transparent),
     ) {
@@ -410,7 +411,7 @@ private fun InfoRow(label: String, value: String) {
 
 @Composable
 private fun RiskCard() {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier.fillMaxWidth().xGlassBody(backdrop = null, shape = Xc.shapes.md),
         colors = CardDefaults.defaultColors(color = Color.Transparent),
     ) {
@@ -430,7 +431,7 @@ private fun CpuPairCard(
     selected: Int,
     onSelect: (Int) -> Unit,
 ) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier.fillMaxWidth().xGlassBody(backdrop = null, shape = Xc.shapes.md),
         colors = CardDefaults.defaultColors(color = Color.Transparent),
     ) {
@@ -485,7 +486,7 @@ private fun RunCard(
     failReason: String?,
     onRun: () -> Unit,
 ) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier.fillMaxWidth().xGlassBody(backdrop = null, shape = Xc.shapes.md),
         colors = CardDefaults.defaultColors(color = Color.Transparent),
     ) {
@@ -539,7 +540,7 @@ private fun LogCard(lines: List<String>) {
     LaunchedEffect(lines.size) {
         if (lines.isNotEmpty()) scrollState.animateScrollTo(scrollState.maxValue)
     }
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier.fillMaxWidth().xGlassBody(backdrop = null, shape = Xc.shapes.md),
         colors = CardDefaults.defaultColors(color = Color.Transparent),
     ) {
@@ -585,7 +586,7 @@ private fun ManualCard(
     val importedNames by produceState(initialValue = emptyList<String>(), key1 = importToken) {
         value = runner.importedProfileNames()
     }
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier.fillMaxWidth().xGlassBody(backdrop = null, shape = Xc.shapes.md),
         colors = CardDefaults.defaultColors(color = Color.Transparent),
     ) {
@@ -690,7 +691,7 @@ private fun ManualStep(index: Int, text: String) {
 private fun BootloaderCard(state: BootlockStatus.State) {
     val context = LocalContext.current
     val channel = remember { UnlockChannels.forDevice() }
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier.fillMaxWidth().xGlassBody(backdrop = null, shape = Xc.shapes.md),
         colors = CardDefaults.defaultColors(color = Color.Transparent),
     ) {
@@ -800,7 +801,7 @@ private fun PermanentCard(
 ) {
     if (hasRoot != true) return
     val confirm = rememberConfirmDialog(onConfirm = onRun)
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier.fillMaxWidth().xGlassBody(backdrop = null, shape = Xc.shapes.md),
         colors = CardDefaults.defaultColors(color = Color.Transparent),
     ) {

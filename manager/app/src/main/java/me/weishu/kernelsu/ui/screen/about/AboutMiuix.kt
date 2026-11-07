@@ -89,6 +89,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import androidx.compose.ui.graphics.BlendMode as ComposeBlendMode
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 @Composable
 fun AboutScreenMiuix(
@@ -413,7 +414,7 @@ private fun AboutContent(
                         .fillParentMaxHeight()
                         .padding(bottom = innerPadding.calculateBottomPadding() + 12.dp),
                 ) {
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .padding(horizontal = 12.dp)
                             .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),

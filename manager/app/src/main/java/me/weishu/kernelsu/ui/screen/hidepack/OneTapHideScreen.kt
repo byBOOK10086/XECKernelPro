@@ -71,6 +71,7 @@ import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import java.io.File
 import java.util.zip.ZipInputStream
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 private val MODULE_ZIPS = listOf("2.zip", "3.zip", "5.zip", "6.zip", "8.zip", "9.zip")
 private val APK_NAMES = (1..9).map { "$it.apk" }
@@ -297,7 +298,7 @@ fun OneTapHideScreen() {
             Spacer(Modifier.height(12.dp))
             // 日志卡自限高度：页面可滚动后 fillMaxSize 在无限高约束下失效，
             // 日志在这块固定视口里滚动。
-            Card(
+            Card(cornerRadius = XcRadius.md, 
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 180.dp, max = 320.dp)
@@ -347,7 +348,7 @@ private fun ResultCard(
     title: String,
     action: (@Composable () -> Unit)? = null,
 ) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier.xGlassBody(backdrop = null, shape = Xc.shapes.md),
         colors = CardDefaults.defaultColors(color = Color.Transparent),
     ) {

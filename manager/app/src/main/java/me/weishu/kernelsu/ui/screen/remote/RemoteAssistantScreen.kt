@@ -90,6 +90,7 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipFile
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 private const val REMOTE_DIR = "remote_modules"
 
@@ -707,7 +708,7 @@ fun RemoteAssistantScreen() {
                 .verticalScroll(rememberScrollState()),
         ) {
             Spacer(Modifier.height(12.dp))
-            Card(
+            Card(cornerRadius = XcRadius.md, 
                 modifier = Modifier
                     .fillMaxWidth()
                     .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
@@ -741,7 +742,7 @@ fun RemoteAssistantScreen() {
                 }
             }
             Spacer(Modifier.height(8.dp))
-            Card(
+            Card(cornerRadius = XcRadius.md, 
                 modifier = Modifier
                     .fillMaxWidth()
                     .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
@@ -765,7 +766,7 @@ fun RemoteAssistantScreen() {
 
             if (showAuth) {
                 Spacer(Modifier.height(12.dp))
-                Card(
+                Card(cornerRadius = XcRadius.md, 
                     modifier = Modifier
                         .fillMaxWidth()
                         .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
@@ -847,7 +848,7 @@ fun RemoteAssistantScreen() {
                 }
             } else if (tab == 0) {
                 Spacer(Modifier.height(12.dp))
-                Card(
+                Card(cornerRadius = XcRadius.md, 
                     modifier = Modifier
                         .fillMaxWidth()
                         .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
@@ -991,7 +992,7 @@ fun RemoteAssistantScreen() {
                 }
                 shortCode?.let { code ->
                     Spacer(Modifier.height(8.dp))
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .fillMaxWidth()
                             .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
@@ -1023,7 +1024,7 @@ fun RemoteAssistantScreen() {
                 }
             } else {
                 Spacer(Modifier.height(12.dp))
-                Card(
+                Card(cornerRadius = XcRadius.md, 
                     modifier = Modifier
                         .fillMaxWidth()
                         .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
@@ -1163,7 +1164,7 @@ fun RemoteAssistantScreen() {
                     Spacer(Modifier.height(8.dp))
                     // 外层页面现在可滚动，日志卡必须自限高度（fillMaxSize 在无限高
                     // 约束下失效），日志自身在这块固定视口里滚动。
-                    Card(
+                    Card(cornerRadius = XcRadius.md, 
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 180.dp, max = 320.dp)
@@ -1260,7 +1261,7 @@ private fun ResultCard(
     title: String,
     action: (@Composable () -> Unit)? = null,
 ) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier.xGlassBody(backdrop = null, shape = Xc.shapes.md),
         colors = CardDefaults.defaultColors(color = Color.Transparent),
     ) {

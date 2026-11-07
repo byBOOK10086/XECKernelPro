@@ -94,6 +94,7 @@ import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 /* -------------------------------------------------------------------------
  * MT 管理器式原生终端。
@@ -455,7 +456,7 @@ fun TerminalScreen() {
 
             if (activeTab == TerminalTab.CONSOLE) {
             // 输出台
-            Card(
+            Card(cornerRadius = XcRadius.md, 
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -727,7 +728,7 @@ private fun FileActionSheet(
                 onLongClick = {},
             ),
     ) {
-        Card(
+        Card(cornerRadius = XcRadius.md, 
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
@@ -934,7 +935,7 @@ private fun OverlayDialogScaffold(onDismiss: () -> Unit, content: @Composable ()
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Card(
+        Card(cornerRadius = XcRadius.md, 
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(24.dp)

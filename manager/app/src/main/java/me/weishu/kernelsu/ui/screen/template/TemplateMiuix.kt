@@ -99,6 +99,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import me.weishu.kernelsu.ui.design.token.XcRadius
 
 /**
  * @author weishu
@@ -283,7 +284,7 @@ private fun TemplateItem(
     onClick: () -> Unit,
     backdrop: LayerBackdrop? = null,
 ) {
-    Card(
+    Card(cornerRadius = XcRadius.md, 
         modifier = Modifier.padding(bottom = 12.dp).xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
         colors = CardDefaults.defaultColors(color = Color.Transparent),
         onClick = onClick,
