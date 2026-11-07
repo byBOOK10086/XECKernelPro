@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckCircleOutline
 import androidx.compose.material.icons.rounded.Cottage
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Security
@@ -136,9 +137,11 @@ fun BottomBarMiuix(
 }
 
 /**
- * 底栏目的地。2026-10-06 收敛为 5 页、2026-10-26 检测页下线后为 4 页：
- * 终端并入设置页入口卡（[me.weishu.kernelsu.ui.navigation3.Route.Terminal]）——
- * 底栏只留高频页，低频工具页一律走各自归属页的入口卡。
+ * 底栏目的地。2026-10-06 收敛为 5 页、2026-10-26 检测页下线后为 4 页，
+ * 2026-11-08 按 MIUI 8 原型把检测页重新立起来，回到 5 页：
+ * Home / SuperUser / Module / Detect / Setting。
+ *
+ * 终端仍然不在底栏（它属于低频工具页，走设置页入口卡）。
  */
 enum class BottomBarDestination(
     @get:StringRes val label: Int,
@@ -147,6 +150,7 @@ enum class BottomBarDestination(
     Home(R.string.home, Icons.Rounded.Cottage),
     SuperUser(R.string.superuser, Icons.Rounded.Security),
     Module(R.string.module, Icons.Rounded.Extension),
+    Detect(R.string.home8_detect, Icons.Rounded.CheckCircleOutline),
     Setting(R.string.settings, Icons.Rounded.Settings),
 }
 

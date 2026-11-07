@@ -1116,4 +1116,17 @@ See the log below for details.</string>
     <string name="home8_manage_root_sub">Grant root to apps by hand</string>
     <string name="home8_refresh">Refresh kernel state</string>
     <string name="home8_refresh_sub">Re-read the current mode and interface</string>
+
+    <!-- Detect page -->
+    <string name="home8_detect">Detect</string>
+    <string name="detect_kicker">Integrity and compatibility</string>
+    <string name="detect_desc">Local checks of the root environment, kernel capabilities and manager compatibility. Nothing leaves the device.</string>
+    <string name="detect_run">Re-run</string>
+    <string name="detect_checks">Checks</string>
+    <string name="detect_all_ok">All checks passed</string>
+    <string name="detect_some_failed">Some checks did not pass</string>
+    <string name="detect_detail">%1$d of %2$d passed · rank %3$s</string>
+    <string name="detect_item_weight">%1$d of %2$d points</string>
+    <string name="detect_tag_pass">Pass</string>
+    <string name="detect_tag_fail">Fail</string>
 </resources>

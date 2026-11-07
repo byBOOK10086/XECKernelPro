@@ -96,11 +96,15 @@ private class MainPageState(
 
 object MainPagerConfig {
     /**
-     * 7 → 5（2026-10-06）：底栏收敛——终端并入设置页入口卡，
-     * 现为 Home / SuperUser / Module / Detect / Setting 五页。
-     * 旧版本存过的 selected_main_page=5/6 由 [coercePage] 在读取侧夹回范围。
+     * 7 → 5（2026-10-06）：底栏收敛——终端并入设置页入口卡。
+     * 4 → 5（2026-11-08）：检测页按 MIUI 8 原型重新立起来，顺序为
+     * Home / SuperUser / Module / Detect / Setting。
+     *
+     * 旧版本存过的 selected_main_page 会被 [coercePage] 夹回范围；另外索引 3
+     * 从"设置"变成了"检测"，装了旧版且停在设置页的用户，升级后第一次打开会落到
+     * 检测页。这是可接受的：页码是纯 UI 偏好，没有数据副作用。
      */
-    const val PAGE_COUNT = 4
+    const val PAGE_COUNT = 5
     const val LAST_PAGE_INDEX = PAGE_COUNT - 1
 
     fun coercePage(page: Int): Int = page.coerceIn(0, LAST_PAGE_INDEX)

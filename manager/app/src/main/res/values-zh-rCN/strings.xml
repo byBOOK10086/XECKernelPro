@@ -1118,4 +1118,17 @@ XEC 项目组
     <string name="home8_manage_root_sub">手动为应用开启 Root 访问</string>
     <string name="home8_refresh">刷新内核状态</string>
     <string name="home8_refresh_sub">重新读取当前模式与接口信息</string>
+
+    <!-- 检测页 -->
+    <string name="home8_detect">检测</string>
+    <string name="detect_kicker">完整性与兼容性</string>
+    <string name="detect_desc">在本机检查当前 Root 环境、内核能力与管理器兼容性，全程不联网。</string>
+    <string name="detect_run">重新检测</string>
+    <string name="detect_checks">检查项</string>
+    <string name="detect_all_ok">全部检查通过</string>
+    <string name="detect_some_failed">有检查项未通过</string>
+    <string name="detect_detail">%1$d/%2$d 项通过 · 评级 %3$s</string>
+    <string name="detect_item_weight">%1$d / %2$d 分</string>
+    <string name="detect_tag_pass">通过</string>
+    <string name="detect_tag_fail">未通过</string>
 </resources>

@@ -3,6 +3,7 @@ package me.weishu.kernelsu.ui.design.panel
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -299,6 +300,118 @@ fun Xc8KeyValueCell(label: String, value: String, modifier: Modifier = Modifier)
             color = Xc.colors.text,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * MIUI 8 的方角按钮：32dp 高、4dp 圆角、13sp。
+ *
+ * 按下态按原型处理：主按钮从强调橙压暗一档（`--accent-strong`），
+ * 次按钮（描边款）底色转淡橙、文字与描边转橙。过渡 120ms，不缩放。
+ */
+@Composable
+fun Xc8Button(
+    text: String,
+    modifier: Modifier = Modifier,
+    primary: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val shape = Xc.shapes.sm
+    val base = if (primary) Xc.colors.accent else Xc.colors.surface
+    val pressedBackground = when {
+        primary -> xc8PressedColor(Xc.colors.accent)
+        else -> Xc.colors.accentSoft
+    }
+    val background by animateColorAsState(
+        targetValue = when {
+            !enabled -> base.copy(alpha = 0.45f)
+            pressed -> pressedBackground
+            else -> base
+        },
+        animationSpec = tween(Xc8Motion.press),
+        label = "xc8ButtonBg",
+    )
+    val contentColor = when {
+        !enabled -> Xc.colors.textMuted
+        primary -> Color.White
+        pressed -> Xc.colors.accent
+        else -> Xc.colors.text
+    }
+    val borderColor = when {
+        primary -> Color.Transparent
+        pressed -> Xc.colors.accent
+        else -> Xc.colors.glassRim
+    }
+    Box(
+        modifier = modifier
+            .height(32.dp)
+            .clip(shape)
+            .background(background)
+            .border(1.dp, borderColor, shape)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+            )
+            .padding(horizontal = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = text, fontSize = 13.sp, color = contentColor, maxLines = 1)
+    }
+}
+
+/**
+ * 页头：小字提示（kicker）+ 大标题 + 一句说明 + 右侧操作区。
+ *
+ * 原型里它是"这一页在讲什么"的唯一说明位，所以三段都在面板**之外**：
+ * 塞进面板会让第一块面板看起来像页头的一部分。
+ */
+@Composable
+fun Xc8PageHeading(
+    title: String,
+    modifier: Modifier = Modifier,
+    kicker: String? = null,
+    subtitle: String? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(start = 3.dp, end = 3.dp, top = 6.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            if (kicker != null) {
+                Text(text = kicker, fontSize = 11.sp, color = Xc.colors.textMuted, maxLines = 1)
+                Spacer(Modifier.height(2.dp))
+            }
+            Text(
+                text = title,
+                fontSize = 21.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Xc.colors.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (subtitle != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    color = Xc.colors.textSecondary,
+                )
+            }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            content = actions,
         )
     }
 }
