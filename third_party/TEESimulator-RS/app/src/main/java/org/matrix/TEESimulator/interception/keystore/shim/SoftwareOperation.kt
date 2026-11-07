@@ -23,6 +23,19 @@ import org.matrix.TEESimulator.logging.KeyMintParameterLogger
 import org.matrix.TEESimulator.logging.SystemLogger
 
 /**
+ * AES-GCM 的形态约束（KeyMint 规范）：
+ * - nonce 必须是 12 字节（96 bit）；
+ * - tag 长度以 bit 计，合法区间 96..128，缺省 128。
+ *
+ * 这两条以前都没校验：任意长度 nonce 直接塞给 JCA，JCA 会接受，于是我们"能做真机做不到
+ * 的事"。真实 TEE 在这里会返回 INVALID_NONCE / INVALID_MAC_LENGTH，我们必须一致。
+ */
+private const val AES_GCM_NONCE_LENGTH = 12
+private const val AES_GCM_DEFAULT_TAG_BITS = 128
+private const val AES_GCM_MIN_TAG_BITS = 96
+private const val AES_GCM_MAX_TAG_BITS = 128
+
+/**
  * Mirrors the per-vendor TEE quirk that Duck Detector's OperationErrorPathProbe checks: real
  * Samsung and Xiaomi-MTK TrustZone return success for updateAad on a non-AEAD operation, while
  * every other vendor rejects it with a service-specific INVALID_TAG. The module reads the same
@@ -200,7 +213,19 @@ private class CipherPrimitive(
         Cipher.getInstance(JcaAlgorithmMapper.mapCipherAlgorithm(params)).apply {
             val nonce = params.nonce
             if (nonce != null && isAead) {
-                init(opMode, cryptoKey, javax.crypto.spec.GCMParameterSpec(128, nonce))
+                // 真实 KeyMint 的 AES-GCM 只接受 12 字节（96 bit）nonce。长度不对必须报
+                // INVALID_NONCE —— 把任意长度塞给 JCA 它会静默接受，于是"我们能做到真机
+                // 做不到的事"，这本身就是一条指纹。
+                if (nonce.size != AES_GCM_NONCE_LENGTH) {
+                    throw ServiceSpecificException(KeystoreErrorCodes.invalidNonce)
+                }
+                // GCM 的 tag 长度由 MAC_LENGTH 决定，合法区间 96..128 bit，缺省 128。
+                // 写死 128 会让请求 96 bit tag 的调用方拿到错误长度的 tag。
+                val tagBits = params.macLength ?: AES_GCM_DEFAULT_TAG_BITS
+                if (tagBits !in AES_GCM_MIN_TAG_BITS..AES_GCM_MAX_TAG_BITS) {
+                    throw ServiceSpecificException(KeystoreErrorCodes.invalidMacLength)
+                }
+                init(opMode, cryptoKey, javax.crypto.spec.GCMParameterSpec(tagBits, nonce))
             } else if (nonce != null) {
                 init(opMode, cryptoKey, javax.crypto.spec.IvParameterSpec(nonce))
             } else if (params.padding.firstOrNull() == PaddingMode.RSA_OAEP) {
@@ -617,6 +642,11 @@ internal object KeystoreErrorCodes {
 
     val invalidMacLength: Int by lazy {
         resolveField("android.hardware.security.keymint.ErrorCode", "INVALID_MAC_LENGTH", -57)
+    }
+
+    /** KeyMint 3 才加的码；旧枚举没有就回退到规范里的 -52。 */
+    val invalidNonce: Int by lazy {
+        resolveField("android.hardware.security.keymint.ErrorCode", "INVALID_NONCE", -52)
     }
 
     fun resolveField(className: String, fieldName: String, fallback: Int): Int =

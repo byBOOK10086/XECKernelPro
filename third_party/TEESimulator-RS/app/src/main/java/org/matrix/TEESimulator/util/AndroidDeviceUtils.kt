@@ -75,6 +75,29 @@ object AndroidDeviceUtils {
     @Volatile private var bootHashSource: String = "uninitialized"
 
     /**
+     * 只有 `system-prop` 和 `tee-attestation` 这两级是真的。
+     *
+     * `persistent-file` 同样是假的：随机兜底那一档也会 `persistToFile()`，所以从文件里读回来
+     * 的只是当年编出来的随机值。把这种值当成真实 vbmeta 摘要写进证明链，检测方拿它跟
+     * `ro.boot.vbmeta.digest` 一比就是自证造假——所以上面拿它当"可信"是错的。
+     */
+    private val trustworthyBootSources = setOf("system-prop", "tee-attestation")
+
+    /** [bootKey] 是否来自真实来源；随机兜底/旧随机文件都算不可信。 */
+    val bootKeyIsTrustworthy: Boolean
+        get() {
+            bootKey // 触发 lazy 初始化，它才会把 bootKeySource 填上
+            return bootKeySource in trustworthyBootSources
+        }
+
+    /** [bootHash] 是否来自真实来源；随机兜底/旧随机文件都算不可信。 */
+    val bootHashIsTrustworthy: Boolean
+        get() {
+            bootHash
+            return bootHashSource in trustworthyBootSources
+        }
+
+    /**
      * Public function to explicitly trigger the initialization of the boot key and hash. Accessing
      * these properties here ensures they are set up before they might be needed elsewhere.
      */

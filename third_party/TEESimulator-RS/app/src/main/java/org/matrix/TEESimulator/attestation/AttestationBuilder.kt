@@ -11,6 +11,7 @@ import org.bouncycastle.asn1.ASN1Boolean
 import org.bouncycastle.asn1.ASN1Encodable
 import org.bouncycastle.asn1.ASN1Enumerated
 import org.bouncycastle.asn1.ASN1Integer
+import org.bouncycastle.asn1.ASN1OctetString
 import org.bouncycastle.asn1.ASN1Sequence
 import org.bouncycastle.asn1.DERNull
 import org.bouncycastle.asn1.DEROctetString
@@ -67,10 +68,55 @@ object AttestationBuilder {
             ASN1Boolean.TRUE // deviceLocked: true, for security
         rootOfTrustElements[AttestationConstants.ROOT_OF_TRUST_VERIFIED_BOOT_STATE_INDEX] =
             ASN1Enumerated(0) // verifiedBootState: Verified
-        rootOfTrustElements[AttestationConstants.ROOT_OF_TRUST_VERIFIED_BOOT_HASH_INDEX] =
-            DEROctetString(AndroidDeviceUtils.bootHash)
 
-        return DERSequence(rootOfTrustElements)
+        // verifiedBootHash 是 RoT 的最后一个**可选**元素（RFC 里的 [3]）。只有能和真实
+        // vbmeta 摘要对上的值才能写进去：随机兜底值、以及从"上次自己编出来又存下来的
+        // 文件"读回的值，写进证书链就是自证造假——检测方拿它跟 ro.boot.vbmeta.digest
+        // 一比就露。拿不到就整个元素省略，3 元素 RoT 是合法形态。
+        val verifiedBootHash = resolveVerifiedBootHash(originalRootOfTrust)
+        if (verifiedBootHash != null) {
+            rootOfTrustElements[AttestationConstants.ROOT_OF_TRUST_VERIFIED_BOOT_HASH_INDEX] =
+                DEROctetString(verifiedBootHash)
+        }
+
+        return DERSequence(rootOfTrustElements.filterNotNull().toTypedArray())
+    }
+
+    /**
+     * RoT 里 `verifiedBootHash` 的取值优先级：
+     * 1. 上游证明链里本来就带了真值 → 原样保留（最可信，绝不能覆盖成我们自己的值）；
+     * 2. 我们自己从 `ro.boot.vbmeta.digest` 或真 TEE 证明里拿到的 → 用；
+     * 3. 都拿不到 → 返回 null，调用方省略该元素。
+     */
+    private fun resolveVerifiedBootHash(originalRootOfTrust: ASN1Encodable?): ByteArray? {
+        extractVerifiedBootHash(originalRootOfTrust)?.takeIf { it.isNotEmpty() }?.let {
+            return it
+        }
+        return if (AndroidDeviceUtils.bootHashIsTrustworthy) {
+            AndroidDeviceUtils.bootHash
+        } else {
+            null
+        }
+    }
+
+    private fun extractVerifiedBootHash(originalRootOfTrust: ASN1Encodable?): ByteArray? {
+        if (originalRootOfTrust == null) return null
+        return try {
+            val sequence = ASN1Sequence.getInstance(originalRootOfTrust)
+            if (sequence.size() <= AttestationConstants.ROOT_OF_TRUST_VERIFIED_BOOT_HASH_INDEX) {
+                null
+            } else {
+                ASN1OctetString.getInstance(
+                        sequence.getObjectAt(
+                            AttestationConstants.ROOT_OF_TRUST_VERIFIED_BOOT_HASH_INDEX
+                        )
+                    )
+                    .octets
+            }
+        } catch (e: Exception) {
+            SystemLogger.debug { "Cannot read verifiedBootHash from the original RootOfTrust: $e" }
+            null
+        }
     }
 
     /**
