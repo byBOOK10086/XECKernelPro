@@ -1,9 +1,8 @@
 package me.weishu.kernelsu.ui.util
 
-import android.system.Os
 import me.weishu.kernelsu.Natives
+import me.weishu.kernelsu.kernelRelease
 import me.weishu.kernelsu.parseKernelVersion
-import java.io.File
 
 /**
  * 设备当前走的是哪条 root 路线。
@@ -19,7 +18,7 @@ import java.io.File
  * 内核态设备显示成 Magisk 那一套。
  *
  * 等价写法（全管理器唯一口径，安装页 / 模块页 / 首页都从这里取）：
- * `mountState = Natives.version <= 0 && !routingKernelRelease().isGKI()`。
+ * `mountState = Natives.version <= 0 && !parseKernelVersion(kernelRelease()).isGKI()`。
  * <5.10 但**有** KSU 驱动（KPatch 注入）属于内核态，不是挂载态。
  */
 enum class RootRoute {
@@ -28,24 +27,13 @@ enum class RootRoute {
 }
 
 /**
- * 路由用的内核版本串。
- *
- * `Os.uname()` 走 uname(2)，而我们的 per-app UTS 伪装改的正是这个 syscall 的用户缓冲：
- * 只要有人给本应用配了假内核串，路由判据就会跟着变 —— 5.10+ 设备被推去 Magisk 分支
- * （或反过来），重启后"突然换了 root 形态"就是这么来的。
- *
- * `/proc/sys/kernel/osrelease` 读的是真实 UTS 命名空间，不受按 uid 的改写影响；读不到
- * 再退回 uname，宁可保持旧行为，也不凭猜测选一条路线。
+ * 路由判据用的内核版本，和 [me.weishu.kernelsu.getKernelVersion] 同一个真源
+ * （`kernelRelease()`：先读 `/proc/sys/kernel/osrelease`，读不到才退回 uname）。
+ * 判据本身不再各自实现一份，避免首页/安装页/路由三套口径。
  */
-private fun routingKernelRelease(): String =
-    runCatching { File("/proc/sys/kernel/osrelease").readText().trim() }
-        .getOrNull()
-        ?.takeIf { it.isNotEmpty() }
-        ?: Os.uname().release
-
 fun currentRootRoute(): RootRoute {
     if (Natives.version > 0) return RootRoute.Kernel
-    return if (parseKernelVersion(routingKernelRelease()).isGKI()) {
+    return if (parseKernelVersion(kernelRelease()).isGKI()) {
         RootRoute.Kernel
     } else {
         RootRoute.Mount

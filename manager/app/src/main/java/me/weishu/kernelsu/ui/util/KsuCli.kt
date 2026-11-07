@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.Cursor
 import android.net.Uri
 import android.os.Environment
+import android.os.Looper
 import android.os.Parcelable
 import android.os.SystemClock
 import android.provider.OpenableColumns
@@ -50,6 +51,10 @@ data class FlashResult(val code: Int, val err: String, val showReboot: Boolean) 
 private class RootShellSlot {
     var shell: Shell? = null
     var retryAtElapsedMs: Long = 0
+
+    /** 一次只允许一个后台补探，避免主线程每次访问都点一把线程。 */
+    @Volatile
+    var refreshScheduled: Boolean = false
 }
 
 object KsuCli {
@@ -80,14 +85,24 @@ object KsuCli {
      * expires, then probe again. A replacement is installed only once a root
      * shell is actually obtained. Old shells are never closed here - an in-flight
      * job may still be using one.
+     *
+     * The probe itself is slow (libsu retries `su`, and a stuck provider can push
+     * a shell build into the tens of seconds), and callers include Compose
+     * composition and the home screen's root probe. So a *retry* never runs on the
+     * main thread: hand back the live fallback and let a worker thread probe.
      */
     private fun getOrRetryShell(globalMnt: Boolean): Shell = synchronized(shellLock) {
         val slot = if (globalMnt) globalMountSlot else normalSlot
         val cached = slot.shell
-        val now = SystemClock.elapsedRealtime()
 
         if (cached != null && cached.isAlive && cached.isRoot) return@synchronized cached
-        if (cached != null && cached.isAlive && now < slot.retryAtElapsedMs) {
+
+        val cooling = cached != null && cached.isAlive &&
+            SystemClock.elapsedRealtime() < slot.retryAtElapsedMs
+        if (cooling) return@synchronized cached
+
+        if (cached != null && cached.isAlive && onMainThread()) {
+            scheduleRefresh(slot, globalMnt)
             return@synchronized cached
         }
 
@@ -97,7 +112,9 @@ object KsuCli {
             slot.retryAtElapsedMs = 0
             candidate
         } else {
-            slot.retryAtElapsedMs = now + NON_ROOT_RETRY_MS
+            // Cooldown starts when the probe *ends*: a probe that itself takes
+            // seconds must not eat the whole window before the first retry.
+            slot.retryAtElapsedMs = SystemClock.elapsedRealtime() + NON_ROOT_RETRY_MS
             if (cached == null || !cached.isAlive) {
                 slot.shell = candidate
                 candidate
@@ -108,6 +125,23 @@ object KsuCli {
                 cached
             }
         }
+    }
+
+    private fun onMainThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
+
+    /** Caller holds [shellLock]. */
+    private fun scheduleRefresh(slot: RootShellSlot, globalMnt: Boolean) {
+        if (slot.refreshScheduled) return
+        slot.refreshScheduled = true
+        Thread({
+            try {
+                getOrRetryShell(globalMnt)
+            } catch (_: Throwable) {
+                // A failed probe must not kill the process; the cooldown retries.
+            } finally {
+                slot.refreshScheduled = false
+            }
+        }, "xecpro-root-shell-probe").apply { isDaemon = true }.start()
     }
 }
 
@@ -431,7 +465,7 @@ fun runModuleAction(
     }
 
     val result = withNewRootShell(true) {
-        newJob().add("${getKsuDaemonPath()} module action $moduleId")
+        newJob().add("${getKsuDaemonPath()} module action ${shQuote(moduleId)}")
             .to(stdoutCallback, stderrCallback).exec()
     }
 
@@ -805,7 +839,7 @@ fun isSepolicyValid(rules: String?): Boolean {
     }
     val shell = getRootShell()
     val result =
-        shell.newJob().add("${getKsuDaemonPath()} sepolicy check '$rules'").to(ArrayList(), null)
+        shell.newJob().add("${getKsuDaemonPath()} sepolicy check ${shQuote(rules)}").to(ArrayList(), null)
             .exec()
     return result.isSuccess
 }
@@ -813,15 +847,25 @@ fun isSepolicyValid(rules: String?): Boolean {
 fun getSepolicy(pkg: String): String {
     val shell = getRootShell()
     val result =
-        shell.newJob().add("${getKsuDaemonPath()} profile get-sepolicy $pkg").to(ArrayList(), null)
+        shell.newJob().add("${getKsuDaemonPath()} profile get-sepolicy ${shQuote(pkg)}").to(ArrayList(), null)
             .exec()
     Log.i(TAG, "code: ${result.code}, out: ${result.out}, err: ${result.err}")
     return result.out.joinToString("\n")
 }
 
+/**
+ * POSIX 单引号转义：整段包进 `'...'`，内部的 `'` 变成 `'\''`。
+ *
+ * 这些命令是**以 root 执行**的字符串拼接，而模板 id、sepolicy 规则、包名都来自
+ * 用户可编辑的数据。之前它们直接插进单引号里（甚至不包引号），一个 `'` 就能提前
+ * 结束参数、把后面的内容当成新的 root 命令执行。
+ */
+fun shQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+
 fun setSepolicy(pkg: String, rules: String): Boolean {
     val shell = getRootShell()
-    val result = shell.newJob().add("${getKsuDaemonPath()} profile set-sepolicy $pkg '$rules'")
+    val result = shell.newJob()
+        .add("${getKsuDaemonPath()} profile set-sepolicy ${shQuote(pkg)} ${shQuote(rules)}")
         .to(ArrayList(), null).exec()
     Log.i(TAG, "set sepolicy result: ${result.code}")
     return result.isSuccess
@@ -835,28 +879,27 @@ fun listAppProfileTemplates(): List<String> {
 
 fun getAppProfileTemplate(id: String): String {
     val shell = getRootShell()
-    return shell.newJob().add("${getKsuDaemonPath()} profile get-template '${id}'")
+    return shell.newJob().add("${getKsuDaemonPath()} profile get-template ${shQuote(id)}")
         .to(ArrayList(), null).exec().out.joinToString("\n")
 }
 
 fun setAppProfileTemplate(id: String, template: String): Boolean {
     val shell = getRootShell()
-    val escapedTemplate = template.replace("'", "'\\''")
-    val cmd = """${getKsuDaemonPath()} profile set-template "$id" '$escapedTemplate'"""
+    val cmd = "${getKsuDaemonPath()} profile set-template ${shQuote(id)} ${shQuote(template)}"
     return shell.newJob().add(cmd)
         .to(ArrayList(), null).exec().isSuccess
 }
 
 fun deleteAppProfileTemplate(id: String): Boolean {
     val shell = getRootShell()
-    return shell.newJob().add("${getKsuDaemonPath()} profile delete-template '${id}'")
+    return shell.newJob().add("${getKsuDaemonPath()} profile delete-template ${shQuote(id)}")
         .to(ArrayList(), null).exec().isSuccess
 }
 
 fun forceStopApp(packageName: String, userId: Int? = null) {
     val shell = getRootShell()
     val userArg = userId?.let { " --user $it" } ?: ""
-    val result = shell.newJob().add("am force-stop$userArg $packageName").exec()
+    val result = shell.newJob().add("am force-stop$userArg ${shQuote(packageName)}").exec()
     Log.i(TAG, "force stop $packageName result: $result")
 }
 
@@ -865,7 +908,7 @@ fun launchApp(packageName: String, userId: Int? = null) {
     val userArg = userId?.let { " --user $it" } ?: ""
     val result =
         shell.newJob()
-            .add("cmd package resolve-activity --brief$userArg $packageName | tail -n 1 | xargs cmd activity start-activity$userArg -n")
+            .add("cmd package resolve-activity --brief$userArg ${shQuote(packageName)} | tail -n 1 | xargs cmd activity start-activity$userArg -n")
             .exec()
     Log.i(TAG, "launch $packageName result: $result")
 }
