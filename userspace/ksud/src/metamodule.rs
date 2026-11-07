@@ -235,10 +235,16 @@ pub fn exec_metauninstall_script(module_id: &str) -> Result<()> {
     // A module id or path outside UTF-8 would panic the daemon here; report it
     // as an error instead so one broken module cannot kill ksud.
     let metauninstall_arg = metauninstall_path.to_str().ok_or_else(|| {
-        anyhow!("metauninstall script path is not valid UTF-8: {metauninstall_path:?}")
+        anyhow!(
+            "metauninstall script path is not valid UTF-8: {}",
+            metauninstall_path.display()
+        )
     })?;
     let metauninstall_dir = metauninstall_path.parent().ok_or_else(|| {
-        anyhow!("metauninstall script has no parent directory: {metauninstall_path:?}")
+        anyhow!(
+            "metauninstall script has no parent directory: {}",
+            metauninstall_path.display()
+        )
     })?;
 
     let result = Command::new(assets::busybox_path())
@@ -268,7 +274,10 @@ pub fn exec_mount_script(module_dir: &str) -> Result<()> {
     info!("Executing mount script for metamodule");
 
     let mount_script_arg = mount_script.to_str().ok_or_else(|| {
-        anyhow!("metamodule mount script path is not valid UTF-8: {mount_script:?}")
+        anyhow!(
+            "metamodule mount script path is not valid UTF-8: {}",
+            mount_script.display()
+        )
     })?;
 
     let result = Command::new(assets::busybox_path())

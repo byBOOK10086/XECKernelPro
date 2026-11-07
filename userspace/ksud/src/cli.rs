@@ -6,8 +6,6 @@ use android_logger::Config;
 use log::{LevelFilter, error, info};
 
 use crate::boot_patch::{BootPatchArgs, BootRestoreArgs};
-#[cfg(target_arch = "aarch64")]
-use crate::feature_id::parse_feature_id;
 use crate::lkm_image::BootPatchV2Args;
 use crate::module::regenerate_preinit;
 #[cfg(target_arch = "aarch64")]

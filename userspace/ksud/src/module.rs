@@ -834,20 +834,16 @@ fn install_module_to_system(zip: &str) -> Result<String> {
         // that before giving up. If it is genuinely absent, say which entries the archive
         // does have - the bare "specified file not found in archive" is unactionable.
         let nested = find_nested_module_prop(&zip_path)?;
-        match nested {
-            Some(found) => {
-                info!("module.prop is at {found}, not at the archive root");
-                let found_path = PathBuf::from_str(&found)?;
-                zip_extract_file_to_memory(&zip_path, &found_path, &mut buffer)?;
-            }
-            None => {
-                let listing = list_archive_entries(&zip_path).unwrap_or_default();
-                bail!(
-                    "this zip has no module.prop at its root, so it is not a module package\n\
-                     first entries: {}",
-                    listing
-                );
-            }
+        if let Some(found) = nested {
+            info!("module.prop is at {found}, not at the archive root");
+            let found_path = PathBuf::from_str(&found)?;
+            zip_extract_file_to_memory(&zip_path, &found_path, &mut buffer)?;
+        } else {
+            let listing = list_archive_entries(&zip_path).unwrap_or_default();
+            bail!(
+                "this zip has no module.prop at its root, so it is not a module package\n\
+                 first entries: {listing}"
+            );
         }
     }
 

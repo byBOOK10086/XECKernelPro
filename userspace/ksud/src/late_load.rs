@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use log::{info, warn};
 use rustix::cstr;
+use std::os::unix::fs::PermissionsExt;
 use std::{process::Command, time::Instant};
 
 use crate::module::{ScriptWait, handle_updated_modules, prune_modules};
@@ -222,13 +223,10 @@ fn load_susfs_lkm(kmi: &str) {
     }
 
     let name = format!("{kmi}_susfs_guard_lkm.ko");
-    let data = match assets::get_asset_data(&name) {
-        Ok(data) => data,
-        Err(_) => {
-            // x86_64 的 xudc 不带这份载荷，这是正常情况。
-            info!("no bundled {name}, skipping SUSFS");
-            return;
-        }
+    let Ok(data) = assets::get_asset_data(&name) else {
+        // x86_64 的 xudc 不带这份载荷，这是正常情况。
+        info!("no bundled {name}, skipping SUSFS");
+        return;
     };
 
     info!("Loading {name}...");
@@ -244,7 +242,6 @@ fn load_susfs_lkm(kmi: &str) {
     let written = (|| -> Result<()> {
         std::fs::create_dir_all(defs::BINARY_DIR)?;
         std::fs::write(&path, data.as_ref())?;
-        use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
         Ok(())
     })();

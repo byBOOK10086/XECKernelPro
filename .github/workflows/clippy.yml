@@ -5,6 +5,9 @@ on:
     branches:
       - main
       - dev
+      # fresh-main 是日常开发分支。之前漏了它，导致 2026-10-28 之后所有 userspace
+      # 提交都没跑过这条 -Dwarnings 的检查，攒下 20 处 pedantic 违规才被发现。
+      - fresh-main
     paths:
       - '.github/workflows/clippy.yml'
       - 'userspace/**'
@@ -12,6 +15,7 @@ on:
     branches:
       - main
       - dev
+      - fresh-main
     paths:
       - '.github/workflows/clippy.yml'
       - 'userspace/**'

@@ -518,7 +518,7 @@ mod imp {
 }
 
 #[cfg(target_os = "android")]
-pub use imp::{MountOutcome, mount_modules};
+pub use imp::mount_modules;
 
 /// 调试/内部入口：`xudc magic-mount [--work DIR] [--dry-run]`。
 ///
@@ -557,7 +557,7 @@ pub fn cli_magic_mount(work: Option<PathBuf>, dry_run: bool) -> Result<()> {
             println!("  - {name}");
         }
         for point in outcome.mount_points {
-            println!("  挂载点 {point:?}（需登记 try-umount）");
+            println!("  挂载点 {}（需登记 try-umount）", point.display());
         }
         Ok(())
     }

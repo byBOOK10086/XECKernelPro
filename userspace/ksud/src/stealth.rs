@@ -581,10 +581,10 @@ fn detect_settings_packages() -> &'static Vec<String> {
             }
         }
 
-        if !found.is_empty() {
-            info!("stealth: resolved settings packages: {}", found.join(", "));
-        } else {
+        if found.is_empty() {
             warn!("stealth: could not resolve the settings package, relying on name match");
+        } else {
+            info!("stealth: resolved settings packages: {}", found.join(", "));
         }
         found
     })

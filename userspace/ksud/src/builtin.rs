@@ -351,7 +351,7 @@ pub fn exec_stage_script(stage: &str, wait: crate::module::ScriptWait) -> Result
         return Ok(());
     }
     let mut ids: Vec<_> = fs::read_dir(root)?
-        .filter_map(|entry| entry.ok())
+        .filter_map(Result::ok)
         .filter(|entry| entry.path().is_dir())
         .map(|entry| entry.path())
         .collect();
@@ -359,11 +359,13 @@ pub fn exec_stage_script(stage: &str, wait: crate::module::ScriptWait) -> Result
 
     for dir in ids {
         // 开关关掉后树应该已经被删了；这里再挡一层，防"删失败但仍然去跑"。
-        if let Some(id) = dir.file_name().and_then(|name| name.to_str()) {
-            if !tee_engine_enabled() && TEE_ENGINE_MODULES.contains(&id) {
-                debug!("skip built-in stage script of disabled TEE/TS tree: {id}");
-                continue;
-            }
+        if let Some(id) = dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|id| !tee_engine_enabled() && TEE_ENGINE_MODULES.contains(id))
+        {
+            debug!("skip built-in stage script of disabled TEE/TS tree: {id}");
+            continue;
         }
         let script = dir.join(format!("{stage}.sh"));
         if !script.is_file() {
@@ -383,12 +385,16 @@ pub fn load_sepolicy_rules() -> Result<()> {
     if !root.is_dir() {
         return Ok(());
     }
-    for entry in fs::read_dir(root)?.filter_map(|entry| entry.ok()) {
-        if let Some(id) = entry.file_name().to_str().map(str::to_string) {
-            if !tee_engine_enabled() && TEE_ENGINE_MODULES.contains(&id.as_str()) {
-                debug!("skip built-in policy of disabled TEE/TS tree: {id}");
-                continue;
-            }
+    for entry in fs::read_dir(root)?.filter_map(Result::ok) {
+        // 先取出 OsString 再借出 &str：`file_name().to_str()` 直接链在临时值上
+        // 会把借用挂到已经释放的 OsString 上（E0716）。
+        let file_name = entry.file_name();
+        if let Some(id) = file_name
+            .to_str()
+            .filter(|id| !tee_engine_enabled() && TEE_ENGINE_MODULES.contains(id))
+        {
+            debug!("skip built-in policy of disabled TEE/TS tree: {id}");
+            continue;
         }
         let rule = entry.path().join("sepolicy.rule");
         if !rule.is_file() {

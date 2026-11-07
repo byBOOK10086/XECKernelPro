@@ -215,6 +215,10 @@ pub fn on_post_fs_data() -> Result<()> {
 /// 永远不会被卸载掉这些 bind，模块挂了等于没做到"只对 root 可见"。
 #[cfg(target_os = "android")]
 fn mount_modules_magic_fallback() -> Result<()> {
+    // MNT_DETACH：允许 busy / 有嵌套挂载时惰性 detach，与 `xudc umount add --flags 2` 同义。
+    // 常量放在函数第一条语句之前：clippy::items_after_statements 不允许在语句之后再写 item。
+    const MNT_DETACH: u32 = 2;
+
     let outcome = crate::magic_mount::mount_modules(Path::new(defs::MAGIC_WORK_DIR))?;
     if outcome.modules.is_empty() {
         info!("magic mount: 没有需要挂载的模块");
@@ -225,8 +229,6 @@ fn mount_modules_magic_fallback() -> Result<()> {
         outcome.modules.len(),
         outcome.modules.join(", ")
     );
-    // MNT_DETACH：允许 busy / 有嵌套挂载时惰性 detach，与 `xudc umount add --flags 2` 同义。
-    const MNT_DETACH: u32 = 2;
     let mut failed = 0usize;
     for point in &outcome.mount_points {
         let path = point.to_string_lossy();
@@ -338,7 +340,11 @@ fn run_boot_completed(commit_boot_txn: bool) {
     let mount_state = utils::is_mount_state();
     if !mount_state {
         if commit_boot_txn {
-            if let Err(e) = crate::boot_txn::commit_boot_success() {
+            // 拆成"先取结果、再判 Err"两步：写成 `if commit_boot_txn { if let Err(..) }`
+            // 会被 clippy::collapsible_if 判为可合并，而 let-chain 依赖更新的 edition，
+            // 这里用中间绑定保持语义不变且不触发该 lint。
+            let committed = crate::boot_txn::commit_boot_success();
+            if let Err(e) = committed {
                 error!("boot transaction commit failed: {e:#}; refusing boot-completed stages");
                 return;
             }

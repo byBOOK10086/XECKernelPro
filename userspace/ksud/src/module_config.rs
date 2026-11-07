@@ -288,9 +288,6 @@ pub fn save_config(
     Ok(())
 }
 
-/// Get a single config value
-#[allow(dead_code)]
-
 /// Set a single config value
 pub fn set_config_value(
     module_id: &str,

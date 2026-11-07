@@ -255,8 +255,6 @@ fn split_kstat_configs(raw: &str) -> Vec<String> {
     }
 }
 
-#[allow(dead_code)]
-
 /// Load config from disk and convert to `ModuleConfig` for `susfs_module::install_module`.
 pub fn load_module_config() -> Result<ModuleConfig> {
     let config = load_config()?;
