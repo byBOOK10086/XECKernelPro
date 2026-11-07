@@ -102,6 +102,10 @@ data class HomeActions(
     val onJailbreakClick: () -> Unit = {},
     /** 未激活界面「提权」导航：进 GhostLock 提权控制台。 */
     val onPrivilegeClick: () -> Unit = {},
-    /** XEC Score 点击进入「检测」pager。 */
-    val onDetectClick: () -> Unit = {},
+    /** 重新读取内核状态（模式卡与各面板的唯一数据源在 HomeViewModel）。 */
+    val onRefresh: () -> Unit = {},
+    /** 底栏第一页 → 第二页（超级用户）。 */
+    val onOpenSuperuser: () -> Unit = {},
+    /** 授权记录（Sulog）。 */
+    val onOpenSulog: () -> Unit = {},
 )

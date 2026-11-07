@@ -1075,4 +1075,45 @@ See the log below for details.</string>
     <string name="ext_modules_install_ok">Installed. Reboot the device to activate it.</string>
     <string name="ext_modules_root_required">Root is not available right now, so the module cannot be installed. Check that this manager is granted root.</string>
     <string name="ext_modules_no_browser">No app is available to open the releases page.</string>
+
+    <!-- Home page in the MIUI 8 layout (2026-11-08 wholesale redesign) -->
+    <string name="home8_mode_label">Current mode</string>
+    <string name="home8_collapse">Collapse</string>
+    <string name="home8_expand">Expand</string>
+    <string name="home8_running">Running</string>
+    <string name="home8_inactive">Inactive</string>
+    <string name="home8_mode_title_lkm">Kernel module mode</string>
+    <string name="home8_mode_title_gki">Built-in kernel mode</string>
+    <string name="home8_mode_title_kpatch">KernelPatch mode</string>
+    <string name="home8_mode_title_mount">Magisk ramdisk mode</string>
+    <string name="home8_desc_active">Loaded and working · kernel root is active</string>
+    <string name="home8_desc_mount">Magisk ramdisk root is working</string>
+    <string name="home8_ksu_version">KernelSU version</string>
+    <string name="home8_uapi">Interface</string>
+    <string name="home8_uapi_matched">UAPI v%1$d · matched</string>
+    <string name="home8_uapi_mismatch">UAPI v%1$d · mismatch</string>
+    <string name="home8_daemon">Daemon</string>
+    <string name="home8_daemon_online">Online · xudc</string>
+    <string name="home8_daemon_missing">Not running</string>
+    <string name="home8_unknown">Unknown</string>
+    <string name="home8_hint">Tap the toggle in the corner to expand or collapse the details</string>
+    <string name="home8_section_info">System information</string>
+    <string name="home8_section_security">Security status</string>
+    <string name="home8_section_overview">Overview</string>
+    <string name="home8_section_actions">Quick actions</string>
+    <string name="home8_section_support">Support and about</string>
+    <string name="home8_boot_state">Boot state</string>
+    <string name="home8_tag_on">Enabled</string>
+    <string name="home8_tag_off">Disabled</string>
+    <string name="home8_tag_stable">Stable</string>
+    <string name="home8_root_count">Root grants</string>
+    <string name="home8_root_count_sub">Apps you enabled by hand</string>
+    <string name="home8_auth_records">Authorization log</string>
+    <string name="home8_auth_records_sub">Review how root has been used</string>
+    <string name="home8_install_kernel">Install or update kernel</string>
+    <string name="home8_install_kernel_sub">Patch the boot image with the bundled LKM</string>
+    <string name="home8_manage_root">Manage root access</string>
+    <string name="home8_manage_root_sub">Grant root to apps by hand</string>
+    <string name="home8_refresh">Refresh kernel state</string>
+    <string name="home8_refresh_sub">Re-read the current mode and interface</string>
 </resources>

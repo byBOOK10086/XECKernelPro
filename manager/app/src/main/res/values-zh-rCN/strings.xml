@@ -1077,4 +1077,45 @@ XEC 项目组
     <string name="ext_modules_install_ok">安装完成，重启设备后生效。</string>
     <string name="ext_modules_root_required">当前没有可用的 Root，无法安装模块。请确认本管理器已获得 Root 授权。</string>
     <string name="ext_modules_no_browser">没有可以打开该页面的应用。</string>
+
+    <!-- 首页 MIUI 8 版式（2026-11-08 全盘换装） -->
+    <string name="home8_mode_label">当前运行模式</string>
+    <string name="home8_collapse">收起</string>
+    <string name="home8_expand">展开</string>
+    <string name="home8_running">运行中</string>
+    <string name="home8_inactive">未生效</string>
+    <string name="home8_mode_title_lkm">内核模块模式</string>
+    <string name="home8_mode_title_gki">内置内核模式</string>
+    <string name="home8_mode_title_kpatch">KernelPatch 模式</string>
+    <string name="home8_mode_title_mount">Magisk 内存盘模式</string>
+    <string name="home8_desc_active">已加载并正常工作 · 内核态 Root 可用</string>
+    <string name="home8_desc_mount">Magisk 内存盘 Root 正常工作</string>
+    <string name="home8_ksu_version">KernelSU 版本</string>
+    <string name="home8_uapi">接口状态</string>
+    <string name="home8_uapi_matched">UAPI v%1$d · 匹配</string>
+    <string name="home8_uapi_mismatch">UAPI v%1$d · 不匹配</string>
+    <string name="home8_daemon">守护进程</string>
+    <string name="home8_daemon_online">在线 · xudc</string>
+    <string name="home8_daemon_missing">未运行</string>
+    <string name="home8_unknown">未知</string>
+    <string name="home8_hint">点右上角的按钮可以在展开与收起之间切换</string>
+    <string name="home8_section_info">系统信息</string>
+    <string name="home8_section_security">安全状态</string>
+    <string name="home8_section_overview">运行概况</string>
+    <string name="home8_section_actions">常用操作</string>
+    <string name="home8_section_support">支持与关于</string>
+    <string name="home8_boot_state">启动状态</string>
+    <string name="home8_tag_on">已启用</string>
+    <string name="home8_tag_off">未启用</string>
+    <string name="home8_tag_stable">稳定</string>
+    <string name="home8_root_count">Root 授权数量</string>
+    <string name="home8_root_count_sub">已手动开启权限的应用</string>
+    <string name="home8_auth_records">授权记录</string>
+    <string name="home8_auth_records_sub">查看 Root 使用记录</string>
+    <string name="home8_install_kernel">安装或更新内核</string>
+    <string name="home8_install_kernel_sub">用内置 LKM 修补引导镜像</string>
+    <string name="home8_manage_root">管理 Root 权限</string>
+    <string name="home8_manage_root_sub">手动为应用开启 Root 访问</string>
+    <string name="home8_refresh">刷新内核状态</string>
+    <string name="home8_refresh_sub">重新读取当前模式与接口信息</string>
 </resources>

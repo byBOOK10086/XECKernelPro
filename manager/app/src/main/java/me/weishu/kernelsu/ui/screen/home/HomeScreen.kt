@@ -80,11 +80,13 @@ fun HomePager(
             }
         },
         onPrivilegeClick = { navigator.push(Route.Privilege(updateMode = false)) },
-        onDetectClick = {
-            // The detect screen was retired with the 2026-10-26 rework; its capabilities live
-            // on in the Tools route. The old page index pointed at Settings.
-            navigator.push(Route.Tools)
-        },
+        // 「刷新内核状态」直接调 ViewModel 的刷新：它同时重算 root/SELinux/TEE/SUSFS，
+        // 是首页所有面板的唯一数据源（不在 UI 层另拼一次读取逻辑）。
+        onRefresh = { viewModel.refresh() },
+        // 底栏第 0 页 → 第 1 页（超级用户）。用分页状态而不是 push 一条路由：
+        // 超级用户不是一个能"返回"的独立页面，它就是底栏那一页。
+        onOpenSuperuser = { mainPagerState.animateToPage(1) },
+        onOpenSulog = { navigator.push(Route.Sulog) },
     )
 
     HomePagerMiuix(

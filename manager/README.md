@@ -1,8 +1,9 @@
 # XECKernelPro Manager
 
-Jetpack Compose + Miuix manager for XECKernelPro. The UI ships the Liquid
-Glass design, module/repo/theming surfaces, TEE/TA diagnostics and — new in
-this branch — the Liquid Home visual layer.
+Jetpack Compose + Miuix manager for XECKernelPro. The UI follows the MIUI 8
+design logic: a light-grey page under white grouped panels separated by 1px
+lines, with square 2–6dp corners and the MIUI orange accent. Module, repo,
+theming and TEE/TA surfaces sit on top of that token layer.
 
 ## Build
 
@@ -26,29 +27,34 @@ cd manager
 For a local UI-only compile, `:app:compileDebugKotlin` does not need the daemon
 binary; a runtime APK does, because the manager's privileged paths call it.
 
-## Liquid Home (this branch)
+## Home layout (MIUI 8)
 
-- **XEC Score**: local 9-item health score (Root, SELinux, SUSFS, TEE
-  injection, daemon, LKM, UAPI, stability, mode), S/A/B/C/D rank.
-- **Liquid Hero**: breathing aura, scanline, animated score ring and guard
-  days on Home.
-- **Status-card appearance**: Palette button opens the image picker plus
-  blur/dim sliders; the image is stored through `ModuleBackgrounds` and never
-  leaves the app.
-- **Share card**: local Canvas PNG (1080×1440), FileProvider + system share.
+- **Mode card**: the first focus of Home. A 56dp mode badge (LKM / GKI /
+  KernelPatch / Magisk), the mode name, one line of state and a running pill;
+  collapsing it keeps only that summary, expanding reveals four key/value
+  cells (KernelSU version, kernel, UAPI match, daemon). The four device routes
+  and the “not installed / unsupported” branches share this one layout.
+- **Panels**: system information, security status, overview and quick actions
+  are plain white groups whose rows carry title + subtitle + right value.
+- **XEC Score** (9 checks: Root, SELinux, SUSFS, TEE injection, daemon, LKM,
+  UAPI, stability, mode) is still computed and still drives the home-screen
+  widget; its ring no longer sits on Home.
+- **Removed with the redesign**: the liquid hero card, the status-card
+  appearance editor (image + blur/dim) and the share card. Theme block
+  backgrounds (`home.*`) keep working through the token layer.
 - **Widget and Quick Settings tile**: `XEC Score` widget and `XEC Hide` tile;
   the one-tap action carries the same intent token as the module deep link and
   opens the existing OneTapHide confirmation flow.
-- **Boot reveal**: a short in-app logo ring after the Android 12 splash, then
-  Home cards stagger in.
+- **Boot reveal**: a short in-app logo ring after the Android 12 splash.
 
 ## Layout
 
 ```
 app/src/main/java/me/weishu/kernelsu/
-├── ui/screen/home/          Home, XecHeroCard, XecScore, appearance, share card
+├── ui/screen/home/          Home, HomeModeCard, XecScore
 ├── widget/                  XecScoreWidgetProvider, XecQuickTileService, store
-├── ui/design/               XEC Fluid Glass tokens and effects
+├── ui/design/panel/         MIUI 8 panel family (Xc8Panel/Row/SectionLabel…)
+├── ui/design/               XEC design tokens, glass effects
 └── ...
 app/src/main/res/xml/        widget provider info, FileProvider paths
 app/src/main/res/layout/     remote widget layout
