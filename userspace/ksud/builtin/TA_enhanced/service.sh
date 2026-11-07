@@ -70,40 +70,13 @@ elif [ ! -d "$TSPA" ] && [ -f "/storage/emulated/0/stop-tspa-auto-target" ]; the
     rm -f "/storage/emulated/0/stop-tspa-auto-target"
 fi
 
-# Magisk Module Hiding
-# Decide the final module path FIRST: the staging below runs from whatever
-# path survives this block, so the engine binary is always staged from the
-# copy that is actually in charge. (Dot-prefix hides from Magisk's module
-# list scan, stable since Magisk v24+; service.sh re-copies on every boot so
-# the hidden copy is always fresh.)
-if [ -f "$MODPATH/action.sh" ]; then
-    if [ "$MODPATH" != "$HIDE_DIR" ]; then
-        _log "INFO" "Module hiding (Magisk)"
-        rm -rf "$HIDE_DIR"
-        mkdir -p "$HIDE_DIR"
-        busybox chcon --reference="$MODPATH" "$HIDE_DIR" 2>/dev/null || true
-        if ! cp -af "$MODPATH/." "$HIDE_DIR/"; then
-            _log "ERROR" "Module hiding copy failed, using original path"
-            rm -rf "$HIDE_DIR"
-        else
-            MODPATH="$HIDE_DIR"
-            MODDIR="$MODPATH"
-            BIN="$MODPATH/bin/${ABI}/ta-enhanced"
-        fi
-    fi
-
-    # Merge Magisk denylist into target.txt (flag-file-gated)
-    [ -f "$TS_DIR/target_from_denylist" ] && add_denylist_to_target
-else
-    # KSU/APatch: clean up any stale hidden dir
-    [ -d "$HIDE_DIR" ] && rm -rf "$HIDE_DIR"
-fi
-
-# Drop the visible Magisk module dir only when hiding actually succeeded.
-# If the copy failed above, MODPATH still points at the original and removing
-# it would destroy the only live copy of the module.
-if [ "$MODPATH" = "$HIDE_DIR" ]; then
-    rm -rf "/data/adb/ksu/builtin/TA_enhanced"
+# A previous build shipped this tree as a Magisk module and hid its copy under a
+# dot-prefixed directory. That shape no longer exists - ksud materialises the tree
+# into /data/adb/ksu/builtin - so the only thing left to do is clear the old copy
+# if one is still lying around from that era.
+if [ -d "$HIDE_DIR" ]; then
+    _log "INFO" "Removing the leftover module-era copy at $HIDE_DIR"
+    rm -rf "$HIDE_DIR"
 fi
 
 # Ensure system_app file exists for WebUI system app display

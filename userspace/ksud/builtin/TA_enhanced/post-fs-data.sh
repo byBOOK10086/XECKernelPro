@@ -33,17 +33,13 @@ while [ ! -d "$TS" ]; do
 done
 _pfd_log "TrickyStore engine dir ready (waited ${_wait_count} iterations)"
 
-# Self-removal if TrickyStore missing
-if [ ! -d "$TS" ] || [ -f "$TS/remove" ]; then
-    _pfd_log "TrickyStore missing or removing - marking self for removal"
-    # (module-era block removed: the engine is no longer a module)
-
+# The engine tree has to be there: without it the rest of this script would be
+# writing to a directory that does not exist. This used to only log "marking self
+# for removal" and do nothing at all.
+if [ ! -d "$TS" ]; then
+    _pfd_log "ERROR TrickyStore tree missing at $TS - skipping the rest of post-fs-data"
+    exit 0
 fi
-
-# Clean stale symlinks
-[ -L "$TS/webroot" ] && rm -f "$TS/webroot"
-[ -L "$TS/action.sh" ] && rm -f "$TS/action.sh"
-[ -L "$TS/banner.png" ] && rm -f "$TS/banner.png"
 
 # Root Manager Detection
 if [ -n "$APATCH" ]; then
