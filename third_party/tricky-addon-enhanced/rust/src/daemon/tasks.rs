@@ -7,6 +7,8 @@ const TS_DIR: &str = "/data/adb/tricky_store";
 const DATA_DIR: &str = "/data/adb/tricky_store/ta-enhanced";
 const MODULE_DIR: &str = "/data/adb/modules/TA_enhanced";
 const MODULE_DIR_HIDDEN: &str = "/data/adb/modules/.TA_enhanced";
+/// The bundled tree lives here since ksud stopped shipping it as a module.
+const BUILTIN_DIR: &str = "/data/adb/ksu/builtin/TA_enhanced";
 
 pub struct TaskBackoff(pub u32);
 
@@ -280,8 +282,12 @@ pub struct PropCleanTask;
 impl PropCleanTask {
     pub fn new() -> Self { Self }
 
+    /// Where propclean.sh lives: the bundled tree first, then a real module install.
+    ///
+    /// Without BUILTIN_DIR the builtin shape never matched, and the task reported
+    /// success after logging "propclean.sh not found" - cleanup silently stopped.
     fn modpath() -> Option<&'static str> {
-        [MODULE_DIR_HIDDEN, MODULE_DIR]
+        [BUILTIN_DIR, MODULE_DIR_HIDDEN, MODULE_DIR]
             .iter()
             .find(|p| Path::new(p).join("propclean.sh").exists())
             .copied()

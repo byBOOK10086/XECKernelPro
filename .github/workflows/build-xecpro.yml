@@ -108,7 +108,7 @@ jobs:
           echo "signing secrets present"
 
   build-lkm:
-    needs: generate-key
+    needs: [guards, generate-key]
     uses: ./.github/workflows/build-lkm.yml
     with:
       # Upstream replaced the expected_size2/expected_hash2 inputs with the
@@ -120,9 +120,11 @@ jobs:
     secrets: inherit
 
   build-ksuinit:
+    needs: [guards]
     uses: ./.github/workflows/ksuinit.yml
 
   build-xecinit:
+    needs: [guards]
     uses: ./.github/workflows/xecinit.yml
 
   build-ksud:

@@ -58,7 +58,12 @@ SELF_DIR="${MODPATH%/}"
 
 external_engine_active() {
     local dir
-    for dir in /data/adb/ksu/builtin/tricky_store /data/adb/modules/.tricky_store; do
+    # /data/adb/modules/tricky_store is where a normal module install lands; the dotted
+    # name is what an earlier build used. Missing the first one let a user-installed
+    # TrickyStore and this engine inject into keystore2 at the same time.
+    for dir in /data/adb/ksu/builtin/tricky_store \
+               /data/adb/modules/tricky_store \
+               /data/adb/modules/.tricky_store; do
         [ "$dir" = "$SELF_DIR" ] && continue
         [ -f "$dir/module.prop" ] || continue
         [ -f "$dir/disable" ] && continue
@@ -86,10 +91,16 @@ CUR=$(cat "$RUNTIME/.engine_version" 2>/dev/null)
 # versionCode 由人手维护，引擎重建而它没变时运行时会一直留着旧的 classes.dex
 # （真机上就是 2395448 vs 2396480，新引擎从没部署过）。再比一次内容大小，
 # 任何一侧变化都重新 stage。
+# 逐字节比，不比长度：同长度的重建（改一行逻辑、换一个常量）以前会被判成
+# "没变"而永不部署。cmp 不可用时退回比长度，行为不比现在更差。
 same_content=1
 for _f in daemon inject supervisor classes.dex libTEESimulator.so libcertgen.so; do
     [ -f "$RUNTIME/$_f" ] || { same_content=0; break; }
-    [ "$(wc -c < "$MODPATH/$_f")" = "$(wc -c < "$RUNTIME/$_f")" ] || { same_content=0; break; }
+    if command -v cmp >/dev/null 2>&1; then
+        cmp -s "$MODPATH/$_f" "$RUNTIME/$_f" || { same_content=0; break; }
+    else
+        [ "$(wc -c < "$MODPATH/$_f")" = "$(wc -c < "$RUNTIME/$_f")" ] || { same_content=0; break; }
+    fi
 done
 if [ "$same_content" != 1 ]; then
     log_line "INFO engine files differ from the bundled tree, restaging"
