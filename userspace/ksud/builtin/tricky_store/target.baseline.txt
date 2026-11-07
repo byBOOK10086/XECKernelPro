@@ -42,3 +42,9 @@ com.android.keyattestation
 # 落给真实 TEE，两次样本就来自不同代码路径，比值失去意义，测量建立不起来。
 # 不在名单里时它拿到的是"一半软件、一半真实"的混合结果。
 com.eltavine.duckdetector
+
+# 春秋检测器（com.chunqiunativecheck）。它的 key_attestation / attest_key_hook /
+# tee_mixed_purpose / tee_timing / keystore2_lru 五条探针**全部**以"拿到我们伪造的链"
+# 为前提：不在名单里时，它读到的是这台设备真实的未锁定 TEE，于是直接判
+# 「设备可信凭据异常」+「可信环境状态异常」——那不是我们伪造得不好，而是根本没伪造。
+com.chunqiunativecheck

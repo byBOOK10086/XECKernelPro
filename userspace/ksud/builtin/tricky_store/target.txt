@@ -10,3 +10,4 @@ com.android.nativetest
 io.liankong.riskdetector
 luna.safe.luna
 com.eltavine.duckdetector
+com.chunqiunativecheck

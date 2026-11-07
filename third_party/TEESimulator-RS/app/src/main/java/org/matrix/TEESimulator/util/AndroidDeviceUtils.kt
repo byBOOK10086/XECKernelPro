@@ -151,13 +151,48 @@ object AndroidDeviceUtils {
             return it
         }
 
+        // 随机兜底**不能**写回系统属性，也**不能**持久化。
+        //
+        // 写回等于把编出来的值伪装成设备真实 vbmeta 摘要：任何拿 `ro.boot.vbmeta.*`
+        // 与别的来源（证明链、其它属性、服务端记录）对账的检测都会看出这是伪造的。
+        // 持久化更糟——它让"当年编出来的随机值"在下一轮开机后看起来像真的，
+        // 于是信任阶梯的第三档（persistent-file）把人骗过去。
         return generateRandomBytes(expectedSize).also {
-            SystemLogger.debug("Using randomly generated $propertyName: ${it.toHex()}")
+            SystemLogger.debug(
+                "No real source for $propertyName; using a random value for this process only " +
+                    "(not written to the property, not persisted): ${it.toHex()}"
+            )
             recordSource("random-fallback")
-            setBootProperty(propertyName, it)
-            persistToFile(propertyName, it)
         }
     }
+
+    /**
+     * 对外呈现的 verified boot 状态，与 `ro.boot.verifiedbootstate` 同源。
+     *
+     * 证明链里的 RootOfTrust 必须和这个值一致。以前这里写死 0(Verified)、
+     * deviceLocked 写死 true：只要设备上那几个属性不是 locked/green，链里的话就和
+     * 属性互相打脸 —— 这种自证不一致是最好抓的一类。
+     */
+    val verifiedBootState: Int
+        get() =
+            when (SystemProperties.get("ro.boot.verifiedbootstate", "").lowercase()) {
+                "green" -> 0
+                "yellow" -> 1
+                "orange" -> 2
+                "red" -> 3
+                // 读不到或没见过的形态：按已验证处理，保持改动前的行为。
+                else -> 0
+            }
+
+    /** `ro.boot.flash.locked` / `ro.boot.vbmeta.device_state` 解析出的 deviceLocked。 */
+    val deviceLocked: Boolean
+        get() {
+            val flashLocked = SystemProperties.get("ro.boot.flash.locked", "")
+            if (flashLocked.isNotEmpty()) return flashLocked != "0"
+            val deviceState = SystemProperties.get("ro.boot.vbmeta.device_state", "")
+            if (deviceState.isNotEmpty()) return deviceState.equals("locked", ignoreCase = true)
+            return true
+        }
 
     /**
      * Retrieves a system property and validates its format.

@@ -33,9 +33,13 @@ pub fn build_attestation_extension(params: &CertGenParams) -> Result<Vec<u8>> {
 fn build_software_enforced(params: &CertGenParams) -> Result<Vec<u8>> {
     let mut fields: Vec<(u32, Vec<u8>)> = Vec::new();
 
-    // Tag 303: CALLER_NONCE — NULL (presence = true)
+    // Tag 7: CALLER_NONCE — NULL (presence = true)
+    //
+    // 这里以前写成 303，那是 ROLLBACK_RESISTANCE。两者都是 BOOLEAN，所以证书照样能签、
+    // 照样能验签，只是语义完全错位：解析方看到"支持防回滚"却看不到"允许调用方自带
+    // nonce"，凡是拿 CALLER_NONCE 做判据的检测都能读出这个矛盾。
     if params.caller_nonce {
-        fields.push((303, enc_null()));
+        fields.push((7, enc_null()));
     }
 
     // Tag 400: ACTIVE_DATETIME — INTEGER (milliseconds)

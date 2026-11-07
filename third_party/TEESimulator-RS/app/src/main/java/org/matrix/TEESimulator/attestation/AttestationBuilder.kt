@@ -65,9 +65,13 @@ object AttestationBuilder {
         rootOfTrustElements[AttestationConstants.ROOT_OF_TRUST_VERIFIED_BOOT_KEY_INDEX] =
             DEROctetString(AndroidDeviceUtils.bootKey)
         rootOfTrustElements[AttestationConstants.ROOT_OF_TRUST_DEVICE_LOCKED_INDEX] =
-            ASN1Boolean.TRUE // deviceLocked: true, for security
+            // 不要写死 true：必须和 `ro.boot.flash.locked` / `ro.boot.vbmeta.device_state`
+            // 讲同一句话，否则链和属性互相打脸。
+            if (AndroidDeviceUtils.deviceLocked) ASN1Boolean.TRUE else ASN1Boolean.FALSE
         rootOfTrustElements[AttestationConstants.ROOT_OF_TRUST_VERIFIED_BOOT_STATE_INDEX] =
-            ASN1Enumerated(0) // verifiedBootState: Verified
+            // 同理，跟着 `ro.boot.verifiedbootstate` 走（0=Verified/1=SelfSigned/
+            // 2=Unverified/3=Failed），不再写死 0。
+            ASN1Enumerated(AndroidDeviceUtils.verifiedBootState)
 
         // verifiedBootHash 是 RoT 的最后一个**可选**元素（RFC 里的 [3]）。只有能和真实
         // vbmeta 摘要对上的值才能写进去：随机兜底值、以及从"上次自己编出来又存下来的

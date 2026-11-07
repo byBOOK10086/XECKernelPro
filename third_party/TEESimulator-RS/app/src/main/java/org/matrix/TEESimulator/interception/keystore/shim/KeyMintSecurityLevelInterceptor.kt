@@ -7,6 +7,7 @@ import android.hardware.security.keymint.EcCurve
 import android.hardware.security.keymint.KeyOrigin
 import android.hardware.security.keymint.KeyParameter
 import android.hardware.security.keymint.KeyParameterValue
+import android.hardware.security.keymint.KeyPurpose
 import android.hardware.security.keymint.SecurityLevel
 import android.hardware.security.keymint.Tag
 import android.os.IBinder
@@ -791,6 +792,21 @@ class KeyMintSecurityLevelInterceptor(
                     )
                     logProbe("REJECT:challenge_len")
                     return InterceptorUtils.createErrorReply(KEYMINT_INVALID_INPUT_LENGTH)
+                }
+
+                // SIGN 与 ATTEST_KEY 是互斥 purpose：ATTEST_KEY 只用于给"已存在的密钥"
+                // 补发证明链，不可能和发起签名的 purpose 同时落在同一把 key 上。真实
+                // KeyMint 在 generateKey 阶段就拒（INVALID_ARGUMENT）；接受它等于宣称我们
+                // 能生成真机生成不了的密钥——这是外部可直接观测的语义差异。
+                if (
+                    parsedParams.purpose.contains(KeyPurpose.SIGN) &&
+                        parsedParams.purpose.contains(KeyPurpose.ATTEST_KEY)
+                ) {
+                    SystemLogger.warning(
+                        "[TX_ID: $txId] Rejecting mutually exclusive purposes SIGN+ATTEST_KEY"
+                    )
+                    logProbe("REJECT:purpose_conflict")
+                    return InterceptorUtils.createErrorReply(KEYMINT_INVALID_ARGUMENT)
                 }
 
                 if (params.any { it.tag == Tag.CREATION_DATETIME }) {
