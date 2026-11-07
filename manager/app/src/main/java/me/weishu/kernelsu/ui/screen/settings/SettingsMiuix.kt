@@ -410,6 +410,22 @@ fun SettingPagerMiuix(
                                 checked = uiState.isAdbRootEnabled,
                                 onCheckedChange = actions.onSetAdbRootEnabled
                             )
+                            // 内置 TEE/TS 引擎总开关。只关伪造的证明链，不动 root：
+                            // 引擎是纯用户态注入，LKM、su、模块、隐藏全部照常。
+                            SwitchPreference(
+                                title = stringResource(id = R.string.settings_tee_engine),
+                                summary = stringResource(id = R.string.settings_tee_engine_summary),
+                                startAction = {
+                                    Icon(
+                                        Icons.Rounded.AdminPanelSettings,
+                                        modifier = Modifier.padding(end = 6.dp),
+                                        contentDescription = stringResource(id = R.string.settings_tee_engine),
+                                        tint = colorScheme.onBackground
+                                    )
+                                },
+                                checked = uiState.isTeeEngineEnabled,
+                                onCheckedChange = actions.onSetTeeEngineEnabled
+                            )
                             SwitchPreference(
                                 title = stringResource(id = R.string.settings_soft_reboot),
                                 summary = stringResource(id = R.string.settings_soft_reboot_summary),

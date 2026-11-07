@@ -58,6 +58,9 @@ data class SettingsUiState(
     // Auto Jailbreak
     val autoJailbreak: Boolean = false,
 
+    // 内置 TEE/TS 引擎总开关（关掉不影响 root，只关掉伪造的证明链）
+    val isTeeEngineEnabled: Boolean = true,
+
     // Soft Reboot
     val useSoftReboot: Boolean = false
 )
@@ -81,6 +84,7 @@ data class SettingsScreenActions(
     val onSetDefaultUmountModules: (Boolean) -> Unit,
     val onSetEnableWebDebugging: (Boolean) -> Unit,
     val onSetAutoJailbreak: (Boolean) -> Unit,
+    val onSetTeeEngineEnabled: (Boolean) -> Unit,
     val onSetUseSoftReboot: (Boolean) -> Unit,
     val onOpenAbout: () -> Unit,
 )

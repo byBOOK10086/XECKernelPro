@@ -19,6 +19,9 @@ import me.weishu.kernelsu.ksuApp
 import me.weishu.kernelsu.privilege.SuperkeyStore
 import me.weishu.kernelsu.ui.screen.settings.SettingsUiState
 import me.weishu.kernelsu.ui.theme.ColorMode
+import me.weishu.kernelsu.ui.util.applyTeeEngineSwitch
+import me.weishu.kernelsu.ui.util.rebootDevice
+import me.weishu.kernelsu.ui.util.teeEngineEnabled
 
 class SettingsViewModel(
     private val repo: SettingsRepository = SettingsRepositoryImpl()
@@ -83,6 +86,8 @@ class SettingsViewModel(
             val autoJailbreak = repo.autoJailbreak
             val useSoftReboot = repo.useSoftReboot
             val isLateLoadMode = Natives.isLateLoadMode
+            // 走 root shell 查询，必须切到 IO；默认开着，查不到也不改变现状。
+            val isTeeEngineEnabled = withContext(Dispatchers.IO) { teeEngineEnabled() }
 
             _uiState.update {
                 it.copy(
@@ -119,6 +124,7 @@ class SettingsViewModel(
                     autoJailbreak = autoJailbreak,
                     useSoftReboot = useSoftReboot,
                     isLateLoadMode = isLateLoadMode,
+                    isTeeEngineEnabled = isTeeEngineEnabled,
                 )
             }
         }
@@ -329,6 +335,30 @@ class SettingsViewModel(
                 repo.execKsudFeatureSave()
                 _uiState.update { it.copy(isAdbRootEnabled = enabled) }
             }
+        }
+    }
+
+    /**
+     * 内置 TEE/TS 引擎总开关。
+     *
+     * 引擎只在开机路径上注入，所以改完**立即重启**：不重启用户会看到开关变了、行为没变，
+     * 反而以为功能坏了。root 不受影响（引擎是纯用户态注入，不是内核模块）。
+     */
+    fun setTeeEngineEnabled(enabled: Boolean) {
+        if (!ensureSuperkey()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            if (!applyTeeEngineSwitch(enabled)) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        ksuApp,
+                        R.string.settings_tee_engine_failed,
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                return@launch
+            }
+            _uiState.update { it.copy(isTeeEngineEnabled = enabled) }
+            rebootDevice()
         }
     }
 

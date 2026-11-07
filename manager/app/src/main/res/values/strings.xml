@@ -386,6 +386,9 @@ XEC Project Team
     <string name="download_install">Install</string>
     <string name="settings_adb_root">ADB Root</string>
     <string name="settings_adb_root_summary">Run adbd daemon with Root privileges</string>
+    <string name="settings_tee_engine">Built-in TEE/TS engine</string>
+    <string name="settings_tee_engine_summary">Emulates the key attestation chain in keystore2. Turning it off only drops the emulation - root, modules and hiding keep working. The device reboots immediately and the engine is not injected on the next boot.</string>
+    <string name="settings_tee_engine_failed">Could not change the built-in TEE/TS engine switch</string>
     <string name="menu_sort">Sort</string>
     <string name="sort_by_name">Application name</string>
     <string name="sort_by_package_name">Package name</string>

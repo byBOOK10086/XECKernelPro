@@ -917,3 +917,31 @@ fun restartApp(packageName: String, userId: Int? = null) {
     forceStopApp(packageName, userId)
     launchApp(packageName, userId)
 }
+
+/**
+ * 内置 TEE/TS 引擎的开关（`xudc builtin tee [on|off]`）。
+ *
+ * 引擎是纯用户态注入（tricky_store 的 daemon + TA_enhanced 的阶段脚本），**不是**内核模块，
+ * 所以关掉它不影响 root：LKM 照常加载，su / 模块 / 隐藏全部照常，只是 keystore2 里那条
+ * 伪造的证明链不再出现。
+ *
+ * 查询失败时按"开着"处理 —— 默认行为必须是不改变现状。
+ */
+fun teeEngineEnabled(): Boolean {
+    val result = runCatching {
+        getRootShell().newJob().add("${getKsuDaemonPath()} builtin tee")
+            .to(ArrayList(), null).exec()
+    }.getOrNull() ?: return true
+    return result.out.joinToString(" ").trim() != "off"
+}
+
+fun applyTeeEngineSwitch(enabled: Boolean): Boolean = runCatching {
+    getRootShell().newJob()
+        .add("${getKsuDaemonPath()} builtin tee ${if (enabled) "on" else "off"}")
+        .to(ArrayList(), null).exec().isSuccess
+}.getOrDefault(false)
+
+/** 开关只在开机路径上读，改完必须重启才生效。 */
+fun rebootDevice() {
+    runCatching { getRootShell().newJob().add("reboot").exec() }
+}

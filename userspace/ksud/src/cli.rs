@@ -13,8 +13,8 @@ use crate::module::regenerate_preinit;
 #[cfg(target_arch = "aarch64")]
 use crate::susfs;
 use crate::{
-    apk_sign, assets, debug, defs, init_event, ksu_uapi, ksucalls, module, module_config, sulog,
-    utils,
+    apk_sign, assets, builtin, debug, defs, init_event, ksu_uapi, ksucalls, module, module_config,
+    sulog, utils,
 };
 
 /// KernelSU userspace cli
@@ -430,6 +430,15 @@ enum BuiltinCmd {
     Spoof {
         /// on or off
         value: String,
+    },
+
+    /// Print or set the bundled TEE/TS engine switch (on|off)
+    ///
+    /// 关掉只影响 keystore2 里那条伪造的证明链；root、模块、隐藏全部照常。
+    /// 开关在开机路径上读，改完要重启才生效。
+    Tee {
+        /// on or off; omit to print the current state
+        value: Option<String>,
     },
 }
 
@@ -892,6 +901,27 @@ pub fn run() -> Result<()> {
             BuiltinCmd::Spoof { value } => {
                 let state = module::builtin_set_spoof(&value)?;
                 println!("spoof={state}");
+                Ok(())
+            }
+            BuiltinCmd::Tee { value } => {
+                match value {
+                    // 不带参数 = 查询
+                    None => {
+                        println!(
+                            "{}",
+                            if builtin::tee_engine_enabled() { "on" } else { "off" }
+                        );
+                    }
+                    Some(raw) => {
+                        let enabled = match raw.trim().to_ascii_lowercase().as_str() {
+                            "on" | "1" | "true" | "enable" => true,
+                            "off" | "0" | "false" | "disable" => false,
+                            other => bail!("unknown TEE switch '{other}', expected on or off"),
+                        };
+                        let now = builtin::set_tee_engine_enabled(enabled)?;
+                        println!("tee={}", if now { "on" } else { "off" });
+                    }
+                }
                 Ok(())
             }
         },

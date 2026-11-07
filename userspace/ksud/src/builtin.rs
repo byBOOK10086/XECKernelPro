@@ -66,6 +66,75 @@ struct BuiltinFile {
 /// disable or have resurrected after a reboot.
 pub const ROOT: &str = "/data/adb/ksu/builtin";
 
+/// 内置 TEE/TS 引擎的总开关（文件存在 = 下一轮开机不注入）。
+///
+/// 引擎是纯用户态注入（`tricky_store` 的 daemon + `TA_enhanced` 的阶段脚本），
+/// **不是**内核模块，所以关掉它不影响 root：LKM 照常加载，su、模块、隐藏全部照常，
+/// 只是 keystore2 里那条伪造的证明链不再出现，设备回到真实硬件证明。
+///
+/// 只在开机路径上读，所以改完必须重启才生效。
+pub const TEE_ENGINE_SWITCH: &str = ".tee_engine_off";
+
+/// 唯一作用就是伪造证明链的两棵内置树；关开关时它们既不安装也不执行。
+pub const TEE_ENGINE_MODULES: [&str; 2] = ["tricky_store", "TA_enhanced"];
+
+fn tee_engine_switch_path() -> PathBuf {
+    Path::new(defs::WORKING_DIR).join(TEE_ENGINE_SWITCH)
+}
+
+pub fn tee_engine_enabled() -> bool {
+    !tee_engine_switch_path().exists()
+}
+
+/// 打开/关闭内置 TEE/TS 引擎，返回生效后的状态。
+///
+/// 关闭时顺手把已经落地的树删掉：只写开关文件的话磁盘上那份还在，任何"直接跑树里
+/// 脚本"的路径都会让开关形同虚设（阶段脚本、sepolicy 规则、TA 的 webroot 都在树里）。
+pub fn set_tee_engine_enabled(enabled: bool) -> Result<bool> {
+    let flag = tee_engine_switch_path();
+    if enabled {
+        match fs::remove_file(&flag) {
+            Ok(()) => info!("built-in TEE/TS engine enabled"),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error).with_context(|| format!("删除 {}", flag.display()));
+            }
+        }
+        return Ok(true);
+    }
+
+    if let Some(parent) = flag.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("创建 {}", parent.display()))?;
+    }
+    fs::write(&flag, b"1\n").with_context(|| format!("写入 {}", flag.display()))?;
+    for id in TEE_ENGINE_MODULES {
+        let tree = Path::new(ROOT).join(id);
+        if !tree.exists() {
+            continue;
+        }
+        match fs::remove_dir_all(&tree) {
+            Ok(()) => info!("removed built-in tree {}", tree.display()),
+            Err(error) => warn!("failed to remove {}: {error:#}", tree.display()),
+        }
+    }
+    Ok(false)
+}
+
+/// 关掉开关时把某棵树清掉（安装/执行两条路径都要能自愈）。
+fn remove_tree_if_tee_disabled(module_id: &str) {
+    if tee_engine_enabled() || !TEE_ENGINE_MODULES.contains(&module_id) {
+        return;
+    }
+    let tree = Path::new(ROOT).join(module_id);
+    if !tree.exists() {
+        return;
+    }
+    match fs::remove_dir_all(&tree) {
+        Ok(()) => info!("built-in TEE/TS engine off, removed {}", tree.display()),
+        Err(error) => warn!("failed to remove {}: {error:#}", tree.display()),
+    }
+}
+
 pub fn install_builtin_modules() -> Result<()> {
     // Mount state (<5.10) hands the whole module tree to Magisk; `/data/adb/modules`
     // there is not ours to populate.
@@ -89,6 +158,12 @@ pub fn install_builtin_modules() -> Result<()> {
 
     let mut first_error: Option<anyhow::Error> = None;
     for (module_id, files) in &modules {
+        // 用户关掉了内置 TEE/TS 引擎：这两棵树既不安装，存量也要清掉，
+        // 否则"磁盘上还在"就等于开关没生效。其它内置树照常安装。
+        if !tee_engine_enabled() && TEE_ENGINE_MODULES.contains(&module_id.as_str()) {
+            remove_tree_if_tee_disabled(module_id);
+            continue;
+        }
         if let Err(error) = install_module(module_id, files) {
             warn!("install built-in module {module_id} failed: {error:#}");
             first_error
@@ -283,6 +358,13 @@ pub fn exec_stage_script(stage: &str, wait: crate::module::ScriptWait) -> Result
     ids.sort();
 
     for dir in ids {
+        // 开关关掉后树应该已经被删了；这里再挡一层，防"删失败但仍然去跑"。
+        if let Some(id) = dir.file_name().and_then(|name| name.to_str()) {
+            if !tee_engine_enabled() && TEE_ENGINE_MODULES.contains(&id) {
+                debug!("skip built-in stage script of disabled TEE/TS tree: {id}");
+                continue;
+            }
+        }
         let script = dir.join(format!("{stage}.sh"));
         if !script.is_file() {
             continue;
@@ -302,6 +384,12 @@ pub fn load_sepolicy_rules() -> Result<()> {
         return Ok(());
     }
     for entry in fs::read_dir(root)?.filter_map(|entry| entry.ok()) {
+        if let Some(id) = entry.file_name().to_str().map(str::to_string) {
+            if !tee_engine_enabled() && TEE_ENGINE_MODULES.contains(&id.as_str()) {
+                debug!("skip built-in policy of disabled TEE/TS tree: {id}");
+                continue;
+            }
+        }
         let rule = entry.path().join("sepolicy.rule");
         if !rule.is_file() {
             continue;

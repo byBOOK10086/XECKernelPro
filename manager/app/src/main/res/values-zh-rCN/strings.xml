@@ -371,6 +371,9 @@ XEC 项目组
     <string name="download_install">安装</string>
     <string name="settings_adb_root">ADB Root 权限</string>
     <string name="settings_adb_root_summary">以 Root 权限运行 adbd 守护进程</string>
+    <string name="settings_tee_engine">内置 TEE/TS 引擎</string>
+    <string name="settings_tee_engine_summary">在 keystore2 里模拟密钥证明链。关掉只取消这层模拟——root、模块、隐藏全部照常；关掉后会立即重启，下一轮开机不再注入。</string>
+    <string name="settings_tee_engine_failed">内置 TEE/TS 引擎开关修改失败</string>
     <string name="settings_selinux_hide">隐藏 SELinux 修改</string>
     <string name="settings_selinux_hide_summary">阻止应用检测 SELinux 修改</string>
     <string name="settings_selinux_hide_reboot_required">重启生效</string>
