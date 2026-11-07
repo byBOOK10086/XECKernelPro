@@ -69,6 +69,16 @@ void on_boot_completed(void)
 {
     ksu_boot_completed = true;
     pr_info("on_boot_completed!\n");
-    track_throne(true);
+    // prune_only=false：开机完成是"管理器身份"最后一次可靠的自我修复机会。
+    //
+    // 之前这里是 true（只裁剪 allowlist、不重新扫管理器），于是管理器只在 LKM 被
+    // 载入的那一刻被扫一次；那一次如果因为 /data 还没起全、或管理器 base.apk 那一刻
+    // 读不到而验签失败，`ksu_invalidate_manager_uid()` 就一直生效 —— `is_manager()`
+    // 为假，管理器的特权 supercall 被 perm.c 拒掉，界面看起来就是"root 没了"，
+    // 要等下一次安装/卸载应用触发 pkg_observer 或者重启碰运气才好。
+    //
+    // 重扫是廉价的：pkg 未变时 track_throne() 自己在 316-327 行判定 need_rescan=false，
+    // 只做一次裁剪就返回。这里不引入新的定时器，只在已有的开机完成事件上补这一次。
+    track_throne(false);
     ksu_selinux_hide_drop_backup_if_unused();
 }
