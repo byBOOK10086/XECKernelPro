@@ -7,12 +7,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * XEC Fluid Glass · 玻璃参数令牌。
+ * XEC · 玻璃参数令牌（**已按 MIUI 8 归零**）。
  *
- * 这一组**全是倍率**，默认 1.0 = 今天的样子。之所以不做成绝对值：
- * 玻璃的观感是"折射 + 高光 + 暗部 + 描边"四项一起调出来的，主题只该在这个基础上
- * 做整体加减（更透/更实/更亮/更雾），一旦允许逐项写死绝对值，主题作者很难调对，
- * 我们也没法保证任何组合下文字仍然可读。
+ * 这一组全是倍率。改成 MIUI 8 的扁平分组面板之后，界面里不该再出现
+ * 模糊、折射、镜面高光、光泽扫过——它们和"白底 + 1px 分隔线"是两套语言。
+ *
+ * 所以除 [shadeAlpha] 之外全部归零：保留一点按下暗部，否则按钮/列表项
+ * 按下去完全没有反馈，那已经不是克制，是坏掉了。
  *
  * 消费点（约 17 处，全部在玻璃壳层里）：
  *  * [me.weishu.kernelsu.ui.design.glass.XGlassSurface] —— 模糊半径、覆色浓度、亮边；
@@ -23,20 +24,20 @@ import androidx.compose.ui.unit.dp
  */
 @Immutable
 data class XcGlass(
-    /** 模糊半径倍率：1.0 = 默认；0.0 = 完全不模糊（省电档/纯色主题常用）。 */
-    val blurRadius: Float = 1f,
-    /** 折射倍率：透明玻璃的位移量与边缘扭曲。 */
-    val refraction: Float = 1f,
-    /** 覆色浓度倍率：乘在 [XcColors.glassTint] / [XcColors.clearGlassTint] 的 alpha 上。 */
-    val tintAlpha: Float = 1f,
-    /** 1px 描边（亮边）强度倍率。 */
-    val rimAlpha: Float = 1f,
-    /** 高光（镜面反射）强度倍率。 */
-    val specular: Float = 1f,
-    /** 暗部（玻璃下的阴影）强度倍率。 */
-    val shadeAlpha: Float = 1f,
-    /** 光泽扫过（sheen）强度倍率。 */
-    val sheenAlpha: Float = 1f,
+    /** 模糊半径倍率：0 = 完全不模糊（MIUI 8 不用模糊）。 */
+    val blurRadius: Float = 0f,
+    /** 折射倍率：0 = 不做边缘扭曲。 */
+    val refraction: Float = 0f,
+    /** 覆色浓度倍率：0 = 不额外染色，面板就是纯白/纯深灰。 */
+    val tintAlpha: Float = 0f,
+    /** 1px 描边强度倍率：0 = 不画玻璃亮边。 */
+    val rimAlpha: Float = 0f,
+    /** 高光（镜面反射）强度倍率：0 = 没有镜面反射。 */
+    val specular: Float = 0f,
+    /** 暗部（按下阴影）强度倍率：保留一点，按下要有反馈。 */
+    val shadeAlpha: Float = 0.35f,
+    /** 光泽扫过（sheen）强度倍率：0 = 没有扫光。 */
+    val sheenAlpha: Float = 0f,
 ) {
     companion object {
         val Default = XcGlass()

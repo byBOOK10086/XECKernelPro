@@ -227,7 +227,10 @@ open class MainActivity : ComponentActivity() {
                 LocalNavigator provides navigator,
                 LocalDensity provides density,
                 LocalColorMode provides appSettings.colorMode.value,
-                LocalEnableBlur provides uiState.enableBlur,
+                // MIUI 8 全盘替换：界面语言从"流体玻璃"改成"白色分组面板 + 1px 分隔线"，
+                // 模糊不再参与渲染。设置里的开关仍然保留（写进状态、读得出来），只是这一层
+                // 不再把它下发给任何玻璃表面 —— 否则用户随手一开，整个界面又回到旧的形态。
+                LocalEnableBlur provides false,
                 LocalEnableFloatingBottomBar provides uiState.enableFloatingBottomBar,
                 LocalEnableFloatingBottomBarBlur provides uiState.enableFloatingBottomBarBlur,
                 LocalEnableNavigationBadge provides uiState.enableNavigationBadge,
@@ -325,8 +328,12 @@ open class MainActivity : ComponentActivity() {
 
                         CompositionLocalProvider(
                             LocalXDialogHost provides dialogHostState,
-                            LocalXDialogBackdrop provides dialogBackdrop,
-                            LocalWallpaperBackdrop provides wallpaperBackdrop,
+                            // MIUI 8：不再下发任何"玻璃采样源"。两个 backdrop 置空之后，
+                            // XGlassSurface 的 active 分支（glassEnabled && backdrop != null）
+                            // 自动落到 `background(solidTint) + 1px rim` 那一支 —— 88 处
+                            // 玻璃卡体一次性变成白底分组面板，不用逐个改调用点。
+                            LocalXDialogBackdrop provides null,
+                            LocalWallpaperBackdrop provides null,
                         ) {
                             XDropletHost {
                                 IntentDispatcher(intentChannel = intentChannel)
@@ -464,7 +471,8 @@ open class MainActivity : ComponentActivity() {
                                 ModuleActionSheet(
                                     module = ModuleSheetState.module,
                                     updateUrl = ModuleSheetState.updateUrl,
-                                    backdrop = dialogBackdrop,
+                                    // MIUI 8：面板改成实色 + 1px 描边，不再采玻璃
+                                    backdrop = null,
                                     bottomInnerPadding = bottomBarClearPadding(),
                                     onDismissRequest = { ModuleSheetState.hide() },
                                     onExecuteAction = {
@@ -493,7 +501,8 @@ open class MainActivity : ComponentActivity() {
                                 )
                                 XDialogHost(
                                     state = dialogHostState,
-                                    backdrop = dialogBackdrop,
+                                    // MIUI 8：对话框实色，不采背景
+                                    backdrop = null,
                                 )
                                 XecBootSplash(visible = showBootSplash)
                                 SideEffect { contentReady = true }

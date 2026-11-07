@@ -8,36 +8,39 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * XEC Fluid Glass · 形状令牌。
+ * XEC · 形状令牌（MIUI 8 设计逻辑）。
  *
  * 硬性约束：**所有矩形表面都必须取这里的值**。
- * 本设计里不存在直角矩形——`RectangleShape` 只允许出现在
- * 全屏背景、分隔线这类"非容器"用途上。
+ *
+ * 与上一版（HyperOS 风格 8/12/16/22/28/32）的区别是全局压平：
+ * MIUI 8 的容器是"白色分组面板 + 1px 分隔线"，圆角只用来削掉直角，
+ * 不用来塑形。所以最大一档也只有 6dp，卡片只要 4dp。
+ * 唯一的例外是 [pill]：开关、分段控件这类控件在 MIUI 8 里本来就是胶囊形。
  */
 @Immutable
 data class XcShapes(
-    /** 8dp：标签、徽标、小药丸。 */
+    /** 2dp：标签、徽标、小药丸。 */
     val xs: Shape,
-    /** 12dp：列表项内嵌块、输入框、缩略图。 */
+    /** 3dp：列表项内嵌块、输入框、缩略图。 */
     val sm: Shape,
-    /** 16dp：卡片、分组容器。 */
+    /** 4dp：卡片、分组容器（改动这一个值就覆盖全站卡片）。 */
     val md: Shape,
-    /** 22dp：大卡片、面板、底部弹层内容。 */
+    /** 5dp：大卡片、面板、底部弹层内容。 */
     val lg: Shape,
-    /** 28dp：对话框、悬浮面板。 */
+    /** 6dp：对话框、悬浮面板。 */
     val xl: Shape,
-    /** 32dp：顶栏 / 导航栏 / 悬浮栏。 */
+    /** 4dp：顶栏 / 导航栏 / 悬浮栏（MIUI 8 的栏是方角）。 */
     val bar: Shape,
-    /** 999dp：按钮、分段控件、开关。 */
+    /** 999dp：开关、分段控件这类真正的胶囊控件。 */
     val pill: Shape,
     /**
-     * 16dp：按下高光的圆角半径。
+     * 2dp：按下高光的圆角半径。
      *
      * 这里单独存一个 `Dp` 而不是复用上面的 [Shape]，是因为按下高光由
      * `drawRoundRect` 直接绘制、需要数值半径，并且还要按控件实际尺寸做一次夹取
      * （见 [me.weishu.kernelsu.ui.design.liquid.XcIndication]）。
      */
-    val pressRadius: Dp = 16.dp,
+    val pressRadius: Dp = 2.dp,
 ) {
     /** 供聚焦态、按下态使用的内缩一档圆角。 */
     val inner: Shape get() = sm
@@ -67,18 +70,18 @@ val XcShapesDefault = XcShapes(
  * 做成可主题化只会让"同一个壳在不同页面圆角不同"这类 bug 有可乘之机。
  */
 object XcRadius {
-    /** 8dp：标签、徽标、小药丸。 */
-    val xs = 8.dp
-    /** 12dp：列表项内嵌块、输入框、缩略图。 */
-    val sm = 12.dp
-    /** 16dp：卡片、分组容器。 */
-    val md = 16.dp
-    /** 22dp：大卡片、面板、底部弹层内容。 */
-    val lg = 22.dp
-    /** 28dp：对话框、悬浮面板。 */
-    val xl = 28.dp
-    /** 32dp：顶栏 / 导航栏 / 悬浮栏。 */
-    val bar = 32.dp
+    /** 2dp：标签、徽标、小药丸。 */
+    val xs = 2.dp
+    /** 3dp：列表项内嵌块、输入框、缩略图。 */
+    val sm = 3.dp
+    /** 4dp：卡片、分组容器。 */
+    val md = 4.dp
+    /** 5dp：大卡片、面板、底部弹层内容。 */
+    val lg = 5.dp
+    /** 6dp：对话框、悬浮面板。 */
+    val xl = 6.dp
+    /** 4dp：顶栏 / 导航栏 / 悬浮栏。 */
+    val bar = 4.dp
 }
 
 val LocalXcShapes = staticCompositionLocalOf { XcShapesDefault }

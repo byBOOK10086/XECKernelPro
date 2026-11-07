@@ -95,57 +95,57 @@ private fun Color.over(base: Color, alpha: Float): Color = Color(
 
 private val XcDarkBase = XcColors(
     isDark = true,
-    backdrop = Color(0xFF0B0F10),
-    backdropScrim = Color(0xCC0B0F10),
-    surface = Color(0xFF131A1C),
-    surfaceMuted = Color(0xFF1A2225),
-    glassTint = Color(0x8C131A1C),
-    // 黑液态玻璃：42% 纯黑介质，折射与边缘光仍然全部保留
-    clearGlassTint = Color(0x6B000000),
-    glassRim = Color(0xFF263033),
-    text = Color(0xFFE7EDEE),
-    textSecondary = Color(0xFFBAC6C8),
-    textMuted = Color(0xFF8A9799),
-    accent = Color(0xFF12B886),
-    accentSoft = Color(0xFF12241F),
-    water = Color(0x6B12B886),
-    danger = Color(0xFFFF4D4F),
-    warning = Color(0xFFFAAD14),
-    success = Color(0xFF52C41A),
+    backdrop = Color(0xFF141416),
+    backdropScrim = Color(0xE6141416),
+    surface = Color(0xFF1D1D20),
+    surfaceMuted = Color(0xFF212125),
+    glassTint = Color(0x8C1D1D20),
+    // 已关闭玻璃形态：这一档保留字段但现在不参与渲染
+    clearGlassTint = Color(0x00000000),
+    glassRim = Color(0xFF2C2C31),
+    text = Color(0xFFEDEDEF),
+    textSecondary = Color(0xFFA4A4AA),
+    textMuted = Color(0xFF7B7B82),
+    accent = Color(0xFFFF6900),
+    accentSoft = Color(0xFF2A1C12),
+    water = Color(0x6BFF6900),
+    danger = Color(0xFFFF6B60),
+    warning = Color(0xFFE0A233),
+    success = Color(0xFF45C07A),
 )
 
 private val XcLightBase = XcColors(
     isDark = false,
-    backdrop = Color(0xFFF2F5F6),
-    backdropScrim = Color(0xE6F2F5F6),
+    // MIUI 8：整页浅灰底，所有内容靠白色分组面板分层
+    backdrop = Color(0xFFF3F3F3),
+    backdropScrim = Color(0xF2F3F3F3),
     surface = Color(0xFFFFFFFF),
-    surfaceMuted = Color(0xFFEDF1F2),
+    surfaceMuted = Color(0xFFFAFAFA),
     glassTint = Color(0x8CFFFFFF),
-    glassRim = Color(0xFFDCE3E5),
-    text = Color(0xFF161D1F),
-    textSecondary = Color(0xFF485356),
-    textMuted = Color(0xFF788486),
-    accent = Color(0xFF0E9E76),
-    accentSoft = Color(0xFFE2F6EF),
-    water = Color(0x6B0E9E76),
+    glassRim = Color(0xFFEBEBEB),
+    text = Color(0xFF1F2022),
+    textSecondary = Color(0xFF6B6C70),
+    textMuted = Color(0xFF9A9BA0),
+    // MIUI 8 的强调橙
+    accent = Color(0xFFFF6900),
+    accentSoft = Color(0xFFFFF3E9),
+    water = Color(0x6BFF6900),
     danger = Color(0xFFD93025),
-    warning = Color(0xFFD08700),
-    success = Color(0xFF2F9E44),
+    warning = Color(0xFFD9880A),
+    success = Color(0xFF1F9D55),
 )
 
 /**
- * DARK_AMOLED 档位：底色压到纯黑，玻璃整体更透明、更依赖描边分层，
- * 否则纯黑底上的半透明块会糊成一片。
+ * DARK_AMOLED 档位：底色压到纯黑，面板与分组再抬一档，
+ * 否则纯黑底上的面板边界与 1px 分隔线会糊成一片。
  */
 private val XcAmoled = XcDarkBase.copy(
     backdrop = Color(0xFF000000),
     backdropScrim = Color(0xF2000000),
-    surface = Color(0xFF0A0E0F),
-    surfaceMuted = Color(0xFF111819),
-    glassTint = Color(0x6B0A0E0F),
-    // 纯黑底上玻璃要更实一档，否则与背景拉不开层次
-    clearGlassTint = Color(0x80000000),
-    glassRim = Color(0xFF2E3A3C),
+    surface = Color(0xFF101012),
+    surfaceMuted = Color(0xFF161618),
+    glassTint = Color(0x6B101012),
+    glassRim = Color(0xFF232327),
 )
 
 fun xcColorsFor(isDark: Boolean, isAmoled: Boolean = false): XcColors = when {
