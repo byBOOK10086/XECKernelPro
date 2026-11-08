@@ -37,14 +37,31 @@ krypton.tbsafetychecker
 com.google.android.gsf
 com.android.keyattestation
 
-# Duck Detector（com.eltavine.duckdetector）。它的 TEE 卡片会用"同一把密钥
-# 的有证明/无证明两次 generateKey + 反复 getKeyEntry"做配对测时；只要其中一次
-# 落给真实 TEE，两次样本就来自不同代码路径，比值失去意义，测量建立不起来。
-# 不在名单里时它拿到的是"一半软件、一半真实"的混合结果。
-com.eltavine.duckdetector
-
-# 春秋检测器（com.chunqiunativecheck）。它的 key_attestation / attest_key_hook /
-# tee_mixed_purpose / tee_timing / keystore2_lru 五条探针**全部**以"拿到我们伪造的链"
-# 为前提：不在名单里时，它读到的是这台设备真实的未锁定 TEE，于是直接判
-# 「设备可信凭据异常」+「可信环境状态异常」——那不是我们伪造得不好，而是根本没伪造。
-com.chunqiunativecheck
+# ── 2026-11-08：第三方**检测工具**不再纳入注入名单 ──────────────────────────
+#
+# 以前这一组是故意列进来的（让验机工具看到"已锁定"的假链）。真机对照之后改主意了：
+#
+#   * 链**可信**时：列进来确实能让工具显示"已锁定"（收益）。
+#   * 链**不可信**时（keybox 过期 / 根不被对方认得）：工具看到的是"被篡改的
+#     attestation key + 未知根证书"，这是比"解锁"严重得多的证据 —— 等于我们
+#     主动把最脏的一条递给对方。OnePlus / Android 16 上就是这样（2026-11-08 实测
+#     截图：Tampered Attestation Key(26)、未知根证书、找到了 TEESimulator）。
+#
+# 权衡结论：检测工具**不注入**。它们拿到的是真实 TEE 链 —— 设备解锁是事实，
+# 但那是"用户自己解锁了 bootloader"，不是"有人在伪造密钥"。
+#
+# 保留注入的只有两类：GMS/Play 完整性入口（不伪装就直接不过），以及我们自己的
+# 验机页 wu.keyChain.test（见上）。
+#
+# 下面保留原条目作为**记录**，用 '#' 注释掉；用户想恢复某一条，去掉行首 '#' 即可。
+# io.github.vvb2060.keyattestation    # 密钥认证
+# io.github.vvb2060.mahoshojo
+# io.github.qwq233.keyattestation
+# com.reveny.nativecheck
+# com.zhenxi.hunter
+# io.liankong.riskdetector
+# luna.safe.luna
+# icu.nullptr.nativetest
+# com.android.nativetest
+# com.eltavine.duckdetector           # Duck Detector
+# com.chunqiunativecheck              # 春秋检测
