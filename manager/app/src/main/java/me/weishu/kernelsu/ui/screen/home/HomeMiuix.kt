@@ -214,6 +214,10 @@ fun HomePagerMiuix(
                             WarningCard(stringResource(id = R.string.home_daemon_missing), block = warningBlock)
                         }
 
+                        // 2026-11-08：结论先于细节。仪表台把评分与三个关键指标提到最上面，
+                        // 整块可点进入 XEC SCORE 的九项明细（原版是"版本卡 + 一串信息行"）。
+                        HomeDashboard(state = state)
+
                         HomeModeCard(
                             state = state,
                             actions = actions,
