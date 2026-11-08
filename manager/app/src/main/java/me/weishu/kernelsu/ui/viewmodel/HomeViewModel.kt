@@ -54,6 +54,13 @@ class HomeViewModel(
                 .filter { it }
                 .collect { refresh() }
         }
+        // 第一次探测落定（成功或失败）也要重算一次：首帧的 isRootAvailable 只是
+        // "还没问到"，探测落定之后才允许出现「获取 Root 失败」这类告警。
+        viewModelScope.launch {
+            KsuCli.probeSettled
+                .filter { it }
+                .collect { refresh() }
+        }
     }
 
     fun refresh() {
@@ -194,6 +201,7 @@ class HomeViewModel(
                     Os.prctl(21 /* PR_GET_SECCOMP */, 0, 0, 0, 0)
                 }.getOrDefault(-1),
             ),
+            rootProbeSettled = KsuCli.probeSettled.value,
         )
     }
 }

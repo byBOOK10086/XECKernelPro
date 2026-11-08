@@ -68,6 +68,16 @@ private class RootShellSlot {
     /** 一次只允许一个后台补探，避免主线程每次访问都点一把线程。 */
     @Volatile
     var refreshScheduled: Boolean = false
+
+    /**
+     * 同一个槽位一次只允许一个探测跑在路上。
+     *
+     * 探测（`createRootShell`）是慢操作，**绝不能在持有 shellLock 时执行** —— 主线程
+     * 每一次取 shell 都要拿这把锁，持锁探测会把 ANR 隐患原样搬回来。所以探测在锁外跑，
+     * 这个标记只用来防止多个线程同时探。
+     */
+    @Volatile
+    var probing: Boolean = false
 }
 
 object KsuCli {
@@ -75,6 +85,21 @@ object KsuCli {
 
     /** 退避上限：晚加载的机器最多每分钟重试两次，够用且不会打满。 */
     private const val NON_ROOT_RETRY_MAX_MS = 30_000L
+
+    /**
+     * 首帧先把一条 `sh` 交给调用方之后，第一次补探只等这么久。
+     *
+     * 3s 是"别反复打 su"的冷却，不是首探延迟：驱动本来就加载好的机器上，
+     * 让"获取 Root 失败"在屏幕上停 3 秒纯属自找。
+     */
+    private const val FIRST_PROBE_DELAY_MS = 500L
+
+    /**
+     * 监管线程最多探多少轮（0.5→3→6→12→24→30×3 ≈ 2.6 分钟）后收工，
+     * 下一次访问会重新拉起它。留个上限是为了没装 root 的机器上不养一个常驻线程。
+     */
+    private const val SUPERVISOR_MAX_ATTEMPTS = 8
+
     private val shellLock = Any()
     private val normalSlot = RootShellSlot()
     private val globalMountSlot = RootShellSlot()
@@ -92,6 +117,16 @@ object KsuCli {
      */
     private val _rootReady = MutableStateFlow(false)
     val rootReady: StateFlow<Boolean> = _rootReady.asStateFlow()
+
+    /**
+     * 是否已经**至少完成过一次**探测。
+     *
+     * 开机首帧只能先发一条非 root 的兜底 shell（探测不能跑主线程），那一刻
+     * `rootAvailable()` 必然是 false —— 那是"还没问到"，不是"拿不到"。告警必须
+     * 等这个翻 true 之后再判，否则每次冷启动都会闪一条红色的「获取 Root 失败！」。
+     */
+    private val _probeSettled = MutableStateFlow(false)
+    val probeSettled: StateFlow<Boolean> = _probeSettled.asStateFlow()
 
     /** 探测日志只在状态翻转时写一行，不记录每次访问。 */
     @Volatile
@@ -145,64 +180,103 @@ object KsuCli {
      * composition and the home screen's root probe. So a *retry* never runs on the
      * main thread: hand back the live fallback and let a worker thread probe.
      */
-    private fun getOrRetryShell(globalMnt: Boolean): Shell = synchronized(shellLock) {
+    private fun getOrRetryShell(globalMnt: Boolean): Shell {
         val slot = if (globalMnt) globalMountSlot else normalSlot
-        val cached = slot.shell
 
-        if (cached != null && cached.isAlive && cached.isRoot) return@synchronized cached
+        // ---- 快路径：不持锁 ----
+        val cached = slot.shell
+        if (cached != null && cached.isAlive && cached.isRoot) {
+            _probeSettled.value = true
+            return cached
+        }
 
         val cooling = cached != null && cached.isAlive &&
             SystemClock.elapsedRealtime() < slot.retryAtElapsedMs
-        if (cooling) return@synchronized cached
+        // 有活壳但不是 root：主线程、冷却期两种情况都只把壳交出去，探测交给监管线程。
+        if (cached != null && cached.isAlive && (cooling || onMainThread())) {
+            scheduleRefresh(slot, globalMnt)
+            return cached
+        }
 
-        // 2026-11-09：**主线程一律不在锁里探测**。
-        // 旧实现在"还没有缓存 shell"时会落到下面的同步探测分支，而那一步要跑
-        // `ksud debug su`（libsu 自己还会重试），开机早期驱动没就绪时能把主线程
-        // 卡上几秒 —— 这就是之前记的那笔"锁内探测 + 主线程调用者" ANR 隐患。
-        // 现在主线程只做一个**极轻**的 `sh` 兜底并排一次后台补探：
-        // 拿不到 root 时行为与以前一致（调用方看到非 root shell），但不再卡 UI。
         if (onMainThread()) {
-            if (cached != null && cached.isAlive) {
-                scheduleRefresh(slot, globalMnt)
-                return@synchronized cached
-            }
-            val light = runCatching { Shell.Builder.create().build("sh") }.getOrNull()
-            if (light != null) {
-                slot.shell = light
-                slot.retryAtElapsedMs = SystemClock.elapsedRealtime() + NON_ROOT_RETRY_MS
-                scheduleRefresh(slot, globalMnt)
-                return@synchronized light
+            // 2026-11-09：**主线程一律不跑 `su`**。旧实现在"还没有缓存 shell"时会直接
+            // 同步探测（libsu 自己还会重试），开机早期驱动没就绪时能把主线程卡上几秒。
+            // 现在只做一个**极轻**的 `sh` 兜底，然后交给监管线程补探。
+            synchronized(shellLock) {
+                val again = slot.shell
+                if (again != null && again.isAlive) return again
+                val light = runCatching { Shell.Builder.create().build("sh") }.getOrNull()
+                if (light != null) {
+                    slot.shell = light
+                    slot.retryAtElapsedMs = SystemClock.elapsedRealtime() + FIRST_PROBE_DELAY_MS
+                    scheduleRefresh(slot, globalMnt)
+                    return light
+                }
             }
             // 连 sh 都起不来：只能退回同步探测（真没别的选择）。
         }
 
-        val candidate = createRootShell(globalMnt)
+        return probeOnce(slot, globalMnt)
+    }
+
+    /**
+     * 真探一次。慢操作（`createRootShell`）在**锁外**跑，绝不让主线程为它排队。
+     */
+    private fun probeOnce(slot: RootShellSlot, globalMnt: Boolean): Shell {
+        val alreadyRunning = synchronized(shellLock) {
+            if (slot.probing) {
+                true
+            } else {
+                slot.probing = true
+                false
+            }
+        }
+        if (alreadyRunning) {
+            // 已经有探测在跑：把现有壳交出去，别让调用方再等一次。
+            return slot.shell?.takeIf { it.isAlive } ?: Shell.Builder.create().build("sh")
+        }
+
+        val candidate = runCatching { createRootShell(globalMnt) }.getOrNull()
+        if (candidate == null) {
+            synchronized(shellLock) { slot.probing = false }
+            return slot.shell?.takeIf { it.isAlive } ?: Shell.Builder.create().build("sh")
+        }
+
+        return synchronized(shellLock) {
+            slot.probing = false
+            applyProbeLocked(slot, candidate)
+        }
+    }
+
+    /** Caller holds [shellLock]. 只做记账，不做任何慢操作。 */
+    private fun applyProbeLocked(slot: RootShellSlot, candidate: Shell): Shell {
+        _probeSettled.value = true
+        val cached = slot.shell
         if (candidate.isAlive && candidate.isRoot) {
             slot.shell = candidate
             slot.retryAtElapsedMs = 0
             slot.retryCount = 0
             _rootReady.value = true
             noteProbe("root-ok")
+            return candidate
+        }
+        // 退避：3s → 6s → 12s → 24s，封顶 30s。晚加载的机器迟早能等到；
+        // 每轮只多一次进程探测，不会打满 CPU。
+        val delay = (NON_ROOT_RETRY_MS shl slot.retryCount.coerceAtMost(4))
+            .coerceAtMost(NON_ROOT_RETRY_MAX_MS)
+        slot.retryCount = (slot.retryCount + 1).coerceAtMost(8)
+        // 冷却从**探测结束**开始算：探测本身耗掉的时间不该吃掉窗口。
+        slot.retryAtElapsedMs = SystemClock.elapsedRealtime() + delay
+        _rootReady.value = false
+        noteProbe("probe-fail alive=${candidate.isAlive} retry=${slot.retryCount} delay=${delay}ms")
+        if (cached == null || !cached.isAlive) {
+            slot.shell = candidate
             candidate
         } else {
-            // 退避：3s → 6s → 12s → 24s，封顶 30s。晚加载的机器迟早能等到；
-            // 每轮只多一次进程探测，不会打满 CPU。
-            val delay = (NON_ROOT_RETRY_MS shl slot.retryCount.coerceAtMost(4))
-                .coerceAtMost(NON_ROOT_RETRY_MAX_MS)
-            slot.retryCount = (slot.retryCount + 1).coerceAtMost(8)
-            // 冷却从**探测结束**开始算：探测本身耗掉的时间不该吃掉窗口。
-            slot.retryAtElapsedMs = SystemClock.elapsedRealtime() + delay
-            _rootReady.value = false
-            noteProbe("probe-fail alive=${candidate.isAlive} retry=${slot.retryCount} delay=${delay}ms")
-            if (cached == null || !cached.isAlive) {
-                slot.shell = candidate
-                candidate
-            } else {
-                // 保留现有的活兜底 shell，只丢弃这次没用上的探测结果，
-                // 免得重试把 `sh` 进程越堆越多。
-                runCatching { candidate.close() }
-                cached
-            }
+            // 保留现有的活兜底 shell，只丢弃这次没用上的探测结果，
+            // 免得重试把 `sh` 进程越堆越多。
+            runCatching { candidate.close() }
+            cached
         }
     }
 
@@ -233,15 +307,32 @@ object KsuCli {
 
     private fun onMainThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
 
-    /** Caller holds [shellLock]. */
+    /**
+     * 后台监管线程：**循环**探到拿到 root 为止。
+     *
+     * 这里必须循环。旧实现只是"探一次就走"，而主线程路径刚刚设过冷却：监管线程
+     * 一启动就撞进冷却窗口，什么也没做就退出，此后没有任何东西会再重试 ——
+     * 表现就是首帧一直显示「获取 Root 失败 / 守护组件缺失」，切一次页（下一次访问
+     * 才会越过冷却）才恢复正常。v31413 真机实测就是这个现象。
+     */
     private fun scheduleRefresh(slot: RootShellSlot, globalMnt: Boolean) {
-        if (slot.refreshScheduled) return
-        slot.refreshScheduled = true
+        synchronized(shellLock) {
+            if (slot.refreshScheduled) return
+            slot.refreshScheduled = true
+        }
         Thread({
             try {
-                getOrRetryShell(globalMnt)
+                var attempt = 0
+                while (attempt < SUPERVISOR_MAX_ATTEMPTS) {
+                    // 睡过冷却再探：冷却的本意是"别在锁里等"，不是"别再试"。
+                    val wait = slot.retryAtElapsedMs - SystemClock.elapsedRealtime()
+                    if (wait > 0) Thread.sleep(wait.coerceAtMost(NON_ROOT_RETRY_MAX_MS))
+                    val shell = probeOnce(slot, globalMnt)
+                    if (shell.isAlive && shell.isRoot) return@Thread
+                    attempt++
+                }
             } catch (_: Throwable) {
-                // A failed probe must not kill the process; the cooldown retries.
+                // 探测失败不能杀进程；下一次访问会把监管重新拉起来。
             } finally {
                 slot.refreshScheduled = false
             }

@@ -45,6 +45,15 @@ data class HomeUiState(
      * 只在挂载态探测（见 `HomeViewModel.refresh()`）：内核态首页一次都不引用 Magisk。
      */
     val magiskVersion: String? = null,
+    /**
+     * 是否已经**至少完成过一次** root 探测。
+     *
+     * 开机首帧只能先拿一条非 root 的兜底 shell（探测不能跑在主线程上），那一刻
+     * `isRootAvailable` 必然是 false —— 但这不是"获取 Root 失败"，只是"还没问到"。
+     * 没有这个闸门的话，每次冷启动都会红一条「获取 Root 失败！」，然后几百毫秒后
+     * 自己消失。所以告警只在探测落定之后才允许出现。
+     */
+    val rootProbeSettled: Boolean = true,
 ) {
     val isSELinuxPermissive: Boolean
         get() = systemInfo.selinuxStatus == "Permissive"
@@ -78,12 +87,12 @@ data class HomeUiState(
         get() = lkmMode == true && !isLkmBundled
 
     val showRootWarning: Boolean
-        get() = ksuVersion != null && !isRootAvailable
+        get() = ksuVersion != null && rootProbeSettled && !isRootAvailable
 
     // 内核已加载但守护组件不在：内置模块的物化/provision 链条断在第一步，
     // 所有"内置了却没效果"的问题都是这个形态，必须显式暴露而不是静默失败。
     val showDaemonMissingWarning: Boolean
-        get() = ksuVersion != null && !isDaemonPresent
+        get() = ksuVersion != null && rootProbeSettled && !isDaemonPresent
 
     val showManagerPrBuildWarning: Boolean
         get() = isManager && isManagerPrBuild
