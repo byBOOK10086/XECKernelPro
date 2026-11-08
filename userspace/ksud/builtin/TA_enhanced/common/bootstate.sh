@@ -159,6 +159,19 @@ bootstate_spoof_lock() {
     check_reset_prop "ro.is_ever_orange" "0"
     # sys.oem_unlock_allowed 不是 ro，系统后续可能改回去——看护循环会补写。
     check_reset_prop "sys.oem_unlock_allowed" "0"
+    # 2026-11-08 真机（K60E / HyperOS 2.0）实测：这台 ROM 明明 adbd 在跑
+    # （/dev/socket/adbd 在、JDWP 控制 socket 在听、adbd 进程活着），属性
+    # `init.svc.adbd` 却读 `stopped`。这是 **ROM 自己报错**，不是我们藏的；但
+    # 检测方（Duck / 春秋）会拿"属性说 stopped + socket 还活着"判成运行时矛盾，
+    # 直接给 DANGER（实测：纠正后该条从 DANGER 降为 WARNING）。
+    # 所以这里不是"继续藏"，而是把属性**纠正成事实**。三个判据同时成立才写，
+    # 免得 adbd 真没跑时把它写成 running：
+    #   ① 属性当前是 stopped ② /dev/socket/adbd 存在 ③ adbd 进程在
+    if [ "$(getprop init.svc.adbd)" = "stopped" ] && [ -S /dev/socket/adbd ] && \
+       pidof adbd >/dev/null 2>&1; then
+        check_reset_prop "init.svc.adbd" "running"
+        _log "INFO" "init.svc.adbd 与事实不符（adbd 在跑但属性=stopped），已纠正为 running"
+    fi
 }
 
 # ---------------------------------------------------------------------------

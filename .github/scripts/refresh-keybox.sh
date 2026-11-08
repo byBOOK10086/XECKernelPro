@@ -174,19 +174,28 @@ fi
 
 # 有效期守卫（2026-11-08 加）：上游 RKP 箱子的叶子证书只有十几天寿命，
 # 所以**代次更新 ≠ 还能用**。v31410 就是这样把一份"刚过期两天的最新箱子"
-# 嵌进了产物：设备上 Duck 报 CertificateExpiredException，Bootloader 卡变红。
-# 过期就不采用，回退到仓库里那份长效兜底（Yurikey58，2020→2030）。
+# 嵌进了产物。
+#
+# 但真机对照实验（K60E，2026-11-08）证明了**不能自动降级**：
+#   67 + 有效 → Duck 红在 Bootloader（cert2 expired）
+#   58 + 有效 → Duck 红在 TEE（老式子链与当前引擎不一致）
+# 两者都恰好 1 个 Danger —— 换箱子只是把红灯从一张卡挪到另一张卡。而 67 是
+# 真 RKP 链、根仍是 Google，长相比"用五年前的老箱子"干净；仓库里那 58 只当
+# **离线兜底**（网络全断时设备照样有箱子可用），不该因为过期就优先它。
+#
+# 所以这里的判据是：**过期只告警，不替换**。日志里点名到期时间，让人一眼看到
+# "上游还没换代"，而不是悄悄换成老箱子。
 LEAF_END="$(keybox_leaf_enddate "$CANDIDATE" 2>/dev/null || true)"
 LEAF_EPOCH="$(keybox_leaf_epoch "$CANDIDATE" 2>/dev/null || true)"
 NOW_EPOCH="$(date -u +%s)"
 if [ -n "$LEAF_EPOCH" ] && [ "$LEAF_EPOCH" -le "$NOW_EPOCH" ]; then
-    echo "::warning::fetched keybox leaf already expired ($LEAF_END); keeping the committed copy"
+    echo "::warning::fetched keybox leaf already expired ($LEAF_END) — upstream has not rotated yet; shipping it anyway (see refresh-keybox.sh comments for the 2026-11-08 experiment)"
     if [ -f "$TARGET" ]; then
         log "committed leaf end: $(keybox_leaf_enddate "$TARGET" 2>/dev/null || echo '<unreadable>')"
     fi
-    exit 0
+else
+    log "candidate leaf valid until ${LEAF_END:-<unreadable>}"
 fi
-log "candidate leaf valid until ${LEAF_END:-<unreadable>}"
 
 # 代次保护：只在"新代次不低于旧代次"或"旧文件无法识别代次"时替换，
 # 避免某个镜像回源到旧快照时把更新的内置副本降级。
