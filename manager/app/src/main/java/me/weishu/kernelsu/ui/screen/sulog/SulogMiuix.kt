@@ -338,7 +338,7 @@ fun SulogScreenMiuix(
                                     items = fileSelector.items,
                                     enabled = fileSelector.items.isNotEmpty(),
                                     selectedIndex = fileSelector.selectedIndex,
-                                    cancelText = stringResource(R.string.cancel),
+                                    cancelText = stringResource(android.R.string.cancel),
                                     onSelectedIndexChange = { index ->
                                         state.files.getOrNull(index)?.let { file ->
                                             actions.onSelectFile(file.path)

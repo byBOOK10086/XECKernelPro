@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -29,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -90,7 +92,7 @@ fun Xc8Dialog(
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(horizontal = DialogPaddingH),
             contentAlignment = Alignment.Center,
         ) {
@@ -204,6 +206,7 @@ fun Xc8Dropdown(
     onSelectedIndexChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    leading: ImageVector? = null,
     enabled: Boolean = true,
     cancelText: String? = null,
 ) {
@@ -214,14 +217,16 @@ fun Xc8Dropdown(
         title = title,
         modifier = modifier,
         subtitle = subtitle,
+        leading = leading,
         enabled = usable,
         onClick = if (usable) ({ expanded = true }) else null,
-    ) {
-        if (current != null) {
-            Xc8Value(current)
-        }
-        Xc8Chevron()
-    }
+        trailing = {
+            if (current != null) {
+                Xc8Value(current)
+            }
+            Xc8Chevron()
+        },
+    )
     if (expanded) {
         Xc8Dialog(
             title = title,

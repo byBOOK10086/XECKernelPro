@@ -69,6 +69,7 @@ import kotlinx.coroutines.delay
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.bottombar.useNavigationRail
 import me.weishu.kernelsu.ui.component.miuix.ScaleDialog
+import me.weishu.kernelsu.ui.design.panel.Xc8Dropdown
 import me.weishu.kernelsu.ui.design.panel.Xc8Panel
 import me.weishu.kernelsu.ui.design.panel.Xc8Row
 import me.weishu.kernelsu.ui.design.panel.Xc8Seekbar
@@ -91,7 +92,6 @@ import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -178,8 +178,8 @@ fun ColorPaletteScreenMiuix(
                         },
                     )
 
-                    // 配色卡：开关换成面板行，下面三个下拉（配色/风格/规范）没有面板族
-                    // 等价物，原样留在同一块面板里，避免拆成"开关一块、下拉一块"。
+                    // 配色卡：开关是面板行，下面三个下拉（配色/风格/规范）用 Xc8Dropdown，
+                    // 点开是 MIUI 8 的居中选择框（不是 miuix 那种贴着行展开的浮层）。
                     Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
                         Xc8Row(
                             title = stringResource(id = R.string.settings_monet),
@@ -216,18 +216,12 @@ fun ColorPaletteScreenMiuix(
                                     stringResource(id = R.string.color_sakura),
                                 )
                                 val colorValues = listOf(0) + keyColorOptions
-                                OverlayDropdownPreference(
+                                Xc8Dropdown(
                                     title = stringResource(id = R.string.settings_key_color),
+                                    leading = Icons.Rounded.Colorize,
                                     items = colorItems,
-                                    startAction = {
-                                        Icon(
-                                            Icons.Rounded.Colorize,
-                                            modifier = Modifier.padding(end = 6.dp),
-                                            contentDescription = stringResource(id = R.string.settings_key_color),
-                                            tint = colorScheme.onBackground
-                                        )
-                                    },
                                     selectedIndex = colorValues.indexOf(uiState.keyColor).takeIf { it >= 0 } ?: 0,
+                                    cancelText = stringResource(android.R.string.cancel),
                                     onSelectedIndexChange = { index ->
                                         actions.onSetKeyColor(colorValues[index])
                                     }
@@ -238,36 +232,24 @@ fun ColorPaletteScreenMiuix(
                                 ) {
                                     Column {
                                         val styles = PaletteStyle.entries
-                                        OverlayDropdownPreference(
+                                        Xc8Dropdown(
                                             title = stringResource(R.string.settings_color_style),
-                                            startAction = {
-                                                Icon(
-                                                    Icons.Rounded.Style,
-                                                    modifier = Modifier.padding(end = 6.dp),
-                                                    contentDescription = stringResource(id = R.string.settings_color_style),
-                                                    tint = colorScheme.onBackground
-                                                )
-                                            },
+                                            leading = Icons.Rounded.Style,
                                             items = styles.map { it.name },
                                             selectedIndex = styles.indexOfFirst { it.name == uiState.colorStyle }.coerceAtLeast(0),
+                                            cancelText = stringResource(android.R.string.cancel),
                                             onSelectedIndexChange = { index ->
                                                 actions.onSetColorStyle(styles[index].name)
                                             }
                                         )
 
                                         val specs = ColorSpec.SpecVersion.entries
-                                        OverlayDropdownPreference(
+                                        Xc8Dropdown(
                                             title = stringResource(R.string.settings_color_spec),
-                                            startAction = {
-                                                Icon(
-                                                    Icons.Rounded.DesignServices,
-                                                    modifier = Modifier.padding(end = 6.dp),
-                                                    contentDescription = stringResource(id = R.string.settings_color_spec),
-                                                    tint = colorScheme.onBackground
-                                                )
-                                            },
+                                            leading = Icons.Rounded.DesignServices,
                                             items = specs.map { it.name },
                                             selectedIndex = specs.indexOfFirst { it.name == uiState.colorSpec }.coerceAtLeast(0),
+                                            cancelText = stringResource(android.R.string.cancel),
                                             onSelectedIndexChange = { index ->
                                                 actions.onSetColorSpec(specs[index].name)
                                             }

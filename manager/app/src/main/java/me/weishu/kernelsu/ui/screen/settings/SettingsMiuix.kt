@@ -256,7 +256,7 @@ fun SettingPagerMiuix(
                                 enabled = uiState.suCompatStatus == "supported",
                                 selectedIndex = uiState.suCompatMode,
                                 onSelectedIndexChange = actions.onSetSuCompatMode,
-                                cancelText = stringResource(id = R.string.cancel),
+                                cancelText = stringResource(id = android.R.string.cancel),
                             )
                         }
 

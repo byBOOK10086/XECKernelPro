@@ -74,11 +74,12 @@ import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
 import top.yukonga.miuix.kmp.icon.extended.MoveFile
 import top.yukonga.miuix.kmp.preference.CheckboxPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import me.weishu.kernelsu.ui.design.token.XcRadius
+import me.weishu.kernelsu.ui.design.panel.Xc8Dropdown
+import me.weishu.kernelsu.ui.design.panel.Xc8Panel
 
 /**
  * @author weishu
@@ -163,30 +164,18 @@ internal fun InstallScreenMiuix(
                         } else {
                             uiState.partitionSelectionIndex
                         }
-                        Card(cornerRadius = XcRadius.md, 
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 12.dp)
-                                .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-                            colors = CardDefaults.defaultColors(color = Color.Transparent),
-                        ) {
-                            OverlayDropdownPreference(
+                        Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
+                            Xc8Dropdown(
                                 items = partitionItems,
                                 selectedIndex = partitionIndex,
+                                leading = MiuixIcons.ConvertFile,
+                                cancelText = stringResource(android.R.string.cancel),
                                 title = if (isDownload) {
                                     stringResource(R.string.install_select_partition)
                                 } else {
                                     "${stringResource(R.string.install_select_partition)} (${uiState.slotSuffix})"
                                 },
                                 onSelectedIndexChange = actions.onSelectPartition,
-                                startAction = {
-                                    Icon(
-                                        MiuixIcons.ConvertFile,
-                                        tint = colorScheme.onSurface,
-                                        modifier = Modifier.padding(end = 12.dp),
-                                        contentDescription = null
-                                    )
-                                }
                             )
                         }
                     }
