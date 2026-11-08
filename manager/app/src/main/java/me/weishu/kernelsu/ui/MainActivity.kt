@@ -82,7 +82,6 @@ import me.weishu.kernelsu.ui.component.dialog.XDialogHost
 import me.weishu.kernelsu.ui.component.dialog.XDialogHostState
 import me.weishu.kernelsu.ui.design.clear.LocalWallpaperBackdrop
 import me.weishu.kernelsu.ui.design.liquid.XDropletHost
-import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.design.token.XcTheme
 import me.weishu.kernelsu.ui.navigation3.IntentDispatcher
 import me.weishu.kernelsu.ui.navigation3.LocalNavigator
@@ -438,20 +437,12 @@ open class MainActivity : ComponentActivity() {
                                     val customWallpaperBitmap = customWallpaper
                                     val builtinWallpaperBitmap = builtinWallpaper
                                     when {
-                                        // MIUI 8 全盘换装（2026-11-08）：页面底色是平色 `#F3F3F3`，
-                                        // 不再是"壁纸 + 半透明玻璃"。所以**没有显式选过图/纯色**
-                                        // 的时候直接铺平色底，内置壁纸池不再随机接管整页。
-                                        // 用户自己挑过自定义图或纯色时仍然按他的选择画（下面三支），
-                                        // 那属于用户显式意图，不该被设计改版清掉。
-                                        currentSolid == null && customWallpaperName.isEmpty() -> Box(
-                                            modifier = wallpaperModifier.background(Xc.colors.backdrop)
-                                        )
-
                                         // 纯色档优先：它就是"这一档的最终答案"，内置池不再参与。
                                         currentSolid != null -> Box(
                                             modifier = wallpaperModifier.background(currentSolid)
                                         )
 
+                                        // 自定义图（用户在壁纸页选过的那张）。
                                         customWallpaperBitmap != null -> Image(
                                             bitmap = customWallpaperBitmap,
                                             contentDescription = null,
@@ -459,7 +450,10 @@ open class MainActivity : ComponentActivity() {
                                             contentScale = ContentScale.Crop,
                                         )
 
-                                        // 模糊档的内置图：小图放大绘制，边缘由双线性插值抹平。
+                                        // 内置壁纸池：**空名字就是"内置"**（壁纸页的缩略图也写着
+                                        // 「内置」），所以槽位没设过、或用户点过"清除"都落到这里。
+                                        // 2026-11-08 曾在这里插过一支平色底把内置池整个顶掉，
+                                        // 结果是壁纸页选"内置"点了没反应 —— 已回退，不再拦。
                                         builtinWallpaperBitmap != null -> Image(
                                             bitmap = builtinWallpaperBitmap,
                                             contentDescription = null,
@@ -467,6 +461,8 @@ open class MainActivity : ComponentActivity() {
                                             contentScale = ContentScale.Crop,
                                         )
 
+                                        // 内置图还没解码完的那一两帧：直接画资源原图，
+                                        // 不留白底闪一下（也兜住解码失败的情况）。
                                         else -> Image(
                                             painter = painterResource(wallpaperRes),
                                             contentDescription = null,
