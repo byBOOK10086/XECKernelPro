@@ -272,7 +272,10 @@ jobs:
           BASE="https://github.com/KernelSU-Next/KPatch-Next/releases/download/0.13.5-2"
           fetch() {
             local name="$1" sha="$2" dest="$3"
-            curl -fsSL --retry 3 -o "/tmp/${name}" "${BASE}/${name}"
+            # --retry-all-errors：curl 的 --retry 默认**不重试** exit 56（连接被掐断），
+            # 而 runner 到 github 的下载恰恰经常以 56 结束（2026-11-08 连续红了三次）。
+            curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 \
+              -o "/tmp/${name}" "${BASE}/${name}"
             echo "${sha}  /tmp/${name}" | sha256sum -c -
             mkdir -p "$(dirname "${dest}")"
             cp -f "/tmp/${name}" "${dest}"
@@ -296,7 +299,9 @@ jobs:
         working-directory: .
         run: |
           set -euo pipefail
-          curl -fsSL --retry 3 -o /tmp/magisk.apk \
+          # 同 fetch()：必须带 --retry-all-errors，否则 exit 56 不重试（2026-11-08 踩过）。
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 \
+            -o /tmp/magisk.apk \
             https://github.com/topjohnwu/Magisk/releases/download/v30.7/Magisk-v30.7.apk
           echo "e0d32d2123532860f97123d927b1bb86c4e08e6fd8a48bfc6b5bee0afae9ebd5  /tmp/magisk.apk" \
             | sha256sum -c -
