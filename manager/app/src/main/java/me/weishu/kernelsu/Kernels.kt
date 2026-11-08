@@ -58,3 +58,19 @@ fun kernelRelease(): String =
         .getOrNull()
         ?.takeIf { it.isNotEmpty() }
         ?: Os.uname().release
+
+/**
+ * 从内核串直接推设备 KMI（`android12-5.10` 这种），**零权限**。
+ *
+ * GKI 的 release 本来就带标签，形如 `5.10.101-android12-9-00001-gabcdef`。
+ * 这是 [me.weishu.kernelsu.ui.util.getCurrentKmi] 在 `ksud boot-info current-kmi`
+ * 也跑不起来时的最后一道兜底 —— 安装页显示 "Unknown" 并禁用「确认」是用户
+ * 明确反馈过的死路，只要能读到内核串就不该走到那里。
+ *
+ * 非 GKI（或串里没标签）返回空串：那种机器靠厂商 KMI，不该编一个假的出来。
+ */
+fun deviceKmi(): String {
+    val release = kernelRelease()
+    Regex("(android\\d+)-(\\d+\\.\\d+)").find(release)?.let { return it.value }
+    return ""
+}

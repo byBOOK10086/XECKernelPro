@@ -22,6 +22,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
 import me.weishu.kernelsu.BuildConfig
 import me.weishu.kernelsu.Natives
+import me.weishu.kernelsu.deviceKmi
 import me.weishu.kernelsu.core.tasks.BootKernelVersion
 import me.weishu.kernelsu.core.tasks.ExtractImage
 import me.weishu.kernelsu.core.tasks.ProbeResult
@@ -95,6 +96,26 @@ object KsuCli {
     /** 探测日志只在状态翻转时写一行，不记录每次访问。 */
     @Volatile
     private var lastProbeNote: String? = null
+
+    /**
+     * 一条**不需要 root** 的普通 shell，给 `boot-info` 这类纯用户态子命令用。
+     *
+     * 和 [SHELL] 完全分开：这条 shell 不碰 KSU 驱动，所以在还没装 root 的机器上
+     * 也一定起得来；正因为如此，安装页读 KMI 才不会因为"没 root"而拿到空结果。
+     */
+    private val plainShellLock = Any()
+
+    @Volatile
+    private var plainShellCache: Shell? = null
+
+    fun plainShell(): Shell = synchronized(plainShellLock) {
+        val live = plainShellCache?.takeIf { it.isAlive }
+        if (live != null) {
+            live
+        } else {
+            Shell.Builder.create().build("sh").also { plainShellCache = it }
+        }
+    }
 
     /**
      * Lazily resolved so constructing this object never probes root before the
@@ -852,17 +873,37 @@ fun rootAvailable(): Boolean {
     return shell.isRoot
 }
 
+/**
+ * 不需要 root 的 ksud 子命令。
+ *
+ * `boot-info current-kmi` 只是解析本机 uname（失败再退到 /proc/modules），
+ * `boot-info supported-kmis` 列出的是编进 ksud 自己的 .ko 资产 —— 两条都是纯用户态
+ * 计算，一个字都不碰 KSU 驱动。可是旧实现一律走 `getRootShell()`，而安装页最常是在
+ * **还没有 root** 的时候打开的：于是 KMI 列表为空、设备 KMI 显示 Unknown、「确认」
+ * 永久禁用 —— 用户被卡在一个"必须先有 root 才能回答"的问题上。
+ *
+ * 这里直接用本进程能执行的 `libxeccli.so`（应用自己的 nativeLibraryDir，libsu 建
+ * root shell 用的也是这条路径），再退一步才用内核串自己拼。
+ */
+private fun runKsudNoRoot(args: String): List<String> = runCatching {
+    val shell = KsuCli.plainShell()
+    shell.newJob()
+        .add("${getKsuDaemonPath()} $args")
+        .to(ArrayList(), null)
+        .exec()
+        .out
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+}.getOrDefault(emptyList())
+
 suspend fun getCurrentKmi(): String = withContext(Dispatchers.IO) {
-    val shell = getRootShell()
-    val cmd = "boot-info current-kmi"
-    ShellUtils.fastCmd(shell, "${getKsuDaemonPath()} $cmd")
+    runKsudNoRoot("boot-info current-kmi").firstOrNull()
+        ?: deviceKmi().takeIf { it.isNotBlank() }
+        ?: ""
 }
 
 suspend fun getSupportedKmis(): List<String> = withContext(Dispatchers.IO) {
-    val shell = getRootShell()
-    val cmd = "boot-info supported-kmis"
-    val out = shell.newJob().add("${getKsuDaemonPath()} $cmd").to(ArrayList(), null).exec().out
-    out.filter { it.isNotBlank() }.map { it.trim() }
+    runKsudNoRoot("boot-info supported-kmis")
 }
 
 suspend fun isAbDevice(): Boolean = withContext(Dispatchers.IO) {

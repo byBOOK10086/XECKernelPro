@@ -42,6 +42,12 @@ fun ChooseKmiDialogMiuix(
         value = getCurrentKmi()
     }
     val currentSelection = rememberSaveable(currentKmi) { mutableStateOf(currentKmi) }
+    // 列表来自 ksud 里编进去的 .ko 资产，正常一定非空；但万一拿不到（老版本 ksud、
+    // 或者执行环境异常），也要把「本设备 KMI」自己列出来 —— 否则弹窗是空的、
+    // 「确认」永久禁用，用户就只能取消，安装流程直接断在这里。
+    val listedKmis = supportedKMIs.ifEmpty {
+        listOfNotNull(currentKmi.takeIf { it.isNotBlank() })
+    }
     XDialog(
         show = show,
         onDismissRequest = {
@@ -55,7 +61,7 @@ fun ChooseKmiDialogMiuix(
         )
         Column(modifier = Modifier.heightIn(max = 500.dp)) {
             LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
-                items(supportedKMIs) { kmi ->
+                items(listedKmis) { kmi ->
                     CheckboxPreference(
                         title = kmi,
                         summary = if (kmi == currentKmi) stringResource(R.string.current_device_kmi) else null,
@@ -84,7 +90,7 @@ fun ChooseKmiDialogMiuix(
                 )
                 Spacer(modifier = Modifier.width(20.dp))
                 TextButton(
-                    enabled = supportedKMIs.contains(currentSelection.value),
+                    enabled = listedKmis.contains(currentSelection.value),
                     onClick = {
                         onSelected(currentSelection.value)
                         onDismissRequest()
