@@ -1,9 +1,11 @@
 package me.weishu.kernelsu.ui.component.miuix
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
@@ -17,13 +19,25 @@ import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.dialog.XDialog
 import me.weishu.kernelsu.ui.component.dialog.XDialogTitle
 import me.weishu.kernelsu.ui.component.filter.FilterNumber
+import me.weishu.kernelsu.ui.design.panel.Xc8Chevron
+import me.weishu.kernelsu.ui.design.panel.Xc8DialogAction
+import me.weishu.kernelsu.ui.design.panel.Xc8Row
+import me.weishu.kernelsu.ui.design.panel.Xc8TextField
+import me.weishu.kernelsu.ui.design.panel.Xc8Value
+import me.weishu.kernelsu.ui.design.token.Xc
 import top.yukonga.miuix.kmp.basic.BasicComponentColors
 import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.preference.ArrowPreference
 
+/**
+ * 「点一下改一个数字」的行（原来是 miuix `ArrowPreference` + `TextField` 弹窗）。
+ *
+ * 2026-11-08 换成 MIUI 8 皮：行是 [Xc8Row]，弹窗正文用 [Xc8TextField]，
+ * 底部按钮是整格两等分的 [Xc8DialogAction]。
+ *
+ * 参数签名**刻意保持 miuix 那套不变**（[titleColor] / [summaryColor] / [insideMargin]
+ * 现在都不再参与绘制，留着是为了不动几十个调用点）：MIUI 8 的行只有"标题 + 右值"两档，
+ * 没有"标题色/副标题色/内边距各自可调"这回事，配色统一由主题令牌给。
+ */
 @Composable
 fun SuperEditArrow(
     modifier: Modifier = Modifier,
@@ -38,19 +52,16 @@ fun SuperEditArrow(
 ) {
     val showDialog = remember { mutableStateOf(false) }
 
-    ArrowPreference(
+    Xc8Row(
         title = title,
-        titleColor = titleColor,
-        summary = defaultValue.toString(),
-        summaryColor = summaryColor,
-        startAction = startAction,
         modifier = modifier,
-        insideMargin = insideMargin,
-        onClick = {
-            showDialog.value = true
+        enabled = enabled,
+        leadingContent = startAction,
+        onClick = { showDialog.value = true },
+        trailing = {
+            Xc8Value(defaultValue.toString())
+            Xc8Chevron()
         },
-        holdDownState = showDialog.value,
-        enabled = enabled
     )
 
     EditDialog(
@@ -62,7 +73,6 @@ fun SuperEditArrow(
             onValueChange?.invoke(it)
         }
     )
-
 }
 
 @Composable
@@ -83,28 +93,35 @@ private fun EditDialog(
         },
     ) {
         XDialogTitle(text = title)
-        TextField(
-            value = filter.getInputValue(),
-            maxLines = 1,
+        Xc8TextField(
+            value = filter.getInputValue().text,
+            // FilterNumber 的状态是 TextFieldValue（它要守着光标位置做数字过滤），
+            // 面板族的输入框只吐 String，回填时由 setInputValue 把光标收到末尾。
+            onValueChange = { filter.setInputValue(it) },
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Number,
             ),
-            onValueChange = filter.onValueChange()
         )
-        Row(
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            TextButton(
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Xc8DialogAction(
                 text = stringResource(android.R.string.cancel),
+                color = Xc.colors.textSecondary,
+                modifier = Modifier.weight(1f),
                 onClick = {
                     onDismissRequest()
                     filter.setInputValue(dialogTextFieldValue.toString())
                 },
-                modifier = Modifier.weight(1f)
             )
-            Spacer(Modifier.width(20.dp))
-            TextButton(
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(46.dp)
+                    .background(Xc.colors.glassRim),
+            )
+            Xc8DialogAction(
                 text = stringResource(R.string.confirm),
+                color = Xc.colors.accent,
+                modifier = Modifier.weight(1f),
                 onClick = {
                     onDismissRequest()
                     with(filter.getInputValue().text) {
@@ -114,11 +131,8 @@ private fun EditDialog(
                         } else {
                             onValueChange(this@with.toInt())
                         }
-
                     }
                 },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.textButtonColorsPrimary()
             )
         }
     }

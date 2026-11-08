@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -395,6 +396,8 @@ fun Xc8TextField(
     placeholder: String? = null,
     singleLine: Boolean = true,
     enabled: Boolean = true,
+    /** 数字键盘之类的输入法提示；默认不指定，跟平台一致。 */
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
 ) {
     val shape = Xc.shapes.sm
     BasicTextField(
@@ -407,6 +410,7 @@ fun Xc8TextField(
             .padding(horizontal = 10.dp, vertical = 8.dp),
         enabled = enabled,
         singleLine = singleLine,
+        keyboardOptions = keyboardOptions,
         textStyle = TextStyle(
             color = Xc.colors.text,
             fontSize = 14.sp,

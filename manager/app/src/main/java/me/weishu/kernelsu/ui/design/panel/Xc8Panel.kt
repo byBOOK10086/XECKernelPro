@@ -131,6 +131,14 @@ fun Xc8Row(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     leading: ImageVector? = null,
+    /**
+     * 自定义前导块（miuix 的 `startAction` 可以原样传进来）。
+     *
+     * 给了它就先画它、不再画 [leading] 的橙色图标砖：miuix 那些调用点早就自己带了
+     * 图标与间距，再套一层砖会变成"砖里套图标"的双层。
+     * 代价是禁用时的淡化由调用方自己负责（砖会自动转灰，这里不会）。
+     */
+    leadingContent: (@Composable () -> Unit)? = null,
     trailing: @Composable RowScope.() -> Unit = {},
     onClick: (() -> Unit)? = null,
     titleColor: Color = Xc.colors.text,
@@ -179,7 +187,10 @@ fun Xc8Row(
             .padding(horizontal = RowPaddingH, vertical = RowPaddingV),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (leading != null) {
+        if (leadingContent != null) {
+            leadingContent()
+            Spacer(Modifier.width(12.dp))
+        } else if (leading != null) {
             // 26dp 橙色砖里的图标（原型 `.row__icon`）；禁用时砖与图标一起转淡。
             Xc8IconTile(tint = if (enabled) Xc.colors.accent else Xc.colors.textMuted) {
                 Icon(

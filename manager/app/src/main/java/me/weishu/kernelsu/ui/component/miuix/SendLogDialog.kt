@@ -5,9 +5,8 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Share
@@ -16,7 +15,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -26,11 +24,10 @@ import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.dialog.LoadingDialogHandle
 import me.weishu.kernelsu.ui.component.dialog.XDialog
 import me.weishu.kernelsu.ui.component.dialog.XDialogTitle
+import me.weishu.kernelsu.ui.design.panel.Xc8DialogAction
+import me.weishu.kernelsu.ui.design.panel.Xc8Row
+import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.util.getBugreportFile
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -66,34 +63,19 @@ fun SendLogDialog(
         onDismissRequest = onDismissRequest,
     ) {
         XDialogTitle(text = stringResource(R.string.send_log))
-        ArrowPreference(
+        Xc8Row(
             title = stringResource(id = R.string.save_log),
-            startAction = {
-                Icon(
-                    Icons.Rounded.Save,
-                    contentDescription = null,
-                    modifier = Modifier.padding(end = 16.dp),
-                    tint = colorScheme.onSurface
-                )
-            },
+            leading = Icons.Rounded.Save,
             onClick = {
                 val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH_mm")
                 val current = LocalDateTime.now().format(formatter)
                 exportBugreportLauncher.launch("XECKernelPro_bugreport_${current}.tar.gz")
                 onDismissRequest()
             },
-            insideMargin = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
         )
-        ArrowPreference(
+        Xc8Row(
             title = stringResource(id = R.string.send_log),
-            startAction = {
-                Icon(
-                    Icons.Rounded.Share,
-                    contentDescription = null,
-                    modifier = Modifier.padding(end = 16.dp),
-                    tint = colorScheme.onSurface
-                )
-            },
+            leading = Icons.Rounded.Share,
             onClick = {
                 scope.launch {
                     onDismissRequest()
@@ -124,16 +106,16 @@ fun SendLogDialog(
                     )
                 }
             },
-            insideMargin = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
         )
-        TextButton(
-            text = stringResource(id = android.R.string.cancel),
-            onClick = {
-                onDismissRequest()
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp)
-        )
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Xc8DialogAction(
+                text = stringResource(android.R.string.cancel),
+                color = Xc.colors.textSecondary,
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    onDismissRequest()
+                },
+            )
+        }
     }
 }

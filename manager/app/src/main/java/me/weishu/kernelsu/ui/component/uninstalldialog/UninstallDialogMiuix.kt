@@ -1,20 +1,21 @@
 package me.weishu.kernelsu.ui.component.uninstalldialog
 
 import android.widget.Toast
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.dialog.XDialog
 import me.weishu.kernelsu.ui.component.dialog.XDialogTitle
 import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
+import me.weishu.kernelsu.ui.design.panel.Xc8DialogAction
+import me.weishu.kernelsu.ui.design.panel.Xc8Row
+import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.navigation3.LocalNavigator
 import me.weishu.kernelsu.ui.navigation3.Route
 import me.weishu.kernelsu.ui.screen.flash.FlashIt
@@ -23,10 +24,6 @@ import me.weishu.kernelsu.ui.screen.flash.UninstallType.NONE
 import me.weishu.kernelsu.ui.screen.flash.UninstallType.PERMANENT
 import me.weishu.kernelsu.ui.screen.flash.UninstallType.RESTORE_STOCK_IMAGE
 import me.weishu.kernelsu.ui.screen.flash.UninstallType.TEMPORARY
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun UninstallDialogMiuix(
@@ -62,31 +59,26 @@ fun UninstallDialogMiuix(
         onDismissRequest = onDismissRequest,
     ) {
         XDialogTitle(text = stringResource(R.string.uninstall))
+        // 选项行用面板族：图标直接给 `leading`，会套上 MIUI 8 的橙色图标砖。
         options.forEach { type ->
-            ArrowPreference(
+            Xc8Row(
+                title = stringResource(type.title),
+                leading = type.icon,
                 onClick = {
                     showConfirmDialog.value = true
                     runType.value = type
                 },
-                title = stringResource(type.title),
-                startAction = {
-                    Icon(
-                        imageVector = type.icon,
-                        contentDescription = null,
-                        modifier = Modifier.padding(end = 16.dp),
-                        tint = MiuixTheme.colorScheme.onSurface
-                    )
-                },
-                insideMargin = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
             )
         }
-        TextButton(
-            text = stringResource(id = android.R.string.cancel),
-            onClick = onDismissRequest,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp)
-        )
+        // 取消是整格单按钮（MIUI 8 的单动作弹窗就是这样铺满一行）。
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Xc8DialogAction(
+                text = stringResource(android.R.string.cancel),
+                color = Xc.colors.textSecondary,
+                modifier = Modifier.weight(1f),
+                onClick = onDismissRequest,
+            )
+        }
     }
     val confirmDialog = rememberConfirmDialog(
         onConfirm = {
