@@ -35,7 +35,10 @@ object Natives {
     const val ROOT_GID = 0
 
     init {
-        System.loadLibrary("kernelsu")
+        // 与 cpp/CMakeLists.txt 的 add_library(xcnative ...) 必须一致。
+        // 原来叫 "kernelsu"（产物 libkernelsu.so），等于在 APK 元数据里直接写着
+        // "我是 KernelSU 管理器"——任何检测器扫一眼 nativeLibraryDir 就能认出来。
+        System.loadLibrary("xcnative")
     }
 
     val version: Int
