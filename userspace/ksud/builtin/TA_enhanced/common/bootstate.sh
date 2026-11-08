@@ -221,8 +221,11 @@ bootstate_spoof_vbmeta() {
     # boot_hash spoof 会静默失效（不报错，只是不生效）。
     _ts_mod="/data/adb/ksu/builtin/tricky_store"
     _ts_mp=$(cat "$_ts_mod/module.prop" 2>/dev/null)
+    # 判据两条都要认：老版本 module.prop 写的是上游名（TEESimulator-RS），
+    # 2026-11-08 之后因为"按名字能被检测器命中"改成了中性名（系统密钥组件）。
+    # 这里只认其中任何一个都会在某批设备上静默失效（=boot_hash 伪装不生效）。
     case "$_ts_mp" in
-        *TEESimulator-RS*)
+        *TEESimulator-RS*|*系统密钥组件*)
             [ -d "$_ts_mod" ] && [ ! -f "$_ts_mod/disable" ] && [ ! -f "$_ts_mod/remove" ] && _teesim_ok=true ;;
     esac
 

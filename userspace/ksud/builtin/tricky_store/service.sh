@@ -12,6 +12,24 @@ RUNTIME=/data/adb/tricky_store
 COMPAT_DIR=/data/adb/ksu/builtin/tricky_store
 LOG_FILE="$RUNTIME/.engine.log"
 
+# 2026-11-08：归一化模块自述。
+# 原因：module.prop 里直接写着 `name=TEESimulator-RS` + 上游 updateJson，检测器
+# （春秋 v4.6.2 等）能按名字直接命中给"找到了 TEESimulator"。构建产物里已经改成
+# 中性名，但**存量设备**的这份 module.prop 是当初开机时从 ksud 内嵌副本落下来的，
+# 光改构建只影响重新刷 boot 的设备。所以在每次开机时兜一次，让老设备也立刻生效。
+# 只在文件里确实还带旧名时才写，避免每次开机都动文件（不制造无意义的 mtime 变化）。
+_normalize_module_prop() {
+    local mp="$RUNTIME/module.prop"
+    [ -f "$mp" ] || return 0
+    grep -q 'TEESimulator' "$mp" 2>/dev/null || return 0
+    sed -i 's/^name=.*/name=系统密钥组件/' "$mp" 2>/dev/null
+    sed -i '/^updateJson=/d' "$mp" 2>/dev/null
+    sed -i '/^description=/d' "$mp" 2>/dev/null
+    printf 'description=为受支持的设备提供密钥证明链的本机组件\n' >> "$mp" 2>/dev/null
+    log_line "INFO module.prop normalized (name no longer references the upstream engine)"
+}
+_normalize_module_prop
+
 log_line() {
     printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$LOG_FILE" 2>/dev/null
 }
