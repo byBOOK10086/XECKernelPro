@@ -58,6 +58,44 @@ generation() {
     sed -n 's/.*Yurikey\([0-9][0-9]*\).*/\1/p' "$1" 2>/dev/null | head -n 1
 }
 
+# 叶子证书 = 链上第一张。上游 yurikey 每次换代的正是这张**短命**证书
+# （Yurikey67 的叶子只活 12 天：2026-10-25 → 2026-11-06），所以"代次更新"
+# 不等于"还能用"：67 代就是最最新的一代，且叶子在 2026-11-06 已经过期。
+# 判据必须是 notAfter，而不是代次。
+keybox_leaf_enddate() {
+    local f="$1" pem
+    [ -s "$f" ] || return 1
+    pem="$WORK/leaf.pem"
+    # 三种形态都要吃得下：①缩进在 XML 里、②PEM 被压成一整行（仓库兜底那份就是）、
+    # ③CRLF 检出。openssl 3.x 要求 BEGIN/END 各自顶格独占一行，所以这里不是
+    # "抽几行"而是**把 base64 抽出来重新按 64 列折行**。
+    awk '
+        /-----BEGIN CERTIFICATE-----/ { inside = 1; buf = "" }
+        inside {
+            line = $0
+            sub(/.*-----BEGIN CERTIFICATE-----/, "", line)
+            ended = ($0 ~ /-----END CERTIFICATE-----/)
+            sub(/-----END CERTIFICATE-----.*/, "", line)
+            gsub(/[^A-Za-z0-9+\/=]/, "", line)
+            buf = buf line
+            if (ended) {
+                print "-----BEGIN CERTIFICATE-----"
+                for (i = 1; i <= length(buf); i += 64) print substr(buf, i, 64)
+                print "-----END CERTIFICATE-----"
+                exit
+            }
+        }' "$f" > "$pem" || return 1
+    [ -s "$pem" ] || return 1
+    openssl x509 -in "$pem" -noout -enddate 2>/dev/null | sed 's/^notAfter=//'
+}
+
+keybox_leaf_epoch() {
+    local end
+    end="$(keybox_leaf_enddate "$1")" || return 1
+    [ -n "$end" ] || return 1
+    date -u -d "$end" +%s 2>/dev/null
+}
+
 fetch() {
     # fetch <url> <out>
     curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 60 \
@@ -66,6 +104,28 @@ fetch() {
 
 CANDIDATE="$WORK/keybox.xml"
 FOUND=""
+
+# 本地自检模式：`refresh-keybox.sh --check <keybox.xml>`
+# 只解析文件、不联网，用来在改脚本/排查"为什么还是过期证书"时直接验证判据。
+if [ "${1:-}" = "--check" ]; then
+    KB="${2:?usage: refresh-keybox.sh --check <keybox.xml>}"
+    END="$(keybox_leaf_enddate "$KB" || true)"
+    EPOCH="$(keybox_leaf_epoch "$KB" || true)"
+    NOW="$(date -u +%s)"
+    printf 'file       : %s\n' "$KB"
+    printf 'generation : %s\n' "$(generation "$KB" || true)"
+    printf 'leaf end   : %s\n' "${END:-<unreadable>}"
+    if [ -z "$EPOCH" ]; then
+        echo "verdict    : UNKNOWN (openssl/date 不可用，或不是 keybox)"
+        exit 2
+    fi
+    if [ "$EPOCH" -le "$NOW" ]; then
+        echo "verdict    : EXPIRED"
+        exit 1
+    fi
+    echo "verdict    : VALID"
+    exit 0
+fi
 
 for url in "${B64_SOURCES[@]}"; do
     log "trying base64 source: $url"
@@ -111,6 +171,22 @@ log "new: DeviceID=$(device_id "$CANDIDATE") generation=${NEW_GEN:-?} sha256=$(s
 if [ -f "$TARGET" ]; then
     log "old: DeviceID=$(device_id "$TARGET") generation=${OLD_GEN:-?} sha256=$(sha256sum "$TARGET" | cut -c1-16)"
 fi
+
+# 有效期守卫（2026-11-08 加）：上游 RKP 箱子的叶子证书只有十几天寿命，
+# 所以**代次更新 ≠ 还能用**。v31410 就是这样把一份"刚过期两天的最新箱子"
+# 嵌进了产物：设备上 Duck 报 CertificateExpiredException，Bootloader 卡变红。
+# 过期就不采用，回退到仓库里那份长效兜底（Yurikey58，2020→2030）。
+LEAF_END="$(keybox_leaf_enddate "$CANDIDATE" 2>/dev/null || true)"
+LEAF_EPOCH="$(keybox_leaf_epoch "$CANDIDATE" 2>/dev/null || true)"
+NOW_EPOCH="$(date -u +%s)"
+if [ -n "$LEAF_EPOCH" ] && [ "$LEAF_EPOCH" -le "$NOW_EPOCH" ]; then
+    echo "::warning::fetched keybox leaf already expired ($LEAF_END); keeping the committed copy"
+    if [ -f "$TARGET" ]; then
+        log "committed leaf end: $(keybox_leaf_enddate "$TARGET" 2>/dev/null || echo '<unreadable>')"
+    fi
+    exit 0
+fi
+log "candidate leaf valid until ${LEAF_END:-<unreadable>}"
 
 # 代次保护：只在"新代次不低于旧代次"或"旧文件无法识别代次"时替换，
 # 避免某个镜像回源到旧快照时把更新的内置副本降级。
