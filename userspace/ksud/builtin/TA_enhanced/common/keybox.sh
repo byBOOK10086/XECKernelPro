@@ -71,7 +71,8 @@ KB_URL_TIMEOUT=${KB_URL_TIMEOUT:-20}        # 单个镜像下载上限（秒）
 KB_VENDOR_TIMEOUT=${KB_VENDOR_TIMEOUT:-60}  # 交给 vendor CLI 拉取时的上限（秒）
 KB_SWEEP_BUDGET=${KB_SWEEP_BUDGET:-240}     # 一轮镜像扫描总预算（秒）
 KB_VENDOR_MAX=${KB_VENDOR_MAX:-3}           # 一轮里最多交给 vendor CLI 试几个 URL
-KB_REFRESH_INTERVAL=${KB_REFRESH_INTERVAL:-21600}  # 正常情况下的刷新间隔（6h）
+KB_REFRESH_INTERVAL=${KB_REFRESH_INTERVAL:-300}    # 轮询间隔（5min）：上游 RKP 叶子只活十几天，
+                                                   # 换代后要在几分钟内跟上，否则全网用户一起"证书已过期"
 KB_RETRY_OFFLINE=${KB_RETRY_OFFLINE:-60}    # 离线时的重试间隔（秒）
 KB_MAX_AGE=${KB_MAX_AGE:-93600}             # 超过 26h 未更新则强制刷新
 KB_TICK=${KB_TICK:-1}                       # 权限看护周期（秒）
@@ -455,6 +456,12 @@ kb_need_refresh() {
     # 只有"结构合法但没挂到 Google 根"的盒子、并且手上没有可信副本时，继续找。
     [ "$_lvl" = "1" ] && [ ! -s "$KB_GOOD" ] && return 0
     _age=$(( $(kb_now) - $(stat -c %Y "$KB_LIVE" 2>/dev/null || echo 0) ))
+    # 2026-11-08：原来这里只判 26h（KB_MAX_AGE），等于"六小时才想起来看一眼"。
+    # 上游 yurikey 的 RKP 叶子只活 12 天（67 代：10-25→11-06），到期后**全网用户
+    # 同时**报"证书已过期"。所以轮询要按 KB_REFRESH_INTERVAL（5min）来：
+    # 到点就去镜像问一句"有没有新代次"，内容没变 kb_sweep 不会写盘（同代次保护），
+    # 所以只是每 5 分钟一个 ~6KB 的 GET，不会写放大、也不会改 mtime。
+    [ "$_age" -gt "$KB_REFRESH_INTERVAL" ] && return 0
     [ "$_age" -gt "$KB_MAX_AGE" ] && return 0
     return 1
 }

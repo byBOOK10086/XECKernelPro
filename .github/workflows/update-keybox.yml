@@ -17,7 +17,10 @@ name: Update keybox mirror
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    # 2026-11-08：15 分钟 → 5 分钟。上游 RKP 叶子只有十几天寿命，换代窗口越短越好；
+    # 设备端已改为每 5 分钟轮询镜像（TA_enhanced/common/keybox.sh 的 KB_REFRESH_INTERVAL），
+    # 镜像本身也必须在这个粒度上是新的，否则设备问了也还是旧代次。
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
