@@ -269,7 +269,7 @@ object KsuCli {
         slot.retryAtElapsedMs = SystemClock.elapsedRealtime() + delay
         _rootReady.value = false
         noteProbe("probe-fail alive=${candidate.isAlive} retry=${slot.retryCount} delay=${delay}ms")
-        if (cached == null || !cached.isAlive) {
+        return if (cached == null || !cached.isAlive) {
             slot.shell = candidate
             candidate
         } else {
