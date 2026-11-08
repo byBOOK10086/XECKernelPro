@@ -184,8 +184,10 @@ private fun Xc8RadialConsole(
             entries.forEachIndexed { index, entry ->
                 val angleDeg = 210f + index * 60f
                 val rad = Math.toRadians(angleDeg.toDouble())
-                val dx = (radius * kotlin.math.cos(rad)).toFloat()
-                val dy = (radius * kotlin.math.sin(rad)).toFloat()
+                // Dp 只有 times(Float)/times(Int) —— 三角函数回来的是 Double，
+                // 直接 `radius * cos(...)` 编译不过，必须先换算成 Float 再转 Dp。
+                val dx = (radius.value * kotlin.math.cos(rad)).toFloat().dp
+                val dy = (radius.value * kotlin.math.sin(rad)).toFloat().dp
                 Column(
                     modifier = Modifier
                         .offset(x = pivotX + dx - 34.dp, y = pivotY + dy - 34.dp)
