@@ -133,7 +133,7 @@ fun Xc8Dialog(
                             },
                     ) {
                         if (dismissText != null) {
-                            DialogAction(
+                            Xc8DialogAction(
                                 text = dismissText,
                                 color = Xc.colors.textSecondary,
                                 modifier = Modifier.weight(1f),
@@ -149,7 +149,7 @@ fun Xc8Dialog(
                                         .background(rim),
                                 )
                             }
-                            DialogAction(
+                            Xc8DialogAction(
                                 text = confirmText,
                                 color = Xc.colors.accent,
                                 modifier = Modifier.weight(1f),
@@ -166,9 +166,9 @@ fun Xc8Dialog(
     }
 }
 
-/** 对话框底部的一格按钮。 */
+/** 对话框底部的一格按钮（确认框、选择框共用）。 */
 @Composable
-private fun DialogAction(
+fun Xc8DialogAction(
     text: String,
     color: Color,
     modifier: Modifier = Modifier,

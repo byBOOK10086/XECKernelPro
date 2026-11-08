@@ -1,9 +1,13 @@
 package me.weishu.kernelsu.ui.component.dialog
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+
+import androidx.compose.foundation.layout.Box
+
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
@@ -14,9 +18,9 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
@@ -24,12 +28,14 @@ import androidx.navigationevent.compose.rememberNavigationEventState
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.markdown.MarkdownContent
 import me.weishu.kernelsu.ui.design.glass.XGlassDialog
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
+import me.weishu.kernelsu.ui.design.panel.Xc8DialogAction
+
+import me.weishu.kernelsu.ui.design.panel.Xc8Loading
+
+import me.weishu.kernelsu.ui.design.token.Xc
+
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * XEC Fluid Glass · 全局对话框宿主。
@@ -130,13 +136,12 @@ fun XDialogHost(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            InfiniteProgressIndicator(
-                color = MiuixTheme.colorScheme.onBackground,
-            )
+            Xc8Loading()
             Text(
                 modifier = Modifier.padding(start = 12.dp),
                 text = stringResource(R.string.processing),
                 fontWeight = FontWeight.Medium,
+                color = Xc.colors.text,
             )
         }
     }
@@ -203,21 +208,24 @@ private fun ConfirmDialogContent(
                     else -> Text(text = content)
                 }
             }
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.padding(top = 12.dp),
-            ) {
-                TextButton(
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Xc8DialogAction(
                     text = visuals.dismiss ?: stringResource(id = android.R.string.cancel),
+                    color = Xc.colors.textSecondary,
+                    modifier = Modifier.weight(1f),
                     onClick = dismiss,
-                    modifier = Modifier.weight(1f),
                 )
-                Spacer(Modifier.width(20.dp))
-                TextButton(
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(46.dp)
+                        .background(Xc.colors.glassRim),
+                )
+                Xc8DialogAction(
                     text = visuals.confirm ?: stringResource(id = android.R.string.ok),
-                    onClick = confirm,
+                    color = Xc.colors.accent,
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    onClick = confirm,
                 )
             }
         },

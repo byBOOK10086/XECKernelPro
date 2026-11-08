@@ -3,12 +3,12 @@ package me.weishu.kernelsu.ui.design.glass
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
@@ -37,31 +38,30 @@ import androidx.compose.ui.unit.dp
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
-import me.weishu.kernelsu.ui.design.clear.ClearGlassSurface
 import me.weishu.kernelsu.ui.design.token.Xc
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 
 /**
- * XEC Fluid Glass · 玻璃对话框。
+ * XEC · 对话框渲染层（2026-11-08 换成 MIUI 8 皮）。
  *
- * 刻意**不用**独立 Window 的 `Dialog`：`LayerBackdrop` 取的是当前窗口的图层，
- * 换一个 window 之后模糊与折射都会失效，只剩一块死色。
- * 所以这里是一个同窗口的全屏浮层，调用方把它放在根节点的最后一个子项即可。
+ * **为什么要改**：全 App 的弹窗都从这里出来（确认框、加载框、各页自绘框），
+ * 所以只改这一处就等于把所有弹窗一次性换成 MIUI 8 —— 白色面板、小圆角、
+ * 180ms 淡入。原来是 `ClearGlassSurface` 的模糊 + 折射玻璃，那套语言在
+ * 「白面板 + 1px 分隔线」的界面里会显得像另一个 App 的零件。
  *
- * 入场的缩放从 0.92 起、用弹簧收尾，配上下方 [Xc] 的圆角，落点手感与水滴一致。
+ * 刻意**不用**独立 Window 的 `Dialog`：同窗口浮层才能继续用根层的遮罩与返回键接管。
  *
  * 显隐由 [show] 受控：本组件**永远留在组合里**，靠 [MutableTransitionState]
  * 驱动进出场，退场动画才不会因为调用方把它从树上摘掉而永远看不到。
  *
- * 从平台 `Dialog` 换成同窗口浮层，返回键的接管要自己补回来——否则一次返回会
- * 直接 pop 掉整个路由，而对话框还留在屏幕上。这里统一按平台 `Dialog` 的语义
- * 处理：返回 = [onDismissRequest]。于是"点外面不关闭"的场景（传 `{}`）自然
- * 等价于"吞掉返回、什么都不做"，加载框正是要这个行为。
+ * 返回键的接管按平台 `Dialog` 的语义处理：返回 = [onDismissRequest]。于是
+ * "点外面不关闭"的场景（传 `{}`）自然等价于"吞掉返回、什么都不做"，加载框正是要这个行为。
  *
  * @param show 为 `false` 且退场动画跑完之后，本组件不再绘制任何内容、也不再
  *   接管返回键，因此它是可以放心跟着页面一起挂载的。
  * @param onDismissRequest 点遮罩或按返回时回调；不传可用 `{}` 表示"不关闭"。
- * @param backdrop 根节点的 `rememberBlurBackdrop` 结果；`null` 时退化为不透明底 + 描边。
+ * @param backdrop 保留参数：现在面板是实色，不再取模糊图层；留着是为了不动
+ *   全部调用点（`XDialogHost` / `DownloadDialog` 都还在传）。
  *
  * 面板宽度上限 [maxWidth]，高度上限为**扣掉安全区之后**可用高度的 90%（且不超过
  * 640dp）；遮罩铺满整个窗口，面板则被收在挖孔与手势条之内。内容超出时在面板
@@ -73,7 +73,7 @@ fun XGlassDialog(
     onDismissRequest: () -> Unit,
     backdrop: LayerBackdrop?,
     modifier: Modifier = Modifier,
-    shape: Shape = Xc.shapes.xl,
+    shape: Shape = Xc.shapes.lg,
     maxWidth: Dp = 420.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -130,34 +130,28 @@ fun XGlassDialog(
         ) {
             AnimatedVisibility(
                 visibleState = visibleState,
-                enter = fadeIn(animationSpec = tween(durationMillis = 160)) + scaleIn(
-                    initialScale = 0.92f,
-                    animationSpec = spring(dampingRatio = 0.82f, stiffness = 420f),
+                // MIUI 8 的弹窗是"淡入 + 微微放大"，不是弹簧：180ms / 0.96 → 1.0。
+                enter = fadeIn(animationSpec = tween(durationMillis = 180)) + scaleIn(
+                    initialScale = 0.96f,
+                    animationSpec = tween(durationMillis = 180),
                 ),
-                exit = fadeOut(animationSpec = tween(durationMillis = 120)),
+                exit = fadeOut(animationSpec = tween(durationMillis = 140)),
             ) {
-                ClearGlassSurface(
-                    backdrop = backdrop,
+                Column(
                     modifier = Modifier
                         .padding(horizontal = 24.dp)
                         .widthIn(max = maxWidth)
-                        .heightIn(max = panelMaxHeight),
-                    shape = shape,
-                    // 透明玻璃语言：轻雾度 + 全分辨率记录（半径超限会被钳到
-                    // CLEAR_GLASS_MAX_BLUR_PX），折射才不会出马赛克。
-                    blurRadius = 2.5.dp,
-                    refraction = 26.dp,
-                ) {
-                    Column(
-                        // 内边距在外、滚动在内：22dp 的呼吸位固定不动，超长内容只在
-                        // 自己那块区域里滚，不会顶到圆角边上。
-                        modifier = Modifier
-                            .padding(22.dp)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
-                        content = content,
-                    )
-                }
+                        .heightIn(max = panelMaxHeight)
+                        .clip(shape)
+                        .background(Xc.colors.surface)
+                        .border(width = 1.dp, color = Xc.colors.glassRim, shape = shape)
+                        // 内边距在外、滚动在内：文字只在 20dp 的呼吸位之内滚，
+                        // 不会贴着圆角与描边划过去。
+                        .padding(20.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    content = content,
+                )
             }
         }
     }
