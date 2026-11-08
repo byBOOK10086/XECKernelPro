@@ -82,6 +82,7 @@ import me.weishu.kernelsu.ui.component.dialog.XDialogHost
 import me.weishu.kernelsu.ui.component.dialog.XDialogHostState
 import me.weishu.kernelsu.ui.design.clear.LocalWallpaperBackdrop
 import me.weishu.kernelsu.ui.design.liquid.XDropletHost
+import me.weishu.kernelsu.ui.design.panel.Xc8Dock
 import me.weishu.kernelsu.ui.design.token.XcTheme
 import me.weishu.kernelsu.ui.navigation3.IntentDispatcher
 import me.weishu.kernelsu.ui.navigation3.LocalNavigator
@@ -690,10 +691,14 @@ fun MainScreen(
                 Box(
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    BottomBar(
-                        blurBackdrop = blurBackdrop,
-                        backdrop = backdrop,
-                        navigationBadge = navigationBadge,
+                    // 2026-11-08：五格等宽 tab → 两席 + 控制台（见 Xc8Dock）。
+                    // 页面索引不动，所以超级用户 / 检测 / 设置仍然可达，只是入口收进控制台。
+                    Xc8Dock(
+                        selectedPage = mainPagerState.selectedPage,
+                        onSelectPage = { page -> mainPagerState.animateToPage(page) },
+                        moduleBadge = navigationBadge.moduleUpdatableCount
+                            .takeIf { it > 0 } ?: navigationBadge.moduleEnabledCount,
+                        superuserCount = navigationBadge.superuserCount,
                         modifier = Modifier.align(Alignment.BottomCenter),
                     )
                 }
