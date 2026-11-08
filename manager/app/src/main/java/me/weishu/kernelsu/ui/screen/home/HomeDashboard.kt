@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.weishu.kernelsu.ui.LocalMainPagerState
 import me.weishu.kernelsu.ui.design.panel.Xc8Panel
+import me.weishu.kernelsu.ui.design.panel.Xc8Radar
 import me.weishu.kernelsu.ui.design.token.Xc
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
@@ -62,11 +63,26 @@ fun HomeDashboard(state: HomeUiState) {
                 .padding(horizontal = 15.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ScoreRing(
-                score = result.total,
-                ringColor = ringColor,
-                trackColor = track,
-            )
+            // 2026-11-09：环 → **雷达**。九项各占一个方向，缺的那一角一眼可见，
+            // 比"一个百分比环 + 一串行"更能表达"哪里掉了"。
+            Xc8Radar(
+                values = result.items.map { if (it.max <= 0) 0f else it.earned.toFloat() / it.max },
+                size = 92.dp,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = result.total.toString(),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Xc.colors.text,
+                    )
+                    Text(
+                        text = result.rank.name,
+                        fontSize = 9.sp,
+                        color = Xc.colors.textMuted,
+                    )
+                }
+            }
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
