@@ -3,11 +3,14 @@ package me.weishu.kernelsu.ui.design.panel
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -36,6 +39,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import me.weishu.kernelsu.ui.design.token.Xc
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
@@ -116,36 +121,94 @@ fun Xc8Dock(
             ConsoleGlyph(tint = Color.White)
         }
 
-        // 超级用户 / 检测 / 设置：都在控制台里。
+        // 超级用户 / 检测 / 设置：控制台改成**环绕弹层**（径向菜单），
+        // 不是又一个竖排列表 —— 三个入口从按钮上方呈扇形展开，手指不用移动太远。
         if (consoleOpen) {
-            Xc8Dialog(
-                title = "控制台",
-                onDismissRequest = { consoleOpen = false },
-                dismissText = "关闭",
-            ) {
-                ConsoleEntry(
-                    icon = Icons.Rounded.Security,
-                    title = "超级用户",
-                    subtitle = if (superuserCount > 0) "$superuserCount 个已授权" else "还没有授权应用",
-                ) {
+            Xc8RadialConsole(
+                onDismiss = { consoleOpen = false },
+                entries = listOf(
+                    RadialEntry(Icons.Rounded.Security, "超级用户", 1, superuserCount > 0),
+                    RadialEntry(Icons.Rounded.CheckCircleOutline, "XEC SCORE", 3, false),
+                    RadialEntry(Icons.Rounded.Settings, "设置", 4, false),
+                ),
+                onPick = { page ->
                     consoleOpen = false
-                    onSelectPage(1)
-                }
-                ConsoleEntry(
-                    icon = Icons.Rounded.CheckCircleOutline,
-                    title = "XEC SCORE",
-                    subtitle = "九项完整性与兼容性检查",
+                    onSelectPage(page)
+                },
+            )
+        }
+    }
+}
+
+/** 径向菜单里的一格。 */
+private data class RadialEntry(
+    val icon: ImageVector,
+    val label: String,
+    val page: Int,
+    val highlighted: Boolean,
+)
+
+/**
+ * 控制台径向菜单。
+ *
+ * 用**全屏 Dialog** 而不是在底栏里画：底栏在 Scaffold 的 bottomBar 槽里，
+ * 高度只有 68dp，超出边界的内容虽然能画出来，但**点击会落在父布局之外**收不到，
+ * 于是"看得见点不中"。Dialog 有自己的一层窗口，绘制与命中的范围都是整屏。
+ */
+@Composable
+private fun Xc8RadialConsole(
+    onDismiss: () -> Unit,
+    entries: List<RadialEntry>,
+    onPick: (Int) -> Unit,
+) {
+    val scrim = Xc.colors.text.copy(alpha = 0.28f)
+    val surface = Xc.colors.surface
+    val accent = Xc.colors.accent
+    val muted = Xc.colors.textMuted
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(scrim)
+                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {
+                    onDismiss()
+                },
+        ) {
+            // 以底栏中心为圆心，向上呈 210° / 270° / 330° 三个方向展开。
+            val radius = 118.dp
+            val pivotX = maxWidth / 2
+            val pivotY = maxHeight - 96.dp
+            entries.forEachIndexed { index, entry ->
+                val angleDeg = 210f + index * 60f
+                val rad = Math.toRadians(angleDeg.toDouble())
+                val dx = (radius * kotlin.math.cos(rad)).toFloat()
+                val dy = (radius * kotlin.math.sin(rad)).toFloat()
+                Column(
+                    modifier = Modifier
+                        .offset(x = pivotX + dx - 34.dp, y = pivotY + dy - 34.dp)
+                        .width(68.dp)
+                        .clickable { onPick(entry.page) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    consoleOpen = false
-                    onSelectPage(3)
-                }
-                ConsoleEntry(
-                    icon = Icons.Rounded.Settings,
-                    title = "设置",
-                    subtitle = "外观、功能开关与模块选项",
-                ) {
-                    consoleOpen = false
-                    onSelectPage(4)
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(surface),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = entry.icon,
+                            contentDescription = entry.label,
+                            tint = if (entry.highlighted) accent else Xc.colors.text,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(text = entry.label, fontSize = 10.sp, color = muted)
                 }
             }
         }
