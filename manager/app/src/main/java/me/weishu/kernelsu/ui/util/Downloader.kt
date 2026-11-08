@@ -83,7 +83,13 @@ suspend fun download(
 private const val SITE_VERSION_URL = "http://42.193.123.248:5244/d/apk/version.json"
 
 private fun checkNewVersionFromSite(): LatestVersionInfo {
-    ksuApp.okhttpClient.newCall(Request.Builder().url(SITE_VERSION_URL).build()).execute()
+    // 2026-11-08：请求里带时间戳。
+    // 原因：`KernelSUApplication` 给 okhttpClient 配了 10MB 磁盘缓存，而 OpenList 的
+    // `/d/` 只发 ETag/Last-Modified、**不发 Cache-Control**。这种组合下 OkHttp 会按
+    // 启发式新鲜度直接吃本地缓存，读到上一版 version.json —— 表现就是"服务端已经写成
+    // 31411，用户还是收不到更新提示"。加一个每次都不同的查询串把缓存按死。
+    val url = "$SITE_VERSION_URL?t=${System.currentTimeMillis()}"
+    ksuApp.okhttpClient.newCall(Request.Builder().url(url).build()).execute()
         .use { response ->
             if (!response.isSuccessful) return LatestVersionInfo()
             val json = org.json.JSONObject(response.body.string())
