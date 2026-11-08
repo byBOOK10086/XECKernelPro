@@ -63,8 +63,22 @@ getprop | grep "test-keys" | cut -d'[' -f2 | cut -d']' -f1 | while IFS= read -r 
     replace_value_prop "$prop" "test-keys" "release-keys"
 done
 
-check_reset_prop "init.svc.adbd" "stopped"
-hexpatch_deleteprop "init.svc.adb_root"
+# init.svc.adbd 以前被强行写成 stopped（想藏 adb 状态）。**2026-11-08 真机实测：
+# 这是自伤**——属性说 stopped、/dev/socket/adbd 和 JDWP 却都活着，Duck Detector
+# 的 "ADB Runtime" 直接把这种矛盾判成 DANGER（春秋也报同类项）。adbd 是否在跑
+# 本来就是用户自己的选择（拿着 USB 调试的人），藏它只会制造矛盾证据。
+# 现在改成"与事实一致"：真在跑就别写 stopped；早先的 bootstate.sh 也会在
+# post-fs-data 阶段做同样的纠正，两处语义保持一致。
+if [ -S /dev/socket/adbd ] && pidof adbd >/dev/null 2>&1; then
+    check_reset_prop "init.svc.adbd" "running"
+else
+    check_reset_prop "init.svc.adbd" "stopped"
+fi
+# 删除属性会在属性区留下空洞（春秋的 Property Modified 就是扫这个），
+# 所以只在该属性**真的存在**时才删。
+if [ -n "$(getprop init.svc.adb_root)" ]; then
+    hexpatch_deleteprop "init.svc.adb_root"
+fi
 check_reset_prop "init.svc.flash_recovery" "stopped"
 
 _log "INFO" "Property cleanup complete: $_PROP_SPOOF_COUNT changed, $_PROP_FAIL_COUNT failed"
