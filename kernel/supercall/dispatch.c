@@ -20,6 +20,7 @@
 #endif
 #include "uapi/supercall.h"
 #include "supercall/internal.h"
+#include "manager/manager_observer.h"
 #include "arch.h" // IWYU pragma: keep
 #include "policy/allowlist.h"
 #include "policy/feature.h"
@@ -73,6 +74,17 @@ static int do_get_info(void __user *arg)
      */
     bool mgr = is_manager();
     struct ksu_get_info_cmd cmd = { .version = mgr ? KERNEL_SU_VERSION : KSU_COMPAT_REPORTED_VERSION, .flags = 0 };
+
+    /*
+     * 管理器身份丢了就自愈：GET_INFO 是 always_allow，所以管理器即使已经不是
+     * manager 也读得到，而这里顺手排一次延迟重扫（身份正常时是空转，5 秒节流）。
+     *
+     * 为什么放在这里而不是开机事件里：late load 的模块根本收不到
+     * boot_completed，那次扫描之后就只剩 /data/system/packages.list 的
+     * fsnotify；系统长时间不装不卸应用时，身份会一直坏着，表现出来就是
+     * "重启后 root 偶尔没了、首页退回原版 KernelSU 的安装页"。
+     */
+    ksu_maybe_rescan_manager();
 
 #ifdef MODULE
     cmd.flags |= KSU_GET_INFO_FLAG_LKM;

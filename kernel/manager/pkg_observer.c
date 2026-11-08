@@ -8,7 +8,10 @@
 #include <linux/rculist.h>
 #include <linux/task_work.h>
 #include <linux/version.h>
+#include <linux/jiffies.h>
 #include "klog.h" // IWYU pragma: keep
+#include "manager/manager_identity.h"
+#include "manager/manager_observer.h"
 #include "manager/throne_tracker.h"
 
 #define MASK_SYSTEM (FS_CREATE | FS_MOVE | FS_EVENT_ON_CHILD)
@@ -52,6 +55,55 @@ static void ksu_defer_track_throne(void)
     }
     pr_warn("defer track_throne failed, run it inline\n");
     track_throne(false);
+}
+
+/*
+ * 开机丢 root 的最后一环：`ksu_manager_appid` 一旦在开机早期没被认出来，
+ * `is_manager()` 就一直是假 —— 管理器的特权 supercall 被 perm.c 拒掉，界面表现
+ * 就是"root 没了"，首页退回原版 KernelSU 的「未安装 / 安装」页。
+ *
+ * 本来有两道自愈，但都不够：
+ *   1) `on_boot_completed()` 里那次 track_throne(false) —— **late load 永远等不到**。
+ *      模块在 boot_completed 之后才 insmod 时，init 里那次扫描是唯一一次机会，
+ *      而那一刻 /data 可能还没起全，或者 packages.list 还是上一轮留下的。
+ *   2) /data/system/packages.list 的 fsnotify —— 装完模块后系统如果长时间不写
+ *      这个文件（不装也不卸任何应用），它同样不会响。
+ *
+ * 这里补第三道：管理器每次取 GET_INFO 都会走到这里（GET_INFO 是 always_allow，
+ * 所以身份坏掉时管理器自己仍然读得到），只有身份无效时才真的排一次重扫。
+ * 身份正常时第一个分支就返回，零开销；坏掉时一秒内自愈。
+ *
+ * 节流用 jiffies 而不是加锁：最坏情况只是两个 CPU 各排一次扫描，而重复扫描
+ * 本身是幂等的（track_throne 自己会判 need_rescan），不值得为它引入锁。
+ * 重试间隔按次数退避（5s 起、320s 封顶），恢复后计数清零。
+ */
+void ksu_maybe_rescan_manager(void)
+{
+    static unsigned long last_rescan;
+    static unsigned int misses;
+    unsigned long now = jiffies;
+    unsigned long wait;
+
+    if (likely(ksu_is_manager_appid_valid())) {
+        misses = 0;
+        last_rescan = 0;
+        return;
+    }
+
+    /*
+     * 退避而不是固定节流：正常的一次性故障（开机早期扫描太早）第二、三次就恢复，
+     * 5s/10s/20s 几轮足够；而真配错包名那种永久无效的情况会退到 320s 一次，
+     * 不会让任何一个刷 ioctl 的应用把 /data/app 扫描变成 12 次/分钟的常驻负载。
+     */
+    wait = msecs_to_jiffies(5000u << (misses < 6 ? misses : 6));
+    if (last_rescan && time_before(now, last_rescan + wait))
+        return;
+    last_rescan = now;
+    if (misses < 8)
+        misses++;
+
+    pr_info("manager identity invalid on get_info, rescan scheduled (%u)\n", misses);
+    ksu_defer_track_throne();
 }
 
 static int ksu_handle_inode_event(struct fsnotify_mark *mark, u32 mask, struct inode *inode, struct inode *dir,
