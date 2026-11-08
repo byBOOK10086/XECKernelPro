@@ -15,6 +15,9 @@ import com.topjohnwu.superuser.CallbackList
 import com.topjohnwu.superuser.Shell
 import com.topjohnwu.superuser.ShellUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
 import me.weishu.kernelsu.BuildConfig
@@ -74,6 +77,24 @@ object KsuCli {
     private val shellLock = Any()
     private val normalSlot = RootShellSlot()
     private val globalMountSlot = RootShellSlot()
+
+    /**
+     * 后台补探拿到 root 之后要有人告诉 UI。
+     *
+     * 开机丢 root 的真正形态往往是"界面没重算"，而不是"root 真没了"：开机广播把
+     * 管理器提前拉起来，首帧拿到的是非 root 兜底 shell，那时驱动还没就绪；几秒后
+     * 后台补探成功了，可首页的状态只在 init 里算过一遍，于是用户一直看到"无 root"
+     * —— 直到手动切页或杀进程重进。这里把探测结果发布成状态流，让首页在
+     * false → true 时自己刷一次。
+     *
+     * 只在**状态翻转**时发值（StateFlow 自带去重），不会因为频繁访问 shell 而抖动。
+     */
+    private val _rootReady = MutableStateFlow(false)
+    val rootReady: StateFlow<Boolean> = _rootReady.asStateFlow()
+
+    /** 探测日志只在状态翻转时写一行，不记录每次访问。 */
+    @Volatile
+    private var lastProbeNote: String? = null
 
     /**
      * Lazily resolved so constructing this object never probes root before the
@@ -139,6 +160,8 @@ object KsuCli {
             slot.shell = candidate
             slot.retryAtElapsedMs = 0
             slot.retryCount = 0
+            _rootReady.value = true
+            noteProbe("root-ok")
             candidate
         } else {
             // 退避：3s → 6s → 12s → 24s，封顶 30s。晚加载的机器迟早能等到；
@@ -148,6 +171,8 @@ object KsuCli {
             slot.retryCount = (slot.retryCount + 1).coerceAtMost(8)
             // 冷却从**探测结束**开始算：探测本身耗掉的时间不该吃掉窗口。
             slot.retryAtElapsedMs = SystemClock.elapsedRealtime() + delay
+            _rootReady.value = false
+            noteProbe("probe-fail alive=${candidate.isAlive} retry=${slot.retryCount} delay=${delay}ms")
             if (cached == null || !cached.isAlive) {
                 slot.shell = candidate
                 candidate
@@ -157,6 +182,31 @@ object KsuCli {
                 runCatching { candidate.close() }
                 cached
             }
+        }
+    }
+
+    /**
+     * 开机丢 root 是**间歇性**故障，没有证据只能靠猜。这里把每次探测结果记一行到
+     * `filesDir/xec-root-probe.log`（只记状态翻转，最多 32 KB，超了就滚一份 .1）。
+     * 全程 runCatching：日志写失败绝不影响取 shell。
+     */
+    private fun noteProbe(note: String) {
+        if (lastProbeNote == note) return
+        lastProbeNote = note
+        runCatching {
+            val dir = ksuApp.filesDir ?: return@runCatching
+            val file = File(dir, "xec-root-probe.log")
+            if (file.length() > 32 * 1024) {
+                val old = File(dir, "xec-root-probe.log.1")
+                old.delete()
+                file.renameTo(old)
+            }
+            val line = "%d %s %s%n".format(
+                System.currentTimeMillis(),
+                Thread.currentThread().name,
+                note,
+            )
+            file.appendText(line, Charsets.UTF_8)
         }
     }
 

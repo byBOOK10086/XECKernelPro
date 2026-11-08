@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -30,8 +31,9 @@ import me.weishu.kernelsu.widget.XecWidgetSnapshot
 import me.weishu.kernelsu.widget.XecWidgetStore
 import me.weishu.kernelsu.ui.util.checkNewVersion
 import me.weishu.kernelsu.ui.util.getKsuDaemonPath
-import me.weishu.kernelsu.ui.util.getSELinuxStatusRaw
 import me.weishu.kernelsu.ui.util.getRootShell
+import me.weishu.kernelsu.ui.util.getSELinuxStatusRaw
+import me.weishu.kernelsu.ui.util.KsuCli
 import me.weishu.kernelsu.ui.util.module.LatestVersionInfo
 import me.weishu.kernelsu.ui.util.resolveDeviceName
 import me.weishu.kernelsu.ui.util.rootAvailable
@@ -42,6 +44,17 @@ class HomeViewModel(
 
     private val _uiState = MutableStateFlow(buildState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    init {
+        // 开机早期被拉起时首帧算出的是"没有 root"。KsuCli 的后台补探晚一点拿到 root
+        // 之后必须让首页重算一次，否则界面会一直停在无 root —— 用户看到的"重启后
+        // root 掉了"有一半是这种界面滞留，而不是 root 真的丢。
+        viewModelScope.launch {
+            KsuCli.rootReady
+                .filter { it }
+                .collect { refresh() }
+        }
+    }
 
     fun refresh() {
         viewModelScope.launch {
