@@ -74,6 +74,7 @@ import me.weishu.kernelsu.ui.component.miuix.SearchPager
 import me.weishu.kernelsu.ui.component.miuix.WarningCard
 import me.weishu.kernelsu.ui.component.statustag.StatusTag
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
+import me.weishu.kernelsu.ui.design.panel.Xc8Dropdown
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.util.BlurredBar
@@ -103,7 +104,6 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Filter
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -333,11 +333,12 @@ fun SulogScreenMiuix(
                                     .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
                                 colors = CardDefaults.defaultColors(color = Color.Transparent),
                             ) {
-                                OverlayDropdownPreference(
+                                Xc8Dropdown(
                                     title = stringResource(R.string.sulog_log_files),
                                     items = fileSelector.items,
                                     enabled = fileSelector.items.isNotEmpty(),
                                     selectedIndex = fileSelector.selectedIndex,
+                                    cancelText = stringResource(R.string.cancel),
                                     onSelectedIndexChange = { index ->
                                         state.files.getOrNull(index)?.let { file ->
                                             actions.onSelectFile(file.path)

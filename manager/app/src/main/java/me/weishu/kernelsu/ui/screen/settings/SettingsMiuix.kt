@@ -52,8 +52,8 @@ import me.weishu.kernelsu.ui.component.dialog.rememberLoadingDialog
 import me.weishu.kernelsu.ui.component.miuix.SendLogDialog
 import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.component.uninstalldialog.UninstallDialog
-import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.island.IslandTopBar
+import me.weishu.kernelsu.ui.design.panel.Xc8Dropdown
 import me.weishu.kernelsu.ui.design.panel.Xc8Chevron
 import me.weishu.kernelsu.ui.design.panel.Xc8Panel
 import me.weishu.kernelsu.ui.design.panel.Xc8Row
@@ -61,18 +61,13 @@ import me.weishu.kernelsu.ui.design.panel.Xc8Switch
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CardDefaults
-import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import me.weishu.kernelsu.ui.design.token.XcRadius
 
 /**
  * @author weishu
@@ -242,13 +237,7 @@ fun SettingPagerMiuix(
                     }
 
                     KsuIsValid {
-                        Card(cornerRadius = XcRadius.md, 
-                            modifier = Modifier
-                                .padding(top = 12.dp)
-                                .fillMaxWidth()
-                                .xGlassBody(backdrop = backdrop, shape = Xc.shapes.md),
-                            colors = CardDefaults.defaultColors(color = Color.Transparent),
-                        ) {
+                        Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
                             val suCompatModeItems = listOf(
                                 stringResource(id = R.string.settings_mode_enable_by_default),
                                 stringResource(id = R.string.settings_mode_disable_until_reboot),
@@ -260,21 +249,14 @@ fun SettingPagerMiuix(
                                 "managed" -> stringResource(id = R.string.feature_status_managed_summary)
                                 else -> stringResource(id = R.string.settings_sucompat_summary)
                             }
-                            OverlayDropdownPreference(
+                            Xc8Dropdown(
                                 title = stringResource(id = R.string.settings_sucompat),
-                                summary = suSummary,
+                                subtitle = suSummary,
                                 items = suCompatModeItems,
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.AdminPanelSettings,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_sucompat),
-                                        tint = colorScheme.onBackground
-                                    )
-                                },
                                 enabled = uiState.suCompatStatus == "supported",
                                 selectedIndex = uiState.suCompatMode,
-                                onSelectedIndexChange = actions.onSetSuCompatMode
+                                onSelectedIndexChange = actions.onSetSuCompatMode,
+                                cancelText = stringResource(id = R.string.cancel),
                             )
                         }
 
