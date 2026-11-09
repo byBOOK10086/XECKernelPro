@@ -167,25 +167,36 @@ jobs:
         SHA=df67a32e86e3276d011735facb1535f64d0d88df84fa87521e90becc2d735444
         ZIP="gradle-${GV}-bin.zip"
         VENDOR="http://42.193.123.248:5244/d/vendor"
-        # services.gradle.org 其实是 302 到 github.com/gradle/gradle-distributions
-        # 的 release 资产，今天整条 github 资产 CDN 都在 504；腾讯/华为的 Gradle
-        # 镜像不走 github，实测 200，所以把它们排在官方前面，官方留作最后兜底。
-        SOURCES="${VENDOR}/${ZIP} \
-          https://mirrors.cloud.tencent.com/gradle/${ZIP} \
+        # 顺序按**实测**排，不是按"谁是我们自己的"排：
+        #   - services.gradle.org 其实是 302 到 github.com/gradle/gradle-distributions
+        #     的 release 资产，2026-11-09 整条 github 资产 CDN 都在 504；
+        #   - 自家盘对 GitHub runner 是跨境拉 144MB，实测一档能烧掉 10 分钟以上
+        #     （06:21:01 起，06:31:32 才放弃），放在第一位等于每跑一次先罚十分钟；
+        #   - 腾讯/华为的 Gradle 镜像不走 github，实测 200、5 秒拉完。
+        # 所以：腾讯 -> 华为 -> 自家盘 -> 官方（官方只作最后的兜底）。
+        # 自家盘仍然在列，它是"不依赖 github 也不依赖第三方"的那一路。
+        SOURCES="https://mirrors.cloud.tencent.com/gradle/${ZIP} \
           https://mirrors.huaweicloud.com/gradle/${ZIP} \
+          ${VENDOR}/${ZIP} \
           https://services.gradle.org/distributions/${ZIP} \
           https://downloads.gradle.org/distributions/${ZIP}"
         ok=0
         for url in ${SOURCES}; do
-          if curl -fsSL --retry 3 --retry-all-errors --retry-delay 5 \
-               --connect-timeout 20 --max-time 900 \
+          # --speed-limit/--speed-time 是这里的关键：144MB 的大件，光有 --max-time
+          # 挡不住"连上了但只有几十 KB/s"的慢源（今天自家盘就是这样，一个源就吃掉
+          # 十分钟）。低于 200KB/s 持续 30 秒立刻断开，换下一个源。
+          # --max-time 也从 900 收到 420：四路源加起来最坏 ~28 分钟，而不是 ~1 小时。
+          _t0=$(date +%s)
+          if curl -fsSL --retry 2 --retry-all-errors --retry-delay 3 \
+               --connect-timeout 15 --max-time 420 \
+               --speed-limit 204800 --speed-time 30 \
                -o "/tmp/${ZIP}" "${url}" 2>/dev/null \
              && echo "${SHA}  /tmp/${ZIP}" | sha256sum -c - >/dev/null 2>&1; then
-            echo "gradle distribution from ${url}"
+            echo "gradle distribution from ${url} in $(( $(date +%s) - _t0 ))s"
             ok=1
             break
           fi
-          echo "gradle distribution from ${url} failed; trying next source" >&2
+          echo "gradle distribution from ${url} failed after $(( $(date +%s) - _t0 ))s; trying next source" >&2
         done
         if [ "${ok}" != 1 ]; then
           echo "::warning::could not fetch ${ZIP} from any source; falling back to the wrapper"
