@@ -2,6 +2,7 @@ package me.weishu.kernelsu.ui
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
@@ -30,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.CompositionLocalProvider
@@ -249,6 +251,16 @@ open class MainActivity : ComponentActivity() {
                     // 所以主题自带的不透明度不会被这个开关抹掉。
                     componentAlpha = if (uiState.componentTransparent) 0f else 1f,
                 ) {
+                    // 窗口底色跟"应用解析后的主题"走，不能交给 values / values-night：
+                    // 资源里的那套只认系统深浅，而本应用的主题是用户在设置里单独选的。
+                    // 系统深色 + 应用浅色时，窗口底会停在 values-night 的近黑
+                    // (#0B0B0E)，页面转场、首帧、任何一层没被 Compose 盖住的边角
+                    // 露出来就是一圈黑边——这是淡入淡出转场看起来"黑框"的根源。
+                    // 这里每次重组都把窗口底刷成当前档的纸色，资源值只当兜底。
+                    val windowBackdrop = Xc.colors.backdrop
+                    SideEffect {
+                        window.setBackgroundDrawable(ColorDrawable(windowBackdrop.toArgb()))
+                    }
                     KernelSUTheme(appSettings = appSettings) {
                         // 对话框的玻璃要采"整个窗口"的图层，所以 backdrop 只能建在根层：
                         // 各页自己的 rememberBlurBackdrop 只覆盖那一页，而对话框宿主是

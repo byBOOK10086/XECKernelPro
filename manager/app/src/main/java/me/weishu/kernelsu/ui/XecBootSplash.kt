@@ -23,7 +23,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -73,11 +72,13 @@ fun XecBootSplash(visible: Boolean) {
             modifier = Modifier
                 .fillMaxSize()
                 .background(
+                    // 扁平方案 A：启动页也是纸色。这里原本是 accentSoft → backdrop →
+                    // Color.Black 的三段径向渐变，边缘那一段黑在浅色档上就是一圈
+                    // 黑边（冷启动第一眼最明显）。去黑之后只剩中心一点强调色晕开。
                     Brush.radialGradient(
                         listOf(
                             Xc.colors.accentSoft,
                             Xc.colors.backdrop,
-                            Color.Black,
                         )
                     )
                 )

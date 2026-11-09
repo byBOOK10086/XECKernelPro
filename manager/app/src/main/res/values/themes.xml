@@ -10,10 +10,23 @@
     <style name="Theme.XecPro" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <item name="android:windowBackground">@color/xec_window_background</item>
+        <!-- 设备窗口还没进 Compose 的那几帧：平台深色 Material 主题会把
+             statusBarColor 落到 colorPrimaryDark（黑）。这里直接把两条系统栏
+             都钉成透明 + 关掉对比度强制，避免"顶部/底部一条黑"。 -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+        <!-- 首帧之前就是浅底，系统栏图标必须是深色，否则启动那一下是"白底白图标" -->
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
     </style>
 
     <style name="Theme.XecPro.Starting" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/ic_splash_background</item>
+        <!-- 系统启动窗口也用纸色：原先恒为品牌深底 #0B0F10，浅色档冷启动第一帧
+             就是一整块黑，正好跟"黑边"的观感叠在一起。 -->
+        <item name="windowSplashScreenBackground">@color/xec_window_background</item>
         <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_splash</item>
         <item name="windowSplashScreenAnimationDuration">500</item>

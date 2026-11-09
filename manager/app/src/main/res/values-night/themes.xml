@@ -4,10 +4,20 @@
     <style name="Theme.XecPro" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <item name="android:windowBackground">@color/xec_window_background</item>
+        <!-- 系统栏透明 + 关对比度强制：避免首帧/转场时出现顶部或底部黑条 -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+        <!-- 深色档首帧是深底，系统栏图标必须保持浅色 -->
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 
     <style name="Theme.XecPro.Starting" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/ic_splash_background</item>
+        <!-- 深色档的窗口底就是 #0B0B0E，启动窗口跟着走，不再恒用品牌深底 -->
+        <item name="windowSplashScreenBackground">@color/xec_window_background</item>
         <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_splash</item>
         <item name="windowSplashScreenAnimationDuration">500</item>
