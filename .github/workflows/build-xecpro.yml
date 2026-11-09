@@ -401,10 +401,12 @@ jobs:
           # 现在靠"每个 URL 只试一次 + 单 URL 最多 240s + 步骤 13 分钟硬超时"兜底：
           # 任何一条黑洞链接最多花 4 分钟，整步最多 13 分钟，不会再拖死 job。
           # 自家源排第一是因为它这两次实测最快（KPatch 400KB 只用了 13 秒）。
-          MIRRORS="${MAGISK_BASE} https://ghfast.top/${MAGISK_BASE} https://gh-proxy.com/${MAGISK_BASE}"
+          MIRRORS="${MAGISK_BASE} https://ghfast.top/${MAGISK_BASE} https://gh-proxy.com/${MAGISK_BASE} https://ghproxy.net/${MAGISK_BASE} https://github.moeyy.xyz/${MAGISK_BASE}"
           magisk_ok=0
+          # 每个 URL 只试一次、最多 180s：9MB 在 >50KB/s 的链路上 3 分钟内必然完成，
+          # 慢于此的源本来也赶不上发版窗口。多留几个镜像，谁快用谁。
           for url in "${VENDOR}/${MAGISK_APK}" ${MIRRORS}; do
-            if curl -fsSL --connect-timeout 20 --max-time 240 \
+            if curl -fsSL --connect-timeout 20 --max-time 180 \
                  -o /tmp/magisk.apk "${url}" 2>/dev/null \
                && echo "${MAGISK_SHA}  /tmp/magisk.apk" | sha256sum -c - >/dev/null 2>&1; then
               echo "magisk apk from ${url}"
