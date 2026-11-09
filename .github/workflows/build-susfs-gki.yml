@@ -87,16 +87,16 @@ jobs:
           # 上游提交必须固定：内核侧的 SUSFS ABI（SUSFS_VERSION、st_susfs_* 结构体
           # 布局、CMD_SUSFS_* 集合）和本仓库用户态 ksud 的 verb 集合是一一对应的，
           # 跟着分支头跑 = 上游一改就是一次静默的功能错配（甚至结构体错位）。
-          # 下表是 2026-10-12 用 GitLab API 解析出的各 KMI 分支尖端；要尝鲜就用
-          # susfs_sha 输入覆盖（susfs_branch 单独使用时按“打到分支头+告警”处理）。
+          # 下表是 2026-11-10 用 GitLab API 解析出的各 KMI 分支尖端（上游已升到 SUSFS v2.4.0，要尝鲜就用
+          # 新增 CMD_SUSFS_SET_PRIORITY_UID_FILTER；ksud 侧仍是 v2.3.0 的命令集，属增量兼容）。
           case "$KMI" in
-            android12-5.10) PINNED_SHA=13e7da018ddd41341b9d6ab1b279f4e712789d9e ;;
-            android13-5.10) PINNED_SHA=2837d10b68bacbd7f06758d301237e8f8b363adb ;;
-            android13-5.15) PINNED_SHA=138a6641afd25fb04f803361232c44ef2e033e61 ;;
-            android14-5.15) PINNED_SHA=1f88baa37858183a45c62ad5aea315f27b3a8fc1 ;;
-            android14-6.1)  PINNED_SHA=17dc6b683b26e036242bfcfe86b33c5982590237 ;;
-            android15-6.6)  PINNED_SHA=a0f9c59e2243f8a5db955f4ad1686d5e0ad26e1a ;;
-            android16-6.12) PINNED_SHA=b213c54126fb243595ce7876e91d84d6e0861fec ;;
+            android12-5.10) PINNED_SHA=5436438b5cc77f146e04f71070da153dabe17a9d ;;
+            android13-5.10) PINNED_SHA=1bea9e8fb4a64920f068e5da43f9751dfe601199 ;;
+            android13-5.15) PINNED_SHA=fe943d15ec6a1891f7a360bf210589bdffe4e318 ;;
+            android14-5.15) PINNED_SHA=10751e3c83f6e63f886cd2af937fd0a34463824b ;;
+            android14-6.1)  PINNED_SHA=69b8e734920b8f9ed885ab8d112969719698e242 ;;
+            android15-6.6)  PINNED_SHA=ec03d0c73b821afa1d5037d6d493216f59744fcb ;;
+            android16-6.12) PINNED_SHA=395a8c0c88d348e9fe7c14f66a456fde4653287c ;;
             *) PINNED_SHA="" ;;
           esac
           WANT_SHA="${{ inputs.susfs_sha }}"
