@@ -121,7 +121,7 @@ fun HomePagerMiuix(
 
     Scaffold(
         containerColor = Color.Transparent,
-        topBar = { HomeHeader(state = state, onRefresh = actions.onRefresh) },
+        topBar = { HomeHeader(onRefresh = actions.onRefresh) },
         popupHost = { },
         contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout)
             .only(WindowInsetsSides.Horizontal),
@@ -239,7 +239,6 @@ fun HomePagerMiuix(
  */
 @Composable
 private fun HomeHeader(
-    state: HomeUiState,
     onRefresh: () -> Unit,
 ) {
     Row(
@@ -249,24 +248,16 @@ private fun HomeHeader(
             .padding(start = 22.dp, end = 22.dp, top = 10.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.app_name),
-                style = Xc.typography.title,
-                color = Xc.colors.text,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "V${state.currentManagerVersionCode} · ${state.systemInfo.deviceModel}",
-                fontSize = 11.sp,
-                letterSpacing = 0.6.sp,
-                color = Xc.colors.textMuted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        // 2026-11-09：标题下面那行「版本号 · 机型」按用户要求去掉 —— 机型在「设备」表里
+        // 仍然有，管理器版本也在表里，顶栏不再重复这两项。
+        Text(
+            text = stringResource(R.string.app_name),
+            style = Xc.typography.title,
+            color = Xc.colors.text,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
         RebootListPopupMiuix(iconTint = Xc.colors.text)
         Spacer(Modifier.width(6.dp))
         Box(
