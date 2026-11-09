@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import me.weishu.kernelsu.ui.design.token.Xc
+import top.yukonga.miuix.kmp.basic.Icon
 
 /**
  * 底栏（2026-11-09 第三版：微透明 + 更圆润 + 四席）。
