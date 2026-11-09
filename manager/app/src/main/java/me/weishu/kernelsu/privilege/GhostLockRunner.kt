@@ -40,9 +40,12 @@ import kotlinx.coroutines.withContext
  *     的标记永远不会满足本次探针）。
  *  5. 200ms 尾随两份日志：0x1eGLK_STATUS <step> <status> 行回写
  *     0x1eGLK_STATUS_ACK\n（原生进程逐等步推进），其余行进日志。
- *  6. 成功判定：ksu 日志出现 "[+] KernelSU module loaded"（根脚本轮询
- *     /proc/modules 50×0.1s 后落盘）或 "[+] KernelSU already loaded"。成功后
- *     ksud late-load 会 force-stop 并重启本管理器。
+ *  6. 成功判定（2026-11-09 审计后收紧）：只认根脚本**最末尾**的终态标记
+ *     "[+] ghostlock done"（在 enforcing 恢复成功之后才写）。中间那行
+ *     "[+] KernelSU module loaded" 只进日志、不再当成功——它写在策略修复与
+ *     enforcing 恢复之前，用它判成功会把"设备留在 permissive"报成绿。
+ *     若看到 "FAILED to restore SELinux enforcing"，单独报"请立即重启"。
+ *     成功后 ksud late-load 会 force-stop 并重启本管理器。
  */
 class GhostLockRunner(context: Context) {
 
@@ -276,11 +279,18 @@ class GhostLockRunner(context: Context) {
             onLog("<b> native exited code=$exitCode")
 
             val ksuText = runCatching { if (ksuLog.isFile) ksuLog.readText() else "" }.getOrDefault("")
-            val loaded = ksuText.contains("[+] KernelSU module loaded") ||
-                ksuText.contains("[+] KernelSU already loaded")
-            if (loaded) {
-                onLog("<k> kernelsu module loaded; manager will restart shortly")
+            // 2026-11-09 审计：以前只要看到 "[+] KernelSU module loaded" 就算成功，可那一行是在
+            // enforcing 恢复**之前**写的（ops.cpp 原 426/427 行），于是"模块在、策略没修好、
+            // 设备留在 permissive"也会被报成成功。现在只认根脚本最末尾的终态标记
+            // "[+] ghostlock done"，并单独把"permissive 没收回来"说清楚。
+            val done = ksuText.contains("[+] ghostlock done")
+            val enforceBroken = ksuText.contains("FAILED to restore SELinux enforcing")
+            if (done) {
+                onLog("<k> ghostlock done; manager will restart shortly")
                 RunOutcome(true, exitCode, "KernelSU module loaded")
+            } else if (enforceBroken) {
+                onLog("<-> SELinux enforcing was NOT restored; device is permissive until reboot")
+                RunOutcome(false, exitCode, "提权完成但 SELinux 没能恢复到强制模式，请立即重启")
             } else {
                 val stuck = lastStuckStep()
                 RunOutcome(

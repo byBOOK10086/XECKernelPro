@@ -321,6 +321,9 @@ namespace ghostlock::attack {
             "}\n"
             "# W1's 64-bit child pointer makes adjacent booleans non-zero.\n"
             "echo 0 > /sys/fs/selinux/checkreqprot 2>/dev/null\n"
+            "# XEC: remember the enforcing bit so every exit path can put it back. A failed run\n"
+            "# must never leave the device permissive without saying so.\n"
+            "ENFORCE_WAS=$(cat /sys/fs/selinux/enforce 2>/dev/null)\n"
             "if grep -q '^kernelsu[[:space:]]' /proc/modules 2>/dev/null; then\n"
             "  echo '[+] KernelSU already loaded' >>\"$LOG\"\n"
             "fi\n"
@@ -407,11 +410,22 @@ namespace ghostlock::attack {
             /* XEC: upstream dropped --allow-shell (its ksud no longer takes it),
              * but this fork's `xudc late-load` still needs allow_shell=1 so the
              * freshly loaded module grants the shell UID — without it the whole
-             * late-load route ends in「no root」. Ask for it first, fall back to
-             * the upstream invocation when the daemon in use rejects the flag. */
-            "  \"$KSUD\" late-load --kmi \"$KMI\" --allow-shell >>\"$LOG\" 2>&1 || \\\n"
+             * late-load route ends in「no root」. 2026-11-09 audit: the old
+             * `cmd --allow-shell || cmd` retried on ANY non-zero exit, so a real
+             * runtime failure got a second, blind execution. Only a *flag
+             * rejection* may fall back now, and both attempts are logged. */
+            "  KS_OUT=$(mktemp \"$HOME_DIR/.ghostlock_ksud.XXXXXX\") || KS_OUT=/dev/null\n"
+            "  \"$KSUD\" late-load --kmi \"$KMI\" --allow-shell >\"$KS_OUT\" 2>&1\n"
+            "  KS_RC=$?\n"
+            "  if [ \"$KS_RC\" -ne 0 ] && grep -qiE 'unexpected argument|unrecognized|unknown (option|flag|argument)|invalid option|usage:' \"$KS_OUT\" 2>/dev/null; then\n"
+            "    echo \"[*] ksud rejected --allow-shell (rc=$KS_RC); retrying without it\" >>\"$LOG\"\n"
             "    \"$KSUD\" late-load --kmi \"$KMI\" >>\"$LOG\" 2>&1\n"
-            "  echo \"[*] late-load exit=$?\" >>\"$LOG\"\n"
+            "    KS_RC=$?\n"
+            "  elif [ \"$KS_RC\" -ne 0 ]; then\n"
+            "    echo \"[!] late-load failed rc=$KS_RC (not a flag rejection; no blind retry)\" >>\"$LOG\"\n"
+            "  fi\n"
+            "  if [ \"$KS_OUT\" != \"/dev/null\" ]; then cat \"$KS_OUT\" >>\"$LOG\" 2>/dev/null; rm -f \"$KS_OUT\"; fi\n"
+            "  echo \"[*] late-load exit=$KS_RC\" >>\"$LOG\"\n"
             "fi\n"
             "echo \"[*] temp su uid=$(id -u); watching kernelsu.ko\" >>\"$LOG\"\n"
             "KSU_READY=0\n"
@@ -423,13 +437,38 @@ namespace ghostlock::attack {
             "  echo '[!] KernelSU module not loaded' >>\"$LOG\"\n"
             "  exit 1\n"
             "fi\n"
-            "echo '[+] KernelSU module loaded' >>\"$LOG\"\n"
-            "if [ \"$KSU_ALREADY\" -eq 1 ]; then\n"
-            "  echo \"[*] kernelsu already loaded; restoring enforcing\" >>\"$LOG\"\n"
+            "echo '[+] KernelSU module loaded (log only; health checks follow)' >>\"$LOG\"\n"
+            /* XEC: 2026-11-09 audit — three defects fixed here:
+             *  1. the old code restored `enforce` only for the already-loaded
+             *     shortcut, so the late-load path relied on the freshly loaded
+             *     module to re-enforce. Restore it on every successful path and
+             *     log the value we actually ended up with.
+             *  2. a failed restore was silently ignored. It now aborts the run
+             *     with a distinct status: "permissive" is a security state the
+             *     user has to be told about.
+             *  3. `[+] KernelSU module loaded` was written before the enforcing
+             *     restore and the manager treated it as success. The terminal
+             *     marker is now `[+] ghostlock done`; the intermediate line stays
+             *     for the log only. */
+            "ENFORCE_RESTORE_RC=0\n"
+            "if [ \"$ENFORCE_WAS\" = \"1\" ]; then\n"
             "  echo 1 > /sys/fs/selinux/enforce 2>/dev/null\n"
+            "  ENFORCE_RESTORE_RC=$?\n"
+            "  echo \"[*] enforcing restore rc=$ENFORCE_RESTORE_RC now=$(cat /sys/fs/selinux/enforce 2>/dev/null)\" >>\"$LOG\"\n"
+            "  if [ \"$ENFORCE_RESTORE_RC\" -ne 0 ]; then\n"
+            "    echo '[!] FAILED to restore SELinux enforcing; device stays permissive until reboot (reboot before re-checking any detection)' >>\"$LOG\"\n"
+            "    exit 2\n"
+            "  fi\n"
             "fi\n"
+            "echo \"[+] ghostlock done enforce=$(cat /sys/fs/selinux/enforce 2>/dev/null) kmi=$KMI\" >>\"$LOG\"\n"
+            "exit 0\n"
             "else\n"
             "  echo '[!] fixup failed; SELinux left permissive' >>\"$LOG\"\n"
+            "  if [ \"$ENFORCE_WAS\" = \"1\" ]; then\n"
+            "    echo 1 > /sys/fs/selinux/enforce 2>/dev/null\n"
+            "    echo \"[*] best-effort enforcing restore rc=$? now=$(cat /sys/fs/selinux/enforce 2>/dev/null)\" >>\"$LOG\"\n"
+            "  fi\n"
+            "  exit 3\n"
             "fi\n",
             (config::runtime_config_snapshot().home_dir.c_str()),
             (config::runtime_config_snapshot().ksu_log_path.c_str()),
