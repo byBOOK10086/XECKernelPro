@@ -316,6 +316,14 @@ jobs:
           file manager/app/src/main/jniLibs/arm64-v8a/libghostlock.so
           ls -la manager/app/src/main/jniLibs/arm64-v8a/
 
+      - name: Restore payload cache
+        # 载荷字节固定（每个都带 sha256 校验），命中就跳过 KPatch(≈5min) 与
+        # Magisk(≈3min) 的下载 —— 2026-11-09 实测这两步占了 build-manager 一半时间。
+        uses: actions/cache@v4
+        with:
+          path: .cache/payload
+          key: xec-payloads-kpatch-0.13.5-2-magisk-30.7-v1
+
       - name: Fetch KPatch binaries (<5.10 kernel route)
         # 硬上限：这两个文件合计不到 500KB，正常源十几秒就该完成。2026-11-09 两次
         # 构建各在这里/Magisk 那步挂了几十分钟（curl 连着但零字节），所以给步骤本身
@@ -343,6 +351,14 @@ jobs:
             # 镜像 URL 必须在函数**内部**拼：`${name}` 是这里的本地变量，
             # 放到函数外用 set -u 会直接 "name: unbound variable"（2026-11-09 踩过）。
             local mirrors="${BASE}/${name} https://ghfast.top/${BASE}/${name} https://gh-proxy.com/${BASE}/${name}"
+            # 缓存先行：这两个二进制不会变，命中就完全跳过网络（2026-11-09 实测
+            # 一次 KPatch 拉取要 5 分钟，自家源只有 ~2KB/s）。
+            if [ -f ".cache/payload/${name}" ] && echo "${sha}  .cache/payload/${name}" | sha256sum -c - >/dev/null 2>&1; then
+              mkdir -p "$(dirname "${dest}")"
+              cp -f ".cache/payload/${name}" "${dest}"
+              echo "cached ${name}"
+              return 0
+            fi
             for url in \
                 "${VENDOR}/${name}" \
                 ${mirrors}; do
@@ -352,6 +368,8 @@ jobs:
                  && echo "${sha}  /tmp/${name}" | sha256sum -c - >/dev/null 2>&1; then
                 mkdir -p "$(dirname "${dest}")"
                 cp -f "/tmp/${name}" "${dest}"
+                mkdir -p .cache/payload
+                cp -f "/tmp/${name}" ".cache/payload/${name}"
                 echo "fetched ${name} from ${url}"
                 return 0
               fi
@@ -408,9 +426,15 @@ jobs:
           # 自家源排第一是因为它这两次实测最快（KPatch 400KB 只用了 13 秒）。
           MIRRORS="${MAGISK_BASE}/${MAGISK_APK} https://ghfast.top/${MAGISK_BASE}/${MAGISK_APK} https://gh-proxy.com/${MAGISK_BASE}/${MAGISK_APK} https://ghproxy.net/${MAGISK_BASE}/${MAGISK_APK} https://github.moeyy.xyz/${MAGISK_BASE}/${MAGISK_APK}"
           magisk_ok=0
-          # 每个 URL 只试一次、最多 180s：9MB 在 >50KB/s 的链路上 3 分钟内必然完成，
-          # 慢于此的源本来也赶不上发版窗口。多留几个镜像，谁快用谁。
+          # 缓存命中就直接用，不碰网络。
+          if [ -f .cache/payload/magisk.apk ] \
+             && echo "${MAGISK_SHA}  .cache/payload/magisk.apk" | sha256sum -c - >/dev/null 2>&1; then
+            cp -f .cache/payload/magisk.apk /tmp/magisk.apk
+            echo "cached magisk apk"
+            magisk_ok=1
+          fi
           for url in "${VENDOR}/${MAGISK_APK}" ${MIRRORS}; do
+            [ "${magisk_ok}" = 1 ] && break
             if curl -fsSL --connect-timeout 20 --max-time 180 \
                  -o /tmp/magisk.apk "${url}" 2>/dev/null \
                && echo "${MAGISK_SHA}  /tmp/magisk.apk" | sha256sum -c - >/dev/null 2>&1; then
@@ -424,6 +448,8 @@ jobs:
             echo "::error::could not fetch ${MAGISK_APK} from any source (vendor, github or mirrors)"
             exit 1
           }
+          mkdir -p .cache/payload
+          cp -f /tmp/magisk.apk .cache/payload/magisk.apk
           echo "${MAGISK_SHA}  /tmp/magisk.apk" | sha256sum -c -
 
           extract() {  # extract <apk-entry> <dest> <sha256>
