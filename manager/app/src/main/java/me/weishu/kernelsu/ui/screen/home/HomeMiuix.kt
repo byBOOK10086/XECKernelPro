@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.VolunteerActivism
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -286,6 +287,20 @@ private fun HomeHero(state: HomeUiState) {
     // 审计 P1（2026-11-09）：之前只看"驱动有没有应答"，驱动在但 su 被拒时仍显示
     // ROOT READY。就绪判据改成实际的 root 可用性。
     val active = state.isRootAvailable
+    // 冷启动/刚重启那段，root 探测还没落定。此时 isRootAvailable 必然 false，
+    // 直接画红点会得到"内核正常运行 + ROOT 未就绪"这种自相矛盾的首帧
+    // （2026-11-09 用户真机反馈）。未落定 → 灰点 + 「正在获取 Root」。
+    val probing = !state.rootProbeSettled
+    val statusLabel = when {
+        active -> R.string.home_hero_ready
+        probing -> R.string.home_hero_probing
+        else -> R.string.home_hero_idle
+    }
+    val statusColor = when {
+        active -> Xc.colors.success
+        probing -> Xc.colors.textMuted
+        else -> Xc.colors.danger
+    }
     val title = when {
         running -> stringResource(R.string.home_hero_running)
         mount -> stringResource(R.string.home_hero_mount)
@@ -310,25 +325,38 @@ private fun HomeHero(state: HomeUiState) {
                 modifier = Modifier
                     .size(7.dp)
                     .clip(CircleShape)
-                    .background(if (active) Xc.colors.success else Xc.colors.danger),
+                    .background(statusColor),
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = stringResource(
-                    if (active) R.string.home_hero_ready else R.string.home_hero_idle
-                ),
+                text = stringResource(statusLabel),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = 1.sp,
                 color = Xc.colors.textMuted,
             )
         }
-        Text(
-            text = title,
-            style = Xc.typography.display,
-            color = Xc.colors.text,
+        Row(
             modifier = Modifier.padding(top = 13.dp),
-        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                style = Xc.typography.display,
+                color = Xc.colors.text,
+            )
+            // 2026-11-09 用户要求：和 KernelSU 首页同款的"已运行"对勾。
+            // 只在真正就绪（su 可用）时出现，未就绪/探测中都不画 —— 那会变成假绿。
+            if (active) {
+                Spacer(Modifier.width(10.dp))
+                Icon(
+                    imageVector = Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    tint = Xc.colors.success,
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+        }
         Text(
             text = "$modeText · SELinux $selinuxText",
             fontSize = 12.sp,

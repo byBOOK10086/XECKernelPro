@@ -81,6 +81,8 @@ data class SettingsScreenActions(
     val onOpenProfileTemplate: () -> Unit,
     val onOpenRemoteAssistant: () -> Unit,
     val onOpenTools: () -> Unit,
+    /** 安装 / 刷入（Route.Install）：首页不再有「常用操作」后的常驻入口。 */
+    val onOpenInstall: () -> Unit = {},
     val onSetSuCompatMode: (Int) -> Unit,
     val onSetKernelUmountEnabled: (Boolean) -> Unit,
     val onSetSelinuxHideEnabled: (Boolean) -> Unit,

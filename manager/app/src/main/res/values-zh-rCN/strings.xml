@@ -1150,4 +1150,7 @@ XEC 项目组
     <string name="home_hero_kernel_mode">内核态</string>
     <string name="home_update_tap_hint">点按查看更新内容</string>
     <string name="tools_section_tools">工具</string>
+    <string name="settings_flash_entry">刷入 / 安装</string>
+    <string name="settings_flash_entry_summary">安装或更新内核、刷入模块包</string>
+    <string name="home_hero_probing">正在获取 Root</string>
 </resources>
