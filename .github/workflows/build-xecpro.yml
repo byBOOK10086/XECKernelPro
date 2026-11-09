@@ -319,8 +319,9 @@ jobs:
       - name: Fetch KPatch binaries (<5.10 kernel route)
         # 硬上限：这两个文件合计不到 500KB，正常源十几秒就该完成。2026-11-09 两次
         # 构建各在这里/Magisk 那步挂了几十分钟（curl 连着但零字节），所以给步骤本身
-        # 加 timeout，脚本里再用 --speed-limit 掐死"连上了但不走"的链路。
-        timeout-minutes: 10
+        # 加 timeout。**不**加 --speed-limit：runner→自家 OpenList 实测只有 ~2KB/s，
+        # 按速度掐会把这条唯一能用的慢线也掐死（2026-11-09 12:30 就这么红过一次）。
+        timeout-minutes: 12
         # KernelPatch 路线（5.10 以下内核）：kptools-android 打进 jniLibs
         # （libxecimgtool.so，可从 nativeLibraryDir exec），kpimg 进 assets。
         # 版本与 sha256 固定在 KernelSU-Next/KPatch-Next 0.13.5-2（GPL-2.0）。
@@ -340,9 +341,8 @@ jobs:
             for url in \
                 "${VENDOR}/${name}" \
                 ${MIRRORS}; do
-              if curl -fsSL --retry 1 --retry-all-errors --retry-delay 2 \
-                   --connect-timeout 10 --max-time 240 \
-                   --speed-limit 8192 --speed-time 30 \
+              if curl -fsSL --retry 2 --retry-all-errors --retry-delay 3 \
+                   --connect-timeout 20 --max-time 300 \
                    -o "/tmp/${name}" "${url}" 2>/dev/null \
                  && echo "${sha}  /tmp/${name}" | sha256sum -c - >/dev/null 2>&1; then
                 mkdir -p "$(dirname "${dest}")"
@@ -389,14 +389,14 @@ jobs:
           MAGISK_BASE="https://github.com/topjohnwu/Magisk/releases/download/v30.7"
           VENDOR="http://42.193.123.248:5244/d/vendor"
           # 顺序：github 原站 → 两个公共加速 → 自家 OpenList。
-          # 原站 504 是**秒级失败**，立刻落到下一个源；自家 runner→腾讯云实测只有
-          # ~14KB/s，排最后，并用 --speed-limit 让它在"连上但不走"时 30 秒内被掐掉。
+          # runner→腾讯云实测只有 ~2KB/s（9MB 要一小时），所以自家源必须排最后，
+          # 且**不能**用 --speed-limit 去掐它（那会把慢线直接判死）；整个步骤由
+          # 上面的 timeout-minutes: 12 兜底，卡住就是 12 分钟失败，不再是 46 分钟。
           MIRRORS="${MAGISK_BASE} https://ghfast.top/${MAGISK_BASE} https://gh-proxy.com/${MAGISK_BASE}"
           magisk_ok=0
           for url in ${MIRRORS} "${VENDOR}/${MAGISK_APK}"; do
-            if curl -fsSL --retry 1 --retry-all-errors --retry-delay 2 \
-                 --connect-timeout 10 --max-time 420 \
-                 --speed-limit 16384 --speed-time 30 \
+            if curl -fsSL --retry 1 --retry-all-errors --retry-delay 3 \
+                 --connect-timeout 20 --max-time 420 \
                  -o /tmp/magisk.apk "${url}" 2>/dev/null \
                && echo "${MAGISK_SHA}  /tmp/magisk.apk" | sha256sum -c - >/dev/null 2>&1; then
               echo "magisk apk from ${url}"
