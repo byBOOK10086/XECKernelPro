@@ -364,6 +364,13 @@ jobs:
           ls -la manager/app/src/main/assets/kpatch/
 
       - name: Fetch Magisk payload (<5.10 mount-state route)
+        # 只有发版（publish=true）才需要这条 <5.10 挂载态载荷：
+        #  * 它的用途是给 5.10 以下设备做 Magisk 路线，和本次要验的 UI 编译无关；
+        #  * 2026-11-09 连续三台 runner 都拉不动那个 9MB 资产（自家源 ~5KB/s，
+        #    github / 两个加速全挂），debug 构建被它卡住没有意义；
+        #  * 发版路径仍然强制要求：下面 *Verify Magisk payload survived repack + sign*
+        #    同样按 publish 门控，缺载荷会当场红。
+        if: ${{ inputs.publish }}
         # 硬上限：Magisk APK 约 9MB，任一正常源几分钟内都该完成。2026-11-09 这步
         # 卡了 46 分钟零输出（--max-time 600 × --retry 5 = 最长一小时），把整个
         # build-manager 拖死。现在每个 URL 只试一次、单 URL 最多 240s，
@@ -624,6 +631,9 @@ jobs:
             --strip
 
       - name: Verify Magisk payload survived repack + sign
+        # 与 *Fetch Magisk payload* 同一个门控：debug 构建根本不装这条载荷，
+        # 这里再去拆 APK 找它必然是"条目缺失"，只会制造假红。
+        if: ${{ inputs.publish }}
         # repack 与签名是另一个 job：下载、解包那一步校验过了，打包/重签这一环再掉载荷
         # （AGP 的资源过滤、repack_apk.py 的条目遍历、--strip …）就没人拦得住，而管理器会
         # 把整条 Magisk 路线静默灰掉。这里直接拆开**签发出去的**那个 APK 逐条对齐 sha256。
