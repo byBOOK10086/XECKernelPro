@@ -251,6 +251,12 @@ class GhostLockRunner(context: Context) {
                     environment()["TMPDIR"] = workDir.absolutePath
                     environment()["HOME"] = workDir.absolutePath
                     environment()["GHOSTLOCK_KSU_LOG"] = ksuLog.absolutePath
+                    // 2026-11-09（vendored 修订 4ebc726b90）：上游新增
+                    // GHOSTLOCK_KSUD —— 根脚本里的 KSUD 直接取这个值，不再依赖
+                    // 一串 `find /data/app`。我们本来就把 libxeccli.so 拷成
+                    // workDir/ksud，这里直接告诉原生层，省掉一次全盘 find，
+                    // 也避免多管理器共存时挑错包（find 的顺序永远猜不全）。
+                    ksud?.let { environment()["GHOSTLOCK_KSUD"] = it.absolutePath }
                 }
             onLog("<b> starting native: ${binary.absolutePath}")
             resetRunState()

