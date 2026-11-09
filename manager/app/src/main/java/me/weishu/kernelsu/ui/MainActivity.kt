@@ -652,6 +652,12 @@ fun MainScreen(
 
     MainScreenBackHandler(mainPagerState, navController)
 
+    // 工具箱这类 NavDisplay 独立 entry 通过事件通道请求切主分页（见 MainPagerBus）：
+    // 它们读不到 LocalMainPagerState，所以只能发请求、由这里真正执行。
+    LaunchedEffect(mainPagerState) {
+        MainPagerBus.requests.collect { page -> mainPagerState.animateToPage(page) }
+    }
+
     CompositionLocalProvider(
         LocalMainPagerState provides mainPagerState
     ) {

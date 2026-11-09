@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CheckCircleOutline
 import androidx.compose.material.icons.rounded.Cottage
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Person
@@ -24,21 +23,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import me.weishu.kernelsu.ui.design.token.Xc
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.Text
 
 /**
- * 底栏（扁平方案 A，2026-11-09）。
+ * 底栏（2026-11-09 第三版：微透明 + 更圆润 + 四席）。
  *
- * 取代 2026-11-08 的「两席 + 中央径向控制台」：那套是玻璃时代的产物，靠凸起圆钮
- * 和手势环制造记忆点；设计稿定稿的扁平语言里不再有凸起、光晕和弹层，所以
- * 回到"一条胶囊托盘 + 五个等距图标"——但**页数一项没少**，0 设备 / 1 超级用户 /
- * 2 模块 / 3 检测 / 4 设置 全部直接可达，比径向菜单少一次手势。
+ * 和上一版的差别：
+ *  * 「检测」不再常驻 —— 它进工具箱的 XEC SCORE 卡（点卡 → `MainPagerBus.jumpTo(3)`），
+ *    底栏只放四个每天都用的页；
+ *  * 托盘从实色改成**微透明**（浅色 88% / 深色 82%）+ 1px 描边：和设计稿的"液态玻璃"
+ *    神似，但不引入 backdrop 采样链（那条链在没有模糊的设备上会退化成一坨脏色）；
+ *  * 每一席从圆角方块改成**圆形**，选中是实心墨圆 + 反色图标，托盘两端留出呼吸位。
  *
- * 选中态是整块实心（墨色底 + 反色图标），不是染色图标：扁平语言里"选中"
- * 用面来表达，不用颜色表达，这样主题换色也不会让底栏变成一栏彩色药丸。
+ * 页面索引与 [me.weishu.kernelsu.ui.viewmodel.MainPagerConfig] 保持一致：
+ * 0 设备 / 1 超级用户 / 2 模块 / 4 设置（3 检测只在工具箱里可达）。
  */
 @Composable
 fun Xc8Dock(
@@ -52,7 +50,6 @@ fun Xc8Dock(
         DockItem(Icons.Rounded.Cottage, "设备", 0),
         DockItem(Icons.Rounded.Person, "超级用户", 1),
         DockItem(Icons.Rounded.Extension, "模块", 2),
-        DockItem(Icons.Rounded.CheckCircleOutline, "检测", 3),
         DockItem(Icons.Rounded.Settings, "设置", 4),
     )
     val surface = Xc.colors.surface
@@ -60,30 +57,33 @@ fun Xc8Dock(
     val ink = Xc.colors.text
     val muted = Xc.colors.textMuted
     val pageBg = Xc.colors.backdrop
+    // 微透明：底色本身就是页面的纸色，透出一点点让托盘"浮"起来，
+    // 但不做 backdrop 模糊 —— 扁平面板一旦半透明到 70% 以下，文字会开始发虚。
+    val trayAlpha = if (Xc.colors.isDark) 0.82f else 0.88f
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .background(pageBg)
             .navigationBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 10.dp),
+            .padding(horizontal = 24.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Row(
             modifier = Modifier
-                .border(1.dp, rim, Xc.shapes.pill)
-                .background(surface, Xc.shapes.pill)
-                .padding(7.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                .clip(Xc.shapes.pill)
+                .background(surface.copy(alpha = trayAlpha), Xc.shapes.pill)
+                .border(1.dp, rim.copy(alpha = 0.75f), Xc.shapes.pill)
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             items.forEach { item ->
                 val selected = selectedPage == item.page
                 Box(
                     modifier = Modifier
-                        .size(50.dp)
-                        .clip(Xc.shapes.lg)
-                        .background(if (selected) ink else surface)
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .background(if (selected) ink else pageBg.copy(alpha = 0f))
                         .clickable { onSelectPage(item.page) },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -91,13 +91,13 @@ fun Xc8Dock(
                         imageVector = item.icon,
                         contentDescription = item.label,
                         tint = if (selected) pageBg else muted,
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier.size(21.dp),
                     )
                     if (item.page == 2 && moduleBadge > 0) {
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
-                                .offset(x = (-4).dp, y = 4.dp)
+                                .offset(x = (-7).dp, y = 8.dp)
                                 .size(6.dp)
                                 .clip(CircleShape)
                                 .background(Xc.colors.accent),
@@ -109,15 +109,9 @@ fun Xc8Dock(
     }
 }
 
-/** 底栏一格：图标 + 语义（无障碍用）+ 目标页。 */
+/** 底栏一格：图标 + 无障碍标签 + 目标页。 */
 private data class DockItem(
     val icon: ImageVector,
     val label: String,
     val page: Int,
 )
-
-/** 供将来"控制台"类入口复用的行（当前底栏不渲染，保留以兼容同包调用）。 */
-@Composable
-private fun DockCaption(text: String) {
-    Text(text = text, fontSize = 10.sp, color = Xc.colors.textMuted)
-}

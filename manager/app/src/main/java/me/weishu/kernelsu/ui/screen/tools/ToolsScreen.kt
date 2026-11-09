@@ -60,6 +60,7 @@ import me.weishu.kernelsu.ui.design.panel.Xc8Panel
 import me.weishu.kernelsu.ui.design.panel.Xc8Row
 import me.weishu.kernelsu.ui.design.panel.Xc8SectionLabel
 import me.weishu.kernelsu.ui.design.panel.Xc8Switch
+import me.weishu.kernelsu.ui.MainPagerBus
 import me.weishu.kernelsu.ui.navigation3.LocalNavigator
 import me.weishu.kernelsu.ui.navigation3.Route
 import me.weishu.kernelsu.ui.viewmodel.HomeViewModel
@@ -172,13 +173,13 @@ fun ToolsScreen() {
                 Column(
                     modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
                 ) {
-                    // 结论先于工具：评分是"该修哪一项"的诊断入口。
-                    // 2026-11-09 审计 P0：这里曾经 pop() 之后再 animateToPage(3) 跳检测页，
-                    // 而 `LocalMainPagerState` 的 provider 只在主分页子树里，工具箱是独立
-                    // 导航 entry —— 读它会直接触发 `error("LocalMainPagerState not provided")`。
-                    // 跨页面跳转要治本（把 pager 状态提到 NavDisplay 之上），这一版先只返回，
-                    // 用户从底栏「检测」进明细。
-                    XecScoreCard(state = homeState) { navigator.pop() }
+                    // 结论先于工具：评分是"该修哪一项"的诊断入口，点它直接去检测页看九项明细。
+                    // 2026-11-09：底栏不再常驻「检测」，这里是它唯一的入口。跨路由切页
+                    // 走 MainPagerBus（有界事件通道），不再读 LocalMainPagerState（P0 源）。
+                    XecScoreCard(state = homeState) {
+                        MainPagerBus.jumpTo(3)
+                        navigator.pop()
+                    }
 
                     Xc8SectionLabel(
                         text = stringResource(R.string.tools_section_tools),
