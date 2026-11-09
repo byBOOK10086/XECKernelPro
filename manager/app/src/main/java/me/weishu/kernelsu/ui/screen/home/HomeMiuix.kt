@@ -29,18 +29,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.DeveloperBoard
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.PowerSettingsNew
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Smartphone
-import androidx.compose.material.icons.filled.Tag
-import androidx.compose.material.icons.filled.VolunteerActivism
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.DeveloperBoard
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.Fingerprint
+import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Smartphone
+import androidx.compose.material.icons.rounded.Tag
+import androidx.compose.material.icons.rounded.VolunteerActivism
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
@@ -495,17 +495,17 @@ private fun DeviceSection(state: HomeUiState, onRefresh: () -> Unit) {
     Xc8Panel {
         Xc8Row(
             title = stringResource(R.string.home_kernel),
-            leading = Icons.Filled.DeveloperBoard,
+            leading = Icons.Rounded.DeveloperBoard,
             trailing = { Xc8Value(state.systemInfo.kernelVersion) },
         )
         Xc8Row(
             title = stringResource(R.string.home_device_model),
-            leading = Icons.Filled.Smartphone,
+            leading = Icons.Rounded.Smartphone,
             trailing = { Xc8Value(state.systemInfo.deviceModel) },
         )
         Xc8Row(
             title = stringResource(R.string.home_selinux_status),
-            leading = Icons.Filled.Security,
+            leading = Icons.Rounded.Security,
             trailing = {
                 Xc8Tag(
                     text = selinuxText,
@@ -515,7 +515,7 @@ private fun DeviceSection(state: HomeUiState, onRefresh: () -> Unit) {
         )
         Xc8Row(
             title = stringResource(R.string.home_manager_version),
-            leading = Icons.Filled.Download,
+            leading = Icons.Rounded.Download,
             trailing = { Xc8Value(state.systemInfo.managerVersion) },
         )
     }
@@ -622,7 +622,7 @@ private fun SecurityPanel(state: HomeUiState) {
     Xc8Panel {
         Xc8Row(
             title = stringResource(R.string.home_selinux_status),
-            leading = Icons.Filled.Security,
+            leading = Icons.Rounded.Security,
             trailing = {
                 Xc8Tag(
                     text = selinuxText,
@@ -640,7 +640,7 @@ private fun SecurityPanel(state: HomeUiState) {
             Xc8Row(
                 title = stringResource(R.string.home_susfs_status),
                 subtitle = susfsText,
-                leading = Icons.Filled.Extension,
+                leading = Icons.Rounded.Extension,
                 trailing = {
                     Xc8Tag(
                         text = if (susfsSupported) {
@@ -655,12 +655,12 @@ private fun SecurityPanel(state: HomeUiState) {
         }
         Xc8Row(
             title = stringResource(R.string.home_seccomp_status),
-            leading = Icons.Filled.FilterList,
+            leading = Icons.Rounded.FilterList,
             trailing = { Xc8Value(seccompText) },
         )
         Xc8Row(
             title = stringResource(R.string.home8_boot_state),
-            leading = Icons.Filled.PowerSettingsNew,
+            leading = Icons.Rounded.PowerSettingsNew,
             trailing = {
                 if (state.isSafeMode) {
                     Xc8Tag(text = stringResource(R.string.safe_mode), tone = Xc8Tone.Warning)
@@ -683,7 +683,7 @@ private fun OverviewPanel(
         Xc8Row(
             title = stringResource(R.string.home8_root_count),
             subtitle = stringResource(R.string.home8_root_count_sub),
-            leading = Icons.Filled.Security,
+            leading = Icons.Rounded.Security,
             onClick = actions.onOpenSuperuser,
             trailing = {
                 Xc8Value(
@@ -700,7 +700,7 @@ private fun OverviewPanel(
         Xc8Row(
             title = stringResource(R.string.home8_auth_records),
             subtitle = stringResource(R.string.home8_auth_records_sub),
-            leading = Icons.AutoMirrored.Filled.MenuBook,
+            leading = Icons.AutoMirrored.Rounded.MenuBook,
             onClick = actions.onOpenSulog,
             trailing = { Xc8Chevron() },
         )
@@ -720,14 +720,14 @@ private fun SupportPanel(
         Xc8Row(
             title = stringResource(R.string.home_support_title),
             subtitle = stringResource(R.string.home_support_content),
-            leading = Icons.Filled.VolunteerActivism,
+            leading = Icons.Rounded.VolunteerActivism,
             onClick = { showDevelopers = true },
             trailing = { Xc8Chevron() },
         )
         Xc8Row(
             title = stringResource(R.string.home_learn_kernelsu),
             subtitle = stringResource(R.string.home_click_to_learn_kernelsu),
-            leading = Icons.AutoMirrored.Filled.MenuBook,
+            leading = Icons.AutoMirrored.Rounded.MenuBook,
             onClick = { actions.onOpenUrl(learnMoreUrl) },
             trailing = { Xc8Chevron() },
         )

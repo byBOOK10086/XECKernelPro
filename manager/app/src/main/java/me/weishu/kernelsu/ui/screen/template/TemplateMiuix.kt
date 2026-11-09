@@ -34,10 +34,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Fingerprint
-import androidx.compose.material.icons.outlined.Group
-import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Fingerprint
+import androidx.compose.material.icons.rounded.Group
+import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -349,15 +349,15 @@ private fun TemplateItem(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 InfoChip(
-                    icon = Icons.Outlined.Fingerprint,
+                    icon = Icons.Rounded.Fingerprint,
                     text = "UID: ${template.uid}"
                 )
                 InfoChip(
-                    icon = Icons.Outlined.Group,
+                    icon = Icons.Rounded.Group,
                     text = "GID: ${template.gid}"
                 )
                 InfoChip(
-                    icon = Icons.Outlined.Shield,
+                    icon = Icons.Rounded.Shield,
                     text = template.context
                 )
             }

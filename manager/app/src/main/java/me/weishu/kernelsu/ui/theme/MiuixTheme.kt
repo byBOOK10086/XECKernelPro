@@ -11,6 +11,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.core.view.WindowInsetsControllerCompat
 import com.materialkolor.dynamiccolor.ColorSpec
 import com.materialkolor.rememberDynamicColorScheme
@@ -23,6 +24,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeColorSpec
 import top.yukonga.miuix.kmp.theme.ThemeController
 import top.yukonga.miuix.kmp.theme.ThemePaletteStyle
+import top.yukonga.miuix.kmp.theme.defaultTextStyles
 
 @Composable
 fun MiuixKernelSUTheme(
@@ -36,6 +38,30 @@ fun MiuixKernelSUTheme(
     val colorSpec = appSettings.colorSpec
     // XEC 语义色（由外层的 XcTheme 提供，已按 isDark / isAmoled 解析完毕）。
     val xc = Xc.colors
+
+    // ── 字阶统一（设计图 方案 A）────────────────────────────────────────────
+    //
+    // miuix 自己的正文档是 17sp / 16sp（HyperOS 那套），而设计图定的是
+    // 「列表正文 14 / 550、辅助 12 / 500、分组标签 11 / 650」。只要 miuix 的
+    // Text 仍走它自己的默认档，用 miuix 组件的页面（超级用户 / 模块 / 仓库 /
+    // 权限 …）就会比扁平页（设备 / 工具 / 设置）整体大两档——同一台手机里
+    // 两种字号，就是"两套皮肤"最直观的来源。
+    //
+    // 这里把正文一系压到 Xc 字阶：main / paragraph / body1 / body2 / button /
+    // footnote* / headline*。标题档（title1..4）保持 miuix 原值不动，避免
+    // 顶栏标题和弹窗标题整站缩水一截。
+    val xcTextStyles = defaultTextStyles(
+        main = Xc.typography.body,
+        paragraph = Xc.typography.body,
+        body1 = Xc.typography.body,
+        body2 = Xc.typography.body,
+        button = Xc.typography.body.copy(fontWeight = FontWeight.SemiBold),
+        footnote1 = Xc.typography.caption,
+        footnote2 = Xc.typography.micro,
+        headline1 = Xc.typography.subtitle,
+        headline2 = Xc.typography.body.copy(fontWeight = FontWeight.SemiBold),
+        subtitle = Xc.typography.body,
+    )
 
     val miuixPaletteStyle = try {
         ThemePaletteStyle.valueOf(colorStyle.name)
@@ -236,6 +262,7 @@ fun MiuixKernelSUTheme(
             }
             MiuixTheme(
                 colors = colors,
+                textStyles = xcTextStyles,
                 content = {
                     LaunchedEffect(darkTheme) {
                         val window = (context as? Activity)?.window ?: return@LaunchedEffect

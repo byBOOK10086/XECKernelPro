@@ -474,7 +474,7 @@ fun TerminalScreen() {
                             .padding(12.dp),
                     ) {
                         items(lines, key = { it.id }) { line ->
-                            androidx.compose.material3.Text(
+                            Text(
                                 text = line.text,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,

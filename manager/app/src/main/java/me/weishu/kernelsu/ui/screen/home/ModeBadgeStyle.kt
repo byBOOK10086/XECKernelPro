@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import me.weishu.kernelsu.data.theme.ThemeCodec
 import me.weishu.kernelsu.ui.screen.module.ModuleBackgrounds
 import me.weishu.kernelsu.ui.screen.module.rememberBackgroundBitmap
+import top.yukonga.miuix.kmp.basic.Text
 import java.io.File
 
 /** 模式牌样式。[keyword] 永远由渲染方传入，不在本模型里。 */
@@ -180,7 +181,7 @@ fun ModeBadge(
             // 压暗纱保证任意底图上的可读性（主题包可调）；无底图时不加任何底色。
             Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = style.dim)))
         }
-        androidx.compose.material3.Text(
+        Text(
             text = "${style.prefix}$keyword${style.suffix}",
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium,
