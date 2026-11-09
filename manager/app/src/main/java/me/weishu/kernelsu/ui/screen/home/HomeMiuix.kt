@@ -32,8 +32,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.DeveloperBoard
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Tag
@@ -493,14 +495,17 @@ private fun DeviceSection(state: HomeUiState, onRefresh: () -> Unit) {
     Xc8Panel {
         Xc8Row(
             title = stringResource(R.string.home_kernel),
+            leading = Icons.Filled.DeveloperBoard,
             trailing = { Xc8Value(state.systemInfo.kernelVersion) },
         )
         Xc8Row(
             title = stringResource(R.string.home_device_model),
+            leading = Icons.Filled.Smartphone,
             trailing = { Xc8Value(state.systemInfo.deviceModel) },
         )
         Xc8Row(
             title = stringResource(R.string.home_selinux_status),
+            leading = Icons.Filled.Security,
             trailing = {
                 Xc8Tag(
                     text = selinuxText,
@@ -510,6 +515,7 @@ private fun DeviceSection(state: HomeUiState, onRefresh: () -> Unit) {
         )
         Xc8Row(
             title = stringResource(R.string.home_manager_version),
+            leading = Icons.Filled.Download,
             trailing = { Xc8Value(state.systemInfo.managerVersion) },
         )
     }
@@ -634,6 +640,7 @@ private fun SecurityPanel(state: HomeUiState) {
             Xc8Row(
                 title = stringResource(R.string.home_susfs_status),
                 subtitle = susfsText,
+                leading = Icons.Filled.Extension,
                 trailing = {
                     Xc8Tag(
                         text = if (susfsSupported) {
@@ -653,6 +660,7 @@ private fun SecurityPanel(state: HomeUiState) {
         )
         Xc8Row(
             title = stringResource(R.string.home8_boot_state),
+            leading = Icons.Filled.PowerSettingsNew,
             trailing = {
                 if (state.isSafeMode) {
                     Xc8Tag(text = stringResource(R.string.safe_mode), tone = Xc8Tone.Warning)

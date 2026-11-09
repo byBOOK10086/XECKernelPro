@@ -204,7 +204,7 @@ open class DownloadService : Service() {
     ) = NotificationCompat.Builder(this, CHANNEL_ID)
         .setContentTitle(getString(R.string.download_progress_title, fileName))
         .setContentText("$progress%")
-        .setSmallIcon(android.R.drawable.stat_sys_download)
+        .setSmallIcon(R.drawable.ic_launcher_monochrome)
         .setProgress(100, progress, progress == 0)
         .setOngoing(true)
         .setSilent(true)
@@ -223,7 +223,7 @@ open class DownloadService : Service() {
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.download_complete_title))
             .setContentText(getString(R.string.download_complete_content, fileName))
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setAutoCancel(true)
 
         // Add "Install" action button
@@ -271,7 +271,7 @@ open class DownloadService : Service() {
     private fun buildFailureNotification(fileName: String) = NotificationCompat.Builder(this, CHANNEL_ID)
         .setContentTitle(getString(R.string.download_failed_title))
         .setContentText(getString(R.string.download_failed_content, fileName))
-        .setSmallIcon(android.R.drawable.stat_notify_error)
+        .setSmallIcon(R.drawable.ic_launcher_monochrome)
         .setAutoCancel(true)
         .build()
 

@@ -97,7 +97,7 @@ class AutoReplayService : Service() {
 
     private fun buildNotification(text: String): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(getString(R.string.auto_replay_channel))
             .setContentText(text)
             .setOngoing(true)
@@ -182,7 +182,7 @@ class AutoReplayService : Service() {
         getSystemService(NotificationManager::class.java).notify(
             NOTIF_ID + 1,
             NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setSmallIcon(R.drawable.ic_launcher_monochrome)
                 .setContentTitle(getString(R.string.auto_replay_channel))
                 .setContentText(text)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(text))
