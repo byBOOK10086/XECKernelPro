@@ -104,7 +104,30 @@ jobs:
             'https://repo1.maven.org/maven2',
         ]
 
-        // 只**追加**，不能替换项目自己声明的仓库：RepositoriesMode 默认
+        // 2026-11-09 第三个 504：build-ksud 里的 TEESimulator-RS 工程在
+        // `:app:compileReleaseKotlin` 要下载 57MB 的 kotlin-compiler-embeddable-2.3.0.jar，
+        // runner 撞 repo.maven.apache.org 504，回落到 GitHub 上的同一个资产又是 504，
+        // BUILD FAILED，整个 build-ksud 红、repack/release 全跳过。
+        // Gradle 的规矩是"元数据从哪个仓库来，artifact 就只从那个仓库下"，所以把镜像
+        // **追加**在后面救不了它 —— 必须让元数据本身就从镜像来。
+        // beforeSettings 在 settings 脚本之前触发，此时塞进去的镜像会排在最前面
+        // （settings 脚本里的 google()/mavenCentral() 只会加在它们后面）。
+        // 只对 TEESimulator-RS 生效：manager 的 app 依赖几乎全在 Google 仓，前置只会
+        // 给每个依赖多加一次 404 往返。
+        // 已用真 Gradle 9.2.0 在本机演练：仓库顺序变成 aliyun -> repo1 -> Google -> MavenRepo，
+        // 且 kotlin-compiler-embeddable-2.3.0.jar（57,669,576 B）连同全部分支依赖
+        // 都从 aliyun 解析成功（BUILD SUCCESSFUL）。
+        beforeSettings { settings ->
+            try {
+                if (settings.settingsDir.absolutePath.replace('\\', '/').contains('TEESimulator-RS')) {
+                    mirrors.each { u ->
+                        settings.dependencyResolutionManagement.repositories.maven { url u }
+                    }
+                }
+            } catch (Throwable ignored) { }
+        }
+
+        // 其余工程只**追加**，不能替换项目自己声明的仓库：RepositoriesMode 默认
         // PREFER_PROJECT，给一个没声明仓库的 project 塞 project 级仓库会把
         // settings 里的 google()/mavenCentral() 整体顶掉（manager 的 app 炸过）。
         settingsEvaluated { settings ->
