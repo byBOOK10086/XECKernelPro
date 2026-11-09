@@ -4,4 +4,6 @@
     <color name="ic_launcher_background">#FF0B0F10</color>
     <color name="ic_launcher_foreground">#FF12B886</color>
     <color name="ic_splash_background">#FF0B0F10</color>
+    <!-- 窗口底色：页面过渡/系统栏透明时露出来的就是它，必须跟当前 UI 的纸色一致。 -->
+    <color name="xec_window_background">#FFF5F5F7</color>
 </resources>

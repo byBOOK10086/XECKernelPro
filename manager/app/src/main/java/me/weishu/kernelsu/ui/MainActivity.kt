@@ -480,7 +480,11 @@ open class MainActivity : ComponentActivity() {
                                             .fillMaxSize()
                                             .background(Xc.colors.backdrop),
                                     )
-                                    Scaffold(containerColor = Color.Transparent) {
+                                    // 2026-11-10：导航宿主自己也铺一层实色底。页面过渡是
+                                    // 交叉淡入淡出，两条 entry 同时半透明时，露出来的必须是
+                                    // 纸色 —— 以前露的是 windowBackground(#0B0F10)，看起来
+                                    // 就是每次转场都闪一圈黑框。
+                                    Scaffold(containerColor = Xc.colors.backdrop) {
                                         navDisplay()
                                     }
                                 }

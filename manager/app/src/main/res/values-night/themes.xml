@@ -3,7 +3,7 @@
 
     <style name="Theme.XecPro" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-        <item name="android:windowBackground">@color/ic_splash_background</item>
+        <item name="android:windowBackground">@color/xec_window_background</item>
     </style>
 
     <style name="Theme.XecPro.Starting" parent="Theme.SplashScreen">
