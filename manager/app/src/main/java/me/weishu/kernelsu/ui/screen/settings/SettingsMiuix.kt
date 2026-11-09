@@ -180,15 +180,8 @@ fun SettingPagerMiuix(
                     // 主题 / 主题商城 / 壁纸都是"进去改外观"的入口，收进同一块面板，
                     // 与上面的开关行保持同一种分组语言（原来是三张 miuix 卡里的箭头行）。
                     Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
-                        // 2026-11-09：首页重排后不再有「常用操作」面板，安装/刷入入口
-                        // 只剩异常态的告警条 —— 正常设备上等于没有入口。这里补一个常驻行。
-                        Xc8Row(
-                            title = stringResource(id = R.string.settings_flash_entry),
-                            subtitle = stringResource(id = R.string.settings_flash_entry_summary),
-                            leading = Icons.Rounded.FlashOn,
-                            onClick = actions.onOpenInstall,
-                            trailing = { Xc8Chevron() },
-                        )
+                        // 2026-11-09 用户定案：安装/刷入入口不做在设置里 —— 首页那块
+                        // 状态标题（内核未运行 / 已准备就绪 / 内核正常运行）本身就是入口。
                         Xc8Row(
                             title = stringResource(id = R.string.settings_theme),
                             subtitle = stringResource(id = R.string.settings_theme_summary),

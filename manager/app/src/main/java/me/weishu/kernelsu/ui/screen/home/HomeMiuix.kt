@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.VolunteerActivism
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -341,9 +342,11 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
             )
         }
         Row(
+            // 2026-11-09 用户定案：安装入口不做在设置里 —— 首页这块「内核未运行 /
+            // 已准备就绪 / 内核正常运行」本身就是入口，点它直接进刷入页。
             modifier = Modifier
                 .padding(top = 13.dp)
-                .then(if (canInstall) Modifier.clickable(onClick = onInstall) else Modifier),
+                .clickable(onClick = onInstall),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -363,24 +366,14 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
                     modifier = Modifier.size(26.dp),
                 )
             }
-            // 有 root、没内核：把这块本身做成安装入口（用户反馈找不到安装入口）。
-            if (canInstall) {
-                Spacer(Modifier.width(12.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(Xc.shapes.pill)
-                        .background(Xc.colors.accent)
-                        .clickable(onClick = onInstall)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                ) {
-                    Text(
-                        text = stringResource(R.string.install),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
-                    )
-                }
-            }
+            // 整行已经可点，这里只留一个"进去"的暗示，不再放强调色按钮抢主视觉。
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                imageVector = Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                tint = Xc.colors.textMuted,
+                modifier = Modifier.size(22.dp),
+            )
         }
         Text(
             text = "$modeText · SELinux $selinuxText",

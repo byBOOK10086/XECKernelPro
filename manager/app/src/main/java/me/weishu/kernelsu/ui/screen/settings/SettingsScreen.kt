@@ -51,7 +51,6 @@ fun SettingPager(
         onOpenProfileTemplate = { navigator.push(Route.AppProfileTemplate) },
         onOpenRemoteAssistant = { navigator.push(Route.RemoteAssistant) },
         onOpenTools = { navigator.push(Route.Tools) },
-        onOpenInstall = { navigator.push(Route.Install) },
         onSetSuCompatMode = viewModel::setSuCompatMode,
         onSetKernelUmountEnabled = viewModel::setKernelUmountEnabled,
         onSetSelinuxHideEnabled = viewModel::setSelinuxHideEnabled,
