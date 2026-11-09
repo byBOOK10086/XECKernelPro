@@ -270,26 +270,30 @@ jobs:
         run: |
           set -euo pipefail
           BASE="https://github.com/KernelSU-Next/KPatch-Next/releases/download/0.13.5-2"
-          # runner 到 github 的下载经常以 56/504 结束（2026-11-08 三次、2026-11-09 两次），
-          # 单靠 curl 自身的重试救不回来——那几次是同一个 URL 连着重试六遍全 504。
-          # 所以按"直连 → 镜像"的顺序逐个试。镜像只换传输路径：
-          # **每一个源都必须过同一个 sha256 才算数**，内容校验一个字节都不放松。
-          MIRRORS="https://ghfast.top https://gh-proxy.com https://ghproxy.net"
+          VENDOR="http://42.193.123.248:5244/d/vendor"
+          # 我们自己的镜像放第一位：2026-11-09 连续四次构建全挂在 runner→github 的
+          # 504 上（gradle 发行包、kotlin 编译器、kptools 各中一次），镜像站也一起 504。
+          # 这两个二进制合计不到 500KB，直接放在自己的 OpenList 上，CI 只依赖一台
+          # 我们自己能管的服务器；github 与公共镜像留作后备。
+          # 顺序变了，但**每个源都必须过同一个 sha256** 才算数，一个字节都不放松。
+          MIRRORS="${BASE} https://ghfast.top/${BASE} https://gh-proxy.com/${BASE}"
           fetch() {
-            local name="$1" sha="$2" dest="$3" prefix url
-            for prefix in "" ${MIRRORS}; do
-              if [ -n "${prefix}" ]; then url="${prefix}/${BASE}/${name}"; else url="${BASE}/${name}"; fi
-              if curl -fsSL --retry 3 --retry-all-errors --retry-delay 3 --connect-timeout 20 \
+            local name="$1" sha="$2" dest="$3" url
+            for url in \
+                "${VENDOR}/${name}" \
+                ${MIRRORS}; do
+              if curl -fsSL --retry 2 --retry-all-errors --retry-delay 3 \
+                   --connect-timeout 15 --max-time 180 \
                    -o "/tmp/${name}" "${url}" 2>/dev/null \
                  && echo "${sha}  /tmp/${name}" | sha256sum -c - >/dev/null 2>&1; then
                 mkdir -p "$(dirname "${dest}")"
                 cp -f "/tmp/${name}" "${dest}"
-                echo "fetched ${name} via ${prefix:-direct}"
+                echo "fetched ${name} from ${url}"
                 return 0
               fi
-              echo "fetch ${name} via ${prefix:-direct} failed; trying next source" >&2
+              echo "fetch ${name} from ${url} failed; trying next source" >&2
             done
-            echo "::error::could not fetch ${name} from any source (direct or mirrors)"
+            echo "::error::could not fetch ${name} from any source (vendor, github or mirrors)"
             return 1
           }
           fetch kptools-android aced6809a27e61604934349396de33fc98c91ad8b0b3c10959750e1956a63660 \
