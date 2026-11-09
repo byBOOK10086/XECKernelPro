@@ -313,15 +313,23 @@ object ConfigurationManager {
                         )
                         KeyBoxManager.invalidateCache(path)
                         if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
-                            // Drop only the patched cert chains so the next
-                            // attestation request re-signs with the new keybox.
-                            // Do NOT drop generatedKeys — that would destroy
-                            // every alias/private key in memory and on disk,
-                            // logging users out of any app that pinned a
-                            // persisted keystore alias.
+                            // Drop the patched cert chains so the next attestation request
+                            // re-signs with the new keybox.
+                            // Do NOT drop generatedKeys — that would destroy every alias/private
+                            // key in memory and on disk, logging users out of any app that pinned
+                            // a persisted keystore alias.
+                            //
+                            // The cached KeyEntryResponse of real-TEE keys has to go too: the
+                            // patch path stores the already re-signed chain in `teeResponses`, and
+                            // getKeyEntry serves that object directly, so clearing only
+                            // `patchedChains` kept handing out the previous keybox's chain after a
+                            // keybox swap (2026-11-09 audit).
                             org.matrix.TEESimulator.interception.keystore.shim
                                 .KeyMintSecurityLevelInterceptor
                                 .invalidatePatchedChains("updating $file")
+                            org.matrix.TEESimulator.interception.keystore.shim
+                                .KeyMintSecurityLevelInterceptor
+                                .invalidateTeeResponses("updating $file")
                         }
                     }
             }

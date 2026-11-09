@@ -1905,6 +1905,26 @@ class KeyMintSecurityLevelInterceptor(
             SystemLogger.info("Invalidated $count patched cert chains$reasonMessage.")
         }
 
+        /**
+         * Drop the *patched* KeyEntryResponse of real-TEE keys so the next getKeyEntry/attestation
+         * re-patches under the keybox that is on disk now.
+         *
+         * `invalidatePatchedChains` alone is not enough: [getGeneratedKeyResponse] serves
+         * `teeResponses[keyId]` first, and that object already carries the chain we built from the
+         * **old** keybox. Replacing keybox.xml therefore kept serving the old (e.g. expired) chain
+         * until process death. Only `teeResponses` is cleared here, never `generatedKeys`: those
+         * hold private key material, and dropping them would invalidate every software alias.
+         */
+        fun invalidateTeeResponses(reason: String? = null) {
+            val count = teeResponses.size
+            if (count == 0) return
+            val reasonMessage = reason?.let { " due to $it" } ?: ""
+            teeResponses.clear()
+            SystemLogger.info(
+                "Invalidated $count cached TEE responses$reasonMessage; they will be re-patched on next use."
+            )
+        }
+
         fun clearAllGeneratedKeys(reason: String? = null) {
             val count = generatedKeys.size
             val reasonMessage = reason?.let { " due to $it" } ?: ""
