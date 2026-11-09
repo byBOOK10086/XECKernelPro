@@ -170,6 +170,13 @@ fun SettingPagerMiuix(
                         }
                     }
 
+                    // 备份与恢复：一年用两次，但用的时候都是在救机器（误删模块、换机搬家、
+                    // 刷坏之后想回到上一个可用组合）。它需要 root，所以和其余 root 项一样
+                    // 包在 KsuIsValid 里 —— 没 root 时整段不出现，而不是点了才报错。
+                    KsuIsValid {
+                        ModuleBackupSection()
+                    }
+
                     // 主题 / 主题商城 / 壁纸都是"进去改外观"的入口，收进同一块面板，
                     // 与上面的开关行保持同一种分组语言（原来是三张 miuix 卡里的箭头行）。
                     Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
