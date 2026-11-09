@@ -22,7 +22,7 @@ import me.weishu.kernelsu.data.model.WEBVIEW_ZYGOTE_PROFILE_KEY
 import me.weishu.kernelsu.data.model.WEBVIEW_ZYGOTE_UID
 import me.weishu.kernelsu.ksuApp
 import me.weishu.kernelsu.ui.KsuService
-import me.weishu.kernelsu.ui.util.KsuCli
+import me.weishu.kernelsu.ui.util.awaitRootShell
 import kotlin.coroutines.resume
 
 class SuperUserRepositoryImpl : SuperUserRepository {
@@ -154,7 +154,11 @@ class SuperUserRepositoryImpl : SuperUserRepository {
                 Shell.EXECUTOR,
                 connection,
             )
-            val shell = KsuCli.SHELL
+            // 必须等一条**真的 root** shell：这段代码跑在 Dispatchers.Main 上，
+            // 主线程取到的是"还没探到 root"时的轻量兜底 sh。拿那条非 root 壳去
+            // exec 绑定任务，RootService 永远连不上（onServiceConnected 不回调），
+            // 于是 getPackages() 拿不到任何包 —— 超级用户列表就一条应用都刷不出来。
+            val shell = awaitRootShell()
             task?.let { shell.execTask(it) }
         }
     }

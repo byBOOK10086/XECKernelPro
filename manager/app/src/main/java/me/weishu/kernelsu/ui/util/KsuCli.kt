@@ -15,6 +15,7 @@ import com.topjohnwu.superuser.CallbackList
 import com.topjohnwu.superuser.Shell
 import com.topjohnwu.superuser.ShellUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -364,6 +365,30 @@ fun getRootShell(globalMnt: Boolean = false): Shell {
     return if (globalMnt) KsuCli.GLOBAL_MNT_SHELL else {
         KsuCli.SHELL
     }
+}
+
+/**
+ * 等一条**真的 root** shell，超时再退回当前能拿到的。
+ *
+ * 给"本身已经是异步、但必须用 root 才能完成"的调用用 —— 典型是绑定 RootService：
+ * 绑定任务要在一个 root shell 里 exec，而主线程上取到的往往是还没探到 root 时的
+ * 轻量兜底 `sh`。用那条壳去 exec，服务永远连不上，`getPackages()` 也就拿不到包，
+ * 表现出来就是超级用户列表一条应用都刷不出来。
+ *
+ * 这里不阻塞主线程：整段在 IO 上轮询，冷却一过 `getOrRetryShell` 就会在工作线程上
+ * 真正探一次；[timeoutMs] 到了还没拿到 root 就把现状交出去，由调用方自己失败。
+ */
+suspend fun awaitRootShell(
+    globalMnt: Boolean = false,
+    timeoutMs: Long = 10_000L,
+): Shell = withContext(Dispatchers.IO) {
+    val deadline = SystemClock.elapsedRealtime() + timeoutMs
+    var shell = getRootShell(globalMnt)
+    while (!shell.isRoot && SystemClock.elapsedRealtime() < deadline) {
+        delay(150)
+        shell = getRootShell(globalMnt)
+    }
+    shell
 }
 
 inline fun <T> withNewRootShell(
