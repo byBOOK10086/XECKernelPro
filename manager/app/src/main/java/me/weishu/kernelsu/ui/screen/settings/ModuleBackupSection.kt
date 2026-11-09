@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -27,22 +28,27 @@ import me.weishu.kernelsu.ui.design.panel.Xc8Row
 private enum class BackupKind { Modules, Allowlist }
 
 /**
- * 模块备份与恢复（2026-11-09，能力来自 KernelSU-Next 的 BackupRestore）。
+ * 模块备份与恢复（2026-11-09；同日第二轮按审计结论加固）。
  *
  * 四件事：备份模块整包、恢复模块整包、备份超级用户授权表、恢复授权表。
- * 恢复模块是「解到 `modules_update` + 提示重启」，不是直接覆盖 `modules` ——
- * 这是上游的语义，也是这条功能唯一值钱的地方：**恢复是可撤销的**，只要没重启，
- * 反悔就直接退出，下一次开机 ksud 不会合并任何东西。
  *
- * 没有新开路由：它是一块普通设置面板。多一个页面就要多一条导航边，而"备份"这种
- * 一年用两次的动作不值得占一个常驻入口。
+ * 两条语义必须说清楚，否则用户会以为是即时生效：
+ *  - **模块恢复**：解到 `modules_update`，ksud 只在下一次开机时把它 rename 进
+ *    `modules`（`userspace/ksud/src/module.rs:730`）。所以"不重启＝没恢复"是真的；
+ *    重启一次之后就不能再撤销了。恢复是**叠加**的：备份里没有的现有模块不会被删。
+ *  - **授权表恢复**：内核只在开机初始化时读 `/data/adb/ksu/.allowlist`
+ *    （`kernel/core/init.c:210`），运行期没有 reload；而且重启前任何一次授权修改都会
+ *    让内核把内存里的旧表整表写回，覆盖掉刚恢复的文件。所以必须是"写完就重启"。
+ *
+ * [kind] 用 rememberSaveable：选文件时会跳去系统文件选择器，Activity 可能被回收重建，
+ * 用 remember 的话回调里会退回默认值 Modules，把授权表的 tar 当模块包解（反之亦然）。
  */
 @Composable
 fun ModuleBackupSection(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val confirm = rememberConfirmDialog()
-    var kind by remember { mutableStateOf(BackupKind.Modules) }
+    var kind by rememberSaveable { mutableStateOf(BackupKind.Modules) }
     var busy by remember { mutableStateOf(false) }
 
     fun say(text: String) {
@@ -85,9 +91,12 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
                     busy = false
                     result.onSuccess { count ->
                         val answer = confirm.awaitConfirm(
-                            title = "模块已解包（$count 个）",
-                            content = "它们被解到 `modules_update`，**重启后**才由 ksud 合并生效。" +
-                                "现在重启，还是先退出（不重启就等于没恢复）？",
+                            title = "已放入 $count 个模块",
+                            content = "它们被解到 `modules_update`，**重启后**才由 ksud 合并生效；" +
+                                "不重启就等于没恢复。\n\n" +
+                                "注意：恢复是**叠加**的 —— 备份里没有的现有模块不会被删除，" +
+                                "同名模块会被这份备份覆盖。\n\n" +
+                                "现在重启，还是先退出（退出后重启也会在下次开机生效）？",
                             markdown = true,
                             confirm = "立即重启",
                             dismiss = "稍后",
@@ -99,12 +108,23 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
                 } else {
                     val result = ModuleBackupOps.restoreAllowlist(context, uri)
                     busy = false
-                    say(
-                        result.fold(
-                            onSuccess = { "授权表已恢复（立即生效）" },
-                            onFailure = { "恢复失败：${it.message}" },
-                        ),
-                    )
+                    result.onSuccess {
+                        val answer = confirm.awaitConfirm(
+                            title = "授权表已写入",
+                            content = "内核**只在开机时**读 `/data/adb/ksu/.allowlist`，" +
+                                "运行期没有重新加载的通道 —— 所以**重启后才会生效**。\n\n" +
+                                "⚠️ 重启之前**不要再动任何授权**：那样内核会把当前内存里的旧表" +
+                                "整表写回，刚恢复的内容会被覆盖。\n\n" +
+                                "如果这份备份里不含本管理器自己，重启后管理器会失去 root，" +
+                                "那种情况只能重刷内核恢复。原表已留了一份 `.allowlist.bak-*`。",
+                            markdown = true,
+                            confirm = "立即重启",
+                            dismiss = "稍后",
+                        )
+                        if (answer == ConfirmResult.Confirmed) {
+                            ModuleBackupOps.reboot()
+                        }
+                    }.onFailure { say("恢复失败：${it.message}") }
                 }
             }
         }
@@ -143,7 +163,7 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
         )
         Xc8Row(
             title = "恢复超级用户授权",
-            subtitle = "从备份写回授权表，立即生效",
+            subtitle = "从备份写回授权表；内核只在开机时读它，重启后生效",
             leading = Icons.Rounded.Security,
             enabled = !busy,
             onClick = {

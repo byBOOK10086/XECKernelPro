@@ -107,9 +107,12 @@ private fun checkNewVersionFromSite(): LatestVersionInfo {
 }
 
 /**
- * 两条路都试一次：官网优先（国内可达），GitHub 那份只额外贡献累计下载量。
+ * 两条路都试一次，**按版本号取大者**：谁新用谁，下载量永远取 GitHub 的累计值。
  *
- * 任何一条拿到版本号就足以让首页显示"有新版本"，所以单点不可达不再等于"已是最新"。
+ * 旧实现是"站点拿到版本号就用站点"，无论 GitHub 是否更新。于是站点 `version.json`
+ * 一旦落后（发版后没跑 `publish_site.py`），用户的首页就会一直停在旧版本号上 ——
+ * 明明 GitHub Release 已经发了新包，"检查更新"却说已是最新。2026-11-09 审计把这条
+ * 定为 P1：更新提示不能依赖"两个源恰好同步"，只能按数值裁决。
  */
 fun checkNewVersion(): LatestVersionInfo {
     if (!isNetworkAvailable(ksuApp)) return LatestVersionInfo()
@@ -117,11 +120,17 @@ fun checkNewVersion(): LatestVersionInfo {
         .getOrDefault(LatestVersionInfo())
     val fromGithub = runCatching { checkNewVersionFromGithub() }
         .getOrDefault(LatestVersionInfo())
-    return when {
-        fromSite.versionCode > 0 && fromGithub.downloadCount > 0 ->
-            fromSite.copy(downloadCount = fromGithub.downloadCount)
-        fromSite.versionCode > 0 -> fromSite
+    val best = when {
+        fromSite.versionCode <= 0 -> fromGithub
+        fromGithub.versionCode <= 0 -> fromSite
+        // 同版本优先站点：国内直连、下载更快。
+        fromSite.versionCode >= fromGithub.versionCode -> fromSite
         else -> fromGithub
+    }
+    return if (fromGithub.downloadCount > 0) {
+        best.copy(downloadCount = fromGithub.downloadCount)
+    } else {
+        best
     }
 }
 
