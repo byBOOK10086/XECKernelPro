@@ -507,6 +507,24 @@ static void migrate_profile(u32 version, struct app_profile *profile)
             profile->rp_config.profile.flags = FLAG_KSU_NO_NEW_PRIVS;
         }
         break;
+    case 4:
+        /*
+         * v4 是当前格式，正常情况下域就是我们自己写的 `u:r:xecpro:s0`。唯一会带着
+         * 外来域进来的路径是「恢复别家 root 实现的授权表」—— 本项目刚移植了
+         * KernelSU-Next 的模块备份/恢复，而它的域是 `ksu`（selinux.h:
+         * KERNEL_SU_DOMAIN "ksu"），uapi 布局与本方逐字节相同，所以 magic/version
+         * 校验拦不住它。直接照搬会让 su 走 setup_selinux() 换域失败、
+         * 提权被拒（app_profile.c:229-231 是硬失败，不回退）。这里只迁移这一个
+         * 已知外来域，用户自己写的域原样保留。
+         */
+        if (profile->allow_su) {
+            domain = profile->rp_config.profile.selinux_domain;
+            if (strncmp(domain, "u:r:ksu:s0", domain_len) == 0) {
+                strscpy_pad(domain, KSU_DEFAULT_SELINUX_DOMAIN, domain_len);
+                pr_info("migrated foreign ksu domain of profile: %s\n", profile->key);
+            }
+        }
+        break;
     }
 
     profile->version = KSU_APP_PROFILE_VER;
