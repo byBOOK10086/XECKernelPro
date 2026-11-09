@@ -9,7 +9,7 @@
 #
 # 顺序依据：
 #   1) yurikey 原始源（base64）via 国内 GitHub 代理——最"新鲜"，代次最高；
-#   2) 本项目 keybox 分支（CI 每 15 分钟把上面那份解码后镜像过去）via 国内代理；
+#   2) 本项目 keybox 分支（CI 每 5 分钟把上面那份解码后镜像过去）via 国内代理；
 #   3) jsDelivr 三个 CDN 域名（国内时通时断，放后面）；
 #   4) 直连 raw.githubusercontent.com（海外/VPN 场景，国内基本不可达）。
 # 注意：源是否"新鲜"以 DeviceID 里的 YurikeyNN 代次为准——代次更低一律拒绝，
