@@ -183,6 +183,33 @@ vendored 源码树（`third_party/`）始终**零修改**：上述修复全部�
 - **QWEA0/Liquid-Glass-Android** — https://github.com/QWEA0/Liquid-Glass-Android （MIT）
   `Lens.kt` 中 XC_LENS_SHADER 着色器的移植来源。
 
+## 模块备份与恢复（KernelSU-Next，GPL-3.0）
+
+- 上游：https://github.com/KernelSU-Next/KernelSU-Next （**GPL-3.0**，与本项目
+  userspace / 管理器同协议，可移植）。
+- 参照文件：`manager/app/src/main/java/com/rifsxd/ksunext/ui/screen/BackupRestore.kt`
+  （2026-11-09 按 `dev` 分支读取；该文件最后一次改动为 `7994bfdf27dc`，2026-10-16）。
+  移植的是**行为契约**而不是逐行代码，实现写在本树的
+  `manager/app/src/main/java/me/weishu/kernelsu/ui/screen/settings/ModuleBackupOps.kt`。
+- 移植的语义：把 `/data/adb/modules` 打成 tar；恢复时解到 `/data/adb/modules_update`
+  （下一次开机由 ksud 合并，因此**恢复是可撤销的** —— 不重启就等于没恢复）；
+  `/data/adb/ksu/.allowlist` 单独备份 / 恢复。
+- 与上游的差异（按本树实际情况改的，不是简化）：tar 实现按 `toybox -> busybox`
+  顺序探测（本树不保证设备装了 busybox，上游硬编码 `/data/adb/ksu/bin/busybox`）；
+  tar 先写 app 私有 `cacheDir` 再流进 SAF 的 Uri（root shell 与 SAF 互相看不见）。
+- 管理器入口：设置页「模块备份与恢复」面板（`ModuleBackupSection.kt`），没有新开路由。
+
+## susfs4ksu-lkm（vendored，`third_party/susfs4ksu-lkm/`，GPL-2.0）
+
+- 上游：https://github.com/inforcqb/susfs4ksu-for-lkm ，收录 commit
+  `269766c8fcd52bb41c1f3b11841a93fc52ba68b7`（2026-11-07），GPL-2.0（见该目录 `LICENSE`）。
+- 用途：SUSFS 的**可加载模块**版本，CI 编译成 `susfs_guard_lkm-<KMI>.ko` 随 `xudc`
+  一起发布，late-load 时在 `kernelsu.ko` 之后加载 —— 这样 LKM 形态的设备也能用上 SUSFS。
+- 它自己声明的上游：susfs4ksu（功能与 hook 点）+ **SukiSU-Ultra**（`patch_memory` /
+  `lsm_hook` / `symbol_resolver`），一并致谢。
+- 保持上游原样、未做本地修改；我们的接线全在 `userspace/ksud/src/late_load.rs` 与
+  workflow 里，细节见 `third_party/susfs4ksu-lkm/UPSTREAM.md`。
+
 ## 环境检测审计引用（Adversarial detection audit）
 
 - **DuckDetector**（`eltavine/Duck-Detector-Refactoring`，Apache-2.0，作者 Eltavine 与 Duck Apps 贡献者）
@@ -308,6 +335,9 @@ vendored 源码树（`third_party/`）始终**零修改**：上述修复全部�
 
 
 ## 其他
+
+- libsu（`com.github.topjohnwu.libsu` 6.0.0，Apache-2.0，
+  https://github.com/topjohnwu/libsu）：管理器执行 root shell、读写受保护文件的依赖。
 
 - Rust 依赖见各 `Cargo.toml` / `Cargo.lock`；Android 依赖见 `manager/gradle/libs.versions.toml`
   （含 miuix `top.yukonga.miuix.kmp` 0.9.3，https://github.com/yukonga/miuix ，Apache-2.0）；
