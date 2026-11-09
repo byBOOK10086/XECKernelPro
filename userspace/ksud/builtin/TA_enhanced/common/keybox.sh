@@ -624,12 +624,12 @@ kb_prepare() {
 # 开机即时可用：模块内置副本（构建时由 CI 从上游刷新的那份）比实时副本新时换掉它。
 # 这是"刷写即拿到可信密钥"的离线路径——完全不依赖设备端能不能连上 GitHub。
 #
-# 判据不是时间（tmpfs 里模块文件的 mtime 就是本次开机时间，没有可比性），而是
-# "实时副本的 sha == 上一次记录的内置副本 sha"：这说明实时副本只是上一版的内置
-# 副本，此时本版内置了不同的箱子就该换掉。反向的三道闸同样要有：
+# 判据不是时间（tmpfs 里模块文件的 mtime 就是本次开机时间，没有可比性），而是**代次**：
+# 内置副本的代次比实时副本高就换。反向的三道闸同样要有：
 #   - 内置副本结构不合法（级别 2）           -> 不换
 #   - 内置副本级别低于实时副本               -> 不换（防止构建产物回退把可信箱子换掉）
 #   - 两边代次都能识别且内置副本代次更低      -> 不换（防止镜像/构建回源到旧快照）
+# 另外保留老规则：实时副本 == 上一版内置副本时（说明它不是下载来的），本版内置不同的箱子就换掉。
 kb_ensure_from_module() {
     local _ship="$1" _live_sha _ship_sha _prev _live_lvl _ship_lvl _live_gen _ship_gen
     [ -f "$_ship" ] || return 0
@@ -644,7 +644,7 @@ kb_ensure_from_module() {
     if [ ! -f "$KB_LIVE" ]; then
         _log "INFO" "keybox: 实时副本缺失，用模块内置副本播种（DeviceID=$(kb_device_id "$_ship") 级别=$_ship_lvl）"
         kb_install "$_ship" "module-shipped"
-    elif [ "$_live_sha" = "$_prev" ] && [ "$_live_sha" != "$_ship_sha" ]; then
+    elif [ "$_live_sha" != "$_ship_sha" ]; then
         _live_lvl=$(kb_trust_level "$KB_LIVE")
         _live_gen=$(kb_generation "$KB_LIVE")
         _ship_gen=$(kb_generation "$_ship")
@@ -652,9 +652,18 @@ kb_ensure_from_module() {
             _log "WARN" "keybox: 本版内置副本级别 $_ship_lvl 低于实时副本 $_live_lvl，保留实时副本"
         elif [ -n "$_live_gen" ] && [ -n "$_ship_gen" ] && [ "$_ship_gen" -lt "$_live_gen" ]; then
             _log "WARN" "keybox: 本版内置副本代次更旧（Yurikey$_ship_gen < Yurikey$_live_gen），保留实时副本"
-        else
+        elif [ -n "$_live_gen" ] && [ -n "$_ship_gen" ] && [ "$_ship_gen" -gt "$_live_gen" ]; then
+            # 实时副本是下载来的旧代次，本版内置了更新的代次 -> 换掉。
+            # 旧实现只在"实时副本 == 上一版内置副本"时才换，于是**下载来的旧代次会一直留着**：
+            # yurikey 的叶子证书只有 12 天寿命，代次 67 于 2026-11-06 过期后，链就再也验不过，
+            # 检测方直接报 Tampered Attestation Key —— 而内置的 68 明明还在有效期内却永远换不上。
+            _log "WARN" "keybox: 实时副本代次更旧（Yurikey$_live_gen < 内置 Yurikey$_ship_gen），换用本版内置副本（$_live_sha -> $_ship_sha）"
+            kb_install "$_ship" "module-shipped-newer-generation"
+        elif [ "$_live_sha" = "$_prev" ]; then
             _log "INFO" "keybox: 实时副本仍是上一版内置副本，本版内置了更新的盒子，换掉（$_live_sha -> $_ship_sha）"
             kb_install "$_ship" "module-shipped-upgrade"
+        else
+            _log "INFO" "keybox: 实时副本保留（DeviceID=$(kb_device_id "$KB_LIVE") sha=$(kb_short "$_live_sha") 级别=$(kb_trust_level "$KB_LIVE") 代次=$(kb_generation "$KB_LIVE")）"
         fi
     else
         _log "INFO" "keybox: 实时副本保留（DeviceID=$(kb_device_id "$KB_LIVE") sha=$(kb_short "$_live_sha") 级别=$(kb_trust_level "$KB_LIVE")）"
