@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -48,9 +49,12 @@ fun HomeDashboard(state: HomeUiState) {
     // 2026-11-09：整块仪表加入场动画。雷达从圆心长出来，分数从 0 数上去 ——
     // 数据是"算出来的结论"，让它有一个"算"的过程比直接甩一个数字更像仪表。
     val reveal = remember { Animatable(0f) }
+    // Xc.colors 是 @Composable，只能在这里读一次；LaunchedEffect 的 lambda 不是
+    // composable 上下文，在里面读会直接编译失败（2026-11-09 CI 抓到过一次）。
+    val dark = Xc.colors.isDark
     LaunchedEffect(result.total) {
         reveal.snapTo(0f)
-        reveal.animateTo(1f, XcMotion.reveal(Xc.colors.isDark))
+        reveal.animateTo(1f, XcMotion.reveal(dark))
     }
     val shownScore by animateIntAsState(
         targetValue = (result.total * reveal.value).roundToInt(),
