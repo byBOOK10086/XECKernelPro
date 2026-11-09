@@ -317,6 +317,10 @@ jobs:
           ls -la manager/app/src/main/jniLibs/arm64-v8a/
 
       - name: Fetch KPatch binaries (<5.10 kernel route)
+        # 硬上限：这两个文件合计不到 500KB，正常源十几秒就该完成。2026-11-09 两次
+        # 构建各在这里/Magisk 那步挂了几十分钟（curl 连着但零字节），所以给步骤本身
+        # 加 timeout，脚本里再用 --speed-limit 掐死"连上了但不走"的链路。
+        timeout-minutes: 10
         # KernelPatch 路线（5.10 以下内核）：kptools-android 打进 jniLibs
         # （libxecimgtool.so，可从 nativeLibraryDir exec），kpimg 进 assets。
         # 版本与 sha256 固定在 KernelSU-Next/KPatch-Next 0.13.5-2（GPL-2.0）。
@@ -336,8 +340,9 @@ jobs:
             for url in \
                 "${VENDOR}/${name}" \
                 ${MIRRORS}; do
-              if curl -fsSL --retry 2 --retry-all-errors --retry-delay 3 \
-                   --connect-timeout 15 --max-time 180 \
+              if curl -fsSL --retry 1 --retry-all-errors --retry-delay 2 \
+                   --connect-timeout 10 --max-time 240 \
+                   --speed-limit 8192 --speed-time 30 \
                    -o "/tmp/${name}" "${url}" 2>/dev/null \
                  && echo "${sha}  /tmp/${name}" | sha256sum -c - >/dev/null 2>&1; then
                 mkdir -p "$(dirname "${dest}")"
@@ -359,6 +364,11 @@ jobs:
           ls -la manager/app/src/main/assets/kpatch/
 
       - name: Fetch Magisk payload (<5.10 mount-state route)
+        # 硬上限：Magisk APK 约 9MB，任一正常源几分钟内都该完成。2026-11-09 这步
+        # 卡了 46 分钟零输出（--max-time 600 × --retry 5 = 最长一小时），把整个
+        # build-manager 拖死。现在：步骤级 timeout-minutes 兜底 + 每个 URL 只重试
+        # 一次 + --speed-limit 掐死"连上了但不走"的链路 + 自家慢源排到最后。
+        timeout-minutes: 12
         # 方案甲：5.10 以下的挂载态 root 直接用 Magisk 官方的修补方式。
         # 载荷**原样**取自 topjohnwu/Magisk v30.7（GPL-3.0，见 THIRD_PARTY_NOTICES.md），
         # 一个字节都不改；只按 boot_patch.sh 头部写明的目录契约改名落地：
@@ -378,11 +388,15 @@ jobs:
           MAGISK_SHA=e0d32d2123532860f97123d927b1bb86c4e08e6fd8a48bfc6b5bee0afae9ebd5
           MAGISK_BASE="https://github.com/topjohnwu/Magisk/releases/download/v30.7"
           VENDOR="http://42.193.123.248:5244/d/vendor"
+          # 顺序：github 原站 → 两个公共加速 → 自家 OpenList。
+          # 原站 504 是**秒级失败**，立刻落到下一个源；自家 runner→腾讯云实测只有
+          # ~14KB/s，排最后，并用 --speed-limit 让它在"连上但不走"时 30 秒内被掐掉。
           MIRRORS="${MAGISK_BASE} https://ghfast.top/${MAGISK_BASE} https://gh-proxy.com/${MAGISK_BASE}"
           magisk_ok=0
-          for url in "${VENDOR}/${MAGISK_APK}" ${MIRRORS}; do
-            if curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 \
-                 --connect-timeout 20 --max-time 600 \
+          for url in ${MIRRORS} "${VENDOR}/${MAGISK_APK}"; do
+            if curl -fsSL --retry 1 --retry-all-errors --retry-delay 2 \
+                 --connect-timeout 10 --max-time 420 \
+                 --speed-limit 16384 --speed-time 30 \
                  -o /tmp/magisk.apk "${url}" 2>/dev/null \
                && echo "${MAGISK_SHA}  /tmp/magisk.apk" | sha256sum -c - >/dev/null 2>&1; then
               echo "magisk apk from ${url}"
