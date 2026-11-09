@@ -166,7 +166,7 @@ API支持
 XEC 项目组
 ]]></string>
     <string name="home_gki_warning">自 v3.0.0 起 GKI 工作模式将仅用于测试环境，我们不建议用于日常使用，也不再提供镜像文件</string>
-    <string name="about_source_code"><![CDATA[在 %1$s 查看源码<br/>加入我们的 %2$s 频道<br/>加入我们的 <b><a href="https://pd.qq.com/s/8lipl1brp">QQ</a></b> 频道]]></string>
+    <string name="about_source_code"><![CDATA[在 %1$s 查看源码<br/>在 %2$s 查看历史版本<br/>QQ 群：<b><a href="mqqapi://card/show_pslcard?src_type=internal&amp;version=1&amp;uin=941895988&amp;card_type=group&amp;source=qrcode">941895988</a></b>]]></string>
     <string name="profile_default">默认</string>
     <string name="profile_template">模板</string>
     <string name="profile_custom">自定义</string>

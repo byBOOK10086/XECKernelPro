@@ -177,7 +177,7 @@ Official group: 941895988
 XEC Project Team
 ]]></string>
     <string name="home_gki_warning">Starting from v3.0.0, the GKI work mode will be used only in testing environments. We do not recommend it for daily use, and image files will no longer be provided.</string>
-    <string name="about_source_code"><![CDATA[View source code at %1$s<br/>Join our %2$s channel]]></string>
+    <string name="about_source_code"><![CDATA[View source code at %1$s<br/>Browse releases at %2$s<br/>QQ group: <b><a href="mqqapi://card/show_pslcard?src_type=internal&amp;version=1&amp;uin=941895988&amp;card_type=group&amp;source=qrcode">941895988</a></b>]]></string>
     <string name="profile">App Profile</string>
     <string name="profile_default">Default</string>
     <string name="profile_template">Template</string>

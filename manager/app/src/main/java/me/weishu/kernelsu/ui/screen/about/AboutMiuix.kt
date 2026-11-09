@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -38,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -297,9 +299,10 @@ private fun AboutContent(
                         iconY = y + size.height
                     },
             ) {
-                Image(
+                Box(
                     modifier = Modifier
                         .requiredSize(245.dp)
+                        .clip(RoundedCornerShape(percent = 26))
                         .then(
                             if (enableBlur) {
                                 Modifier.textureBlur(
@@ -316,10 +319,22 @@ private fun AboutContent(
                                 )
                             } else Modifier
                         ),
-                    painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                    colorFilter = ColorFilter.tint(colorScheme.onBackground),
-                    contentDescription = null,
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // 2026-11-09：这里以前只画 `ic_launcher_foreground`（透明底的前景层）
+                    // 并用 onBackground 染色 —— 浅色档就是把整个字形涂成近黑，看起来是
+                    // 一块黑块。改成真正合成应用图标：向量渐变底 + 前景字形，不做染色。
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_launcher_bg),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
             Text(
                 modifier = Modifier
