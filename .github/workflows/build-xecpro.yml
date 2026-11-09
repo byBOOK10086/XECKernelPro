@@ -335,7 +335,10 @@ jobs:
           # 这两个二进制合计不到 500KB，直接放在自己的 OpenList 上，CI 只依赖一台
           # 我们自己能管的服务器；github 与公共镜像留作后备。
           # 顺序变了，但**每个源都必须过同一个 sha256** 才算数，一个字节都不放松。
-          MIRRORS="${BASE} https://ghfast.top/${BASE} https://gh-proxy.com/${BASE}"
+          # 每个镜像都必须拼到**资产文件名**：只写到 /download/<tag> 会拿到发布页 HTML，
+          # 体积对不上、sha256 直接失败 —— 2026-11-09 之前的 "github 与镜像全挂"
+          # 就是这个原因（vendor 那条带了文件名，所以只有它"能用"，还特别慢）。
+          MIRRORS="${BASE}/${name} https://ghfast.top/${BASE}/${name} https://gh-proxy.com/${BASE}/${name}"
           fetch() {
             local name="$1" sha="$2" dest="$3" url
             for url in \
@@ -401,7 +404,7 @@ jobs:
           # 现在靠"每个 URL 只试一次 + 单 URL 最多 240s + 步骤 13 分钟硬超时"兜底：
           # 任何一条黑洞链接最多花 4 分钟，整步最多 13 分钟，不会再拖死 job。
           # 自家源排第一是因为它这两次实测最快（KPatch 400KB 只用了 13 秒）。
-          MIRRORS="${MAGISK_BASE} https://ghfast.top/${MAGISK_BASE} https://gh-proxy.com/${MAGISK_BASE} https://ghproxy.net/${MAGISK_BASE} https://github.moeyy.xyz/${MAGISK_BASE}"
+          MIRRORS="${MAGISK_BASE}/${MAGISK_APK} https://ghfast.top/${MAGISK_BASE}/${MAGISK_APK} https://gh-proxy.com/${MAGISK_BASE}/${MAGISK_APK} https://ghproxy.net/${MAGISK_BASE}/${MAGISK_APK} https://github.moeyy.xyz/${MAGISK_BASE}/${MAGISK_APK}"
           magisk_ok=0
           # 每个 URL 只试一次、最多 180s：9MB 在 >50KB/s 的链路上 3 分钟内必然完成，
           # 慢于此的源本来也赶不上发版窗口。多留几个镜像，谁快用谁。
