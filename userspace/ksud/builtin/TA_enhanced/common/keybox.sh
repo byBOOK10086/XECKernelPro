@@ -468,7 +468,7 @@ kb_need_refresh() {
 
 # 一轮镜像扫描：国内直连 -> vendor CLI 兜底。命中"可信级"立即收工。
 kb_sweep() {
-    local _deadline _url _host _out _vendor_try _got_any _pre _pre_lvl _new_lvl _pg _ng
+    local _deadline _url _host _out _vendor_try _got_any _pre _pre_lvl _new_lvl _pg _ng _new
     kb_mirrors
     _deadline=$(( $(kb_now) + KB_SWEEP_BUDGET ))
     _vendor_try=0
@@ -510,7 +510,10 @@ kb_sweep() {
         _pre="$KB_STATE/.pre_vendor.$$"
         _pre_lvl="2"
         if [ -f "$KB_LIVE" ]; then
-            cp -f "$KB_LIVE" "$_pre" 2>/dev/null
+            # -p：把原始 mtime 一起保下来。恢复之后 kb_try_candidate 里那条
+            # "实时副本才 ${_age}s，跳过" 的超期判据才有意义；否则一 cp 就把
+            # 实时副本的年龄抹成 0，同代次的合法刷新会被误判成"刚装过"。
+            cp -p -f "$KB_LIVE" "$_pre" 2>/dev/null
             _pre_lvl=$(kb_trust_level "$_pre")
         fi
         if kb_vendor_fetch "$_url"; then
@@ -531,6 +534,31 @@ kb_sweep() {
                 rm -f "$_pre" 2>/dev/null
                 return 0
             fi
+            # 2026-11-09 修：vendor 是**直接改写实时文件**的，所以原来这里的
+            # `kb_try_candidate "$KB_LIVE"` 等于拿 live 跟自己比 —— 第 277 行
+            # "内容一致" 立刻 return 0，级别与代次两道闸全被绕过。隔离复现：
+            # 实时 Yurikey69（级别 0）被 vendor 写回 Yurikey68（级别 0）之后，
+            # sweep 仍然报成功，降级就这么留下来了。
+            # 现在改成：先把 vendor 写进来的内容扣成"候选"，再把快照装回实时位置，
+            # 然后交给**同一个** kb_try_candidate 判定 —— 判据只有一份，不复制策略。
+            _new=""
+            if [ -s "$_pre" ]; then
+                _new="$KB_STATE/.vendor_new.$$"
+                if cp -p -f "$KB_LIVE" "$_new" 2>/dev/null && cp -p -f "$_pre" "$KB_LIVE" 2>/dev/null; then
+                    if kb_try_candidate "$_new" "vendor:$_host" "$_url"; then
+                        kb_remember_working "$_url"
+                        if [ "$(kb_trust_level "$KB_LIVE")" = "0" ]; then
+                            rm -f "$_new" "$_pre" 2>/dev/null
+                            return 0
+                        fi
+                    fi
+                    rm -f "$_new" "$_pre" 2>/dev/null
+                    continue
+                fi
+                # 扣候选/装快照都没成功：退回下面的老路径（不会比改动前更差）。
+                rm -f "$_new" 2>/dev/null
+                _new=""
+            fi
             if kb_try_candidate "$KB_LIVE" "vendor:$_host" "$_url"; then
                 kb_remember_working "$_url"
                 if [ "$(kb_trust_level "$KB_LIVE")" = "0" ]; then
@@ -540,6 +568,11 @@ kb_sweep() {
             fi
         else
             _log "WARN" "keybox: vendor CLI 在 $_host 上失败/超时（${KB_VENDOR_TIMEOUT}s）"
+            # 失败也可能已经动过实时文件（写到一半/写错源）：只要内容与快照不同就装回去。
+            if [ -s "$_pre" ] && [ "$(kb_sha "$_pre")" != "$(kb_sha "$KB_LIVE")" ]; then
+                _log "WARN" "keybox: vendor 失败但改写了实时副本——恢复拉取前的内容"
+                kb_install "$_pre" "restore-pre-vendor"
+            fi
         fi
         rm -f "$_pre" 2>/dev/null
     done < "$KB_MIRRORS_CUR"
@@ -631,7 +664,7 @@ kb_prepare() {
 #   - 两边代次都能识别且内置副本代次更低      -> 不换（防止镜像/构建回源到旧快照）
 # 另外保留老规则：实时副本 == 上一版内置副本时（说明它不是下载来的），本版内置不同的箱子就换掉。
 kb_ensure_from_module() {
-    local _ship="$1" _live_sha _ship_sha _prev _live_lvl _ship_lvl _live_gen _ship_gen
+    local _ship="$1" _live_sha _ship_sha _prev _live_lvl _ship_lvl _live_gen _ship_gen _record
     [ -f "$_ship" ] || return 0
     _ship_sha=$(kb_sha "$_ship")
     _live_sha=$(kb_sha "$KB_LIVE")
@@ -641,9 +674,14 @@ kb_ensure_from_module() {
         return 0
     fi
     _prev=$(cat "$KB_SHIPPED" 2>/dev/null)
+    # _record=1 表示"这一版内置副本已经跟实时副本对过账"。**只有真的换成了**
+    # （或按策略明确决定保留实时副本）才写 marker：2026-11-09 审出旧的写法是
+    # 无条件写，于是 kb_install 失败一次之后 marker 已经推进，下一次开机
+    # live 既不等于 ship 也不等于 prev，同代次换字节那条路就再也重试不了。
+    _record=1
     if [ ! -f "$KB_LIVE" ]; then
         _log "INFO" "keybox: 实时副本缺失，用模块内置副本播种（DeviceID=$(kb_device_id "$_ship") 级别=$_ship_lvl）"
-        kb_install "$_ship" "module-shipped"
+        kb_install "$_ship" "module-shipped" || _record=0
     elif [ "$_live_sha" != "$_ship_sha" ]; then
         _live_lvl=$(kb_trust_level "$KB_LIVE")
         _live_gen=$(kb_generation "$KB_LIVE")
@@ -658,17 +696,21 @@ kb_ensure_from_module() {
             # yurikey 的叶子证书只有 12 天寿命，代次 67 于 2026-11-06 过期后，链就再也验不过，
             # 检测方直接报 Tampered Attestation Key —— 而内置的 68 明明还在有效期内却永远换不上。
             _log "WARN" "keybox: 实时副本代次更旧（Yurikey$_live_gen < 内置 Yurikey$_ship_gen），换用本版内置副本（$_live_sha -> $_ship_sha）"
-            kb_install "$_ship" "module-shipped-newer-generation"
+            kb_install "$_ship" "module-shipped-newer-generation" || _record=0
         elif [ "$_live_sha" = "$_prev" ]; then
             _log "INFO" "keybox: 实时副本仍是上一版内置副本，本版内置了更新的盒子，换掉（$_live_sha -> $_ship_sha）"
-            kb_install "$_ship" "module-shipped-upgrade"
+            kb_install "$_ship" "module-shipped-upgrade" || _record=0
         else
             _log "INFO" "keybox: 实时副本保留（DeviceID=$(kb_device_id "$KB_LIVE") sha=$(kb_short "$_live_sha") 级别=$(kb_trust_level "$KB_LIVE") 代次=$(kb_generation "$KB_LIVE")）"
         fi
     else
         _log "INFO" "keybox: 实时副本保留（DeviceID=$(kb_device_id "$KB_LIVE") sha=$(kb_short "$_live_sha") 级别=$(kb_trust_level "$KB_LIVE")）"
     fi
-    printf '%s\n' "$_ship_sha" > "$KB_SHIPPED" 2>/dev/null
+    if [ "$_record" = "1" ]; then
+        printf '%s\n' "$_ship_sha" > "$KB_SHIPPED" 2>/dev/null
+    else
+        _log "WARN" "keybox: 本版内置副本没能换上（安装失败）——不推进 marker，下次开机继续重试"
+    fi
 }
 
 # 常驻看护：1s 权限钉住，15s 可信度巡检 + 刷新判定。
