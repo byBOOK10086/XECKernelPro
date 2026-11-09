@@ -1146,6 +1146,6 @@ See the log below for details.</string>
     <string name="home_hero_inactive">Kernel not running</string>
     <string name="home_hero_mount_mode">Magisk mount mode</string>
     <string name="home_hero_kernel_mode">Kernel mode</string>
-    <string name="home_update_tap_hint">Tap to see what&#39;s new</string>
+    <string name="home_update_tap_hint">Tap to view the changelog</string>
     <string name="tools_section_tools">Tools</string>
 </resources>
