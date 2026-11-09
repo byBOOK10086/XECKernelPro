@@ -1135,4 +1135,19 @@ XEC 项目组
     <!-- MIUI 8 控件与外观 -->
     <string name="settings8_component_transparent">组件透明</string>
     <string name="settings8_component_transparent_summary">把所有面板与行的底色设为全透明，只保留 1px 描边与文字</string>
+    <!-- 扁平方案 A：首页首屏 -->
+    <string name="home_refresh">刷新</string>
+    <string name="home_section_device">设备</string>
+    <string name="home_stat_kernel">内核</string>
+    <string name="home_stat_manager">管理器</string>
+    <string name="home_stat_superuser">超级用户</string>
+    <string name="home_hero_ready">ROOT 已就绪</string>
+    <string name="home_hero_idle">ROOT 未就绪</string>
+    <string name="home_hero_running">内核正常运行</string>
+    <string name="home_hero_mount">挂载态运行中</string>
+    <string name="home_hero_inactive">内核未运行</string>
+    <string name="home_hero_mount_mode">Magisk 挂载态</string>
+    <string name="home_hero_kernel_mode">内核态</string>
+    <string name="home_update_tap_hint">点按查看更新内容</string>
+    <string name="tools_section_tools">工具</string>
 </resources>

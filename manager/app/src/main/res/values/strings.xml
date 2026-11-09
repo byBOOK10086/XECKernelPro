@@ -1133,4 +1133,19 @@ See the log below for details.</string>
     <!-- MIUI 8 controls / appearance -->
     <string name="settings8_component_transparent">Transparent components</string>
     <string name="settings8_component_transparent_summary">Drop every panel and row background to fully transparent, keeping only the 1px outlines and text</string>
+    <!-- Flat design A: home hero -->
+    <string name="home_refresh">Refresh</string>
+    <string name="home_section_device">Device</string>
+    <string name="home_stat_kernel">Kernel</string>
+    <string name="home_stat_manager">Manager</string>
+    <string name="home_stat_superuser">Superuser</string>
+    <string name="home_hero_ready">ROOT READY</string>
+    <string name="home_hero_idle">ROOT NOT READY</string>
+    <string name="home_hero_running">Kernel running</string>
+    <string name="home_hero_mount">Running in mount mode</string>
+    <string name="home_hero_inactive">Kernel not running</string>
+    <string name="home_hero_mount_mode">Magisk mount mode</string>
+    <string name="home_hero_kernel_mode">Kernel mode</string>
+    <string name="home_update_tap_hint">Tap to see what&#39;s new</string>
+    <string name="tools_section_tools">Tools</string>
 </resources>

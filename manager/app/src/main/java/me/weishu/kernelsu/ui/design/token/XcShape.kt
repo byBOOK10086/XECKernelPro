@@ -70,18 +70,18 @@ val XcShapesDefault = XcShapes(
  * 做成可主题化只会让"同一个壳在不同页面圆角不同"这类 bug 有可乘之机。
  */
 object XcRadius {
-    /** 2dp：标签、徽标、小药丸。 */
-    val xs = 2.dp
-    /** 3dp：列表项内嵌块、输入框、缩略图。 */
-    val sm = 3.dp
-    /** 4dp：卡片、分组容器。 */
-    val md = 4.dp
-    /** 5dp：大卡片、面板、底部弹层内容。 */
-    val lg = 5.dp
-    /** 6dp：对话框、悬浮面板。 */
-    val xl = 6.dp
-    /** 4dp：顶栏 / 导航栏 / 悬浮栏。 */
-    val bar = 4.dp
+    /** 4dp：标签、徽标、小药丸。 */
+    val xs = 4.dp
+    /** 8dp：列表项内嵌块、输入框、缩略图。 */
+    val sm = 8.dp
+    /** 12dp：卡片、分组容器（设计稿口径）。 */
+    val md = 12.dp
+    /** 16dp：大卡片、面板、底部弹层内容。 */
+    val lg = 16.dp
+    /** 20dp：对话框、悬浮面板。 */
+    val xl = 20.dp
+    /** 12dp：顶栏 / 导航栏 / 悬浮栏。 */
+    val bar = 12.dp
 }
 
 val LocalXcShapes = staticCompositionLocalOf { XcShapesDefault }

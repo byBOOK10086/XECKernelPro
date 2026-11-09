@@ -165,18 +165,22 @@ fun MiuixKernelSUTheme(
             // luma 73–82，半透明底压上去依然安全。
             //
             // AMOLED 档位例外：纯黑底是这个档位的全部意义，直接取实色把图盖掉。
-            val amoled = appSettings.colorMode.isAmoled
             val colors = if (darkTheme) {
                 accented.copy(
-                    // 底：XEC 深墨绿灰，整屏最底层。
-                    background = if (amoled) xc.backdrop else xc.backdrop.copy(alpha = 0.80f),
+                    // 扁平方案 A：整页实色，不再让壁纸透出来（之前的 0.80 会把
+                    // 底色调成一张"灰纸"，和设计稿的 #0B0B0E / #F5F5F7 对不上）。
+                    background = xc.backdrop,
+                    // 强调色钉死成设计稿那一个值：materialkolor 派生会把 #6B84FF
+                    // 拉成一族相近但不相同的蓝，按钮和设计稿就对不上了。
+                    primary = xc.accent,
+                    onPrimary = Color(0xFF0B0B0E),
                     onBackground = xc.text,
-                    // 容器：各档容器全部来自 XEC 中性色，越高的档位越实。
-                    surface = xc.surface.copy(alpha = 0.48f),
-                    surfaceVariant = xc.surfaceMuted.copy(alpha = 0.48f),
-                    surfaceContainer = xc.surfaceMuted.copy(alpha = 0.58f),
-                    surfaceContainerHigh = xc.surfaceMuted.copy(alpha = 0.70f),
-                    surfaceContainerHighest = xc.surfaceMuted.copy(alpha = 0.82f),
+                    // 容器：全部实色，层级靠 1px 发丝线而不是半透明叠色。
+                    surface = xc.surface,
+                    surfaceVariant = xc.surfaceMuted,
+                    surfaceContainer = xc.surfaceMuted,
+                    surfaceContainerHigh = xc.surfaceMuted,
+                    surfaceContainerHighest = xc.surfaceMuted,
                     // 注意：miuix 的 Colors 只提供上面这三档容器槽位，
                     // **没有** Material 那套 surfaceContainerLow / surfaceContainerLowest /
                     // surfaceDim / surfaceBright / surfaceTint。写进去是硬编译错误
@@ -205,20 +209,19 @@ fun MiuixKernelSUTheme(
                 //
                 // 上游那套浅色灰阶是"一眼看去还是 KernelSU"的第三个来源：它和
                 // 深色档出自同一套蓝灰偏色，只换强调色压不住——底、容器、分隔线、
-                // 次级文字全是从它派生的。XEC 的浅色取值（backdrop #F2F5F6 /
+                // 次级文字全是从它派生的。XEC 的浅色取值（backdrop #F5F5F7 /
                 // surface 纯白 / text 近黑）与深色档共用同一套语义槽位，规则一致，
                 // 只是把值换掉，所以这里是深色分支的镜像，不是第二套设计。
-                //
-                // alpha 与深色档取同一组：底 0.80 让背景图透出约两成，容器越高的
-                // 档位越实，层次仍然靠玻璃描边说话。
                 accented.copy(
-                    background = xc.backdrop.copy(alpha = 0.80f),
+                    background = xc.backdrop,
+                    primary = xc.accent,
+                    onPrimary = Color.White,
                     onBackground = xc.text,
-                    surface = xc.surface.copy(alpha = 0.62f),
-                    surfaceVariant = xc.surfaceMuted.copy(alpha = 0.62f),
-                    surfaceContainer = xc.surfaceMuted.copy(alpha = 0.72f),
-                    surfaceContainerHigh = xc.surfaceMuted.copy(alpha = 0.82f),
-                    surfaceContainerHighest = xc.surfaceMuted.copy(alpha = 0.90f),
+                    surface = xc.surface,
+                    surfaceVariant = xc.surfaceMuted,
+                    surfaceContainer = xc.surfaceMuted,
+                    surfaceContainerHigh = xc.surfaceMuted,
+                    surfaceContainerHighest = xc.surfaceMuted,
                     onSurface = xc.text,
                     onSurfaceSecondary = xc.textSecondary,
                     onSurfaceVariantSummary = xc.textMuted,

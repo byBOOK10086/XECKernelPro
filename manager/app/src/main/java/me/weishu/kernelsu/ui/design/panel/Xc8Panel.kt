@@ -79,9 +79,10 @@ fun Xc8SectionLabel(
     ) {
         Text(
             text = text,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            color = Xc.colors.textSecondary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.2.sp,
+            color = Xc.colors.textMuted,
             modifier = Modifier.weight(1f),
         )
         trailing?.invoke()

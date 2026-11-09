@@ -1,13 +1,15 @@
 package me.weishu.kernelsu.ui.screen.home
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -20,8 +22,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.DeveloperBoard
@@ -32,8 +37,8 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.VolunteerActivism
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -41,18 +46,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import me.weishu.kernelsu.KernelVersion
 import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.WarningLevel
@@ -62,7 +66,6 @@ import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.component.miuix.WarningCard
 import me.weishu.kernelsu.ui.component.rebootlistpopup.RebootListPopupMiuix
 import me.weishu.kernelsu.ui.design.glass.rememberXcBlock
-import me.weishu.kernelsu.ui.design.island.IslandTopBar
 import me.weishu.kernelsu.ui.design.panel.Xc8Chevron
 import me.weishu.kernelsu.ui.design.panel.Xc8Panel
 import me.weishu.kernelsu.ui.design.panel.Xc8Row
@@ -73,35 +76,28 @@ import me.weishu.kernelsu.ui.design.panel.Xc8Value
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.design.token.XcBlockBackground
 import me.weishu.kernelsu.ui.design.token.XcBlocks
-import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.util.getSuperuserCount
 import me.weishu.kernelsu.ui.util.module.LatestVersionInfo
-import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TopAppBar
-import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 /**
- * 首页（MIUI 8 全盘换装后的版式）。
+ * 首页（扁平方案 A，2026-11-09）。
  *
- * 版式来源：`miui8-kernelsu-prototype` 的首页 —— 模式卡是唯一焦点，
- * 下面依次是系统信息、安全状态、运行概况、常用操作、支持与关于，
- * 全部是"白色分组面板 + 1px 分隔线"。
+ * 版式来自设计稿：**一句话结论 + 三格数据 + 设备表**。
  *
- * 与上一版的关键差异不是换皮，是换信息结构：
- *  - 删掉英雄卡（评分环 + 检测 + 分享）与卡片外观编辑：评分属于检测页，
- *    首页不该同时承担"总览"和"打分"两件事；外观编辑是上一版玻璃形态的产物，
- *    方角面板没有折射可调，留着只会是入口找不到落点。
- *  - 删掉状态卡上的大对勾与 140dp 定高：模式卡改成自适应高度，收起只留
- *    徽标 + 模式名 + 状态，展开才列出四格详情。
- *  - 每个面板的行都是"标题 + 副标题 + 右值"，信息密度靠行承载而不是靠卡片堆叠。
+ * 与上一版（MIUI 8 六张面板）的区别：
+ *  - 首屏不再让"模式卡"独占整块；状态收成一行大字（[HomeHero]），一屏读得出"能不能用"；
+ *  - 三格数据（内核 / 管理器 / 超级用户）是上下两条发丝线夹出来的，不是三张卡；
+ *  - 设备信息变成"标签 + 右值"的表，刷新入口就挂在这一节的标题行上；
+ *  - 更新卡从告警条变成一张实心卡：左边版本与体积、右边一个强调色药丸。
  *
- * 告警与更新条仍排在最前面：它们是异常态才出现的东西，正常设备上模式卡就是第一屏。
+ * 安全状态 / 运行概况 / 支持三块**保留**在下面（设计稿只画了首屏，功能不删），
+ * 只是同样走面板 + 发丝线这套语言。
  */
 @Composable
 fun HomePagerMiuix(
@@ -110,8 +106,6 @@ fun HomePagerMiuix(
     bottomInnerPadding: Dp,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
-    val enableBlur = LocalEnableBlur.current
-    val backdrop = rememberBlurBackdrop(enableBlur)
     // 首页七处 WarningCard 共用的区块背景（告警卡在日志页也在用，所以"首页那块背景"
     // 的取值留在这一层，不跟着组件跑到别的页面去）。
     val warningBlock = rememberXcBlock(XcBlocks.HOME_WARNING)
@@ -132,120 +126,352 @@ fun HomePagerMiuix(
 
     Scaffold(
         containerColor = Color.Transparent,
-        topBar = {
-            TopBar(
-                state = state,
-                scrollBehavior = scrollBehavior,
-            )
-        },
+        topBar = { HomeHeader(state = state, onRefresh = actions.onRefresh) },
         popupHost = { },
-        contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal)
+        contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout)
+            .only(WindowInsetsSides.Horizontal),
     ) { innerPadding ->
-        Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .scrollEndHaptic()
-                    .overScrollVertical()
-                    .nestedScroll(scrollBehavior.nestedScrollConnection)
-                    .padding(horizontal = 12.dp),
-                contentPadding = innerPadding,
-                overscrollEffect = null,
-            ) {
-                item {
-                    Column(
-                        modifier = Modifier.padding(top = 6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        if (state.checkUpdateEnabled) {
-                            UpdateCard(state = state, actions = actions)
-                        }
-                        if (state.showManagerPrBuildWarning) {
-                            WarningCard(
-                                stringResource(id = R.string.home_pr_build_warning),
-                                level = WarningLevel.Notice,
-                                block = warningBlock,
-                            )
-                        } else if (state.showKernelPrBuildWarning) {
-                            WarningCard(
-                                stringResource(id = R.string.home_pr_kernel_warning),
-                                level = WarningLevel.Notice,
-                                block = warningBlock,
-                            )
-                        }
-                        if (state.showGkiWarning) {
-                            WarningCard(
-                                stringResource(id = R.string.home_gki_warning),
-                                level = WarningLevel.Notice,
-                                block = warningBlock,
-                            )
-                        }
-                        if (state.requiresNewKernel) {
-                            WarningCard(
-                                stringResource(
-                                    id = if (state.lkmMode == true) R.string.require_kernel_version else R.string.require_kernel_version_gki
-                                ),
-                                onClick = if (state.lkmMode == true) actions.onInstallClick else null,
-                                block = warningBlock,
-                            )
-                        }
-                        if (state.requiresNewManager) {
-                            WarningCard(
-                                stringResource(
-                                    id = R.string.require_manager_version
-                                ),
-                                block = warningBlock,
-                            )
-                        }
-                        if (state.showLkmUpdate) {
-                            WarningCard(
-                                message = stringResource(R.string.home_lkm_update_available),
-                                level = WarningLevel.Notice,
-                                onClick = actions.onInstallClick,
-                                block = warningBlock,
-                            )
-                        }
-                        if (state.showRootWarning) {
-                            WarningCard(stringResource(id = R.string.grant_root_failed), block = warningBlock)
-                        }
-                        if (state.showDaemonMissingWarning) {
-                            WarningCard(stringResource(id = R.string.home_daemon_missing), block = warningBlock)
-                        }
-
-                        // 2026-11-09：XEC SCORE 与「提权」搬进工具箱（Route.Tools）。
-                        // 首页只回答"我现在能不能用"；评分是诊断、提权是修复动作，都属于工具。
-                        HomeModeCard(
-                            state = state,
-                            actions = actions,
-                            block = rememberXcBlock(XcBlocks.HOME_STATUS),
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxHeight()
+                .scrollEndHaptic()
+                .overScrollVertical()
+                .nestedScroll(scrollBehavior.nestedScrollConnection)
+                .padding(horizontal = 22.dp),
+            contentPadding = innerPadding,
+            overscrollEffect = null,
+        ) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // 异常态永远排在最前：它们才是这一屏唯一需要立刻处理的东西。
+                    if (state.showManagerPrBuildWarning) {
+                        WarningCard(
+                            stringResource(id = R.string.home_pr_build_warning),
+                            level = WarningLevel.Notice,
+                            block = warningBlock,
                         )
-
-                        Xc8SectionLabel(text = stringResource(R.string.home8_section_info))
-                        SystemInfoPanel(state = state, block = rememberXcBlock(XcBlocks.HOME_INFO))
-                        Xc8SectionLabel(text = stringResource(R.string.home8_section_security))
-                        SecurityPanel(state = state)
-                        Xc8SectionLabel(text = stringResource(R.string.home8_section_overview))
-                        OverviewPanel(
-                            state = state,
-                            rootGrantCount = rootGrantCount,
-                            actions = actions,
-                        )
-                        Xc8SectionLabel(text = stringResource(R.string.home8_section_support))
-                        SupportPanel(
-                            actions = actions,
-                            block = rememberXcBlock(XcBlocks.HOME_SUPPORT),
-                        )
-
-                        Spacer(
-                            Modifier.height(
-                                bottomInnerPadding + 12.dp + if (!Natives.isFullFeatured())
-                                    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() else 0.dp
-                            )
+                    } else if (state.showKernelPrBuildWarning) {
+                        WarningCard(
+                            stringResource(id = R.string.home_pr_kernel_warning),
+                            level = WarningLevel.Notice,
+                            block = warningBlock,
                         )
                     }
+                    if (state.showGkiWarning) {
+                        WarningCard(
+                            stringResource(id = R.string.home_gki_warning),
+                            level = WarningLevel.Notice,
+                            block = warningBlock,
+                        )
+                    }
+                    if (state.requiresNewKernel) {
+                        WarningCard(
+                            stringResource(
+                                id = if (state.lkmMode == true) R.string.require_kernel_version else R.string.require_kernel_version_gki
+                            ),
+                            onClick = if (state.lkmMode == true) actions.onInstallClick else null,
+                            block = warningBlock,
+                        )
+                    }
+                    if (state.requiresNewManager) {
+                        WarningCard(
+                            stringResource(id = R.string.require_manager_version),
+                            block = warningBlock,
+                        )
+                    }
+                    if (state.showLkmUpdate) {
+                        WarningCard(
+                            message = stringResource(R.string.home_lkm_update_available),
+                            level = WarningLevel.Notice,
+                            onClick = actions.onInstallClick,
+                            block = warningBlock,
+                        )
+                    }
+                    if (state.showRootWarning) {
+                        WarningCard(stringResource(id = R.string.grant_root_failed), block = warningBlock)
+                    }
+                    if (state.showDaemonMissingWarning) {
+                        WarningCard(stringResource(id = R.string.home_daemon_missing), block = warningBlock)
+                    }
+
+                    HomeHero(state = state)
+
+                    HomeStats(state = state, rootGrantCount = rootGrantCount)
+
+                    if (state.checkUpdateEnabled) {
+                        UpdateCard(state = state, actions = actions)
+                    }
+
+                    DeviceSection(state = state, onRefresh = actions.onRefresh)
+
+                    Xc8SectionLabel(text = stringResource(R.string.home8_section_security))
+                    SecurityPanel(state = state)
+                    Xc8SectionLabel(text = stringResource(R.string.home8_section_overview))
+                    OverviewPanel(
+                        state = state,
+                        rootGrantCount = rootGrantCount,
+                        actions = actions,
+                    )
+                    Xc8SectionLabel(text = stringResource(R.string.home8_section_support))
+                    SupportPanel(
+                        actions = actions,
+                        block = rememberXcBlock(XcBlocks.HOME_SUPPORT),
+                    )
+
+                    Spacer(
+                        Modifier.height(
+                            bottomInnerPadding + 12.dp + if (!Natives.isFullFeatured())
+                                WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() else 0.dp
+                        )
+                    )
                 }
             }
         }
+    }
+}
+
+/**
+ * 顶栏：应用名 + 一行机器可读的元信息（版本号 · 机型），右侧两个图标按钮。
+ *
+ * 不复用 miuix `TopAppBar`：设计稿的标题下面压着一行小字，TopAppBar 的标题槽只有一行，
+ * 硬塞副标题要改它的排版规则；这里就是一个 [statusBarsPadding] 包住的 Row，行为可预期。
+ */
+@Composable
+private fun HomeHeader(
+    state: HomeUiState,
+    onRefresh: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(start = 22.dp, end = 22.dp, top = 10.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.app_name),
+                style = Xc.typography.title,
+                color = Xc.colors.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "V${state.currentManagerVersionCode} · ${state.systemInfo.deviceModel}",
+                fontSize = 11.sp,
+                letterSpacing = 0.6.sp,
+                color = Xc.colors.textMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        RebootListPopupMiuix(iconTint = Xc.colors.text)
+        Spacer(Modifier.width(6.dp))
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(Xc.shapes.md)
+                .border(1.dp, Xc.colors.glassRim, Xc.shapes.md)
+                .clickable(onClick = onRefresh),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Refresh,
+                contentDescription = stringResource(R.string.home_refresh),
+                tint = Xc.colors.textSecondary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+/** 首屏结论：一个状态点 + 一行 34sp 的大字 + 一行说明，底下一条发丝线。 */
+@Composable
+private fun HomeHero(state: HomeUiState) {
+    val running = state.ksuVersion != null
+    val mount = state.isMountState
+    val active = running || mount
+    val title = when {
+        running -> stringResource(R.string.home_hero_running)
+        mount -> stringResource(R.string.home_hero_mount)
+        else -> stringResource(R.string.home_hero_inactive)
+    }
+    val modeText = when {
+        mount -> stringResource(R.string.home_hero_mount_mode)
+        state.lkmMode == true -> "LKM"
+        running -> stringResource(R.string.home_hero_kernel_mode)
+        else -> stringResource(R.string.home_not_installed)
+    }
+    val selinuxText = when (state.systemInfo.selinuxStatus) {
+        "Enforcing" -> stringResource(R.string.selinux_status_enforcing)
+        "Permissive" -> stringResource(R.string.selinux_status_permissive)
+        "Disabled" -> stringResource(R.string.selinux_status_disabled)
+        else -> stringResource(R.string.selinux_status_unknown)
+    }
+
+    Column(modifier = Modifier.padding(top = 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(if (active) Xc.colors.success else Xc.colors.danger),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = stringResource(
+                    if (active) R.string.home_hero_ready else R.string.home_hero_idle
+                ),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.sp,
+                color = Xc.colors.textMuted,
+            )
+        }
+        Text(
+            text = title,
+            style = Xc.typography.display,
+            color = Xc.colors.text,
+            modifier = Modifier.padding(top = 13.dp),
+        )
+        Text(
+            text = "$modeText · SELinux $selinuxText",
+            fontSize = 12.sp,
+            color = Xc.colors.textMuted,
+            modifier = Modifier.padding(top = 9.dp),
+        )
+        Spacer(Modifier.height(20.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(Xc.colors.glassRim),
+        )
+    }
+}
+
+/** 三格数据：内核 / 管理器 / 超级用户，上下发丝线夹住，数值在下、标签更小。 */
+@Composable
+private fun HomeStats(state: HomeUiState, rootGrantCount: Int) {
+    val line = Xc.colors.glassRim
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 17.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StatCell(
+            value = if (state.kernelVersion.major >= 0) {
+                "${state.kernelVersion.major}.${state.kernelVersion.patchLevel}"
+            } else {
+                "—"
+            },
+            label = stringResource(R.string.home_stat_kernel),
+            modifier = Modifier.weight(1f),
+        )
+        StatDivider(line)
+        StatCell(
+            value = state.currentManagerVersionCode.toString(),
+            label = stringResource(R.string.home_stat_manager),
+            modifier = Modifier.weight(1f),
+        )
+        StatDivider(line)
+        StatCell(
+            value = rootGrantCount.toString(),
+            label = stringResource(R.string.home_stat_superuser),
+            modifier = Modifier.weight(1f),
+        )
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(line),
+    )
+}
+
+@Composable
+private fun StatCell(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.padding(start = 2.dp)) {
+        Text(
+            text = value,
+            fontSize = 19.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Xc.colors.text,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = Xc.colors.textMuted,
+        )
+    }
+}
+
+@Composable
+private fun StatDivider(line: Color) {
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 14.dp)
+            .width(1.dp)
+            .height(32.dp)
+            .background(line),
+    )
+}
+
+/** 设备表：标签在左、真值在右；刷新入口挂在分组标题上（删掉「常用操作」后的手动入口）。 */
+@Composable
+private fun DeviceSection(state: HomeUiState, onRefresh: () -> Unit) {
+    val selinuxText = when (state.systemInfo.selinuxStatus) {
+        "Enforcing" -> stringResource(R.string.selinux_status_enforcing)
+        "Permissive" -> stringResource(R.string.selinux_status_permissive)
+        "Disabled" -> stringResource(R.string.selinux_status_disabled)
+        else -> stringResource(R.string.selinux_status_unknown)
+    }
+    Xc8SectionLabel(
+        text = stringResource(R.string.home_section_device),
+        modifier = Modifier.padding(top = 22.dp),
+        trailing = {
+            Row(
+                modifier = Modifier
+                    .clip(Xc.shapes.xs)
+                    .clickable(onClick = onRefresh)
+                    .padding(start = 8.dp, top = 2.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.home_refresh),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Xc.colors.accent,
+                )
+                Xc8Chevron()
+            }
+        },
+    )
+    Xc8Panel {
+        Xc8Row(
+            title = stringResource(R.string.home_kernel),
+            trailing = { Xc8Value(state.systemInfo.kernelVersion) },
+        )
+        Xc8Row(
+            title = stringResource(R.string.home_device_model),
+            trailing = { Xc8Value(state.systemInfo.deviceModel) },
+        )
+        Xc8Row(
+            title = stringResource(R.string.home_selinux_status),
+            trailing = {
+                Xc8Tag(
+                    text = selinuxText,
+                    tone = if (state.isSELinuxPermissive) Xc8Tone.Warning else Xc8Tone.Success,
+                )
+            },
+        )
+        Xc8Row(
+            title = stringResource(R.string.home_manager_version),
+            trailing = { Xc8Value(state.systemInfo.managerVersion) },
+        )
     }
 }
 
@@ -261,116 +487,69 @@ private fun UpdateCard(
     // 更新卡是"有新版本"的那一张，用的是更新那一条区块背景；它下面的七处 WarningCard
     // 才是告警那一条。两者分开，用户才能只给"有更新"这张设背景。
     val updateBlock = rememberXcBlock(XcBlocks.HOME_UPDATE)
+    val click = {
+        if (newVersion.changelog.isEmpty()) {
+            actions.onOpenUrl(newVersion.downloadUrl)
+        } else {
+            updateDialog.showConfirm(
+                title = title,
+                content = newVersion.changelog,
+                markdown = true,
+                confirm = updateText,
+            )
+        }
+    }
 
     AnimatedVisibility(
         visible = state.hasUpdate,
-        enter = fadeIn() + expandVertically(),
-        exit = shrinkVertically() + fadeOut()
+        enter = fadeIn(),
+        exit = fadeOut(),
     ) {
-        WarningCard(
-            message = stringResource(id = R.string.new_version_available, newVersion.versionCode),
-            level = WarningLevel.Notice,
-            onClick = {
-                if (newVersion.changelog.isEmpty()) {
-                    actions.onOpenUrl(newVersion.downloadUrl)
-                } else {
-                    updateDialog.showConfirm(
-                        title = title,
-                        content = newVersion.changelog,
-                        markdown = true,
-                        confirm = updateText
+        Xc8Panel(
+            modifier = Modifier.padding(top = 20.dp),
+            block = updateBlock,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = click)
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(
+                            R.string.new_version_available,
+                            newVersion.versionCode.toString(),
+                        ),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Xc.colors.text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(5.dp))
+                    Text(
+                        text = stringResource(R.string.home_update_tap_hint),
+                        fontSize = 11.sp,
+                        color = Xc.colors.textMuted,
                     )
                 }
-            },
-            block = updateBlock,
-        )
-    }
-}
-
-/**
- * 首页顶栏：完全透明的毛玻璃。
- *
- * 上覆色留空（[Color.Transparent]），栏底整块交给模糊 / 折射去画：玻璃照旧采样下方
- * 内容做模糊与折射，只是不再压任何颜色，滚动时标题像是直接浮在页面上。
- *
- * 前景跟着明暗档走（[Xc.colors.text]）：透明底下的画面就是页面本身，深色档配浅色字、
- * 浅色档配深色字，和页面正文一致。
- */
-@Composable
-private fun TopBar(
-    state: HomeUiState,
-    scrollBehavior: ScrollBehavior,
-) {
-    // 灵动岛：顶栏本身就是岛的展开态（无玻璃底）；上滑收缩成岛。
-    IslandTopBar(
-        islandTitle = stringResource(R.string.app_name),
-        islandLive = when {
-            state.ksuVersion != null ->
-                stringResource(R.string.home_working_version, "${state.ksuVersion}-${state.kernelUAPIVersion}")
-            // 挂载态也是"在跑"：路线名用 Magisk 路线，不能显示成未工作（会和模式卡自相矛盾）。
-            state.isMountState -> stringResource(R.string.home_working_magisk)
-            else -> stringResource(R.string.island_not_working)
-        },
-        statusActive = state.ksuVersion != null || state.isMountState,
-    ) {
-        TopAppBar(
-            // 展开态没有玻璃底：透明浮在页面上。
-            color = Color.Transparent,
-            title = stringResource(R.string.app_name),
-            titleColor = Xc.colors.text,
-            largeTitleColor = Xc.colors.text,
-            actions = {
-                RebootListPopupMiuix(iconTint = Xc.colors.text)
-            },
-            scrollBehavior = scrollBehavior
-        )
-    }
-}
-
-/** 系统信息：六行纯文本行，右值一律是当前读到的真实值。 */
-@Composable
-private fun SystemInfoPanel(
-    state: HomeUiState,
-    block: XcBlockBackground? = null,
-) {
-    val modeKeyword = homeModeKeyword(state)
-    val ksuVersionText = when {
-        state.ksuVersion != null ->
-            listOfNotNull(state.ksuVersion.toString(), modeKeyword).joinToString(" · ")
-        state.isMountState -> state.magiskVersion?.let { "Magisk $it" } ?: "Magisk"
-        else -> stringResource(R.string.home_not_installed)
-    }
-    Xc8Panel(block = block) {
-        Xc8Row(
-            title = stringResource(R.string.home8_ksu_version),
-            subtitle = ksuVersionText,
-            leading = Icons.Filled.Tag,
-        )
-        Xc8Row(
-            title = stringResource(R.string.home_manager_version),
-            subtitle = state.systemInfo.managerVersion,
-            leading = Icons.Filled.Download,
-        )
-        Xc8Row(
-            title = stringResource(R.string.home_kernel),
-            subtitle = state.systemInfo.kernelVersion,
-            leading = Icons.Filled.DeveloperBoard,
-        )
-        Xc8Row(
-            title = stringResource(R.string.home_device_model),
-            subtitle = state.systemInfo.deviceModel,
-            leading = Icons.Filled.Smartphone,
-        )
-        Xc8Row(
-            title = stringResource(R.string.home_fingerprint),
-            subtitle = state.systemInfo.fingerprint,
-            leading = Icons.Filled.Fingerprint,
-        )
-        if (state.latestVersionInfo.downloadCount > 0) {
-            Xc8Row(
-                title = stringResource(R.string.home_download_count),
-                subtitle = "%,d".format(state.latestVersionInfo.downloadCount),
-            )
+                Box(
+                    modifier = Modifier
+                        .clip(Xc.shapes.pill)
+                        .background(Xc.colors.accent)
+                        .clickable(onClick = click)
+                        .padding(horizontal = 18.dp, vertical = 9.dp),
+                ) {
+                    Text(
+                        text = updateText,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                    )
+                }
+            }
         }
     }
 }
@@ -526,104 +705,3 @@ private fun SupportPanel(
         )
     }
 }
-
-private val previewSystemInfo = SystemInfo(
-    kernelVersion = "6.12.23-android16-5-g123456789000-abogki123456789-4k",
-    managerVersion = "3.0.0 (30000)",
-    deviceModel = "Xiaomi 17 Pro Max",
-    fingerprint = "Xiaomi/popsicle/popsicle:16/BQ2A.250705.001-BP2A.250605.031.A3/OS3.0.313.0.WPBCNXM:user/release-keys",
-    selinuxStatus = "Enforcing",
-    seccompStatus = 2
-)
-
-private val previewUriHandler = object : UriHandler {
-    override fun openUri(uri: String) {}
-}
-
-@Composable
-private fun HomeScreenPreviewContent(
-    ksuVersion: Int?,
-    lkmMode: Boolean?,
-    isSafeMode: Boolean = false,
-    isLateLoadMode: Boolean = false,
-    selinuxStatus: String = "Enforcing",
-) {
-    CompositionLocalProvider(LocalUriHandler provides previewUriHandler) {
-        Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            val actions = HomeActions({}, {})
-            val state = previewHomeScreenState(
-                ksuVersion = ksuVersion,
-                lkmMode = lkmMode,
-                isSafeMode = isSafeMode,
-                isLateLoadMode = isLateLoadMode,
-                selinuxStatus = selinuxStatus,
-            )
-            HomeModeCard(state = state, actions = actions)
-            Xc8SectionLabel(text = stringResource(R.string.home8_section_info))
-            SystemInfoPanel(state = state)
-            Xc8SectionLabel(text = stringResource(R.string.home8_section_security))
-            SecurityPanel(state = state)
-            Xc8SectionLabel(text = stringResource(R.string.home8_section_overview))
-            OverviewPanel(state = state, rootGrantCount = 0, actions = actions)
-        }
-    }
-}
-
-@Preview(name = "Home Activated", showBackground = true)
-@Composable
-private fun HomeScreenActivatedPreview() {
-    HomeScreenPreviewContent(ksuVersion = 12345, lkmMode = true)
-}
-
-@Preview(name = "Home Not Activated", showBackground = true)
-@Composable
-private fun HomeScreenNotActivatedPreview() {
-    HomeScreenPreviewContent(ksuVersion = null, lkmMode = null)
-}
-
-@Preview(name = "Home Permissive", showBackground = true)
-@Composable
-private fun HomeScreenPermissivePreview() {
-    HomeScreenPreviewContent(ksuVersion = null, lkmMode = null, selinuxStatus = "Permissive")
-}
-
-@Preview(name = "Home Jailbreak", showBackground = true)
-@Composable
-private fun HomeScreenJailbreakPreview() {
-    HomeScreenPreviewContent(ksuVersion = 12345, lkmMode = true, isLateLoadMode = true)
-}
-
-private fun previewHomeScreenState(
-    ksuVersion: Int?,
-    lkmMode: Boolean?,
-    isSafeMode: Boolean = false,
-    isLateLoadMode: Boolean = false,
-    selinuxStatus: String = "Enforcing",
-) = HomeUiState(
-    kernelVersion = KernelVersion(6, 1, 0),
-    ksuVersion = ksuVersion,
-    lkmMode = lkmMode,
-    isLkmBundled = lkmMode == true,
-    isManager = true,
-    isManagerPrBuild = false,
-    isKernelPrBuild = false,
-    requiresNewKernel = false,
-    requiresNewManager = false,
-    isRootAvailable = ksuVersion != null,
-    isSafeMode = isSafeMode,
-    isLateLoadMode = isLateLoadMode,
-    isDaemonPresent = ksuVersion != null,
-    susfsVersion = null,
-    susfsVariant = null,
-    checkUpdateEnabled = false,
-    latestVersionInfo = LatestVersionInfo(),
-    currentManagerVersionCode = 10000,
-    baseVersionCode = 31271,
-    systemInfo = previewSystemInfo.copy(selinuxStatus = selinuxStatus),
-    kernelUAPIVersion = 1,
-    managerUAPIVersion = 1,
-)

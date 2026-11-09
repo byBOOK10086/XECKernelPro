@@ -94,7 +94,7 @@ fun XcColors.withOverrides(overrides: Map<String, Int>): XcColors {
 
 /** 形状令牌名 -> 默认半径（dp）。主题只写想改的档位。 */
 val XC_SHAPE_TOKENS = mapOf(
-    "xs" to 8, "sm" to 12, "md" to 16, "lg" to 22, "xl" to 28, "bar" to 32, "pressRadius" to 16,
+    "xs" to 4, "sm" to 8, "md" to 12, "lg" to 16, "xl" to 20, "bar" to 12, "pressRadius" to 12,
 )
 
 fun XcShapes.withOverrides(overrides: Map<String, Int>): XcShapes {

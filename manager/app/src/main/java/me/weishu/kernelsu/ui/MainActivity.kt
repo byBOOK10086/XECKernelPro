@@ -83,6 +83,7 @@ import me.weishu.kernelsu.ui.component.dialog.XDialogHostState
 import me.weishu.kernelsu.ui.design.clear.LocalWallpaperBackdrop
 import me.weishu.kernelsu.ui.design.liquid.XDropletHost
 import me.weishu.kernelsu.ui.design.panel.Xc8Dock
+import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.design.token.XcTheme
 import me.weishu.kernelsu.ui.navigation3.IntentDispatcher
 import me.weishu.kernelsu.ui.navigation3.LocalNavigator
@@ -471,6 +472,14 @@ open class MainActivity : ComponentActivity() {
                                             contentScale = ContentScale.Crop,
                                         )
                                     }
+                                    // 扁平方案 A：整页实色底，壁纸层不再参与视觉。
+                                    // 画在壁纸之后 = 盖住它；壁纸的解码链路保留（设置里
+                                    // 那套入口还在），下一批连同设置项一起清理。
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Xc.colors.backdrop),
+                                    )
                                     Scaffold(containerColor = Color.Transparent) {
                                         navDisplay()
                                     }

@@ -23,10 +23,11 @@ data class XcElevations(
 )
 
 val XcElevationsDefault = XcElevations(
+    // 扁平方案 A：全站不用阴影，层级只靠 1px 发丝线与色块，投影一律 0。
     glass = 0.dp,
-    raised = 4.dp,
-    overlay = 12.dp,
-    pressed = 1.dp,
+    raised = 0.dp,
+    overlay = 0.dp,
+    pressed = 0.dp,
 )
 
 val LocalXcElevations = staticCompositionLocalOf { XcElevationsDefault }

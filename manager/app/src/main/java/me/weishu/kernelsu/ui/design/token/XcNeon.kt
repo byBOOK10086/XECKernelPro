@@ -70,66 +70,71 @@ data class XcNeonColors(
     val pageGlowCyan: Color,
 )
 
-/** 暗色档 = 设计稿 HTML 原文。 */
+/**
+ * 暗色档 → 扁平方案 A 的深色令牌（2026-11-09）。
+ *
+ * 模块页原来是紫色霓虹板（#8b5cf6 / #06b6d4 + 半透明卡 + 外辉光），和新的
+ * "实色卡 + 1px 发丝线 + 单一强调色"是两套语言。这里不重写 1176 行的模块页，
+ * **只把这块板子的取值映射到扁平令牌**：卡片=surface、描边=rim、强调=accent，
+ * 所有阴影/辉光/光晕归零 —— 于是模块页不改一行也变成扁平形态。
+ */
 private val XcNeonDark = XcNeonColors(
-    cardBg = Color(0x9914142D), // rgba(20,20,45,0.6)
-    cardBorder = Color(0x338B5CF6), // rgba(139,92,246,0.2)
-    cardBorderPressed = Color(0xA68B5CF6), // rgba(139,92,246,0.65)
-    actionBorder = Color(0x408B5CF6), // rgba(139,92,246,0.25)
-    actionBgPressed = Color(0x408B5CF6), // rgba(139,92,246,0.25)
-    actionBorderPressed = Color(0x998B5CF6), // rgba(139,92,246,0.6)
-    dangerBorderPressed = Color(0x99EF4444), // rgba(239,68,68,0.6)
-    dangerBgPressed = Color(0x33EF4444), // rgba(239,68,68,0.2)
-    dangerBorder = Color(0x4DEF4444), // rgba(239,68,68,0.3)
-    accentPurple = Color(0xFF8B5CF6),
-    accentCyan = Color(0xFF06B6D4),
-    danger = Color(0xFFEF4444),
-    textMain = Color(0xFFE0E7FF),
-    textSub = Color(0xFF94A3B8),
-    divider = Color(0x0DFFFFFF), // border-white/5
-    metaBg = Color(0x2E8B5CF6), // rgba(139,92,246,0.18)
-    metaText = Color(0xFFC4B5FD),
-    pillBg = Color(0x1F06B6D4), // rgba(6,182,212,0.12)
-    gradientStart = Color(0xFF8B5CF6),
-    gradientEnd = Color(0xFF06B6D4),
-    cardShadow = Color(0x4D000000), // rgba(0,0,0,0.3)
-    glow = Color(0x598B5CF6), // rgba(139,92,246,0.35)
-    fabGlow = Color(0x808B5CF6), // rgba(139,92,246,0.5)
-    pageGlowPurple = Color(0x268B5CF6), // rgba(139,92,246,0.15)
-    pageGlowCyan = Color(0x2606B6D4), // rgba(6,182,212,0.15)
+    cardBg = Color(0xFF151519),
+    cardBorder = Color(0xFF26262E),
+    cardBorderPressed = Color(0xFF3A3A46),
+    actionBorder = Color(0xFF26262E),
+    actionBgPressed = Color(0xFF1B1B21),
+    actionBorderPressed = Color(0xFF3A3A46),
+    dangerBorderPressed = Color(0x99FF6B60),
+    dangerBgPressed = Color(0x33FF6B60),
+    dangerBorder = Color(0x4DFF6B60),
+    accentPurple = Color(0xFF6B84FF),
+    accentCyan = Color(0xFFB4B4BF),
+    danger = Color(0xFFFF6B60),
+    textMain = Color(0xFFF5F5F7),
+    textSub = Color(0xFFB4B4BF),
+    divider = Color(0xFF26262E),
+    metaBg = Color(0xFF26262E),
+    metaText = Color(0xFFB4B4BF),
+    pillBg = Color(0xFF1B2140),
+    gradientStart = Color(0xFF6B84FF),
+    gradientEnd = Color(0xFF6B84FF),
+    cardShadow = Color(0x00000000),
+    glow = Color(0x00000000),
+    fabGlow = Color(0x00000000),
+    pageGlowPurple = Color(0x00000000),
+    pageGlowCyan = Color(0x00000000),
 )
 
 /**
- * 浅色档：把同一套语义映射到浅底。
- * 紫色整体压深一档（`#6d28d9`），否则 `#8b5cf6` 在白色卡片上几乎看不见；
- * 「白字」语义换成近黑，否则浅底卡片上的主文字会消失。
+ * 浅色档：同一套扁平映射。
  */
 private val XcNeonLight = XcNeonColors(
-    cardBg = Color(0xEBFFFFFF), // rgba(255,255,255,0.92)
-    cardBorder = Color(0x386D28D9), // rgba(109,40,217,0.22)
-    cardBorderPressed = Color(0xA66D28D9), // rgba(109,40,217,0.65)
-    actionBorder = Color(0x406D28D9), // rgba(109,40,217,0.25)
-    actionBgPressed = Color(0x336D28D9), // rgba(109,40,217,0.2)
-    actionBorderPressed = Color(0x996D28D9), // rgba(109,40,217,0.6)
-    dangerBorderPressed = Color(0x99DC2626), // rgba(220,38,38,0.6)
-    dangerBgPressed = Color(0x2EDC2626), // rgba(220,38,38,0.18)
-    dangerBorder = Color(0x4DDC2626), // rgba(220,38,38,0.3)
-    accentPurple = Color(0xFF6D28D9),
-    accentCyan = Color(0xFF0E7490),
-    danger = Color(0xFFDC2626),
-    textMain = Color(0xFF1E1B4B),
-    textSub = Color(0xFF5B6478),
-    divider = Color(0x0D0B0B1A),
-    metaBg = Color(0x2E6D28D9),
-    metaText = Color(0xFF6D28D9),
-    pillBg = Color(0x1F0E7490),
-    gradientStart = Color(0xFF6D28D9),
-    gradientEnd = Color(0xFF0E7490),
-    cardShadow = Color(0x29000000), // rgba(0,0,0,0.16)
-    glow = Color(0x476D28D9), // rgba(109,40,217,0.28)
-    fabGlow = Color(0x666D28D9), // rgba(109,40,217,0.4)
-    pageGlowPurple = Color(0x268B5CF6),
-    pageGlowCyan = Color(0x2606B6D4),
+    cardBg = Color(0xFFFFFFFF),
+    cardBorder = Color(0xFFE6E6EA),
+    cardBorderPressed = Color(0xFFC8C8D0),
+    actionBorder = Color(0xFFE6E6EA),
+    actionBgPressed = Color(0xFFF5F5F7),
+    actionBorderPressed = Color(0xFFC8C8D0),
+    dangerBorderPressed = Color(0x99F04438),
+    dangerBgPressed = Color(0x33F04438),
+    dangerBorder = Color(0x4DF04438),
+    accentPurple = Color(0xFF3B5BFF),
+    accentCyan = Color(0xFF6E6E78),
+    danger = Color(0xFFF04438),
+    textMain = Color(0xFF111114),
+    textSub = Color(0xFF6E6E78),
+    divider = Color(0xFFE6E6EA),
+    metaBg = Color(0xFFEEF1FF),
+    metaText = Color(0xFF3B5BFF),
+    pillBg = Color(0xFFEEF1FF),
+    gradientStart = Color(0xFF3B5BFF),
+    gradientEnd = Color(0xFF3B5BFF),
+    cardShadow = Color(0x00000000),
+    glow = Color(0x00000000),
+    fabGlow = Color(0x00000000),
+    pageGlowPurple = Color(0x00000000),
+    pageGlowCyan = Color(0x00000000),
 )
 
 fun xcNeonFor(isDark: Boolean): XcNeonColors = if (isDark) XcNeonDark else XcNeonLight

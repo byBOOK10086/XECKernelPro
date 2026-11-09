@@ -14,33 +14,35 @@ import androidx.compose.ui.unit.sp
  */
 @Immutable
 data class XcTypography(
-    /** 28sp / 大标题。 */
+    /** 34sp / 页面主结论（首页「内核正常运行」）。 */
     val display: TextStyle,
-    /** 22sp / 页面标题。 */
+    /** 24sp / 页面标题、应用名。 */
     val title: TextStyle,
-    /** 16sp / 分组标题。 */
+    /** 17sp / 分组标题。 */
     val subtitle: TextStyle,
     /** 14sp / 正文与列表项。 */
     val body: TextStyle,
-    /** 12sp / 注脚、徽标。 */
+    /** 12sp / 注脚、说明。 */
     val caption: TextStyle,
+    /** 11sp / 分组标签（字距放大，如「设备」「工具」）。 */
+    val micro: TextStyle = TextStyle(fontSize = 11.sp, lineHeight = 16.sp),
 )
 
 val XcTypographyDefault = XcTypography(
     display = TextStyle(
-        fontSize = 28.sp,
-        lineHeight = 36.sp,
+        fontSize = 34.sp,
+        lineHeight = 40.sp,
         fontWeight = FontWeight.Bold,
-        letterSpacing = (-0.2).sp,
+        letterSpacing = (-0.8).sp,
     ),
     title = TextStyle(
-        fontSize = 22.sp,
-        lineHeight = 30.sp,
+        fontSize = 24.sp,
+        lineHeight = 32.sp,
         fontWeight = FontWeight.Bold,
-        letterSpacing = (-0.1).sp,
+        letterSpacing = (-0.4).sp,
     ),
     subtitle = TextStyle(
-        fontSize = 16.sp,
+        fontSize = 17.sp,
         lineHeight = 24.sp,
         fontWeight = FontWeight.SemiBold,
     ),
@@ -53,6 +55,12 @@ val XcTypographyDefault = XcTypography(
         fontSize = 12.sp,
         lineHeight = 18.sp,
         fontWeight = FontWeight.Medium,
+    ),
+    micro = TextStyle(
+        fontSize = 11.sp,
+        lineHeight = 16.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.2.sp,
     ),
 )
 

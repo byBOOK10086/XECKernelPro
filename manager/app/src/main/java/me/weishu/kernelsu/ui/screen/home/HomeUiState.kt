@@ -113,4 +113,11 @@ data class HomeActions(
     val onOpenSuperuser: () -> Unit = {},
     /** 授权记录（Sulog）。 */
     val onOpenSulog: () -> Unit = {},
+    /**
+     * 首页顶栏与设备分组的「刷新」。
+     *
+     * 2026-11-09 删掉「常用操作」面板后，首页曾经只剩下拉刷新可触发更新检查；
+     * 设计稿把刷新做成顶栏的一个图标按钮，这条回调就是它的落点。
+     */
+    val onRefresh: () -> Unit = {},
 )

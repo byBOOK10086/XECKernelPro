@@ -3,8 +3,10 @@ package me.weishu.kernelsu.ui.screen.tools
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,8 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -26,23 +26,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.weishu.kernelsu.ui.design.motion.XcMotion
 import me.weishu.kernelsu.ui.design.panel.Xc8Panel
-import me.weishu.kernelsu.ui.design.panel.Xc8Radar
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.screen.home.HomeUiState
 import me.weishu.kernelsu.ui.screen.home.XecScore
-import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import kotlin.math.roundToInt
 
 /**
- * XEC SCORE 卡（2026-11-09 从首页搬到工具箱）。
+ * XEC SCORE 卡（扁平方案 A，2026-11-09）。
  *
- * 版式不变：左边雷达（九项各占一个方向）、右边一句话结论 + 三格关键指标。
- * 搬家的理由：首页是"我现在能不能用"的结论页，评分是"我该修哪一项"的诊断入口，
- * 两者放同一屏会让首页变成体检报告；诊断动作属于工具箱。
+ * 雷达图换成"大数字 + 九格"：雷达在扁平语言里是纯装饰，而九格能一眼数出
+ * 九项里过了几项（格子的颜色只分"过 / 没过"两档，不引入第二种语义）。
  *
- * 数据仍然只来自 [XecScore] 一处定义（`ui/screen/home/XecScore.kt`），这里不新造探针。
- * 点击行为由调用方决定：工具箱里是"关掉工具箱 → 跳到检测页看九项明细"。
+ * 右侧三行仍是真实探针（Root / 运行模式 / 守护进程），不是设计稿里的占位数字。
+ * 数据仍然只来自 [XecScore] 一处定义，这里不新造评分逻辑。
  */
 @Composable
 fun XecScoreCard(
@@ -50,7 +47,7 @@ fun XecScoreCard(
     onClick: () -> Unit,
 ) {
     val result = XecScore.evaluate(state)
-    // 整块仪表加入场动画：雷达从圆心长出来，分数从 0 数上去。
+    // 整块仪表加入场动画：数字从 0 数上去、九格逐格点亮。
     val reveal = remember { Animatable(0f) }
     // Xc.colors 是 @Composable，只能在这里读一次；LaunchedEffect 的 lambda 不是
     // composable 上下文，在里面读会直接编译失败（2026-11-09 CI 抓到过一次）。
@@ -64,104 +61,153 @@ fun XecScoreCard(
         animationSpec = XcMotion.trace(),
         label = "score-count",
     )
+    val passed = result.passed
+    val total = result.items.size
+    val healthy = result.isHealthy
+
     Xc8Panel {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onClick)
-                .padding(horizontal = 15.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(horizontal = 18.dp, vertical = 17.dp),
         ) {
-            Xc8Radar(
-                values = result.items.map { if (it.max <= 0) 0f else it.earned.toFloat() / it.max },
-                size = 92.dp,
-                reveal = reveal.value,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = shownScore.toString(),
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Xc.colors.text,
+                Text(
+                    text = "XEC SCORE",
+                    style = Xc.typography.micro,
+                    color = Xc.colors.textMuted,
+                    modifier = Modifier.weight(1f),
+                )
+                RankBadge(rank = result.rank.name, healthy = healthy)
+            }
+            Row(
+                modifier = Modifier.padding(top = 12.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Text(
+                    text = shownScore.toString(),
+                    fontSize = 62.sp,
+                    lineHeight = 62.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-3).sp,
+                    color = Xc.colors.text,
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "/ $total",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Xc.colors.textMuted,
+                    modifier = Modifier.padding(bottom = 9.dp),
+                )
+            }
+            Text(
+                text = if (healthy) "九项全部通过" else "$passed / $total 项通过，点开看明细",
+                fontSize = 12.sp,
+                color = Xc.colors.textSecondary,
+                modifier = Modifier.padding(top = 9.dp),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp)
+                    .height(1.dp)
+                    .background(Xc.colors.glassRim),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // 九格：每格对应一项，过的用墨色、没过的留描边色，一眼数得清。
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    repeat(3) { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            repeat(3) { col ->
+                                val index = row * 3 + col
+                                val item = result.items.getOrNull(index)
+                                val ok = item != null && item.max > 0 && item.earned >= item.max
+                                Box(
+                                    modifier = Modifier
+                                        .size(11.dp)
+                                        .background(
+                                            color = when {
+                                                item == null -> Xc.colors.glassRim
+                                                ok -> Xc.colors.text
+                                                else -> Xc.colors.glassRim
+                                            },
+                                        ),
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.width(18.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    ScoreMetric(
+                        label = "Root",
+                        value = if (state.isRootAvailable) "可用" else "未启用",
                     )
-                    Text(
-                        text = result.rank.name,
-                        fontSize = 9.sp,
-                        color = Xc.colors.textMuted,
+                    ScoreMetric(
+                        label = "运行模式",
+                        value = when {
+                            state.isMountState -> "挂载态"
+                            state.lkmMode == true -> "LKM"
+                            state.ksuVersion != null -> "内核态"
+                            else -> "未安装"
+                        },
+                    )
+                    ScoreMetric(
+                        label = "守护进程",
+                        value = if (state.isDaemonPresent) "在线" else "离线",
                     )
                 }
             }
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "XEC SCORE",
-                    fontSize = 10.sp,
-                    color = Xc.colors.textMuted,
-                )
-                Text(
-                    text = "${result.rank.name} · ${result.passed}/${result.items.size} 项通过",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Xc.colors.text,
-                )
-                Text(
-                    text = if (result.isHealthy) "环境完整，可以正常使用" else "有项目需要处理，点开看明细",
-                    fontSize = 11.sp,
-                    color = Xc.colors.textSecondary,
-                )
-            }
-            Icon(
-                imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = null,
-                tint = Xc.colors.textMuted,
-                modifier = Modifier.size(18.dp),
-            )
-        }
-        // 三格关键指标：与面板族同一套分隔语言（1px 线 + surface 底）。
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Xc.colors.surface),
-        ) {
-            XecScoreMetric(
-                label = "Root",
-                value = if (state.isRootAvailable) "可用" else "未启用",
-                modifier = Modifier.weight(1f),
-            )
-            XecScoreMetric(
-                label = "运行模式",
-                value = when {
-                    state.isMountState -> "挂载态"
-                    state.lkmMode == true -> "LKM"
-                    state.ksuVersion != null -> "内核态"
-                    else -> "未安装"
-                },
-                modifier = Modifier.weight(1f),
-            )
-            XecScoreMetric(
-                label = "守护进程",
-                value = if (state.isDaemonPresent) "在线" else "离线",
-                modifier = Modifier.weight(1f),
-            )
         }
     }
 }
 
 @Composable
-private fun XecScoreMetric(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier.padding(horizontal = 15.dp, vertical = 9.dp),
+private fun RankBadge(rank: String, healthy: Boolean) {
+    val tint = if (healthy) Xc.colors.success else Xc.colors.warning
+    Box(
+        modifier = Modifier
+            .border(1.dp, tint, Xc.shapes.pill)
+            .padding(horizontal = 9.dp, vertical = 3.dp),
     ) {
-        Text(text = label, fontSize = 10.sp, color = Xc.colors.textMuted)
-        Spacer(Modifier.height(2.dp))
+        Text(
+            text = "$rank 级",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.5.sp,
+            color = tint,
+        )
+    }
+}
+
+@Composable
+private fun ScoreMetric(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.5.sp,
+            color = Xc.colors.textSecondary,
+            modifier = Modifier.weight(1f),
+        )
         Text(
             text = value,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.SemiBold,
             color = Xc.colors.text,
         )
     }

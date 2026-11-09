@@ -95,44 +95,43 @@ private fun Color.over(base: Color, alpha: Float): Color = Color(
 
 private val XcDarkBase = XcColors(
     isDark = true,
-    backdrop = Color(0xFF141416),
-    backdropScrim = Color(0xE6141416),
-    surface = Color(0xFF1D1D20),
-    surfaceMuted = Color(0xFF212125),
-    glassTint = Color(0x8C1D1D20),
+    backdrop = Color(0xFF0B0B0E),
+    backdropScrim = Color(0xF20B0B0E),
+    surface = Color(0xFF151519),
+    surfaceMuted = Color(0xFF1B1B21),
+    glassTint = Color(0x8C151519),
     // 已关闭玻璃形态：这一档保留字段但现在不参与渲染
     clearGlassTint = Color(0x00000000),
-    glassRim = Color(0xFF2C2C31),
-    text = Color(0xFFEDEDEF),
-    textSecondary = Color(0xFFA4A4AA),
-    textMuted = Color(0xFF7B7B82),
-    accent = Color(0xFFFF6900),
-    accentSoft = Color(0xFF2A1C12),
-    water = Color(0x6BFF6900),
+    glassRim = Color(0xFF26262E),
+    text = Color(0xFFF5F5F7),
+    textSecondary = Color(0xFFB4B4BF),
+    textMuted = Color(0xFF8A8A96),
+    accent = Color(0xFF6B84FF),
+    accentSoft = Color(0xFF1B2140),
+    water = Color(0x6B6B84FF),
     danger = Color(0xFFFF6B60),
-    warning = Color(0xFFE0A233),
-    success = Color(0xFF45C07A),
+    warning = Color(0xFFF79009),
+    success = Color(0xFF2ECC80),
 )
 
 private val XcLightBase = XcColors(
     isDark = false,
-    // MIUI 8：整页浅灰底，所有内容靠白色分组面板分层
-    backdrop = Color(0xFFF3F3F3),
-    backdropScrim = Color(0xF2F3F3F3),
+    // 扁平方案 A：浅灰纸面 + 纯白卡片 + 1px 发丝线，整页不再透出壁纸
+    backdrop = Color(0xFFF5F5F7),
+    backdropScrim = Color(0xF2F5F5F7),
     surface = Color(0xFFFFFFFF),
-    surfaceMuted = Color(0xFFFAFAFA),
+    surfaceMuted = Color(0xFFFAFAFB),
     glassTint = Color(0x8CFFFFFF),
-    glassRim = Color(0xFFEBEBEB),
-    text = Color(0xFF1F2022),
-    textSecondary = Color(0xFF6B6C70),
-    textMuted = Color(0xFF9A9BA0),
-    // MIUI 8 的强调橙
-    accent = Color(0xFFFF6900),
-    accentSoft = Color(0xFFFFF3E9),
-    water = Color(0x6BFF6900),
-    danger = Color(0xFFD93025),
-    warning = Color(0xFFD9880A),
-    success = Color(0xFF1F9D55),
+    glassRim = Color(0xFFE6E6EA),
+    text = Color(0xFF111114),
+    textSecondary = Color(0xFF50505A),
+    textMuted = Color(0xFF6E6E78),
+    accent = Color(0xFF3B5BFF),
+    accentSoft = Color(0xFFEEF1FF),
+    water = Color(0x6B3B5BFF),
+    danger = Color(0xFFF04438),
+    warning = Color(0xFFF79009),
+    success = Color(0xFF17B26A),
 )
 
 /**
@@ -142,10 +141,10 @@ private val XcLightBase = XcColors(
 private val XcAmoled = XcDarkBase.copy(
     backdrop = Color(0xFF000000),
     backdropScrim = Color(0xF2000000),
-    surface = Color(0xFF101012),
-    surfaceMuted = Color(0xFF161618),
-    glassTint = Color(0x6B101012),
-    glassRim = Color(0xFF232327),
+    surface = Color(0xFF101014),
+    surfaceMuted = Color(0xFF16161C),
+    glassTint = Color(0x6B101014),
+    glassRim = Color(0xFF232329),
 )
 
 fun xcColorsFor(isDark: Boolean, isAmoled: Boolean = false): XcColors = when {

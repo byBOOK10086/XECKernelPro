@@ -83,6 +83,7 @@ fun HomePager(
         // 超级用户不是一个能"返回"的独立页面，它就是底栏那一页。
         onOpenSuperuser = { mainPagerState.animateToPage(1) },
         onOpenSulog = { navigator.push(Route.Sulog) },
+        onRefresh = { viewModel.refresh() },
     )
 
     HomePagerMiuix(
