@@ -154,13 +154,19 @@ private fun checkNewVersionFromGithub(): LatestVersionInfo {
 
                 for (i in 0 until releases.length()) {
                     val release = releases.getJSONObject(i)
+                    // 草稿不是"新版本"：GitHub 的 /releases 按创建时间倒序，草稿排在最前面，
+                    // 而草稿的 asset 对普通用户是 404。2026-11-09 实测本仓库前五条正是 11-05
+                    // 留下的草稿（v31355…v31350），旧逻辑会取第一条，于是站点源一旦不可用，
+                    // 管理器就会提示一个点开必然 404 的版本。下载量统计照旧，只跳过版本判定。
+                    val isDraft = release.optBoolean("draft")
                     val assets = release.optJSONArray("assets") ?: continue
 
                     for (j in 0 until assets.length()) {
                         totalDownloads += assets.getJSONObject(j).optLong("download_count")
                     }
+                    if (isDraft) continue
 
-                    // 取首个包含 apk 的 release 作为版本信息（release 已按最新在前排序）
+                    // 取首个**非草稿**且包含 apk 的 release 作为版本信息
                     if (downloadUrl.isEmpty()) {
                         changelog = release.optString("body")
                         for (j in 0 until assets.length()) {
