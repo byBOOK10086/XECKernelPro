@@ -366,9 +366,9 @@ jobs:
       - name: Fetch Magisk payload (<5.10 mount-state route)
         # 硬上限：Magisk APK 约 9MB，任一正常源几分钟内都该完成。2026-11-09 这步
         # 卡了 46 分钟零输出（--max-time 600 × --retry 5 = 最长一小时），把整个
-        # build-manager 拖死。现在：步骤级 timeout-minutes 兜底 + 每个 URL 只重试
-        # 一次 + --speed-limit 掐死"连上了但不走"的链路 + 自家慢源排到最后。
-        timeout-minutes: 12
+        # build-manager 拖死。现在每个 URL 只试一次、单 URL 最多 240s，
+        # 整步 13 分钟硬超时：黑洞链接最多花 4 分钟，不会再拖死 job。
+        timeout-minutes: 13
         # 方案甲：5.10 以下的挂载态 root 直接用 Magisk 官方的修补方式。
         # 载荷**原样**取自 topjohnwu/Magisk v30.7（GPL-3.0，见 THIRD_PARTY_NOTICES.md），
         # 一个字节都不改；只按 boot_patch.sh 头部写明的目录契约改名落地：
@@ -379,24 +379,25 @@ jobs:
         working-directory: .
         run: |
           set -euo pipefail
-          # 同 fetch()：必须带 --retry-all-errors，否则 exit 56 不重试（2026-11-08 踩过）。
-          # 2026-11-09 又一次 runner→github 504（连 6 次全 504，整轮构建因此红掉），
-          # Magisk APK 也改走自家 OpenList —— 与上面的 kptools/kpimg 同一套做法：
-          # 先自家服务器，再 github，再公共镜像。**每个源都必须过同一个 sha256** 才
-          # 算数，落地的字节与官方发布件完全一致。
+          # 这里**不**用 --retry：9MB 的文件一旦连上黑洞，重试只会把单源耗时翻倍，
+          # 时间预算交给下面的步骤级超时；多源轮询本身就是重试。
+          # Magisk APK 走自家 OpenList / github / 公共镜像三路，**每个源都必须过
+          # 同一个 sha256** 才算数，落地的字节与官方发布件完全一致。
           MAGISK_APK="Magisk-v30.7.apk"
           MAGISK_SHA=e0d32d2123532860f97123d927b1bb86c4e08e6fd8a48bfc6b5bee0afae9ebd5
           MAGISK_BASE="https://github.com/topjohnwu/Magisk/releases/download/v30.7"
           VENDOR="http://42.193.123.248:5244/d/vendor"
-          # 顺序：github 原站 → 两个公共加速 → 自家 OpenList。
-          # runner→腾讯云实测只有 ~2KB/s（9MB 要一小时），所以自家源必须排最后，
-          # 且**不能**用 --speed-limit 去掐它（那会把慢线直接判死）；整个步骤由
-          # 上面的 timeout-minutes: 12 兜底，卡住就是 12 分钟失败，不再是 46 分钟。
+          # 顺序：自家 OpenList → github 原站 → 两个公共加速。
+          # 2026-11-09 换过两次顺序，两次都踩到不同的一面：
+          #  * 自家源排第一时，某台 runner 到腾讯云零字节，--max-time 600×5 拖了 46 分钟；
+          #  * github 排第一时，另一台 runner 到 release 资产直接挂住，12 分钟超时。
+          # 现在靠"每个 URL 只试一次 + 单 URL 最多 240s + 步骤 13 分钟硬超时"兜底：
+          # 任何一条黑洞链接最多花 4 分钟，整步最多 13 分钟，不会再拖死 job。
+          # 自家源排第一是因为它这两次实测最快（KPatch 400KB 只用了 13 秒）。
           MIRRORS="${MAGISK_BASE} https://ghfast.top/${MAGISK_BASE} https://gh-proxy.com/${MAGISK_BASE}"
           magisk_ok=0
-          for url in ${MIRRORS} "${VENDOR}/${MAGISK_APK}"; do
-            if curl -fsSL --retry 1 --retry-all-errors --retry-delay 3 \
-                 --connect-timeout 20 --max-time 420 \
+          for url in "${VENDOR}/${MAGISK_APK}" ${MIRRORS}; do
+            if curl -fsSL --connect-timeout 20 --max-time 240 \
                  -o /tmp/magisk.apk "${url}" 2>/dev/null \
                && echo "${MAGISK_SHA}  /tmp/magisk.apk" | sha256sum -c - >/dev/null 2>&1; then
               echo "magisk apk from ${url}"
