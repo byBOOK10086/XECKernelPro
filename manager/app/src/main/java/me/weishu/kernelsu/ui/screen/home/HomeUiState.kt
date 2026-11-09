@@ -54,6 +54,13 @@ data class HomeUiState(
      * 自己消失。所以告警只在探测落定之后才允许出现。
      */
     val rootProbeSettled: Boolean = true,
+    /**
+     * 是否正在刷新（下拉刷新/顶栏刷新共用）。
+     *
+     * 2026-11-09 加：首页的下拉刷新需要真实的"进行中"状态，否则指示器只能靠
+     * 定时器假装转圈 —— 那会在探测很慢时提前收起，在探测很快时空转。
+     */
+    val isRefreshing: Boolean = false,
 ) {
     val isSELinuxPermissive: Boolean
         get() = systemInfo.selinuxStatus == "Permissive"

@@ -98,7 +98,7 @@ fun XecScoreCard(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = "/ $total",
+                    text = "/ 100",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Xc.colors.textMuted,
@@ -106,7 +106,13 @@ fun XecScoreCard(
                 )
             }
             Text(
-                text = if (healthy) "九项全部通过" else "$passed / $total 项通过，点开看明细",
+                // 审计 P1（2026-11-09）：原来 `healthy` 只要 ≥75 就写成"九项全部通过"，
+                // 而且分母错用项数（显示成 100 / 9）。改成按实际通过项说话。
+                text = if (total > 0 && passed == total) {
+                    "全部 $total 项通过"
+                } else {
+                    "$passed / $total 项通过，点开看明细"
+                },
                 fontSize = 12.sp,
                 color = Xc.colors.textSecondary,
                 modifier = Modifier.padding(top = 9.dp),

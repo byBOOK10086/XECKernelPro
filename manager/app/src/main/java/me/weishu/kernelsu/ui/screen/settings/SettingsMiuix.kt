@@ -197,26 +197,10 @@ fun SettingPagerMiuix(
                             onClick = actions.onOpenThemes,
                             trailing = { Xc8Chevron() },
                         )
-                        // 自定义背景与主题是同一层的决定：主题决定玻璃令牌，背景决定玻璃折射谁。
-                        // 摘要直接说清"哪几档被换掉了"，避免用户进去才发现只改了浅色档。
-                        val wallpaperLightCustom = uiState.wallpaperLight.isNotEmpty()
-                        val wallpaperDarkCustom = uiState.wallpaperDark.isNotEmpty()
-                        val wallpaperSummary = when {
-                            wallpaperLightCustom && wallpaperDarkCustom ->
-                                stringResource(id = R.string.wallpaper_summary_both)
-
-                            wallpaperLightCustom -> stringResource(id = R.string.wallpaper_summary_light)
-                            wallpaperDarkCustom -> stringResource(id = R.string.wallpaper_summary_dark)
-                            else -> stringResource(id = R.string.wallpaper_summary_builtin)
-                        }
-                        val wallpaperTitle = stringResource(id = R.string.settings_wallpaper)
-                        Xc8Row(
-                            title = wallpaperTitle,
-                            subtitle = wallpaperSummary,
-                            leading = Icons.Rounded.Wallpaper,
-                            onClick = actions.onOpenWallpaper,
-                            trailing = { Xc8Chevron() },
-                        )
+                        // 2026-11-09（扁平方案 A）：壁纸层已经被整页实色底盖住，
+                        // 这个入口点进去"选了也看不见"，是明确的假可用。先整行移除，
+                        // 等主题商店的"调色板/字体"档落地后再决定要不要以新形态回来。
+                        // （代码与资源保留，`Route.Wallpaper` 仍可达用于调试。）
                     }
 
                     Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {

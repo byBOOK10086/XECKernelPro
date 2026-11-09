@@ -52,7 +52,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.privilege.StealthEntrance
 import me.weishu.kernelsu.privilege.SuperkeyStore
-import me.weishu.kernelsu.ui.LocalMainPagerState
 import me.weishu.kernelsu.ui.component.dialog.XDialog
 import me.weishu.kernelsu.ui.component.dialog.XDialogTitle
 import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
@@ -82,7 +81,6 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 @Composable
 fun ToolsScreen() {
     val navigator = LocalNavigator.current
-    val mainPager = LocalMainPagerState.current
     val scrollBehavior = MiuixScrollBehavior()
     val context = LocalContext.current
 
@@ -174,11 +172,13 @@ fun ToolsScreen() {
                 Column(
                     modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
                 ) {
-                    // 结论先于工具：评分是"该修哪一项"的诊断入口，点开跳去检测页看九项明细。
-                    XecScoreCard(state = homeState) {
-                        navigator.pop()
-                        mainPager.animateToPage(3)
-                    }
+                    // 结论先于工具：评分是"该修哪一项"的诊断入口。
+                    // 2026-11-09 审计 P0：这里曾经 pop() 之后再 animateToPage(3) 跳检测页，
+                    // 而 `LocalMainPagerState` 的 provider 只在主分页子树里，工具箱是独立
+                    // 导航 entry —— 读它会直接触发 `error("LocalMainPagerState not provided")`。
+                    // 跨页面跳转要治本（把 pager 状态提到 NavDisplay 之上），这一版先只返回，
+                    // 用户从底栏「检测」进明细。
+                    XecScoreCard(state = homeState) { navigator.pop() }
 
                     Xc8SectionLabel(
                         text = stringResource(R.string.tools_section_tools),

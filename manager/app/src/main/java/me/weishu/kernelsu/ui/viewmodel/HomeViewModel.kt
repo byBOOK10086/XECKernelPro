@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.topjohnwu.superuser.ShellUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,6 +46,9 @@ class HomeViewModel(
     private val _uiState = MutableStateFlow(buildState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    /** 当前在跑的那一轮刷新；用于重入合并（见 [refresh]）。 */
+    private var refreshJob: Job? = null
+
     init {
         // 开机早期被拉起时首帧算出的是"没有 root"。KsuCli 的后台补探晚一点拿到 root
         // 之后必须让首页重算一次，否则界面会一直停在无 root —— 用户看到的"重启后
@@ -64,7 +68,13 @@ class HomeViewModel(
     }
 
     fun refresh() {
-        viewModelScope.launch {
+        // 2026-11-09：首页、工具箱、下拉刷新、顶栏刷新会同时打进来；以前每次调用都
+        // 新开一个协程，几条探测（root shell / 更新检查）并发跑会互相覆盖状态流。
+        // 这里做**重入合并**：已经有一轮在跑就忽略新请求 —— 一轮跑完状态一定比旧的新。
+        if (refreshJob?.isActive == true) return
+        refreshJob = viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true) }
+            try {
             val baseState = withContext(Dispatchers.IO) { buildState() }
             // 挂载态（唯一判据：没有 KSU 驱动应答且内核低于 5.10）：root 就是 Magisk 自己的，
             // 首页要把正在跑的 magiskd 版本显示出来。snapshot() 会开一条 root shell，
@@ -81,6 +91,10 @@ class HomeViewModel(
             val latestVersionInfo = withContext(Dispatchers.IO) { checkNewVersion() }
             _uiState.update { it.copy(latestVersionInfo = latestVersionInfo) }
             publishWidgetState(_uiState.value)
+            } finally {
+                // 失败也要收指示器：宁可让用户看到"没刷出来"，也不要一直转圈。
+                _uiState.update { it.copy(isRefreshing = false) }
+            }
         }
     }
 

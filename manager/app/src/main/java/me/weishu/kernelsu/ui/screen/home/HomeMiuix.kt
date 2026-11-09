@@ -49,7 +49,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -80,11 +79,9 @@ import me.weishu.kernelsu.ui.design.token.XcBlocks
 import me.weishu.kernelsu.ui.util.getSuperuserCount
 import me.weishu.kernelsu.ui.util.module.LatestVersionInfo
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.PullToRefresh
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.utils.overScrollVertical
-import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 /**
  * 首页（扁平方案 A，2026-11-09）。
@@ -106,9 +103,6 @@ fun HomePagerMiuix(
     actions: HomeActions,
     bottomInnerPadding: Dp,
 ) {
-    val scrollBehavior = MiuixScrollBehavior()
-    // 首页七处 WarningCard 共用的区块背景（告警卡在日志页也在用，所以"首页那块背景"
-    // 的取值留在这一层，不跟着组件跑到别的页面去）。
     val warningBlock = rememberXcBlock(XcBlocks.HOME_WARNING)
 
     // Root 授权数量：只有内核驱动应答时才问得到；driver 不在时显示 0，
@@ -132,16 +126,21 @@ fun HomePagerMiuix(
         contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout)
             .only(WindowInsetsSides.Horizontal),
     ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxHeight()
-                .scrollEndHaptic()
-                .overScrollVertical()
-                .nestedScroll(scrollBehavior.nestedScrollConnection)
-                .padding(horizontal = 22.dp),
-            contentPadding = innerPadding,
-            overscrollEffect = null,
+        // 2026-11-09：上滑偶发不响应，根因是这里挂着 MiuixScrollBehavior 的
+        // nestedScrollConnection，却没有任何 TopAppBar 消费它（顶栏已改成自绘的
+        // HomeHeader）。连接器会吞掉一部分 fling，手势就时灵时不灵。
+        // 现在改由 miuix 的 PullToRefresh 接管下拉手势，滚动本身走默认实现。
+        PullToRefresh(
+            isRefreshing = state.isRefreshing,
+            onRefresh = actions.onRefresh,
         ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .padding(horizontal = 22.dp),
+                contentPadding = innerPadding,
+                overscrollEffect = null,
+            ) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     // 异常态永远排在最前：它们才是这一屏唯一需要立刻处理的东西。
@@ -228,6 +227,7 @@ fun HomePagerMiuix(
                 }
             }
         }
+        }
     }
 }
 
@@ -292,7 +292,9 @@ private fun HomeHeader(
 private fun HomeHero(state: HomeUiState) {
     val running = state.ksuVersion != null
     val mount = state.isMountState
-    val active = running || mount
+    // 审计 P1（2026-11-09）：之前只看"驱动有没有应答"，驱动在但 su 被拒时仍显示
+    // ROOT READY。就绪判据改成实际的 root 可用性。
+    val active = state.isRootAvailable
     val title = when {
         running -> stringResource(R.string.home_hero_running)
         mount -> stringResource(R.string.home_hero_mount)
