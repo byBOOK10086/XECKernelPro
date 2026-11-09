@@ -91,6 +91,32 @@ jobs:
         distribution: temurin
         java-version: '21'
 
+    # 2026-11-09：runner 取 kotlin-compiler-embeddable-2.3.0.jar 时先撞
+    # repo.maven.apache.org 再落到 github.com，两边都 504，构建直接红。
+    # 这个 jar 在 Central 和阿里云上是同一个文件（57,669,576 B），所以只**追加**
+    # 两个 Maven Central 的镜像源，不改任何坐标、不改版本、不动 pluginManagement。
+    - name: Point Gradle at Maven mirrors
+      run: |
+        mkdir -p ~/.gradle/init.d
+        cat > ~/.gradle/init.d/ci-mirrors.gradle <<'EOF'
+        def mirrors = [
+            'https://maven.aliyun.com/repository/public',
+            'https://repo1.maven.org/maven2',
+        ]
+        allprojects { project ->
+            project.buildscript {
+                repositories {
+                    mirrors.each { u -> maven { url u } }
+                }
+            }
+            project.repositories {
+                mirrors.each { u -> maven { url u } }
+            }
+        }
+        EOF
+        echo "wrote ~/.gradle/init.d/ci-mirrors.gradle"
+        cat ~/.gradle/init.d/ci-mirrors.gradle
+
     - name: Install Android SDK components for builtin module build
       run: |
         yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true

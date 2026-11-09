@@ -192,6 +192,29 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      # 同 ksud.yml 的理由：runner 到 repo.maven.apache.org / github.com 取
+      # kotlin-compiler-embeddable 会 504。只追加 Central 的镜像源，不改坐标。
+      - name: Point Gradle at Maven mirrors
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cat > ~/.gradle/init.d/ci-mirrors.gradle <<'EOF'
+          def mirrors = [
+              'https://maven.aliyun.com/repository/public',
+              'https://repo1.maven.org/maven2',
+          ]
+          allprojects { project ->
+              project.buildscript {
+                  repositories {
+                      mirrors.each { u -> maven { url u } }
+                  }
+              }
+              project.repositories {
+                  mirrors.each { u -> maven { url u } }
+              }
+          }
+          EOF
+          echo "wrote ~/.gradle/init.d/ci-mirrors.gradle"
+
       - name: Setup Android SDK
         shell: bash
         run: |
