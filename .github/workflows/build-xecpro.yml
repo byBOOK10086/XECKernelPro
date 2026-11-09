@@ -338,12 +338,14 @@ jobs:
           # 每个镜像都必须拼到**资产文件名**：只写到 /download/<tag> 会拿到发布页 HTML，
           # 体积对不上、sha256 直接失败 —— 2026-11-09 之前的 "github 与镜像全挂"
           # 就是这个原因（vendor 那条带了文件名，所以只有它"能用"，还特别慢）。
-          MIRRORS="${BASE}/${name} https://ghfast.top/${BASE}/${name} https://gh-proxy.com/${BASE}/${name}"
           fetch() {
             local name="$1" sha="$2" dest="$3" url
+            # 镜像 URL 必须在函数**内部**拼：`${name}` 是这里的本地变量，
+            # 放到函数外用 set -u 会直接 "name: unbound variable"（2026-11-09 踩过）。
+            local mirrors="${BASE}/${name} https://ghfast.top/${BASE}/${name} https://gh-proxy.com/${BASE}/${name}"
             for url in \
                 "${VENDOR}/${name}" \
-                ${MIRRORS}; do
+                ${mirrors}; do
               if curl -fsSL --retry 2 --retry-all-errors --retry-delay 3 \
                    --connect-timeout 20 --max-time 300 \
                    -o "/tmp/${name}" "${url}" 2>/dev/null \
