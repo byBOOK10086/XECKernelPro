@@ -1151,4 +1151,5 @@ See the log below for details.</string>
     <string name="settings_flash_entry">Flash / Install</string>
     <string name="settings_flash_entry_summary">Install or update the kernel, flash module packages</string>
     <string name="home_hero_probing">Getting root</string>
+    <string name="home_hero_ready_install">Ready to install</string>
 </resources>

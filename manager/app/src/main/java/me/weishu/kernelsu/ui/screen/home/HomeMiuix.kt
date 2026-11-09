@@ -195,7 +195,7 @@ fun HomePagerMiuix(
                         WarningCard(stringResource(id = R.string.home_daemon_missing), block = warningBlock)
                     }
 
-                    HomeHero(state = state)
+                    HomeHero(state = state, onInstall = actions.onInstallClick)
 
                     HomeStats(state = state, rootGrantCount = rootGrantCount)
 
@@ -281,12 +281,15 @@ private fun HomeHeader(
 
 /** 首屏结论：一个状态点 + 一行 34sp 的大字 + 一行说明，底下一条发丝线。 */
 @Composable
-private fun HomeHero(state: HomeUiState) {
+private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
     val running = state.ksuVersion != null
     val mount = state.isMountState
     // 审计 P1（2026-11-09）：之前只看"驱动有没有应答"，驱动在但 su 被拒时仍显示
     // ROOT READY。就绪判据改成实际的 root 可用性。
     val active = state.isRootAvailable
+    // 2026-11-09 用户要求：管理器已经拿到 root、但内核模块还没装/没跑起来时，
+    // 不再说"内核未运行"，而是明确告诉用户"可以直接装"，并且这块本身就是入口。
+    val canInstall = !running && !mount && state.isRootAvailable
     // 冷启动/刚重启那段，root 探测还没落定。此时 isRootAvailable 必然 false，
     // 直接画红点会得到"内核正常运行 + ROOT 未就绪"这种自相矛盾的首帧
     // （2026-11-09 用户真机反馈）。未落定 → 灰点 + 「正在获取 Root」。
@@ -304,6 +307,7 @@ private fun HomeHero(state: HomeUiState) {
     val title = when {
         running -> stringResource(R.string.home_hero_running)
         mount -> stringResource(R.string.home_hero_mount)
+        canInstall -> stringResource(R.string.home_hero_ready_install)
         else -> stringResource(R.string.home_hero_inactive)
     }
     val modeText = when {
@@ -337,17 +341,20 @@ private fun HomeHero(state: HomeUiState) {
             )
         }
         Row(
-            modifier = Modifier.padding(top = 13.dp),
+            modifier = Modifier
+                .padding(top = 13.dp)
+                .then(if (canInstall) Modifier.clickable(onClick = onInstall) else Modifier),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = title,
                 style = Xc.typography.display,
                 color = Xc.colors.text,
+                modifier = Modifier.weight(1f, fill = false),
             )
             // 2026-11-09 用户要求：和 KernelSU 首页同款的"已运行"对勾。
-            // 只在真正就绪（su 可用）时出现，未就绪/探测中都不画 —— 那会变成假绿。
-            if (active) {
+            // 只在**内核真的在跑**时出现 —— 只是拿到 root 但没装内核时不画，那会变假绿。
+            if (running) {
                 Spacer(Modifier.width(10.dp))
                 Icon(
                     imageVector = Icons.Rounded.CheckCircle,
@@ -355,6 +362,24 @@ private fun HomeHero(state: HomeUiState) {
                     tint = Xc.colors.success,
                     modifier = Modifier.size(26.dp),
                 )
+            }
+            // 有 root、没内核：把这块本身做成安装入口（用户反馈找不到安装入口）。
+            if (canInstall) {
+                Spacer(Modifier.width(12.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(Xc.shapes.pill)
+                        .background(Xc.colors.accent)
+                        .clickable(onClick = onInstall)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.install),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                    )
+                }
             }
         }
         Text(

@@ -1153,4 +1153,5 @@ XEC 项目组
     <string name="settings_flash_entry">刷入 / 安装</string>
     <string name="settings_flash_entry_summary">安装或更新内核、刷入模块包</string>
     <string name="home_hero_probing">正在获取 Root</string>
+    <string name="home_hero_ready_install">已准备就绪，可以直接安装</string>
 </resources>
