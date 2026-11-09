@@ -1,8 +1,14 @@
 package me.weishu.kernelsu.ui.design.panel
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,9 +31,12 @@ import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,12 +44,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.launch
 import me.weishu.kernelsu.ui.design.token.Xc
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
@@ -108,17 +122,33 @@ fun Xc8Dock(
         }
 
         // 控制台按钮：凸起 13dp，白圈把它从底栏上"抬"起来（原型里的做法）。
+        // 展开时按钮自己也要有反馈：整体轻微放倒 + 图标旋转 45°，否则点下去只有
+        // 弹层在动，指下的这个圆是死的。
+        val open by animateFloatAsState(
+            targetValue = if (consoleOpen) 1f else 0f,
+            animationSpec = spring(dampingRatio = 0.58f, stiffness = Spring.StiffnessMediumLow),
+            label = "console-open",
+        )
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .offset(y = (-13).dp)
                 .size(56.dp)
+                .graphicsLayer {
+                    scaleX = 1f - 0.06f * open
+                    scaleY = 1f - 0.06f * open
+                }
                 .clip(CircleShape)
                 .background(accent)
                 .clickable { consoleOpen = true },
             contentAlignment = Alignment.Center,
         ) {
-            ConsoleGlyph(tint = Color.White)
+            Box(
+                modifier = Modifier.graphicsLayer { rotationZ = 45f * open },
+                contentAlignment = Alignment.Center,
+            ) {
+                ConsoleGlyph(tint = Color.White)
+            }
         }
 
         // 超级用户 / 检测 / 设置：控制台改成**环绕弹层**（径向菜单），
@@ -149,7 +179,19 @@ private data class RadialEntry(
 )
 
 /**
- * 控制台径向菜单。
+ * 控制台径向菜单（2026-11-09：加过渡动画 + 拖拽选择）。
+ *
+ * 动效分三层，都是在回答"东西从哪来"：
+ *   1. 涟漪：一个细环从按钮圆心扩散到菜单半径，只在展开的那一下出现；
+ *   2. 三格入口每隔 100ms 依次从圆心弹出（easeOutBack，带约 4% 过冲），
+ *      缩放 0.42 -> 1、透明度 0 -> 1，标签比图标晚一点亮；
+ *   3. 收起是 150ms 的反向收拢 —— 不是弹回原位，而是缩回圆心，于是"从哪来、
+ *      回哪去"，和弹开共用同一条几何。
+ *
+ * 交互也一并换了：不再只是"点按钮 → 再点一项"。按住按钮往外拖，指到哪一格，
+ * 哪一格放大、亮强调色，同时从圆心拉一条线连过去；松手选中，松在死区里取消。
+ * 一次拖动就能选完，比两次点击少一次抬手。这是它和 KernelSU 那套「底栏五格」
+ * 最直观的区别：入口是一条**手势轨迹**，不是固定格子。
  *
  * 用**全屏 Dialog** 而不是在底栏里画：底栏在 Scaffold 的 bottomBar 槽里，
  * 高度只有 68dp，超出边界的内容虽然能画出来，但**点击会落在父布局之外**收不到，
@@ -161,60 +203,210 @@ private fun Xc8RadialConsole(
     entries: List<RadialEntry>,
     onPick: (Int) -> Unit,
 ) {
-    val scrim = Xc.colors.text.copy(alpha = 0.28f)
+    val reveal = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    var hover by remember { mutableIntStateOf(-1) }
+    var closing by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
     val surface = Xc.colors.surface
     val accent = Xc.colors.accent
     val muted = Xc.colors.textMuted
+    val scrimBase = Xc.colors.text
+
+    // 几何：以底栏中心为圆心，向上呈 210° / 270° / 330° 三个方向展开。
+    val radiusDp = 118.dp
+    val deadZoneDp = 46.dp
+    val reachDp = 190.dp
+
+    LaunchedEffect(Unit) {
+        reveal.animateTo(
+            targetValue = 1f,
+            animationSpec = spring(dampingRatio = 0.74f, stiffness = Spring.StiffnessMediumLow),
+        )
+    }
+
+    fun close(then: () -> Unit) {
+        if (closing) return
+        closing = true
+        scope.launch {
+            reveal.animateTo(0f, tween(durationMillis = 150))
+            then()
+        }
+    }
+
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { close(onDismiss) },
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .background(scrim)
-                .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {
-                    onDismiss()
-                },
+                .background(scrimBase.copy(alpha = 0.30f * reveal.value))
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                ) { close(onDismiss) },
         ) {
-            // 以底栏中心为圆心，向上呈 210° / 270° / 330° 三个方向展开。
-            val radius = 118.dp
             val pivotX = maxWidth / 2
             val pivotY = maxHeight - 96.dp
-            entries.forEachIndexed { index, entry ->
-                val angleDeg = 210f + index * 60f
-                val rad = Math.toRadians(angleDeg.toDouble())
-                // Dp 只有 times(Float)/times(Int) —— 三角函数回来的是 Double，
-                // 直接 `radius * cos(...)` 编译不过，必须先换算成 Float 再转 Dp。
-                val dx = (radius.value * kotlin.math.cos(rad)).toFloat().dp
-                val dy = (radius.value * kotlin.math.sin(rad)).toFloat().dp
-                Column(
-                    modifier = Modifier
-                        .offset(x = pivotX + dx - 34.dp, y = pivotY + dy - 34.dp)
-                        .width(68.dp)
-                        .clickable { onPick(entry.page) },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(CircleShape)
-                            .background(surface),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = entry.icon,
-                            contentDescription = entry.label,
-                            tint = if (entry.highlighted) accent else Xc.colors.text,
-                            modifier = Modifier.size(22.dp),
+            val pivotPx = with(density) { Offset(pivotX.toPx(), pivotY.toPx()) }
+            val radiusPx = with(density) { radiusDp.toPx() }
+            val deadPx = with(density) { deadZoneDp.toPx() }
+            val reachPx = with(density) { reachDp.toPx() }
+            val piF = Math.PI.toFloat()
+            val twoPiF = (2 * Math.PI).toFloat()
+            val halfSectorF = Math.toRadians(38.0).toFloat()
+
+            // 命中判定：按角度归到最近的一格；径向留死区，太远也不选。
+            fun sectorAt(pos: Offset): Int {
+                val dx = pos.x - pivotPx.x
+                val dy = pos.y - pivotPx.y
+                val dist = kotlin.math.hypot(dx, dy)
+                if (dist < deadPx || dist > reachPx) return -1
+                val ang = kotlin.math.atan2(dy, dx)
+                var best = -1
+                var bestDiff = Float.MAX_VALUE
+                entries.forEachIndexed { index, _ ->
+                    val target = Math.toRadians(210.0 + index * 60.0).toFloat()
+                    var diff = ang - target
+                    while (diff > piF) diff -= twoPiF
+                    while (diff < -piF) diff += twoPiF
+                    val ad = kotlin.math.abs(diff)
+                    if (ad < bestDiff) {
+                        bestDiff = ad
+                        best = index
+                    }
+                }
+                return if (bestDiff <= halfSectorF) best else -1
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(entries.size) {
+                        detectDragGestures(
+                            onDragStart = { pos -> hover = sectorAt(pos) },
+                            onDrag = { change, _ ->
+                                change.consume()
+                                hover = sectorAt(change.position)
+                            },
+                            onDragEnd = {
+                                val picked = hover
+                                hover = -1
+                                if (picked in entries.indices) {
+                                    close { onPick(entries[picked].page) }
+                                } else {
+                                    close(onDismiss)
+                                }
+                            },
+                            onDragCancel = { hover = -1 },
+                        )
+                    },
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    // ① 开场涟漪：进度收尾时环已经淡到看不见。
+                    val r = reveal.value
+                    if (r > 0.02f && r < 0.995f) {
+                        drawCircle(
+                            color = accent.copy(alpha = 0.42f * (1f - r)),
+                            radius = radiusPx * 1.06f * r,
+                            center = pivotPx,
+                            style = Stroke(width = 1.6.dp.toPx()),
                         )
                     }
-                    Spacer(Modifier.height(4.dp))
-                    Text(text = entry.label, fontSize = 10.sp, color = muted)
+                    // ② 拖拽轨迹：圆心 -> 当前命中的那一格，末端点一个圆点。
+                    if (hover in entries.indices) {
+                        val angle = Math.toRadians(210.0 + hover * 60.0)
+                        val end = Offset(
+                            pivotPx.x + (radiusPx * kotlin.math.cos(angle)).toFloat(),
+                            pivotPx.y + (radiusPx * kotlin.math.sin(angle)).toFloat(),
+                        )
+                        drawLine(
+                            color = accent.copy(alpha = 0.55f),
+                            start = pivotPx,
+                            end = end,
+                            strokeWidth = 1.8.dp.toPx(),
+                            cap = StrokeCap.Round,
+                        )
+                        drawCircle(
+                            color = accent.copy(alpha = 0.9f),
+                            radius = 3.2.dp.toPx(),
+                            center = end,
+                        )
+                    }
+                }
+
+                entries.forEachIndexed { index, entry ->
+                    // 逐格错开 100ms 弹出：每格自己的 t 从 0 走到 1。
+                    val start = index * 0.10f
+                    val span = (1f - 0.10f * (entries.size - 1)).coerceAtLeast(0.01f)
+                    val t = ((reveal.value - start) / span).coerceIn(0f, 1f)
+                    val eased = easeOutBack(t)
+                    val angle = Math.toRadians(210.0 + index * 60.0)
+                    val dx = (radiusDp.value * kotlin.math.cos(angle)).toFloat()
+                    val dy = (radiusDp.value * kotlin.math.sin(angle)).toFloat()
+                    val hovered = hover == index
+                    val scale = (0.42f + 0.58f * eased) * if (hovered) 1.10f else 1f
+                    Column(
+                        modifier = Modifier
+                            .offset(
+                                x = pivotX + (dx * eased).dp - 34.dp,
+                                y = pivotY + (dy * eased).dp - 34.dp,
+                            )
+                            .width(68.dp)
+                            .graphicsLayer {
+                                alpha = t
+                                scaleX = scale
+                                scaleY = scale
+                            }
+                            .clickable { close { onPick(entry.page) } },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(if (hovered) accent.copy(alpha = 0.18f) else surface),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (hovered) {
+                                Canvas(Modifier.size(56.dp)) {
+                                    drawCircle(
+                                        color = accent,
+                                        radius = size.minDimension / 2f - 1.dp.toPx(),
+                                        style = Stroke(width = 1.6.dp.toPx()),
+                                    )
+                                }
+                            }
+                            Icon(
+                                imageVector = entry.icon,
+                                contentDescription = entry.label,
+                                tint = if (entry.highlighted || hovered) accent else Xc.colors.text,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = entry.label,
+                            fontSize = 10.sp,
+                            color = if (hovered) accent else muted,
+                            modifier = Modifier.graphicsLayer {
+                                alpha = ((t - 0.35f) / 0.65f).coerceIn(0f, 1f)
+                            },
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+/** 轻微过冲的缓出：0 -> 1 途中越过 1 约 4%，手感上是"弹"一下而不是硬停。 */
+private fun easeOutBack(t: Float): Float {
+    val c1 = 1.24f
+    val c3 = c1 + 1f
+    val p = t - 1f
+    return 1f + c3 * p * p * p + c1 * p * p
 }
 
 /**
