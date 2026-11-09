@@ -103,14 +103,33 @@ jobs:
             'https://maven.aliyun.com/repository/public',
             'https://repo1.maven.org/maven2',
         ]
-        allprojects { project ->
-            project.buildscript {
-                repositories {
-                    mirrors.each { u -> maven { url u } }
+
+        // 只**追加**，不能替换项目自己声明的仓库：RepositoriesMode 默认
+        // PREFER_PROJECT，给一个没声明仓库的 project 塞 project 级仓库会把
+        // settings 里的 google()/mavenCentral() 整体顶掉（manager 的 app 炸过）。
+        settingsEvaluated { settings ->
+            try {
+                mirrors.each { u ->
+                    settings.dependencyResolutionManagement.repositories.maven { url u }
                 }
-            }
-            project.repositories {
+            } catch (Throwable ignored) { }
+            try {
+                mirrors.each { u ->
+                    settings.pluginManagement.repositories.maven { url u }
+                }
+            } catch (Throwable ignored) { }
+        }
+
+        allprojects { project ->
+            project.buildscript.repositories {
                 mirrors.each { u -> maven { url u } }
+            }
+            project.afterEvaluate {
+                if (!project.repositories.isEmpty()) {
+                    project.repositories {
+                        mirrors.each { u -> maven { url u } }
+                    }
+                }
             }
         }
         EOF
@@ -134,6 +153,54 @@ jobs:
     # 设备端能连上 GitHub 也能拿到可信密钥。脚本拿不到源时不失败，保留仓库里那份。
     - name: Refresh embedded keybox
       run: bash .github/scripts/refresh-keybox.sh
+
+    # 2026-11-09：runner 从 services.gradle.org 取 gradle-9.2.0-bin.zip 直接吃
+    # HTTP 504（wrapper 里没有镜像也没有重试），build-ksud 因此在 builtin-modules
+    # 那一步红掉。这里先把**同一个**发行包从自家镜像取下来（必须过官方 .sha256，
+    # 一个字节都不放松），解压后经 XEC_GRADLE_BIN 交给 build-builtin-modules.sh。
+    # 取不到就什么都不设、直接成功退出，脚本退回 ./gradlew 原路径 —— 这一步只会
+    # 让构建更稳，不会让它更容易失败。
+    - name: Prefetch Gradle distribution for builtin modules
+      run: |
+        set -uo pipefail
+        GV=9.2.0
+        SHA=df67a32e86e3276d011735facb1535f64d0d88df84fa87521e90becc2d735444
+        ZIP="gradle-${GV}-bin.zip"
+        VENDOR="http://42.193.123.248:5244/d/vendor"
+        # services.gradle.org 其实是 302 到 github.com/gradle/gradle-distributions
+        # 的 release 资产，今天整条 github 资产 CDN 都在 504；腾讯/华为的 Gradle
+        # 镜像不走 github，实测 200，所以把它们排在官方前面，官方留作最后兜底。
+        SOURCES="${VENDOR}/${ZIP} \
+          https://mirrors.cloud.tencent.com/gradle/${ZIP} \
+          https://mirrors.huaweicloud.com/gradle/${ZIP} \
+          https://services.gradle.org/distributions/${ZIP} \
+          https://downloads.gradle.org/distributions/${ZIP}"
+        ok=0
+        for url in ${SOURCES}; do
+          if curl -fsSL --retry 3 --retry-all-errors --retry-delay 5 \
+               --connect-timeout 20 --max-time 900 \
+               -o "/tmp/${ZIP}" "${url}" 2>/dev/null \
+             && echo "${SHA}  /tmp/${ZIP}" | sha256sum -c - >/dev/null 2>&1; then
+            echo "gradle distribution from ${url}"
+            ok=1
+            break
+          fi
+          echo "gradle distribution from ${url} failed; trying next source" >&2
+        done
+        if [ "${ok}" != 1 ]; then
+          echo "::warning::could not fetch ${ZIP} from any source; falling back to the wrapper"
+          exit 0
+        fi
+        echo "${SHA}  /tmp/${ZIP}" | sha256sum -c -
+        mkdir -p "${RUNNER_TEMP}/xec-gradle"
+        unzip -q -o "/tmp/${ZIP}" -d "${RUNNER_TEMP}/xec-gradle"
+        BIN="${RUNNER_TEMP}/xec-gradle/gradle-${GV}/bin/gradle"
+        chmod +x "${BIN}"
+        if ! "${BIN}" --version; then
+          echo "::warning::pre-fetched Gradle does not run here; falling back to the wrapper"
+          exit 0
+        fi
+        echo "XEC_GRADLE_BIN=${BIN}" >> "${GITHUB_ENV}"
 
     - name: Build builtin modules from vendored source
       env:

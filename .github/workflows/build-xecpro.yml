@@ -202,14 +202,38 @@ jobs:
               'https://maven.aliyun.com/repository/public',
               'https://repo1.maven.org/maven2',
           ]
-          allprojects { project ->
-              project.buildscript {
-                  repositories {
-                      mirrors.each { u -> maven { url u } }
+
+          // 只能**追加**，绝不能替换项目自己声明的仓库。
+          // RepositoriesMode 默认 PREFER_PROJECT：一旦给某个 project 塞了 project 级
+          // 仓库、而它自己一个都没声明（manager 的 app 正是如此，仓库全写在下边
+          // settings 的 dependencyResolutionManagement 里），settings 里的 google()/
+          // mavenCentral()/jitpack 就会被整体忽略，androidx 全线变成
+          // "Could not find"（2026-11-09 真炸过一次，整轮构建红掉）。
+          settingsEvaluated { settings ->
+              try {
+                  mirrors.each { u ->
+                      settings.dependencyResolutionManagement.repositories.maven { url u }
                   }
-              }
-              project.repositories {
+              } catch (Throwable ignored) { }
+              try {
+                  mirrors.each { u ->
+                      settings.pluginManagement.repositories.maven { url u }
+                  }
+              } catch (Throwable ignored) { }
+          }
+
+          allprojects { project ->
+              // buildscript 类路径照样追加（Kotlin 编译器那个 jar 走这条），安全。
+              project.buildscript.repositories {
                   mirrors.each { u -> maven { url u } }
+              }
+              // 只有当项目**自己**声明过仓库时才追加，避免把 PREFER_PROJECT 翻过来。
+              project.afterEvaluate {
+                  if (!project.repositories.isEmpty()) {
+                      project.repositories {
+                          mirrors.each { u -> maven { url u } }
+                      }
+                  }
               }
           }
           EOF

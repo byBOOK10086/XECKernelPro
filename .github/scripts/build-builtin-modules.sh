@@ -91,7 +91,16 @@ build_tricky_store() {
     }
     rustup target add "$TARGET"
     cd "$TS_SRC"
-    ./gradlew zipRelease --no-daemon -q
+    # 2026-11-09：runner 从 services.gradle.org 取 gradle-9.2.0-bin.zip 直接拿到
+    # HTTP 504，整个 build-ksud 红掉。workflow 里新增的一步会先把同一个发行包从
+    # 我们自己的镜像取下来（sha256 校验后解压），再用 XEC_GRADLE_BIN 指过来；
+    # 那一步没拿到时退回 wrapper 原路径，本地开发行为一点没变。
+    local gradle_cmd="./gradlew"
+    if [ -n "${XEC_GRADLE_BIN:-}" ] && [ -x "${XEC_GRADLE_BIN}" ]; then
+        gradle_cmd="${XEC_GRADLE_BIN}"
+        log "Using pre-fetched Gradle: ${gradle_cmd}"
+    fi
+    "$gradle_cmd" zipRelease --no-daemon -q
 
     local zip stage
     zip="$(ls -t out/TEESimulator-RS-*-Release.zip 2>/dev/null | head -1 || true)"
