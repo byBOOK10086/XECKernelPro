@@ -1,39 +1,36 @@
 package me.weishu.kernelsu.ui.screen.home
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.weishu.kernelsu.ui.LocalMainPagerState
+import me.weishu.kernelsu.ui.design.motion.XcMotion
 import me.weishu.kernelsu.ui.design.panel.Xc8Panel
 import me.weishu.kernelsu.ui.design.panel.Xc8Radar
 import me.weishu.kernelsu.ui.design.token.Xc
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
+import kotlin.math.roundToInt
 
 /**
  * XEC Console · 首页仪表台（2026-11-08）。
@@ -48,12 +45,18 @@ import top.yukonga.miuix.kmp.basic.Text
 @Composable
 fun HomeDashboard(state: HomeUiState) {
     val result = XecScore.evaluate(state)
-    val ringColor = when {
-        result.total >= XecRank.A.min -> Xc.colors.accent
-        result.total >= XecRank.B.min -> Xc.colors.warning
-        else -> Xc.colors.danger
+    // 2026-11-09：整块仪表加入场动画。雷达从圆心长出来，分数从 0 数上去 ——
+    // 数据是"算出来的结论"，让它有一个"算"的过程比直接甩一个数字更像仪表。
+    val reveal = remember { Animatable(0f) }
+    LaunchedEffect(result.total) {
+        reveal.snapTo(0f)
+        reveal.animateTo(1f, XcMotion.reveal(Xc.colors.isDark))
     }
-    val track = Xc.colors.glassRim
+    val shownScore by animateIntAsState(
+        targetValue = (result.total * reveal.value).roundToInt(),
+        animationSpec = XcMotion.trace(),
+        label = "score-count",
+    )
     val pager = LocalMainPagerState.current
     Xc8Panel {
         Row(
@@ -68,10 +71,11 @@ fun HomeDashboard(state: HomeUiState) {
             Xc8Radar(
                 values = result.items.map { if (it.max <= 0) 0f else it.earned.toFloat() / it.max },
                 size = 92.dp,
+                reveal = reveal.value,
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = result.total.toString(),
+                        text = shownScore.toString(),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Xc.colors.text,
@@ -136,45 +140,6 @@ fun HomeDashboard(state: HomeUiState) {
                 modifier = Modifier.weight(1f),
             )
         }
-    }
-}
-
-/** 评分环。颜色由调用方算好再传进来：`Xc.colors` 是 @Composable，进不了 DrawScope。 */
-@Composable
-private fun ScoreRing(score: Int, ringColor: Color, trackColor: Color) {
-    Box(
-        modifier = Modifier.size(54.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Canvas(modifier = Modifier.size(54.dp)) {
-            val stroke = size.minDimension * 0.11f
-            val inset = stroke / 2f
-            val arcSize = Size(size.width - stroke, size.height - stroke)
-            drawArc(
-                color = trackColor,
-                startAngle = 0f,
-                sweepAngle = 360f,
-                useCenter = false,
-                topLeft = Offset(inset, inset),
-                size = arcSize,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
-            )
-            drawArc(
-                color = ringColor,
-                startAngle = -90f,
-                sweepAngle = 360f * (score.coerceIn(0, 100) / 100f),
-                useCenter = false,
-                topLeft = Offset(inset, inset),
-                size = arcSize,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
-            )
-        }
-        Text(
-            text = score.toString(),
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Xc.colors.text,
-        )
     }
 }
 

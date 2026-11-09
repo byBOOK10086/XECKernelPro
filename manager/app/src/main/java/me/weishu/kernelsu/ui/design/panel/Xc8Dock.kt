@@ -1,10 +1,7 @@
 package me.weishu.kernelsu.ui.design.panel
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -48,13 +45,16 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import android.content.Context
 import kotlinx.coroutines.launch
+import me.weishu.kernelsu.ui.design.motion.XcMotion
 import me.weishu.kernelsu.ui.design.token.Xc
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
@@ -79,6 +79,12 @@ fun Xc8Dock(
     superuserCount: Int = 0,
 ) {
     var consoleOpen by remember { mutableStateOf(false) }
+    // 轮盘上的「最近去过」：只记最后一个落点，不重排 —— 位置一旦会动，肌肉记忆就没了。
+    val context = LocalContext.current
+    val dockPrefs = remember {
+        context.getSharedPreferences("xec_dock", Context.MODE_PRIVATE)
+    }
+    var lastPage by remember { mutableIntStateOf(dockPrefs.getInt("last_page", -1)) }
     val rim = Xc.colors.glassRim
     val surface = Xc.colors.surface
     val accent = Xc.colors.accent
@@ -126,7 +132,7 @@ fun Xc8Dock(
         // 弹层在动，指下的这个圆是死的。
         val open by animateFloatAsState(
             targetValue = if (consoleOpen) 1f else 0f,
-            animationSpec = spring(dampingRatio = 0.58f, stiffness = Spring.StiffnessMediumLow),
+            animationSpec = XcMotion.reveal(Xc.colors.isDark),
             label = "console-open",
         )
         Box(
@@ -152,17 +158,26 @@ fun Xc8Dock(
         }
 
         // 超级用户 / 检测 / 设置：控制台改成**环绕弹层**（径向菜单），
-        // 不是又一个竖排列表 —— 三个入口从按钮上方呈扇形展开，手指不用移动太远。
+        // 不是又一个竖排列表 —— 入口从按钮上方呈扇形展开，手指不用移动太远。
+        //
+        // 2026-11-09：三格 → 五格，全部主页面都上轮。三格时代"检测"和"模块"得
+        // 先进底栏再加一步；现在五个页面都从圆心一次拖到位，底栏只保留最常用的
+        // 两席（模块/设备）。这是和 KernelSU「底栏五格」在结构上的分岔：常驻入口
+        // 只有两个，其余是**手势环**里的临时目标。
         if (consoleOpen) {
             Xc8RadialConsole(
                 onDismiss = { consoleOpen = false },
                 entries = listOf(
-                    RadialEntry(Icons.Rounded.Security, "超级用户", 1, superuserCount > 0),
-                    RadialEntry(Icons.Rounded.CheckCircleOutline, "XEC SCORE", 3, false),
-                    RadialEntry(Icons.Rounded.Settings, "设置", 4, false),
+                    RadialEntry(Icons.Rounded.Cottage, "设备", 0, lastPage == 0),
+                    RadialEntry(Icons.Rounded.Extension, "模块", 2, lastPage == 2),
+                    RadialEntry(Icons.Rounded.Security, "超级用户", 1, lastPage == 1),
+                    RadialEntry(Icons.Rounded.CheckCircleOutline, "检测", 3, lastPage == 3),
+                    RadialEntry(Icons.Rounded.Settings, "设置", 4, lastPage == 4),
                 ),
                 onPick = { page ->
                     consoleOpen = false
+                    lastPage = page
+                    dockPrefs.edit().putInt("last_page", page).apply()
                     onSelectPage(page)
                 },
             )
@@ -213,23 +228,25 @@ private fun Xc8RadialConsole(
     val muted = Xc.colors.textMuted
     val scrimBase = Xc.colors.text
 
-    // 几何：以底栏中心为圆心，向上呈 210° / 270° / 330° 三个方向展开。
-    val radiusDp = 118.dp
+    // 几何：以底栏中心为圆心，五格摊在 200°..340° 这条 140° 的扇面里
+    // （全部落在按钮**上方**；180°/360° 会让最外侧两格和按钮同高，贴着底栏）。
+    // 格数变化时步长自动算，将来加格子不用再改这里。
+    val radiusDp = 126.dp
+    val startDeg = 200.0
+    val stepDeg = if (entries.size > 1) 140.0 / (entries.size - 1) else 0.0
     val deadZoneDp = 46.dp
-    val reachDp = 190.dp
+    val reachDp = 196.dp
+    val dark = Xc.colors.isDark
 
     LaunchedEffect(Unit) {
-        reveal.animateTo(
-            targetValue = 1f,
-            animationSpec = spring(dampingRatio = 0.74f, stiffness = Spring.StiffnessMediumLow),
-        )
+        reveal.animateTo(targetValue = 1f, animationSpec = XcMotion.reveal(dark))
     }
 
     fun close(then: () -> Unit) {
         if (closing) return
         closing = true
         scope.launch {
-            reveal.animateTo(0f, tween(durationMillis = 150))
+            reveal.animateTo(0f, XcMotion.collapse())
             then()
         }
     }
@@ -267,7 +284,7 @@ private fun Xc8RadialConsole(
                 var best = -1
                 var bestDiff = Float.MAX_VALUE
                 entries.forEachIndexed { index, _ ->
-                    val target = Math.toRadians(210.0 + index * 60.0).toFloat()
+                    val target = Math.toRadians(startDeg + index * stepDeg).toFloat()
                     var diff = ang - target
                     while (diff > piF) diff -= twoPiF
                     while (diff < -piF) diff += twoPiF
@@ -316,7 +333,7 @@ private fun Xc8RadialConsole(
                     }
                     // ② 拖拽轨迹：圆心 -> 当前命中的那一格，末端点一个圆点。
                     if (hover in entries.indices) {
-                        val angle = Math.toRadians(210.0 + hover * 60.0)
+                        val angle = Math.toRadians(startDeg + hover * stepDeg)
                         val end = Offset(
                             pivotPx.x + (radiusPx * kotlin.math.cos(angle)).toFloat(),
                             pivotPx.y + (radiusPx * kotlin.math.sin(angle)).toFloat(),
@@ -342,7 +359,7 @@ private fun Xc8RadialConsole(
                     val span = (1f - 0.10f * (entries.size - 1)).coerceAtLeast(0.01f)
                     val t = ((reveal.value - start) / span).coerceIn(0f, 1f)
                     val eased = easeOutBack(t)
-                    val angle = Math.toRadians(210.0 + index * 60.0)
+                    val angle = Math.toRadians(startDeg + index * stepDeg)
                     val dx = (radiusDp.value * kotlin.math.cos(angle)).toFloat()
                     val dy = (radiusDp.value * kotlin.math.sin(angle)).toFloat()
                     val hovered = hover == index

@@ -36,12 +36,21 @@ fun Xc8Radar(
     values: List<Float>,
     modifier: Modifier = Modifier,
     size: Dp = 168.dp,
+    /**
+     * 入场进度 0..1（2026-11-09）：默认 1 表示"直接画满"，老调用点行为不变。
+     * 首页传一条 reveal 动画进来，形状就从圆心长出来 —— 冷启动第一帧不是
+     * "啪"地出现一个满图，而是先看到网格、再看到自己的分数长上去。
+     */
+    reveal: Float = 1f,
     centerContent: @Composable () -> Unit = {},
 ) {
-    val gridColor = Xc.colors.glassRim
-    val spokeColor = Xc.colors.glassRim
-    val fillColor = Xc.colors.accent.copy(alpha = if (Xc.colors.isDark) 0.30f else 0.18f)
-    val strokeColor = Xc.colors.accent
+    val progress = reveal.coerceIn(0f, 1f)
+    val gridColor = Xc.colors.glassRim.copy(alpha = 0.35f + 0.65f * progress)
+    val spokeColor = Xc.colors.glassRim.copy(alpha = 0.35f + 0.65f * progress)
+    val fillColor = Xc.colors.accent.copy(
+        alpha = (if (Xc.colors.isDark) 0.30f else 0.18f) * progress,
+    )
+    val strokeColor = Xc.colors.accent.copy(alpha = progress)
     val safe = values.takeIf { it.size >= 3 } ?: listOf(0f, 0f, 0f)
 
     Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
@@ -50,7 +59,10 @@ fun Xc8Radar(
             val cy = this.size.height / 2f
             val radius = minOf(cx, cy) - 6.dp.toPx()
             drawRadarGrid(cx, cy, radius, safe.size, gridColor)
-            drawRadarShape(cx, cy, radius, safe, fillColor, strokeColor)
+            // 形状按 reveal 缩放整条半径：从圆心长出去。
+            // 不能去乘 values —— drawRadarShape 对每个轴有 18% 保底，乘了之后
+            // 进场第一帧会是一圈"18% 的小多边形"而不是空。
+            drawRadarShape(cx, cy, radius * progress, safe, fillColor, strokeColor)
         }
         centerContent()
     }
