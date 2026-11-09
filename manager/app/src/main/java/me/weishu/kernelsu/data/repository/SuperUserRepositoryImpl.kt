@@ -124,6 +124,12 @@ class SuperUserRepositoryImpl : SuperUserRepository {
     private suspend inline fun connectKsuService(
         crossinline onDisconnect: () -> Unit = {}
     ): Pair<IBinder, ServiceConnection> = withContext(Dispatchers.Main) {
+        // 必须等一条**真的 root** shell：主线程上取到的是"还没探到 root"时的轻量
+        // 兜底 `sh`，拿那条非 root 壳去 exec 绑定任务，RootService 永远连不上
+        // （onServiceConnected 不回调），getPackages() 拿不到包 —— 超级用户列表
+        // 就一条应用都刷不出来（真机实测：进程表里根本没有 `:root` 子进程）。
+        // 这一步是挂起的，所以只能放在 suspendCancellableCoroutine **外面**。
+        val shell = awaitRootShell()
         suspendCancellableCoroutine { cont ->
             val connection = object : ServiceConnection {
                 override fun onServiceDisconnected(name: ComponentName?) {
@@ -154,11 +160,6 @@ class SuperUserRepositoryImpl : SuperUserRepository {
                 Shell.EXECUTOR,
                 connection,
             )
-            // 必须等一条**真的 root** shell：这段代码跑在 Dispatchers.Main 上，
-            // 主线程取到的是"还没探到 root"时的轻量兜底 sh。拿那条非 root 壳去
-            // exec 绑定任务，RootService 永远连不上（onServiceConnected 不回调），
-            // 于是 getPackages() 拿不到任何包 —— 超级用户列表就一条应用都刷不出来。
-            val shell = awaitRootShell()
             task?.let { shell.execTask(it) }
         }
     }
