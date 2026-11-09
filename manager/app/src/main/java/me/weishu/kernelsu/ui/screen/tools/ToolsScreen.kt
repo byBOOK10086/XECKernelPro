@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Key
@@ -46,8 +47,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.privilege.SuperkeyStore
+import me.weishu.kernelsu.ui.LocalMainPagerState
 import me.weishu.kernelsu.ui.component.dialog.XDialog
 import me.weishu.kernelsu.ui.component.dialog.XDialogTitle
 import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
@@ -61,6 +65,7 @@ import me.weishu.kernelsu.ui.navigation3.Route
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.util.BlurredBar
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
+import me.weishu.kernelsu.ui.viewmodel.HomeViewModel
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
@@ -79,11 +84,20 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 @Composable
 fun ToolsScreen() {
     val navigator = LocalNavigator.current
+    val mainPager = LocalMainPagerState.current
     val enableBlur = LocalEnableBlur.current
     val backdrop = rememberBlurBackdrop(enableBlur)
     val blurActive = backdrop != null
     val barColor = if (blurActive) Color.Transparent else colorScheme.surface
     val scrollBehavior = MiuixScrollBehavior()
+
+    // XEC SCORE 从首页搬到这里（2026-11-09）：数据仍然只有一个来源 —— HomeViewModel
+    // 与 `ui/screen/home/XecScore.kt`，工具箱不另造评分逻辑。
+    // 进页面刷一次：工具箱可能先于首页被打开（从设置直达、或进程恢复直接落在这一页），
+    // 那样 ViewModel 还是初始态，不刷就会显示"未安装 / 0 分"。
+    val homeViewModel = viewModel<HomeViewModel>()
+    val homeState by homeViewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { homeViewModel.refresh() }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -127,6 +141,22 @@ fun ToolsScreen() {
                     modifier = Modifier.padding(top = 12.dp, bottom = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    // 结论先于工具：评分是"该修哪一项"的诊断入口，点开跳去检测页看九项明细。
+                    XecScoreCard(state = homeState) {
+                        navigator.pop()
+                        mainPager.animateToPage(3)
+                    }
+                    // 提权入口（原首页未激活态那块）。放在工具箱里恒显示：
+                    // 它不只是"没 root 时的补救"，也是 root 掉了之后重跑 late-load 的入口。
+                    Xc8Panel {
+                        Xc8Row(
+                            title = stringResource(R.string.privilege_title),
+                            subtitle = stringResource(R.string.privilege_entry_subtitle),
+                            leading = Icons.Rounded.Bolt,
+                            onClick = { navigator.push(Route.Privilege(updateMode = false)) },
+                            trailing = { Xc8Chevron() },
+                        )
+                    }
                     ToolCard(
                         title = stringResource(id = R.string.tools_terminal_title),
                         summary = stringResource(id = R.string.tools_terminal_summary),

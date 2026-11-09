@@ -32,8 +32,6 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.VolunteerActivism
-import androidx.compose.material.icons.rounded.Bolt
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -214,29 +212,13 @@ fun HomePagerMiuix(
                             WarningCard(stringResource(id = R.string.home_daemon_missing), block = warningBlock)
                         }
 
-                        // 2026-11-08：结论先于细节。仪表台把评分与三个关键指标提到最上面，
-                        // 整块可点进入 XEC SCORE 的九项明细（原版是"版本卡 + 一串信息行"）。
-                        HomeDashboard(state = state)
-
+                        // 2026-11-09：XEC SCORE 与「提权」搬进工具箱（Route.Tools）。
+                        // 首页只回答"我现在能不能用"；评分是诊断、提权是修复动作，都属于工具。
                         HomeModeCard(
                             state = state,
                             actions = actions,
                             block = rememberXcBlock(XcBlocks.HOME_STATUS),
                         )
-
-                        // 未激活态：把「提权」单独抬成一块，而不是混进常用操作 ——
-                        // 这时它是用户唯一能推进的动作，和"刷新"并列会被淹掉。
-                        if (state.ksuVersion == null && !state.isMountState) {
-                            Xc8Panel(block = rememberXcBlock(XcBlocks.HOME_PRIVILEGE)) {
-                                Xc8Row(
-                                    title = stringResource(R.string.privilege_title),
-                                    subtitle = stringResource(R.string.privilege_entry_subtitle),
-                                    leading = Icons.Rounded.Bolt,
-                                    onClick = actions.onPrivilegeClick,
-                                    trailing = { Xc8Chevron() },
-                                )
-                            }
-                        }
 
                         Xc8SectionLabel(text = stringResource(R.string.home8_section_info))
                         SystemInfoPanel(state = state, block = rememberXcBlock(XcBlocks.HOME_INFO))
@@ -248,8 +230,6 @@ fun HomePagerMiuix(
                             rootGrantCount = rootGrantCount,
                             actions = actions,
                         )
-                        Xc8SectionLabel(text = stringResource(R.string.home8_section_actions))
-                        ActionsPanel(actions = actions)
                         Xc8SectionLabel(text = stringResource(R.string.home8_section_support))
                         SupportPanel(
                             actions = actions,
@@ -500,34 +480,6 @@ private fun OverviewPanel(
     }
 }
 
-/** 常用操作：安装/更新内核、管理 Root、刷新，三条都能直接落到具体页面。 */
-@Composable
-private fun ActionsPanel(
-    actions: HomeActions,
-) {
-    Xc8Panel {
-        Xc8Row(
-            title = stringResource(R.string.home8_install_kernel),
-            subtitle = stringResource(R.string.home8_install_kernel_sub),
-            onClick = actions.onInstallClick,
-            trailing = { Xc8Chevron() },
-        )
-        Xc8Row(
-            title = stringResource(R.string.home8_manage_root),
-            subtitle = stringResource(R.string.home8_manage_root_sub),
-            onClick = actions.onOpenSuperuser,
-            trailing = { Xc8Chevron() },
-        )
-        Xc8Row(
-            title = stringResource(R.string.home8_refresh),
-            subtitle = stringResource(R.string.home8_refresh_sub),
-            leading = Icons.Rounded.Refresh,
-            onClick = actions.onRefresh,
-            trailing = { Xc8Chevron() },
-        )
-    }
-}
-
 /** 支持与关于。 */
 @Composable
 private fun SupportPanel(
@@ -617,8 +569,6 @@ private fun HomeScreenPreviewContent(
             SecurityPanel(state = state)
             Xc8SectionLabel(text = stringResource(R.string.home8_section_overview))
             OverviewPanel(state = state, rootGrantCount = 0, actions = actions)
-            Xc8SectionLabel(text = stringResource(R.string.home8_section_actions))
-            ActionsPanel(actions = actions)
         }
     }
 }

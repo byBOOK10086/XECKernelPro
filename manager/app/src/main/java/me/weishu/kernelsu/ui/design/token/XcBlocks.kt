@@ -28,7 +28,13 @@ object XcBlocks {
     /** 首页 · 告警卡（所有 `WarningCard` 共用这一块）。 */
     const val HOME_WARNING = "home.warning"
 
-    /** 首页 · 提权入口卡（`PrivilegeEntryCard`）。 */
+    /**
+     * 首页 · 提权入口卡。
+     *
+     * 2026-11-09：提权入口搬进工具箱，工具箱那一行不再单独接受区块背景（它和终端/
+     * 安全锁同属一组工具，不需要逐行换背景）。令牌本身保留：已保存的主题里可能存着
+     * 这个 id，删掉常量会让那些主题在解析时多一条"未知区块"，留着无害。
+     */
     const val HOME_PRIVILEGE = "home.privilege"
 
     /** 首页 · 支持链接卡（`SupportLinks`）。 */
@@ -37,12 +43,16 @@ object XcBlocks {
     /** 首页 · 设备信息卡（`InfoCard`）。 */
     const val HOME_INFO = "home.info"
 
-    /** 首页六张卡片，按界面上的先后顺序。编辑器按这个顺序列行。 */
+    /**
+     * 首页六张卡片，按界面上的先后顺序。编辑器按这个顺序列行。
+     *
+     * 2026-11-09：`HOME_PRIVILEGE` 已从列表移除 —— 提权入口搬去了工具箱，首页不再
+     * 渲染这块卡片；继续列出来只会是一个调了没有任何效果的开关。
+     */
     val HOME_ALL: List<String> = listOf(
         HOME_UPDATE,
         HOME_WARNING,
         HOME_STATUS,
-        HOME_PRIVILEGE,
         HOME_INFO,
         HOME_SUPPORT,
     )
