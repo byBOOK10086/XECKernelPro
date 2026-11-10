@@ -48,6 +48,37 @@ fi
 
 _log "INFO" "Property spoofing complete: $_PROP_SPOOF_COUNT spoofed, $_PROP_FAIL_COUNT failed"
 
+# ---------------------------------------------------------------------------
+# 自定义属性（上游 v5.53.x 把执行路径删了，只剩 `config props-custom` 能读出来）
+# ---------------------------------------------------------------------------
+# 用户以前在 WebUI 里存的 `props.custom_props` 仍然被序列化在 config.toml 里，但新版
+# 上游只提供"打印"（`name<TAB>value`），没有任何代码去 apply。这里在 shell 侧补回来，
+# 并且**限定前缀**：只放行 ro./persist./sys.，避免有人借它写 `service.adb.root` 之类
+# 会把机器交出去的东西。
+_custom_props=$("$BIN" config props-custom 2>/dev/null)
+if [ -n "$_custom_props" ]; then
+    _tab=$(printf '\t')
+    _custom_ok=0
+    _custom_skip=0
+    while IFS="$_tab" read -r _cn _cv; do
+        [ -n "$_cn" ] || continue
+        case "$_cn" in
+            ro.*|persist.*|sys.*) ;;
+            *)
+                _custom_skip=$((_custom_skip + 1))
+                _log "WARN" "custom_props: 前缀不在白名单，已忽略：$_cn"
+                continue
+                ;;
+        esac
+        [ -n "$_cv" ] || continue
+        check_reset_prop "$_cn" "$_cv"
+        _custom_ok=$((_custom_ok + 1))
+    done <<XEC_CUSTOM_PROPS
+$_custom_props
+XEC_CUSTOM_PROPS
+    _log "INFO" "custom_props: 应用 $_custom_ok 项，忽略 $_custom_skip 项"
+fi
+
 # 收尾：两遍校验 + 真实启动状态取证（/proc/cmdline、/proc/bootconfig）
 bootstate_verify
 bootstate_leak_report

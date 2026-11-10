@@ -149,6 +149,11 @@ fi
 # module scripts without requiring module.prop, but Magisk treats a module
 # dir without one as invalid and would stop running this script entirely.
 cp -f "$MODPATH/module.prop" "/data/adb/.xudc_secure/ta-enhanced/module.prop" 2>/dev/null || true
+# 上游有多处（版本显示 / status 上报 / WebUI 元数据）读的是
+# `/data/adb/tricky_store/ta-enhanced/module.prop`，和我们的备份目录不是同一个路径；
+# 不补这一份，界面上版本号只能落到 crate 版本，状态任务也拿不到元数据。
+mkdir -p "/data/adb/tricky_store/ta-enhanced" 2>/dev/null || true
+cp -f "$MODPATH/module.prop" "/data/adb/tricky_store/ta-enhanced/module.prop" 2>/dev/null || true
 if [ "$MANAGER" != "MAGISK" ]; then
     rm -f "$MODPATH/module.prop"
 fi

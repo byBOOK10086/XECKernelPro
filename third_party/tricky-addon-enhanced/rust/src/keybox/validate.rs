@@ -337,6 +337,16 @@ fn check_key(
     report.not_before = leaf.validity().not_before.to_string();
     report.not_after = leaf.validity().not_after.to_string();
     report.validity_ok = check_validity(leaf, &mut report.errors);
+    // XECKernel Pro 本地新增：链上其余证书的有效期也要验（见 within_validity 注释）。
+    for (idx, cert) in certs.iter().enumerate().skip(1) {
+        if !within_validity(cert) {
+            report.validity_ok = false;
+            report.errors.push(format!(
+                "certificate #{} is outside its validity window",
+                idx + 1
+            ));
+        }
+    }
 
     if certs.len() < 2 {
         report
@@ -390,6 +400,24 @@ fn check_validity(leaf: &X509Certificate<'_>, errors: &mut Vec<String>) -> bool 
     }
     let now = ASN1Time::now();
     let v = leaf.validity();
+    v.not_before <= now && now <= v.not_after
+}
+
+/// 只回答"现在是否在有效期内"，不写错误（给链上其余证书用，预 NTP 时一律 true）。
+///
+/// XECKernel Pro 本地新增（2026-11-10）：上游只验**叶子**证书的有效期，
+/// `verify_chain` 又只比签名和 issuer/subject ⇒ 一份"签名链完整、但中间证书或根证书
+/// 已经过期"的箱子会被判 `validity_ok = true`。这里把链上其余证书也验一遍。
+fn within_validity(cert: &X509Certificate<'_>) -> bool {
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if now_secs < PRE_NTP_EPOCH_SECS {
+        return true;
+    }
+    let now = ASN1Time::now();
+    let v = cert.validity();
     v.not_before <= now && now <= v.not_after
 }
 

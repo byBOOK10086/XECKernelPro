@@ -1,6 +1,6 @@
 id=tricky_store
 name=系统密钥组件
-version=v6.0.0-162
-versionCode=162
+version=v6.0.1-307
+versionCode=307
 author=JingMatrix, Enginex0
 description=为受支持的设备提供密钥证明链的本机组件

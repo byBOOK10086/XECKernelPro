@@ -230,10 +230,40 @@ kb_remember_working() {
     printf '%s\n' "$1" > "$KB_WORKING" 2>/dev/null
 }
 
+# 用 daemon 的完整密码学校验当最后一道闸（v5.51+ 的 `keybox validate`）。
+#
+# 只拦"密码学上就是坏的"两种：链签名通不过（`chain_valid: false`）、私钥与叶子
+# 证书不匹配（`key_match: "mismatched"`）。**不改信任策略**：未知根（自签、第三方源）
+# 仍然按本脚本的级别/代次规则处理 —— 那是策略问题，不是密码学问题，混在一起会让
+# "用户自己贴的箱子"永远装不进去。
+#
+# daemon 二进制不存在时直接放行：那时连校验器都没有，硬拦等于让模块彻底不能用。
+kb_vendor_verify() {
+    local _f="$1" _out
+    [ -s "$_f" ] || return 1
+    [ -n "$BIN" ] && [ -x "$BIN" ] || return 0
+    _out=$("$BIN" keybox validate "$_f" 2>&1)
+    case "$_out" in
+        *'"chain_valid": false'*)
+            _log "WARN" "keybox: daemon 校验链签名失败（chain_valid=false）——丢弃候选"
+            return 1
+            ;;
+        *'"key_match": "mismatched"'*)
+            _log "WARN" "keybox: daemon 校验私钥与证书不匹配（key_match=mismatched）——丢弃候选"
+            return 1
+            ;;
+    esac
+    return 0
+}
+
 # 安装候选：原子替换 + 644 + 备份 + 维护可信/最后可用副本 + 同步兼容副本。
 kb_install() {
     local _src="$1" _label="$2" _tmp _lvl
     [ -s "$_src" ] || return 1
+    if ! kb_vendor_verify "$_src"; then
+        _log "WARN" "keybox: $_label 未通过 daemon 密码学校验，拒绝安装"
+        return 1
+    fi
     mkdir -p "$KB_DIR" "$KB_STATE" 2>/dev/null
     _tmp="$KB_DIR/.keybox.tmp.$$"
     rm -f "$_tmp"

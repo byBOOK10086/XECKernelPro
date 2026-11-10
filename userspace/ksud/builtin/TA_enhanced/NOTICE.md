@@ -98,6 +98,31 @@ vbhash 提取功能由源码构建的 ta-enhanced 守护进程（`rust/src/vbhas
   不依赖跨进程传递的标记）；`bootstate_verify` 相应改为"窗口未关则推迟"，
   `post-fs-data.sh` 的计数行打印 `DEFERRED (ZeroMount mount window)`。
 
+- **2026-11-10（构建指纹伪装 + 补丁刷新节奏）**：
+  1. **新增** `pif.sh`（本仓库原创文件，不是上游文件）：读 `/data/adb/.xudc_secure/pif/`
+     下的白名单属性表并在开机早期用 `resetprop` 写回，做 Play Integrity 需要的
+     "整机身份自洽"那一半。脚本**不解析 JSON**（设备上没有 jq，sed 解析 JSON 出错会
+     静默写坏全局属性），来源选择与 JSON 解析都在管理器里（`PifConfig.kt`，org.json），
+     脚本只做白名单校验（只放行身份字段，`security_patch` 一律不碰，交给守护进程
+     每 2 小时刷一次，避免两个写入方互相覆盖）。
+  2. `post-fs-data.sh` 在锁态写入之后立刻应用一次指纹（早于 GMS 读属性）；
+     `service.sh` 在 `sys.boot_completed` 之后补写第二遍（MIUI/HyperOS 会重算 identity），
+     并在开机时把 `security_patch.auto_update` / `security_patch.interval=7200` 强制对齐。
+  3. `service.sh` 额外把 staged 的 `resetprop-rs` 同步到
+     `/data/adb/tricky_store/ta-enhanced/bin/`：v5.53.1 起 daemon 写属性改成 exec 这个
+     **固定路径**（`rust/src/platform/props.rs` 的 `RP_PATH`），与我们自己的 staging
+     目录不同，不补这份会让 region/补丁属性写入全部失败。
+  4. `common/keybox.sh` 新增 `kb_vendor_verify()`：安装前用 daemon 的完整密码学校验
+     （v5.51+ `keybox validate`）挡掉两类**密码学上就是坏的**候选（`chain_valid=false`、
+     `key_match=mismatched`）。**不改信任策略** —— 未知根/自签仍走本脚本的级别与代次
+     规则；daemon 二进制缺失时直接放行（那时没有校验器，硬拦等于让模块不可用）。
+  5. `prop.sh` 补回自定义属性的执行：上游 v5.53.x 删掉了 `props.custom_props` 的 apply
+     路径（只剩 `config props-custom` 打印 `name<TAB>value`），这里在 shell 侧按
+     `ro./persist./sys.` 白名单前缀重新应用，其余前缀记 WARN 并忽略。
+  6. `service.sh` 把 `module.prop` 同时复制到 `/data/adb/tricky_store/ta-enhanced/`：
+     上游的版本显示 / status 上报 / WebUI 元数据读的是这个路径，只放我们自己的备份目录
+     会让版本号落到 crate 版本、状态任务拿不到元数据。
+
 许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
 一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。
 
