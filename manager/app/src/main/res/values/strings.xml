@@ -1139,6 +1139,18 @@ See the log below for details.</string>
     <string name="home_stat_kernel">Kernel</string>
     <string name="home_stat_manager">Manager</string>
     <string name="home_stat_superuser">Superuser</string>
+    <string name="home_stat_module_total">Modules</string>
+    <string name="home_stat_module_enabled">Enabled</string>
+    <!-- Customizable home data panel -->
+    <string name="home_stat_edit_title">Customize data panel</string>
+    <string name="home_stat_edit_slot">Position %1$d</string>
+    <string name="home_stat_edit_pick">Pick an item for the selected position</string>
+    <string name="home_stat_edit_used">In use</string>
+    <string name="home_stat_edit_reset">Restore defaults</string>
+    <string name="home_stat_edit_done">Done</string>
+    <string name="home_stat_edit_move_left">Move left</string>
+    <string name="home_stat_edit_move_right">Move right</string>
+    <string name="home_stat_edit_hint">Long-press the data panel to customize it</string>
     <string name="home_hero_ready">ROOT READY</string>
     <string name="home_hero_idle">ROOT NOT READY</string>
     <string name="home_hero_running">Kernel running</string>

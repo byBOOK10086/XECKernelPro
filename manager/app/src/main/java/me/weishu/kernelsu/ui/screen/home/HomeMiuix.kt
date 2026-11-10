@@ -1,11 +1,14 @@
 package me.weishu.kernelsu.ui.screen.home
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,6 +47,7 @@ import androidx.compose.material.icons.rounded.VolunteerActivism
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -53,12 +57,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.Natives
@@ -81,6 +90,7 @@ import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.design.token.XcBlockBackground
 import me.weishu.kernelsu.ui.design.token.XcBlocks
 import me.weishu.kernelsu.ui.util.getSuperuserCount
+import me.weishu.kernelsu.ui.viewmodel.ModuleViewModel
 import me.weishu.kernelsu.ui.util.module.LatestVersionInfo
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.PullToRefresh
@@ -122,6 +132,18 @@ fun HomePagerMiuix(
             withContext(Dispatchers.IO) { runCatching { getSuperuserCount() }.getOrDefault(0) }
         }
     }
+
+    // 2026-11-11 第三轮：数据面板变成用户自选，需要「模块总数 / 启用模块数」这两项。
+    // 它们不在 HomeUiState 里 —— 模块列表属于 ModuleViewModel，而 MainScreen 启动时
+    // 已经预载过一遍（MainActivity.kt:614-620）。这里复用**同一个** ViewModel 实例
+    // （同一 NavEntry 的 ViewModelStore），所以既不起新 shell，也不会出现两份计数。
+    // hasLoaded 之前一律当"未知"，不能当 0。
+    val moduleViewModel = viewModel<ModuleViewModel>()
+    val moduleState by moduleViewModel.uiState.collectAsStateWithLifecycle()
+    val moduleTotal = if (moduleState.hasLoaded) moduleState.modules.size else null
+    val moduleEnabled = if (moduleState.hasLoaded) moduleState.modules.count { it.enabled } else null
+
+    var showStatEditor by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -200,7 +222,15 @@ fun HomePagerMiuix(
 
                     HomeHero(state = state, onInstall = actions.onInstallClick)
 
-                    HomeStats(state = state, rootGrantCount = rootGrantCount)
+                    HomeStats(
+                        inputs = HomeStatInputs(
+                            state = state,
+                            rootGrantCount = rootGrantCount,
+                            moduleTotal = moduleTotal,
+                            moduleEnabled = moduleEnabled,
+                        ),
+                        onEdit = { showStatEditor = true },
+                    )
 
                     if (state.checkUpdateEnabled) {
                         UpdateCard(state = state, actions = actions)
@@ -232,6 +262,11 @@ fun HomePagerMiuix(
             }
         }
         }
+    }
+
+    // 编辑页挂在 Scaffold 之外：它是一个独立的 Dialog 窗口，和滚动区域无关。
+    if (showStatEditor) {
+        HomeStatEditorDialog(onDismissRequest = { showStatEditor = false })
     }
 }
 
@@ -321,12 +356,9 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
         running -> stringResource(R.string.home_hero_kernel_mode)
         else -> stringResource(R.string.home_not_installed)
     }
-    val selinuxText = when (state.systemInfo.selinuxStatus) {
-        "Enforcing" -> stringResource(R.string.selinux_status_enforcing)
-        "Permissive" -> stringResource(R.string.selinux_status_permissive)
-        "Disabled" -> stringResource(R.string.selinux_status_disabled)
-        else -> stringResource(R.string.selinux_status_unknown)
-    }
+    // 文案统一走 HomeStatItem.kt 里的 selinuxLabel()：设备表 / 安全面板 / 数据面板
+    // 三处曾经各抄一份 when，删一处就会漏一处。
+    val selinuxText = selinuxLabel(state.systemInfo.selinuxStatus)
     // 副标题：可安装这一档换成一句完整的话；其它档沿用「模式 · SELinux」。
     val subtitle = when {
         canInstall -> stringResource(R.string.home_hero_ready_subtitle)
@@ -401,37 +433,38 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
     }
 }
 
-/** 三格数据：内核 / 管理器 / 超级用户，上下发丝线夹住，数值在下、标签更小。 */
+/**
+ * 三格数据面板（第三轮：可自定义）。
+ *
+ * 结构上仍是「上下两条发丝线夹出的三格」——设计要求明确保留三列布局、不要给每格
+ * 单独加卡片。变的是**每格里放什么**：读 [HomeStatStore]，用户可以自选 8 项里的 3 项。
+ *
+ * 编辑入口只有**长按整块面板**一处：设计要求「不要让正常浏览首页时出现过多编辑按钮」，
+ * 所以这里不画图标、不画「编辑」字样。长按给了震动反馈，否则手势没有任何回执。
+ */
 @Composable
-private fun HomeStats(state: HomeUiState, rootGrantCount: Int) {
+private fun HomeStats(inputs: HomeStatInputs, onEdit: () -> Unit) {
     val line = Xc.colors.glassRim
+    val slots by HomeStatStore.slots.collectAsState()
+    val haptic = LocalHapticFeedback.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 17.dp),
+            .padding(vertical = 17.dp)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onLongPress = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onEdit()
+                    },
+                )
+            },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        StatCell(
-            value = if (state.kernelVersion.major >= 0) {
-                "${state.kernelVersion.major}.${state.kernelVersion.patchLevel}"
-            } else {
-                "—"
-            },
-            label = stringResource(R.string.home_stat_kernel),
-            modifier = Modifier.weight(1f),
-        )
-        StatDivider(line)
-        StatCell(
-            value = state.currentManagerVersionCode.toString(),
-            label = stringResource(R.string.home_stat_manager),
-            modifier = Modifier.weight(1f),
-        )
-        StatDivider(line)
-        StatCell(
-            value = rootGrantCount.toString(),
-            label = stringResource(R.string.home_stat_superuser),
-            modifier = Modifier.weight(1f),
-        )
+        slots.forEachIndexed { index, item ->
+            if (index > 0) StatDivider(line)
+            StatCell(item = item, inputs = inputs, modifier = Modifier.weight(1f))
+        }
     }
     Box(
         modifier = Modifier
@@ -441,20 +474,43 @@ private fun HomeStats(state: HomeUiState, rootGrantCount: Int) {
     )
 }
 
+/**
+ * 一个格子。
+ *
+ * 值变化走 [Crossfade]（设计要求「数据项替换时采用轻微淡出和淡入」），外层固定
+ * 30dp 高：数字（24sp）和文字（15sp）换档时行高不同，不固定的话整块面板会抖一下。
+ *
+ * 文字类项目（SELinux / SUSFS / Seccomp）不能用 24sp —— 「不适用」这种词在 24sp 下
+ * 三格必然被截断。所以按 [HomeStatValue.numeric] 分两档，这本身也是一种截断策略。
+ */
 @Composable
-private fun StatCell(value: String, label: String, modifier: Modifier = Modifier) {
+private fun StatCell(item: HomeStatItem, inputs: HomeStatInputs, modifier: Modifier = Modifier) {
+    val value = item.value(inputs)
+    val label = stringResource(item.label)
     Column(modifier = modifier.padding(start = 2.dp)) {
-        Text(
-            text = value,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Xc.colors.text,
-        )
+        Box(
+            modifier = Modifier.height(30.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Crossfade(targetState = value, animationSpec = tween(200), label = "statCellValue") { shown ->
+                Text(
+                    text = shown.text,
+                    fontSize = if (shown.numeric) 24.sp else 15.sp,
+                    lineHeight = if (shown.numeric) 30.sp else 22.sp,
+                    fontWeight = if (shown.numeric) FontWeight.SemiBold else FontWeight.Medium,
+                    color = Xc.colors.text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         Spacer(Modifier.height(6.dp))
         Text(
             text = label,
             fontSize = 13.sp,
             color = Xc.colors.textMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -473,12 +529,6 @@ private fun StatDivider(line: Color) {
 /** 设备表：标签在左、真值在右；刷新入口挂在分组标题上（删掉「常用操作」后的手动入口）。 */
 @Composable
 private fun DeviceSection(state: HomeUiState, onRefresh: () -> Unit) {
-    val selinuxText = when (state.systemInfo.selinuxStatus) {
-        "Enforcing" -> stringResource(R.string.selinux_status_enforcing)
-        "Permissive" -> stringResource(R.string.selinux_status_permissive)
-        "Disabled" -> stringResource(R.string.selinux_status_disabled)
-        else -> stringResource(R.string.selinux_status_unknown)
-    }
     Xc8SectionLabel(
         text = stringResource(R.string.home_section_device),
         modifier = Modifier.padding(top = 22.dp),
@@ -517,18 +567,10 @@ private fun DeviceSection(state: HomeUiState, onRefresh: () -> Unit) {
             leading = Icons.Rounded.Smartphone,
             trailing = { Xc8Value(state.systemInfo.deviceModel) },
         )
-        Xc8Row(
-            title = stringResource(R.string.home_selinux_status),
-            leading = Icons.Rounded.Security,
-            trailing = {
-                Xc8Tag(
-                    text = selinuxText,
-                    tone = if (state.isSELinuxPermissive) Xc8Tone.Warning else Xc8Tone.Success,
-                )
-            },
-        )
-        // 2026-11-11 用户要求：删掉「管理器版本」这一行，设备表只留
-        // 内核版本 / 设备型号 / SELinux 状态。
+        // 2026-11-11 第二轮：删掉「管理器版本」这一行。
+        // 2026-11-11 第三轮：再删掉 SELinux 这一行 —— 它在下面的「安全状态」里已经有一条，
+        // 同一屏出现两次是设计要求点名的重复。设备区只留 内核版本 / 设备型号。
+        // （数据源没动：SELinux 仍然在 systemInfo 里，只是不再在这里画。）
     }
 }
 
@@ -614,19 +656,10 @@ private fun UpdateCard(
 /** 安全状态：SELinux / SUSFS / Seccomp / 启动状态，异常档直接给标签。 */
 @Composable
 private fun SecurityPanel(state: HomeUiState) {
-    val selinuxText = when (state.systemInfo.selinuxStatus) {
-        "Enforcing" -> stringResource(R.string.selinux_status_enforcing)
-        "Permissive" -> stringResource(R.string.selinux_status_permissive)
-        "Disabled" -> stringResource(R.string.selinux_status_disabled)
-        else -> stringResource(R.string.selinux_status_unknown)
-    }
-    val seccompText = when (state.systemInfo.seccompStatus) {
-        -1 -> stringResource(R.string.seccomp_status_not_supported)
-        0 -> stringResource(R.string.seccomp_status_disabled)
-        1 -> stringResource(R.string.seccomp_status_strict)
-        2 -> stringResource(R.string.seccomp_status_filter)
-        else -> stringResource(R.string.seccomp_status_unknown)
-    }
+    // 文案统一走 HomeStatItem.kt 里的 selinuxLabel()：设备表 / 安全面板 / 数据面板
+    // 三处曾经各抄一份 when，删一处就会漏一处。
+    val selinuxText = selinuxLabel(state.systemInfo.selinuxStatus)
+    val seccompText = seccompLabel(state.systemInfo.seccompStatus)
     // SUSFS 行：null = 探测不到（无 root / shell 失败）→ 整行隐藏；
     // "unsupport" = 内核没打 SUSFS 补丁，明确告知用户而不是静默。
     val susfsVersion = state.susfsVersion
@@ -637,7 +670,13 @@ private fun SecurityPanel(state: HomeUiState) {
             trailing = {
                 Xc8Tag(
                     text = selinuxText,
-                    tone = if (state.isSELinuxPermissive) Xc8Tone.Warning else Xc8Tone.Success,
+                    // "Unknown"（getenforce 失败或被拒）以前落到 else → Success，也就是画成
+                    // 一片绿 —— 那是把"没问到"当成"正常"。三态各自给色。
+                    tone = when (state.systemInfo.selinuxStatus) {
+                        "Enforcing" -> Xc8Tone.Success
+                        "Permissive" -> Xc8Tone.Warning
+                        else -> Xc8Tone.Neutral
+                    },
                 )
             },
         )

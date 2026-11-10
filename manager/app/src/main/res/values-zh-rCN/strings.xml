@@ -1141,6 +1141,18 @@ XEC 项目组
     <string name="home_stat_kernel">内核</string>
     <string name="home_stat_manager">管理器</string>
     <string name="home_stat_superuser">超级用户</string>
+    <string name="home_stat_module_total">模块总数</string>
+    <string name="home_stat_module_enabled">启用模块</string>
+    <!-- 首页可自定义数据面板 -->
+    <string name="home_stat_edit_title">自定义数据面板</string>
+    <string name="home_stat_edit_slot">位置 %1$d</string>
+    <string name="home_stat_edit_pick">选择要放入所选位置的项目</string>
+    <string name="home_stat_edit_used">已占用</string>
+    <string name="home_stat_edit_reset">恢复默认</string>
+    <string name="home_stat_edit_done">完成</string>
+    <string name="home_stat_edit_move_left">左移</string>
+    <string name="home_stat_edit_move_right">右移</string>
+    <string name="home_stat_edit_hint">长按数据面板可自定义</string>
     <string name="home_hero_ready">ROOT 已就绪</string>
     <string name="home_hero_idle">ROOT 未就绪</string>
     <string name="home_hero_running">内核正常运行</string>
