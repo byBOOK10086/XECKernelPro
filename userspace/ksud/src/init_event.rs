@@ -266,6 +266,25 @@ fn mount_modules_magic_fallback() -> Result<()> {
 pub fn run_stage(stage: &str, wait: ScriptWait) {
     utils::umask(0);
 
+    // 「重启后强制自启」：用户点过强制修复就等于明确说了"我要引擎起来"。这个开关
+    // 打开时，即使下面的闸门会让整个 stage 让位（Magisk 残留 / 安全模式），也要把
+    // **内置 TEE 引擎**按同一套步骤拉起来 —— 引擎是纯用户态 ptrace 注入，不是内核
+    // 模块，不属于"安全模式里不许加载模块"那条禁令。
+    if stage == "service"
+        && crate::builtin::force_boot_enabled()
+        && (utils::has_magisk_installed() || utils::is_safe_mode())
+    {
+        warn!("force-boot flag set: starting the bundled TEE engine despite the boot gates");
+        match crate::builtin::start_tee_engine(false) {
+            Ok(report) => info!(
+                "forced engine start: pid={} injected={}",
+                report.engine_pid, report.injected
+            ),
+            Err(error) => warn!("forced engine start failed: {error:#}"),
+        }
+        return;
+    }
+
     if crate::utils::is_safe_mode() {
         warn!("safe mode, skip {stage} scripts");
         return;

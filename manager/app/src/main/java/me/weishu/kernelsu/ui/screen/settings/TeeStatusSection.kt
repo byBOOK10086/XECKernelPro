@@ -327,8 +327,9 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
                             "**不会**动你的密钥库、不写 TEE、也不删你的模块。注意引擎自己的 " +
                             "`service.sh` 开机时本来就会按 baseline 合并/对账 `target.txt`" +
                             "（只增不删）并可能拉一次 keybox，这里跑的是同一段脚本。\n\n" +
-                            "注意：这条路径绕开了开机的四道闸门（Magisk 残留 / 安全模式 / boot 事务 / " +
-                            "UAPI 不匹配），所以**重启后要再点一次**，或者把闸门清掉。",
+                            "重启后：这条路径绕开了开机的四道闸门（Magisk 残留 / 安全模式 / boot 事务 / " +
+                            "UAPI），所以**旧内核重启后要再点一次**；「重启后强制自启」的开关会预先写好，" +
+                            "刷入带钩子的 KMI 内核后由内核在开机时自动拉起，旧内核会忽略它。",
                         markdown = true,
                         confirm = "开始",
                         dismiss = "取消",
@@ -344,7 +345,15 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
                         listOf(TeeDiagnostics.RepairStep("修复", false, it.message.orEmpty()))
                     }
                     note = result.fold(
-                        onSuccess = { steps -> "一键修复：${steps.count { step -> step.ok }}/${steps.size} 步成功" },
+                        onSuccess = { steps ->
+                            val failed = steps.filterNot { step -> step.ok }
+                            if (failed.isEmpty()) {
+                                "一键修复：${steps.size} 步全部成功"
+                            } else {
+                                "一键修复未完全成功：${failed.size} 步失败（" +
+                                    failed.joinToString("、") { it.label } + "）"
+                            }
+                        },
                         onFailure = { "修复失败：${it.message}" },
                     )
                     toast(note.orEmpty())

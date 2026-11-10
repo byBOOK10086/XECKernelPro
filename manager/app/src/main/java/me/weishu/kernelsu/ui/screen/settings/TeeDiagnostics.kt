@@ -301,6 +301,26 @@ object TeeDiagnostics {
             )
         }
         val steps = ArrayList<RepairStep>()
+        // 先给"重启后强制自启"排队：这个开关只有**带钩子的 KMI 内核**才认，所以这里
+        // 顺手探一次 /data/adb/xudc（内核侧的 daemon）到底认不认，别让用户以为
+        // 旧内核重启一下就会自己起来。
+        val kernelXudc = "/data/adb/xudc"
+        val arm = runCatching {
+            shell.newJob().add(
+                "'${bundledKsud()}' builtin force-boot on >/dev/null 2>&1; " +
+                    "V=\$('$kernelXudc' builtin force-boot 2>/dev/null); echo __K=\$V",
+            ).exec().out
+        }.getOrNull().orEmpty()
+        val kernelState = arm.firstOrNull { it.startsWith("__K=") }?.removePrefix("__K=")?.trim()
+        steps += RepairStep(
+            label = "重启后强制自启",
+            ok = kernelState == "on",
+            detail = when (kernelState) {
+                "on" -> "开关已写入；这个内核认它，下次开机会自动拉起引擎"
+                "off" -> "开关已写入但内核侧读回是 off：内核还不认这个开关"
+                else -> "开关已预先写入；当前内核不认它（还没刷带钩子的 KMI），刷入后开机才会自动拉起"
+            },
+        )
         // 装 + 起在同一条命令里。timeout 兜底：内核不是本项目时，脚本环境采集里
         // 的内核调用可能拖住，绝不能让 UI 一直转圈。
         val result = runCatching {
@@ -352,9 +372,11 @@ object TeeDiagnostics {
             val probe = runCatching {
                 shell.newJob().add(
                     "echo P=\$(pidof TEESimulator 2>/dev/null | cut -d' ' -f1); " +
-                        "K=\$(pidof keystore2 2>/dev/null | cut -d' ' -f1); " +
-                        "if [ -n \"\$K\" ] && grep -q libTEESimulator /proc/\$K/maps 2>/dev/null; " +
-                        "then echo I=1; else echo I=0; fi",
+                        // keystore2 重启窗口里可能有多个 pid：逐个看，别只看第一个 ——
+                        // 只看第一个会把"只注入到将要退出的那个"报成成功。
+                        "I=0; for K in \$(pidof keystore2 2>/dev/null); do " +
+                        "grep -q libTEESimulator /proc/\$K/maps 2>/dev/null && I=1; done; " +
+                        "echo I=\$I",
                 ).exec().out
             }.getOrNull().orEmpty()
             pid = probe.firstOrNull { it.startsWith("P=") }

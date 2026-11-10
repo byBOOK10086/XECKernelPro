@@ -76,6 +76,13 @@ pub const ROOT: &str = "/data/adb/ksu/builtin";
 /// 只在开机路径上读，所以改完必须重启才生效。
 pub const TEE_ENGINE_SWITCH: &str = ".tee_engine_off";
 
+/// 「重启后强制自启」开关（文件存在 = 开机 service 阶段即使命中闸门也要把引擎拉起来）。
+///
+/// 和 [`TEE_ENGINE_SWITCH`] 是两件事：那个是"要不要引擎"，这个是"闸门挡着时要不要
+/// 破例"。用户在管理器里点过强制修复就等于明确表态"我要它起来"，所以这个开关只是
+/// 把那句话记到下一次开机。
+pub const FORCE_BOOT_FLAG: &str = ".tee_engine_force_boot";
+
 /// 唯一作用就是伪造证明链的两棵内置树；关开关时它们既不安装也不执行。
 pub const TEE_ENGINE_MODULES: [&str; 2] = ["tricky_store", "TA_enhanced"];
 
@@ -85,6 +92,29 @@ fn tee_engine_switch_path() -> PathBuf {
 
 pub fn tee_engine_enabled() -> bool {
     !tee_engine_switch_path().exists()
+}
+
+/// 开机 service 阶段要不要无视闸门强起引擎。
+pub fn force_boot_enabled() -> bool {
+    Path::new(defs::WORKING_DIR).join(FORCE_BOOT_FLAG).exists()
+}
+
+/// 打开/关闭「重启后强制自启」，返回生效后的状态。
+pub fn set_force_boot(enabled: bool) -> Result<bool> {
+    let flag = Path::new(defs::WORKING_DIR).join(FORCE_BOOT_FLAG);
+    if enabled {
+        if let Some(parent) = flag.parent() {
+            fs::create_dir_all(parent).with_context(|| format!("创建 {}", parent.display()))?;
+        }
+        fs::write(&flag, b"1\n").with_context(|| format!("写入 {}", flag.display()))?;
+        return Ok(true);
+    }
+    match fs::remove_file(&flag) {
+        Ok(()) => info!("force-boot switch off"),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error).with_context(|| format!("删除 {}", flag.display())),
+    }
+    Ok(false)
 }
 
 /// 打开/关闭内置 TEE/TS 引擎，返回生效后的状态。
@@ -439,7 +469,10 @@ fn write_atomic(dest: &Path, contents: &[u8], mode: u32) -> Result<()> {
 ///
 /// Fails when the engine switch is off, the payload is not embedded, or another
 /// root solution's module already owns the engine.
-pub fn start_tee_engine() -> Result<StartReport> {
+///
+/// `wait_for_engine` 只影响最后的回读：管理器要立刻告诉用户结果，所以等；
+/// 开机钩子不在乎这一两秒，先返回，引擎自己会起来。
+pub fn start_tee_engine(wait_for_engine: bool) -> Result<StartReport> {
     ensure!(
         tee_engine_enabled(),
         "内置 TEE/TS 引擎总开关是关的：先执行 `xudc builtin tee on`，再修复"
@@ -503,8 +536,14 @@ pub fn start_tee_engine() -> Result<StartReport> {
         });
     }
 
-    let engine_pid = wait_for_comm("TEESimulator", ENGINE_WAIT).unwrap_or(0);
-    let injected = wait_for_injection(ENGINE_WAIT);
+    let (engine_pid, injected) = if wait_for_engine {
+        (
+            wait_for_comm("TEESimulator", ENGINE_WAIT).unwrap_or(0),
+            wait_for_injection(ENGINE_WAIT),
+        )
+    } else {
+        (pid_by_comm("TEESimulator").unwrap_or(0), injection_present())
+    };
 
     Ok(StartReport {
         engine_dir: engine_dir.display().to_string(),
@@ -695,12 +734,15 @@ fn wait_for_comm(name: &str, budget: Duration) -> Option<i32> {
 }
 
 /// Whether keystore2's memory map already contains the injected engine library.
+///
+/// Counts **every** `keystore2` pid: during a restart there can be more than one
+/// briefly, and an engine that only injected into the first would be reported as
+/// healthy while the surviving instance still serves the real TEE.
 fn injection_present() -> bool {
-    let Some(pid) = pid_by_comm("keystore2") else {
-        return false;
-    };
-    fs::read_to_string(format!("/proc/{pid}/maps"))
-        .is_ok_and(|maps| maps.contains("libTEESimulator"))
+    pids_by_comm("keystore2").into_iter().any(|pid| {
+        fs::read_to_string(format!("/proc/{pid}/maps"))
+            .is_ok_and(|maps| maps.contains("libTEESimulator"))
+    })
 }
 
 fn wait_for_injection(budget: Duration) -> bool {

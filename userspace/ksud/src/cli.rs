@@ -449,6 +449,16 @@ enum BuiltinCmd {
     /// 管理器「一键修复」的入口：释放内置引擎、跑 stage 脚本、回读引擎进程与
     /// keystore2 注入。不需要刷内核，也不需要重启。
     Start,
+
+    /// Print or set the "start the bundled engine on boot even behind a gate" switch
+    ///
+    /// 开机 service 阶段的四道闸门（Magisk 残留 / 安全模式 / boot 事务 / UAPI）
+    /// 默认会让整个 stage 让位。这个开关打开后，只有**内置 TEE 引擎**会破例被拉起
+    /// —— 引擎是纯用户态注入，不是模块，不属于"安全模式里不许加载模块"那条禁令。
+    ForceBoot {
+        /// on or off; omit to print the current state
+        value: Option<String>,
+    },
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -940,7 +950,7 @@ pub fn run() -> Result<()> {
                 Ok(())
             }
             BuiltinCmd::Start => {
-                let report = builtin::start_tee_engine()?;
+                let report = builtin::start_tee_engine(true)?;
                 println!("engine_dir={}", report.engine_dir);
                 println!("modules={}", report.install.modules);
                 println!("rewritten={}", report.install.rewritten);
@@ -954,6 +964,28 @@ pub fn run() -> Result<()> {
                 }
                 println!("engine_pid={}", report.engine_pid);
                 println!("injected={}", u8::from(report.injected));
+                Ok(())
+            }
+            BuiltinCmd::ForceBoot { value } => {
+                match value {
+                    None => {
+                        println!(
+                            "{}",
+                            if builtin::force_boot_enabled() { "on" } else { "off" }
+                        );
+                    }
+                    Some(raw) => {
+                        let enabled = match raw.trim().to_ascii_lowercase().as_str() {
+                            "on" | "1" | "true" | "enable" => true,
+                            "off" | "0" | "false" | "disable" => false,
+                            other => {
+                                bail!("unknown force-boot switch '{other}', expected on or off")
+                            }
+                        };
+                        let now = builtin::set_force_boot(enabled)?;
+                        println!("force_boot={}", if now { "on" } else { "off" });
+                    }
+                }
                 Ok(())
             }
         },
