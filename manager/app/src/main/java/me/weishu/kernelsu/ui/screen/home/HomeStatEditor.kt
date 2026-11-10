@@ -242,9 +242,15 @@ private fun SlotRow(
                 )
             }
         }
-        MoveArrow(Icons.Rounded.ChevronLeft, enabled = index > 0, onClick = onMoveLeft)
+        MoveArrow(
+            icon = Icons.Rounded.ChevronLeft,
+            contentDescription = stringResource(R.string.home_stat_edit_move_left),
+            enabled = index > 0,
+            onClick = onMoveLeft,
+        )
         MoveArrow(
             icon = Icons.Rounded.ChevronRight,
+            contentDescription = stringResource(R.string.home_stat_edit_move_right),
             enabled = index < HomeStatStore.SLOT_COUNT - 1,
             onClick = onMoveRight,
         )
@@ -252,7 +258,12 @@ private fun SlotRow(
 }
 
 @Composable
-private fun MoveArrow(icon: ImageVector, enabled: Boolean, onClick: () -> Unit) {
+private fun MoveArrow(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
     Box(
         modifier = Modifier
             .size(34.dp)
@@ -262,7 +273,7 @@ private fun MoveArrow(icon: ImageVector, enabled: Boolean, onClick: () -> Unit) 
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = null,
+            contentDescription = contentDescription,
             tint = if (enabled) Xc.colors.textSecondary else Xc.colors.textMuted.copy(alpha = 0.3f),
             modifier = Modifier.size(20.dp),
         )

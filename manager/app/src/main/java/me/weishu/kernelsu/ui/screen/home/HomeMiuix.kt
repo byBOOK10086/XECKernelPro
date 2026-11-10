@@ -68,6 +68,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -507,6 +509,9 @@ private fun HomeStats(inputs: HomeStatInputs, onEdit: () -> Unit) {
     val line = Xc.colors.glassRim
     val slots by HomeStatStore.slots.collectAsState()
     val haptic = LocalHapticFeedback.current
+    // 长按是唯一的编辑入口，所以必须同时挂一条无障碍动作：读屏用户看不到"长按"
+    // 这个手势，只能靠 semantics 里的 onLongClick 触发。
+    val editHint = stringResource(R.string.home_stat_edit_hint)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -518,6 +523,12 @@ private fun HomeStats(inputs: HomeStatInputs, onEdit: () -> Unit) {
                         onEdit()
                     },
                 )
+            }
+            .semantics {
+                onLongClick(label = editHint) {
+                    onEdit()
+                    true
+                }
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
