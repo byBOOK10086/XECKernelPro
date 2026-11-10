@@ -184,6 +184,12 @@ fun SettingPagerMiuix(
                         TeeStatusSection(modifier = Modifier.padding(top = 12.dp))
                     }
 
+                    // 构建指纹伪装（Play Integrity 的另一半：身份自洽）。数据落在
+                    // /data/adb/.xudc_secure/pif，由模块脚本在开机早期写入属性。
+                    KsuIsValid {
+                        PifSection(modifier = Modifier.padding(top = 12.dp))
+                    }
+
                     // 主题 / 主题商城 / 壁纸都是"进去改外观"的入口，收进同一块面板，
                     // 与上面的开关行保持同一种分组语言（原来是三张 miuix 卡里的箭头行）。
                     Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {

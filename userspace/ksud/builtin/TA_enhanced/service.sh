@@ -238,6 +238,20 @@ _log "INFO" "Starting ta-enhanced daemon"
 _log "INFO" "Daemon launched"
 
 # ---------------------------------------------------------------------------
+# 安全补丁：**每 2 小时**自动刷新（用户硬性要求）
+# ---------------------------------------------------------------------------
+# 每次开机强制对齐：config 里 interval 的合法下限是 3600 秒
+# （rust/src/config/mod.rs 的 clamp），7200 合法；以前默认 86400，等于一天才动一次，
+# Play Integrity 的 DEVICE 判定会因为补丁太旧掉到 BASIC。
+# 白名单里留下 60/3600 等其他取值范围，是为了不让"用户在 WebUI 里选的值"被
+# 无条件覆盖 —— 这里只在开机时写一次默认策略，运行期用户可以改。
+"$BIN" config set security_patch.auto_update true >/dev/null 2>&1 \
+    || _log "WARN" "security_patch.auto_update set failed"
+"$BIN" config set security_patch.interval 7200 >/dev/null 2>&1 \
+    || _log "WARN" "security_patch.interval set failed"
+_log "INFO" "安全补丁自动更新：enabled=$(read_config security_patch.auto_update true) interval=$(read_config security_patch.interval 7200)s"
+
+# ---------------------------------------------------------------------------
 # Keybox 守护（中国大陆可用）：权限 / 可信核验 / 多镜像刷新 / 防退化
 # ---------------------------------------------------------------------------
 # 实现全部在 common/keybox.sh（本仓库新增文件，文件头逐条写了改动理由与代码证据），
@@ -274,6 +288,12 @@ _log "INFO" "Keybox guardian started (state=$KB_STATE live级别=$(kb_trust_leve
 
     _log "INFO" "Running property cleanup"
     sh "$MODPATH/propclean.sh" &
+
+    # 指纹第二遍：boot_completed 之后系统/厂商框架可能重算过 identity 属性
+    # （MIUI/HyperOS 会），再写一次并核对。失败只告警，不影响开机。
+    if [ -f "$MODPATH/pif.sh" ]; then
+        sh "$MODPATH/pif.sh" apply
+    fi
 
     pm list packages -s 2>/dev/null | sed 's/^package://' | sort > "/data/adb/.xudc_secure/ta-enhanced/system_packages.txt"
 

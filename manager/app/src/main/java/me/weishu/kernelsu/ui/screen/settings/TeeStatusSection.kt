@@ -81,11 +81,11 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
             trailing = {
                 when {
                     att == null -> Unit
-                    !att.ok -> Xc8Tag("失败", Xc8Tone.Danger)
+                    !att.ok -> Xc8Tag("失败", tone = Xc8Tone.Danger)
                     att.securityLevel == TeeAttestation.Level.SOFTWARE ->
-                        Xc8Tag("软件证明", Xc8Tone.Warning)
+                        Xc8Tag("软件证明", tone = Xc8Tone.Warning)
 
-                    else -> Xc8Tag(att.levelText, Xc8Tone.Success)
+                    else -> Xc8Tag(att.levelText, tone = Xc8Tone.Success)
                 }
             },
         )
@@ -105,8 +105,8 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
             leading = Icons.Rounded.Memory,
             trailing = {
                 if (snap != null && snap.engineDir != null) {
-                    if (snap.enginePid > 0) Xc8Tag("在跑", Xc8Tone.Success)
-                    else Xc8Tag("没跑", Xc8Tone.Danger)
+                    if (snap.enginePid > 0) Xc8Tag("在跑", tone = Xc8Tone.Success)
+                    else Xc8Tag("没跑", tone = Xc8Tone.Danger)
                 }
             },
         )
@@ -134,9 +134,9 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
             trailing = {
                 if (snap != null && snap.keyboxPresent) {
                     when (kb?.ok) {
-                        true -> Xc8Tag("可信", Xc8Tone.Success)
-                        false -> Xc8Tag("不可信", Xc8Tone.Danger)
-                        null -> Xc8Tag("未知", Xc8Tone.Neutral)
+                        true -> Xc8Tag("可信", tone = Xc8Tone.Success)
+                        false -> Xc8Tag("不可信", tone = Xc8Tone.Danger)
+                        null -> Xc8Tag("未知", tone = Xc8Tone.Neutral)
                     }
                 }
             },

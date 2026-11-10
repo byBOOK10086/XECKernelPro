@@ -85,4 +85,18 @@ else
     _pfd_log "common/bootstate.sh missing - early boot-state spoof skipped"
 fi
 
+# ---------------------------------------------------------------------------
+# 构建指纹伪装（Play Integrity DEVICE/STRONG 的前提）
+# ---------------------------------------------------------------------------
+# 越早越好：GMS 在开机后很早就读 build 属性。数据由管理器写成白名单表
+# （`/data/adb/.xudc_secure/pif/props.txt`），这里只做校验 + resetprop；
+# JSON 解析、机型 profile 选择、开关全在管理器侧（org.json），脚本里不碰 JSON。
+if [ -f "$MODPATH/pif.sh" ]; then
+    _pfd_log "pif: applying build fingerprint spoof"
+    sh "$MODPATH/pif.sh" apply 2>&1 | while IFS= read -r _line; do _pfd_log "pif| $_line"; done
+    _pfd_log "pif: fingerprint now $(getprop ro.build.fingerprint)"
+else
+    _pfd_log "pif.sh missing - build fingerprint spoof skipped"
+fi
+
 _pfd_log "post-fs-data completed"

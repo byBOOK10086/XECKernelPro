@@ -203,7 +203,7 @@ object TeeAttestation {
         val octets = outer[0].children(raw) ?: return null
         val inner = Der.parse(octets)
         if (inner.isEmpty()) return null
-        val fields = inner[0].children(octets) ?: return null
+        val fields = Der.parse(inner[0].children(octets) ?: return null)
         var securityLevel = Level.UNKNOWN
         var keymasterLevel = Level.UNKNOWN
         if (fields.size >= 4) {
@@ -216,11 +216,11 @@ object TeeAttestation {
         var osVersion: Int? = null
         var osPatch: Int? = null
         for (i in 6 until fields.size) {
-            val list = fields[i].children(octets) ?: continue
+            val list = Der.parse(fields[i].children(octets) ?: continue)
             for (item in list) {
                 when (item.tag) {
                     TAG_ROOT_OF_TRUST -> {
-                        val rot = item.children(octets) ?: continue
+                        val rot = Der.parse(item.children(octets) ?: continue)
                         for (sub in rot) {
                             when (sub.tag) {
                                 TAG_BOOT_STATE -> bootState =
