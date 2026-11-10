@@ -103,6 +103,11 @@ jobs:
       - name: Licence matrix is self-consistent
         run: python3 scripts/check_license_matrix.py
 
+      # 服务器端代码对外开源（AGPL §13），它同时也是任何人都能读的：断言 server/
+      # 里没有明文口令/令牌/本机绝对路径，且 .env.example 的占位符保持为空。
+      - name: Server code carries no credentials
+        run: python3 scripts/check_server_secrets.py
+
       # GitHub 对坏掉的 workflow 是静默拒绝：run 照样建出来，但 jobs 为空、没有一行
       # shell 报错，看上去和普通变红没区别，所以没人会去点开。GKI 流水线就是这样从
       # 2026-10-31 死到 11-06 —— 一个反斜杠被写成了真换行。

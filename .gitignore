@@ -10,3 +10,7 @@ __pycache__
 /dist
 /repack-config.json
 /userspace/ksud/.lkm_image_bootstrap.o
+
+# ���ɲ��server/publish_site.py build �������
+server/www/
+server/__pycache__/
