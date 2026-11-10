@@ -69,7 +69,7 @@ object ModuleBackupOps {
      * 每次恢复在它下面开一个 `restore_<时间>_<随机>` 子目录，避免两次恢复互相踩踏。
      */
     private const val STAGE_ROOT = "/data/adb/xec/tmp"
-    private const val ALLOW_STAGE = "$KSU_DIR/.xec_allow_stage"
+    private const val ALLOW_STAGE_PREFIX = "$KSU_DIR/.xec_allow_stage"
 
     // kernel/policy/allowlist.c:29 `#define FILE_MAGIC 0x7f4b5355`；uapi app_profile.h 版本上限。
     private const val ALLOW_MAGIC = 0x7f4b5355L
@@ -159,7 +159,7 @@ object ModuleBackupOps {
                     )
                 }
             }
-            val out = File(context.cacheDir, "modules_${stamp()}.tar")
+            val out = File(context.cacheDir, "modules_${stamp()}_${System.nanoTime() % 100000}.tar")
             val packed = exec(shell, "$tar -cf '${out.absolutePath}' -C '$MODULES_DIR' .")
             if (!packed.isSuccess || !out.isFile || out.length() == 0L) {
                 out.delete()
@@ -225,7 +225,7 @@ object ModuleBackupOps {
                 return@withContext Result.failure(Refused("没有 root，无法写入 $MODULES_UPDATE_DIR"))
             }
             val tar = tarCmd(shell) ?: return@withContext Result.failure(Refused("没有可用的 tar"))
-            val staged = File(context.cacheDir, "restore_${stamp()}.tar")
+            val staged = File(context.cacheDir, "restore_${stamp()}_${System.nanoTime() % 100000}.tar")
             if (!copyUriTo(context, uri, staged)) {
                 staged.delete()
                 return@withContext Result.failure(Refused("读取你选的文件失败（可能不是本地文件，或已被移动）"))
@@ -249,11 +249,24 @@ object ModuleBackupOps {
                 }
                 // 每次恢复用**独立**暂存目录：固定路径会让两次恢复（或上一个任务被杀后
                 // 留下的残局）互相踩踏，解到一半被另一个进程 rm -rf 掉就是"模块目录凭空消失"。
-                val stageDir = "$STAGE_ROOT/restore_${stamp()}_${Random.nextInt(1000, 9999)}"
-                exec(
-                    shell,
-                    "rm -rf '$stageDir' && mkdir -p '$stageDir' && mkdir -p '$MODULES_UPDATE_DIR'",
-                )
+                // 随机名还不够 —— 必须用 `mkdir` 的**原子性**确认自己真的占到了这个名字，
+                // 否则两次恢复撞上同一个随机数时，后一个会直接复用前一个的半个目录。
+                var stageDir = ""
+                var attempt = 0
+                while (attempt < 4 && stageDir.isEmpty()) {
+                    attempt++
+                    val candidate = "$STAGE_ROOT/restore_${stamp()}_${Random.nextInt(100000, 999999)}"
+                    val made = exec(
+                        shell,
+                        "mkdir -p '$STAGE_ROOT' && mkdir '$candidate' 2>/dev/null && mkdir -p '$MODULES_UPDATE_DIR'",
+                    )
+                    if (made.isSuccess && exec(shell, "test -d '$candidate'").isSuccess) {
+                        stageDir = candidate
+                    }
+                }
+                if (stageDir.isEmpty()) {
+                    return@withContext Result.failure(Refused("占不到临时目录（$STAGE_ROOT 不可写？）"))
+                }
                 val unpack = exec(shell, "$tar -xf '${staged.absolutePath}' -C '$stageDir'")
                 if (!unpack.isSuccess) {
                     exec(shell, "rm -rf '$stageDir'")
@@ -279,12 +292,13 @@ object ModuleBackupOps {
                         // （`userspace/ksud/src/module.rs:737`）。两者不一致时模块会变成"列表里
                         // 叫 A、实际目录叫 B"的幽灵：能加载，但 uninstall/enable/action 全指向
                         // 一个不存在的目录。这种情况宁可不恢复，也不留一个管不动的模块。
-                        val propId = exec(
-                            shell,
-                            "sed -n 's/^id=//p' '$stageDir/$id/module.prop' 2>/dev/null | head -n1 | tr -d '\\r'",
-                        ).out.firstOrNull()?.trim().orEmpty()
-                        if (propId.isEmpty()) {
-                            skipped += RestoreResult.Skipped(id, "module.prop 里没有 id= 行")
+                        // 解析规则必须和 ksud 的 parse_module_prop 完全一致（trim / 跳过 #! /
+                        // 重复 id 取最后一个），所以放在 Kotlin 里做，而不是再拼一条 sed。
+                        val propText = exec(shell, "cat '$stageDir/$id/module.prop' 2>/dev/null")
+                            .out.joinToString("\n")
+                        val propId = TarScan.modulePropId(propText)
+                        if (propId.isNullOrEmpty()) {
+                            skipped += RestoreResult.Skipped(id, "module.prop 里没有（有效的）id= 行")
                             continue
                         }
                         if (propId != id) {
@@ -294,13 +308,17 @@ object ModuleBackupOps {
                         // 安全替换：`modules_update/<id>` 里可能已经躺着一个待更新模块（用户刚刷过
                         // 同一个模块还没重启）。旧写法 `rm -rf 目标 && mv` 在 mv 失败时会把那份待
                         // 更新**永久删掉**；现在先把旧的挪到暂存区外，新的搬成功才删旧的，失败就搬回。
-                        val aside = "$STAGE_ROOT/prev_${id}_${Random.nextInt(1000, 9999)}"
+                        // 每一处 mv 的返回值都要看：`mv 源 目标` 在目标已存在且是目录时会把源
+                        // **挪进**目标里面（而不是失败），所以 aside 必须先确认不存在。
+                        val aside = "$STAGE_ROOT/prev_${id}_${Random.nextInt(100000, 999999)}"
                         val mv = exec(
                             shell,
-                            "B='$aside'; U='$MODULES_UPDATE_DIR/$id'; " +
-                                "[ -d \"\$U\" ] && mv \"\$U\" \"\$B\"; " +
-                                "if mv '$stageDir/$id' \"\$U\"; then rm -rf \"\$B\"; echo XEC_OK; " +
-                                "else [ -d \"\$B\" ] && mv \"\$B\" \"\$U\"; echo XEC_FAIL; fi",
+                            "U='$MODULES_UPDATE_DIR/$id'; B='$aside'; S='$stageDir/$id'; " +
+                                "if [ -e \"\$B\" ]; then echo XEC_FAIL; exit 0; fi; " +
+                                "if [ -e \"\$U\" ]; then mv \"\$U\" \"\$B\" || { echo XEC_FAIL; exit 0; }; fi; " +
+                                "if mv \"\$S\" \"\$U\"; then rm -rf \"\$B\"; " +
+                                "  if [ -d \"\$U\" ] && [ ! -e \"\$B\" ]; then echo XEC_OK; else echo XEC_FAIL; fi; " +
+                                "else [ -e \"\$B\" ] && mv \"\$B\" \"\$U\"; echo XEC_FAIL; fi",
                         )
                         if (mv.out.any { it.trim() == "XEC_OK" }) {
                             installed += id
@@ -339,7 +357,7 @@ object ModuleBackupOps {
                 return@withContext Result.failure(Refused("没有 root，无法写入 $KSU_DIR"))
             }
             val tar = tarCmd(shell) ?: return@withContext Result.failure(Refused("没有可用的 tar"))
-            val staged = File(context.cacheDir, "restore_allow_${stamp()}.tar")
+            val staged = File(context.cacheDir, "restore_allow_${stamp()}_${System.nanoTime() % 100000}.tar")
             if (!copyUriTo(context, uri, staged)) {
                 staged.delete()
                 return@withContext Result.failure(Refused("读取你选的文件失败"))
@@ -353,17 +371,20 @@ object ModuleBackupOps {
                 if (!hasAllowlist) {
                     return@withContext Result.failure(Refused("这个 tar 里没有 $ALLOWLIST"))
                 }
-                exec(shell, "rm -rf '$ALLOW_STAGE' && mkdir -p '$ALLOW_STAGE'")
-                val unpack = exec(shell, "$tar -xf '${staged.absolutePath}' -C '$ALLOW_STAGE'")
+                // 每次恢复用独立暂存目录：固定路径会让两次恢复互相踩踏（一个把另一个
+                // 正在校验的 .allowlist 删掉，最后落地的就成了半份）。
+                val allowStage = "${ALLOW_STAGE_PREFIX}_${System.nanoTime() % 100000}"
+                exec(shell, "rm -rf '$allowStage' && mkdir -p '$allowStage'")
+                val unpack = exec(shell, "$tar -xf '${staged.absolutePath}' -C '$allowStage'")
                 if (!unpack.isSuccess) {
-                    exec(shell, "rm -rf '$ALLOW_STAGE'")
+                    exec(shell, "rm -rf '$allowStage'")
                     return@withContext Result.failure(Refused(detail(unpack, "解包失败")))
                 }
-                val stagedAllow = "$ALLOW_STAGE/$ALLOWLIST"
+                val stagedAllow = "$allowStage/$ALLOWLIST"
                 // 只认普通文件：tar 里把 .allowlist 做成软链接，`mv` 搬过去的就是链接本身，
                 // 内核开机读到的会是链接目标（magic 一验不过，整表丢弃 = 全丢 root）。
                 if (!exec(shell, "[ -f '$stagedAllow' ] && [ ! -L '$stagedAllow' ]").isSuccess) {
-                    exec(shell, "rm -rf '$ALLOW_STAGE'")
+                    exec(shell, "rm -rf '$allowStage'")
                     return@withContext Result.failure(
                         Refused("备份里的 $ALLOWLIST 不是普通文件（软链接/目录），已拒绝导入"),
                     )
@@ -378,13 +399,13 @@ object ModuleBackupOps {
                 val magic = head.getOrNull(0)?.toLongOrNull()
                 val version = head.getOrNull(1)?.toLongOrNull()
                 if (magic != ALLOW_MAGIC) {
-                    exec(shell, "rm -rf '$ALLOW_STAGE'")
+                    exec(shell, "rm -rf '$allowStage'")
                     return@withContext Result.failure(
                         Refused("这不是本内核的授权表（magic 对不上），写进去重启后整表会被丢弃"),
                     )
                 }
                 if (version == null || version < ALLOW_VERSION_MIN || version > ALLOW_VERSION_MAX) {
-                    exec(shell, "rm -rf '$ALLOW_STAGE'")
+                    exec(shell, "rm -rf '$allowStage'")
                     return@withContext Result.failure(
                         Refused("授权表版本 $version 当前内核不支持（只支持 $ALLOW_VERSION_MIN..$ALLOW_VERSION_MAX）"),
                     )
@@ -396,7 +417,7 @@ object ModuleBackupOps {
                         "if [ -f '$KSU_DIR/$ALLOWLIST' ]; then cp -f '$KSU_DIR/$ALLOWLIST' '$backupName'; fi && " +
                         "mv -f '$stagedAllow' '$KSU_DIR/$ALLOWLIST'",
                 )
-                exec(shell, "rm -rf '$ALLOW_STAGE'")
+                exec(shell, "rm -rf '$allowStage'")
                 if (!install.isSuccess) {
                     return@withContext Result.failure(Refused("写入授权表失败（已放弃，原文件未改动）"))
                 }

@@ -33,11 +33,35 @@ internal object TarScan {
      * 顶层目录名 = 模块 id。
      *
      * **必须和 ksud 的校验规则一字不差**（`userspace/ksud/src/module.rs:115`：
-     * `^[a-zA-Z][a-zA-Z0-9._-]+$`，首字符必须是字母、长度至少 2）。旧版这里放宽成
-     * `[A-Za-z0-9._-]{1,64}`，于是 `1foo`、`_bar` 这种目录能恢复成功，却在之后
-     * `ksud module uninstall/enable/action` 里被判非法 —— 模块在，但管理器再也管不动它。
+     * `^[a-zA-Z][a-zA-Z0-9._-]+$`，首字符必须是字母、长度至少 2、**没有上限**）。
+     * 旧版这里放宽成 `[A-Za-z0-9._-]{1,64}`，于是 `1foo`、`_bar` 这种目录能恢复成功，
+     * 却在之后 `ksud module uninstall/enable/action` 里被判非法 —— 模块在，但管理器
+     * 再也管不动它；反过来若给它加长度上限，又会把 ksud 认得的超长 id 判成非法。
+     * （条目名本身的长度另有 [MAX_NAME] 兜底，那是防畸形归档，不是模块 id 规则。）
      */
-    val MODULE_ID = Regex("^[A-Za-z][A-Za-z0-9._-]{1,63}$")
+    val MODULE_ID = Regex("^[A-Za-z][A-Za-z0-9._-]+$")
+
+    /**
+     * 按 ksud 的 `parse_module_prop()` 语义取 `id`：逐行 `trim()` → 跳过空行与
+     * `#`/`!` 开头 → `split_once('=')` → key/value 各自 `trim()` → **后出现的覆盖先出现的**。
+     *
+     * 这些细节必须对齐：`sed 's/^id=//'` 会把 `id = x`（等号旁有空格）漏掉、把
+     * `#id=evil` 当成 id、遇到重复 `id=` 行时取第一个 —— 而 ksud 取最后一个。
+     * 两边不一致的后果是"管理器校验通过、ksud 却把模块认成另一个 id"。
+     */
+    fun modulePropId(content: String): String? {
+        var id: String? = null
+        for (raw in content.lineSequence()) {
+            val line = raw.trim()
+            if (line.isEmpty() || line.startsWith("#") || line.startsWith("!")) continue
+            val eq = line.indexOf('=')
+            if (eq < 0) continue
+            val key = line.substring(0, eq).trim()
+            if (key != "id") continue
+            id = line.substring(eq + 1).trim()
+        }
+        return id
+    }
 
     /**
      * 归档里的一个条目。
