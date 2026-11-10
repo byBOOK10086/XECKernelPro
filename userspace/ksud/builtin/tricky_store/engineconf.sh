@@ -137,8 +137,138 @@ _target_covers() {
 }
 
 log_target_coverage() {
-    local covered=no vvb=no
+    local covered=no vvb=no route=unknown
     _target_covers 'wu\.keyChain\.test' && covered=yes
     _target_covers 'io\.github\.vvb2060\.keyattestation' && vvb=yes
-    log_line "INFO target.txt: $(_target_count) entr(y/ies), bundled checker covered=$covered, vvb2060 keyattestation covered=$vvb"
+    [ -f "$RUNTIME/.detector_route" ] && route=$(cat "$RUNTIME/.detector_route" 2>/dev/null)
+    log_line "INFO target.txt: $(_target_count) entr(y/ies), bundled checker covered=$covered, vvb2060 keyattestation covered=$vvb, verifier route=${route:-unknown}"
+}
+
+# ---------------------------------------------------------------------------
+# 验机工具路由（2026-11-10）
+#
+# 背景：本轮把 OhMyKeymint 1.2.6 的源码读完之后，可以确定它让春秋/鸭子闭嘴的机制
+# 不是"更强的伪造"，而是把验机工具的 keystore 调用整体改投到一套能自证的实现上；
+# 它自己的 FAQ 也写明——keybox 过期/被吊销时，工具看到的是"证书已过期"，这比让
+# 工具看到"bootloader 已解锁"更糟。
+#
+# 旧策略（2026-11-08）是一刀切把检测工具从注入名单里摘掉，理由是真机实测：链不可信
+# 时注入会递出"被篡改的 attestation key + 未知根证书"。那份证据是对的，但结论过宽：
+# 真正决定成败的是**链能不能自证**。所以这里改成按 keybox 健康度决定：
+#   * keybox 通过完整校验（链签名、全链有效期、私钥匹配、吊销列表）
+#   * 根是 Google / Google-RKP（硬件形态；AOSP 软件根意味着 Software 安全级，
+#     与引擎声称的 TrustedEnvironment 自相矛盾，本身就是检测点）
+#   * 叶子剩余 >= 7 天，给上游轮换和自动拉取留出窗口
+# 满足时条目带 `!` 写入（强制 GENERATE，才会用 keybox 现签一条 Google 根的链）；
+# 不满足时全部剥掉，让它们走真实 TEE。手动关闭：
+#   touch /data/adb/.xudc_secure/verifier_forge_off
+DETECTOR_PKGS='com.eltavine.duckdetector
+com.chunqiunativecheck
+io.github.vvb2060.keyattestation
+io.github.vvb2060.mahoshojo
+io.github.qwq233.keyattestation
+com.reveny.nativecheck
+com.zhenxi.hunter
+io.liankong.riskdetector
+luna.safe.luna
+icu.nullptr.nativetest
+com.android.nativetest'
+
+_detector_re() {
+    printf '%s\n' $DETECTOR_PKGS | tr '\n' '|' | sed -e 's/|$//' -e 's/\./\\./g'
+}
+
+# 打印 `ok days_left root_type`；找不到 TA 引擎就当"没有健康度信息"。
+# 用 TA_ENHANCED_BIN 可覆盖（离线单测 / 非标准安装路径都用它）。
+_keybox_health_line() {
+    local _bin
+    for _bin in "${TA_ENHANCED_BIN:-}" \
+        /data/adb/.xudc_secure/ta-enhanced/bin/ta-enhanced \
+        /data/adb/ksu/builtin/TA_enhanced/bin/ta-enhanced \
+        /data/adb/modules/TA_enhanced/bin/ta-enhanced; do
+        [ -n "$_bin" ] || continue
+        [ -x "$_bin" ] || continue
+        "$_bin" keybox health 2>/dev/null | head -n 1
+        return 0
+    done
+    return 1
+}
+
+_route_decision() {
+    local _line _ok _days _root
+    if ! _line=$(_keybox_health_line) || [ -z "$_line" ]; then
+        printf 'off no-engine\n'
+        return 0
+    fi
+    set -- $_line
+    _ok=${1:-0}
+    _days=${2:--1}
+    _root=${3:-unknown}
+    if [ "$_ok" != "1" ]; then
+        printf 'off keybox-invalid\n'
+        return 0
+    fi
+    case "$_root" in
+        google|google_rkp) : ;;
+        *)
+            printf 'off root=%s\n' "$_root"
+            return 0
+            ;;
+    esac
+    case "$_days" in
+        ''|*[!0-9-]*)
+            printf 'off days=unknown\n'
+            return 0
+            ;;
+    esac
+    if [ "$_days" -lt 7 ]; then
+        printf 'off days=%s\n' "$_days"
+        return 0
+    fi
+    printf 'on days=%s root=%s\n' "$_days" "$_root"
+}
+
+apply_detector_routing() {
+    local _want _reason _tgt _tmp _pkg _prev _re _rc
+    if [ -f "$DATA/verifier_forge_off" ]; then
+        _want=off
+        _reason=opt-out
+    else
+        set -- $(_route_decision)
+        _want=${1:-off}
+        shift 2>/dev/null || true
+        _reason="${*:-unknown}"
+    fi
+    _re=$(_detector_re)
+    for _tgt in "$RUNTIME/target.txt" "$DATA/target.txt"; do
+        [ -f "$_tgt" ] || continue
+        _tmp="${_tgt}.route.$$"
+        # 先用同一份正则把检测工具的三种写法（裸名=AUTO / `!` / `?`）全部剥掉：
+        # 旧版 baseline 用的是裸名，AUTO 在 TEE 可用时等于 PATCH——检测工具拿到的是
+        # 厂商根签的真实链，界面照样报"未知认证根证书"。剥完再按需重加，逻辑幂等。
+        grep -v -E "^(${_re})([!?])?$" "$_tgt" > "$_tmp" 2>/dev/null
+        _rc=$?
+        if [ "$_rc" -gt 1 ]; then
+            rm -f "$_tmp"
+            continue
+        fi
+        if [ "$_want" = "on" ]; then
+            # 必须带 `!`：强制 GENERATE，才会用 keybox 现签一条 Google 根的链；
+            # 裸名（AUTO）在 TEE 可用时走 PATCH，链还是厂商根，检测工具不认。
+            for _pkg in $DETECTOR_PKGS; do
+                printf '%s!\n' "$_pkg" >> "$_tmp"
+            done
+        fi
+        if ! cmp -s "$_tmp" "$_tgt" 2>/dev/null; then
+            mv -f "$_tmp" "$_tgt" 2>/dev/null || rm -f "$_tmp"
+        else
+            rm -f "$_tmp"
+        fi
+        chmod 644 "$_tgt" 2>/dev/null
+    done
+    _prev=$(cat "$RUNTIME/.detector_route" 2>/dev/null)
+    if [ "$_want $_reason" != "$_prev" ]; then
+        printf '%s %s\n' "$_want" "$_reason" > "$RUNTIME/.detector_route" 2>/dev/null
+        log_line "INFO target.txt: verifier routing $_want ($_reason)"
+    fi
 }

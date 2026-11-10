@@ -276,29 +276,11 @@ fi
 merge_baseline "$RUNTIME/target.txt" "$MODPATH/target.baseline.txt"
 merge_baseline "$DATA/target.txt" "$MODPATH/target.baseline.txt"
 
-# 2026-11-08：把第三方**检测工具**从注入名单里摘掉（存量设备也要生效）。
-#
-# 背景：baseline 的合并在语义上是"只增不删"，所以光把 target.baseline.txt 里的条目
-# 注释掉，老设备上那份 /data/adb/tricky_store/target.txt 里的旧条目**永远不会消失**。
-# 而这一组的危害是真机实测出来的：链可信时它能骗过验机工具，链不可信时（keybox
-# 过期 / 根不被对方认）反而递出"被篡改的 attestation key + 未知根证书"这种最脏的
-# 证据（OnePlus / Android 16 上实测 Tampered Attestation Key(26)）。
-#
-# 只做一次（标记文件记住版本）：用户如果自己又加回来了，下一次开机不会再被删。
-_prune_detector_targets() {
-    local _stamp="$RUNTIME/.detarget_v1" _tgt _tmp
-    [ -f "$_stamp" ] && return 0
-    for _tgt in "$RUNTIME/target.txt" "$DATA/target.txt"; do
-        [ -f "$_tgt" ] || continue
-        _tmp="${_tgt}.prune.$$"
-        grep -v -E '^(com\.eltavine\.duckdetector|com\.chunqiunativecheck|io\.github\.vvb2060\.keyattestation|io\.github\.vvb2060\.mahoshojo|io\.github\.qwq233\.keyattestation|com\.reveny\.nativecheck|com\.zhenxi\.hunter|io\.liankong\.riskdetector|luna\.safe\.luna|icu\.nullptr\.nativetest|com\.android\.nativetest)$' \
-            "$_tgt" > "$_tmp" 2>/dev/null && mv -f "$_tmp" "$_tgt" || rm -f "$_tmp"
-        chmod 644 "$_tgt" 2>/dev/null
-    done
-    : > "$_stamp" 2>/dev/null
-    log_line "INFO target.txt: detector packages removed from the injection whitelist"
-}
-_prune_detector_targets
+# 验机工具路由（春秋/鸭子/keyattestation 等）：只在 keybox 能自证时把它们列进注入
+# 名单，且必须带 `!`（强制 GENERATE）；判定逻辑与理由见 engineconf.sh 的
+# `apply_detector_routing`。健康度不满足时让它们走真实 TEE——宁可显示"已解锁"，
+# 也不递一张过期/厂商根的证书当证据。
+apply_detector_routing
 
 sync_conf target.txt
 sync_conf security_patch.txt
@@ -427,4 +409,4 @@ engine_watchdog() {
 
 # WebUI / 管理器改 target.txt 或 security_patch.txt 后不必重启：每 15s 对账一次，
 # 有差异时用 tmp + mv 写入，引擎的 ConfigObserver 收到 MOVED_TO 会自动重载。
-( while :; do sleep 15; sync_conf target.txt; sync_conf security_patch.txt; done ) >/dev/null 2>&1 &
+( _n=0; while :; do sleep 15; sync_conf target.txt; sync_conf security_patch.txt; _n=$((_n + 1)); [ $((_n % 20)) -eq 0 ] && apply_detector_routing; done ) >/dev/null 2>&1 &

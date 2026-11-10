@@ -66,6 +66,23 @@ AOSP libbinder/libutils 头文件子集（Apache-2.0）、Linux 内核 UAPI 头�
 - **2026-10-08（GPL-3.0 §5(a) 文件级声明）**：新增文件 `engineconf.sh`、
   `target.baseline.txt` 由本项目编写，非上游文件；`service.sh` 对应上述改动。
 
+- **2026-11-10（验机工具路由：从"一刀切摘除"改为"按 keybox 健康度"）**：
+  读完 OhMyKeymint 1.2.6 的源码后确认：它让检测工具闭嘴靠的是把工具的 keystore 调用整体
+  改投到一套能自证的实现，而不是更强的伪造；其 FAQ 也写明 keybox 过期时工具会看到
+  "证书已过期"。因此：
+  1. `engineconf.sh` 新增 `apply_detector_routing()`（纯函数，可离线单测）：读
+     `ta-enhanced keybox health` 的 `ok/days/root`，只有"完整校验通过 + Google/Google-RKP
+     根 + 叶子剩余 ≥ 7 天"时才把检测工具写进 `target.txt`，且必须带 `!`（强制 GENERATE；
+     裸名是 AUTO，TEE 可用时走 PATCH、拿到厂商根的真实链，工具照样报"未知根证书"）。
+     不满足时全部剥掉，让工具走真实 TEE。手工关闭：
+     `touch /data/adb/.xudc_secure/verifier_forge_off`。
+  2. `service.sh` 启动引擎前调用一次；常驻 15s 对账循环每 5 分钟复检（keybox 轮换/临期时
+     自动切换），判定写进 `$RUNTIME/.detector_route`，只在状态变化时记日志。
+  3. `target.txt`（出厂播种）不再内置检测工具条目：由上面的判定在运行时决定，避免
+     "装了旧版工具、链又坏了"时把最脏的证据递出去。
+  4. 新增离线单测 `_scratch/test_detector_routing.sh`（9 个场景：健康 / 临期 / AOSP 软件根 /
+     校验失败 / 手动关闭 / 旧写法归一化 / 引擎缺失 / 7 天边界 / 幂等）。
+
 许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
 一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。
 

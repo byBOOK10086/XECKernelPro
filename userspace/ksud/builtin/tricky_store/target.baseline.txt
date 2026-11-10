@@ -37,31 +37,38 @@ krypton.tbsafetychecker
 com.google.android.gsf
 com.android.keyattestation
 
-# ── 2026-11-08：第三方**检测工具**不再纳入注入名单 ──────────────────────────
+# ── 2026-11-10：第三方**检测工具**改为运行时按 keybox 健康度决定 ─────────────
 #
-# 以前这一组是故意列进来的（让验机工具看到"已锁定"的假链）。真机对照之后改主意了：
+# 2026-11-08 的结论是"检测工具不注入"，理由是真机实测：链不可信时注入会递出
+# "被篡改的 attestation key + 未知根证书"（OnePlus / Android 16：Tampered
+# Attestation Key(26)、找到了 TEESimulator）。那份证据是对的，但结论过宽——
+# 决定成败的是**链能不能自证**，而不是"注入"本身。
 #
-#   * 链**可信**时：列进来确实能让工具显示"已锁定"（收益）。
-#   * 链**不可信**时（keybox 过期 / 根不被对方认得）：工具看到的是"被篡改的
-#     attestation key + 未知根证书"，这是比"解锁"严重得多的证据 —— 等于我们
-#     主动把最脏的一条递给对方。OnePlus / Android 16 上就是这样（2026-11-08 实测
-#     截图：Tampered Attestation Key(26)、未知根证书、找到了 TEESimulator）。
+# 本轮读完 OhMyKeymint 1.2.6 的源码后确认：它让工具闭嘴靠的是把工具的 keystore
+# 调用整体改投到一套能自证的实现；它自己的 FAQ 也写明 keybox 过期时工具看到的是
+# "证书已过期"。所以我们把这条策略改成条件式，实现在 engineconf.sh 的
+# `apply_detector_routing()`：
 #
-# 权衡结论：检测工具**不注入**。它们拿到的是真实 TEE 链 —— 设备解锁是事实，
-# 但那是"用户自己解锁了 bootloader"，不是"有人在伪造密钥"。
+#   * 完整校验通过 + 根是 Google/Google-RKP + 叶子剩余 ≥ 7 天
+#       -> 把工具以 `包名!` 写进 target.txt（`!` = 强制 GENERATE，用 keybox 现签
+#          一条 Google 根的链；裸名是 AUTO，TEE 可用时会走 PATCH、拿到厂商根的真
+#          实链，工具照样报"未知认证根证书"）
+#   * 其余情况 -> 全部剥掉，让工具走真实 TEE
+#       （宁可让工具看到"bootloader 已解锁"，也不递一张过期/厂商根的证书）
 #
-# 保留注入的只有两类：GMS/Play 完整性入口（不伪装就直接不过），以及我们自己的
-# 验机页 wu.keyChain.test（见上）。
+# 因此这一组**不出现在本 baseline 里**；用户也可以永久关闭：
+#   touch /data/adb/.xudc_secure/verifier_forge_off
 #
-# 下面保留原条目作为**记录**，用 '#' 注释掉；用户想恢复某一条，去掉行首 '#' 即可。
-# io.github.vvb2060.keyattestation    # 密钥认证
-# io.github.vvb2060.mahoshojo
-# io.github.qwq233.keyattestation
-# com.reveny.nativecheck
-# com.zhenxi.hunter
-# io.liankong.riskdetector
-# luna.safe.luna
-# icu.nullptr.nativetest
-# com.android.nativetest
-# com.eltavine.duckdetector           # Duck Detector
-# com.chunqiunativecheck              # 春秋检测
+# 下面保留条目作为**记录**（想手动强制某一条时，去掉 '#' 并补 '!' 即可）。
+# io.github.vvb2060.keyattestation!   # 密钥认证
+# io.github.vvb2060.mahoshojo!
+# io.github.qwq233.keyattestation!
+# com.reveny.nativecheck!
+# com.zhenxi.hunter!
+# io.liankong.riskdetector!
+# luna.safe.luna!
+# icu.nullptr.nativetest!
+# com.android.nativetest!
+# com.eltavine.duckdetector!          # Duck Detector
+# com.chunqiunativecheck!             # 春秋检测
+

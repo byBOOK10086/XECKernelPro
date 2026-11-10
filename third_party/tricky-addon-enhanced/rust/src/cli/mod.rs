@@ -93,6 +93,8 @@ pub enum ConfigAction {
 #[derive(Subcommand)]
 pub enum KeyboxAction {
     Fetch,
+    /// 打印一行 `ok days_left root_type`，供开机脚本决定验机工具是否走伪造链。
+    Health,
     Validate { path: Option<String> },
     #[command(name = "set-custom")]
     SetCustom { path: String },

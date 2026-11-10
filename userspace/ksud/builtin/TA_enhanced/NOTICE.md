@@ -130,6 +130,19 @@ vbhash 提取功能由源码构建的 ta-enhanced 守护进程（`rust/src/vbhas
   为准（日志写明"已由用户关闭"）。这是把"补丁/指纹/远程密钥逻辑优先于 TEE 引擎配置"
   这条裁定落成可切换的事实，而不是散落在各脚本里的隐式约定。
 
+- **2026-11-10（keybox 健康度 + 防降级；本项目首次改动 vendor Rust 源码）**：
+  1. `rust/src/keybox/validate.rs`：`KeyReport` 新增 `days_left`，`ValidationReport` 新增
+     `leaf_days_left` / `expires_soon`（叶子剩余天数，14 天内告警）。起因是 2026-11-10 实测：
+     内置 Yurikey 箱子的叶子 **2026-11-13 16:32:13 UTC** 到期，而 `fetch()` 过去只验
+     "链能不能验过"，临期/过期箱子仍会照常下发——检测工具收到的每一张伪造链都带过期叶子，
+     比不伪造更糟。
+  2. `rust/src/keybox/mod.rs`：新增 `keybox health` 子命令（输出一行 `ok days_left root_type`，
+     供开机脚本做路由判定）；`fetch()` 增加**防降级**：候选箱子的叶子比在用箱子更早到期时
+     拒绝安装（在用箱子已不合法时不拦）。
+  3. `rust/src/cli/mod.rs`：注册 `keybox health`。
+  以上是本项目对 vendor Rust 源码的第一处改动（此前 Rust 侧保持零修改），按 GPL-3.0 §5(a)
+  在此声明；`tricky_store` 的 `service.sh` 用它决定验机工具是否走伪造链。
+
 许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
 一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。
 

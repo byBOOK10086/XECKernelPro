@@ -91,6 +91,9 @@ pub struct KeyReport {
     pub leaf_subject: String,
     pub not_before: String,
     pub not_after: String,
+    /// 叶子证书距现在的整日数（负值=已过期）。检测侧最关心这一项：keybox 一旦过期，
+    /// 所有伪造链都会带一张过期叶子，验机工具必然报"证书已过期"，所以路由策略要按它来。
+    pub days_left: i64,
     pub validity_ok: bool,
     pub chain_valid: bool,
     pub chain_len: usize,
@@ -105,10 +108,22 @@ pub struct KeyReport {
 #[derive(Debug, Serialize)]
 pub struct ValidationReport {
     pub ok: bool,
+    /// 所有通过校验的密钥里最短的叶子剩余天数。`None` = 没有可用的键。
+    pub leaf_days_left: Option<i64>,
+    /// 叶子 14 天内到期：此后继续伪造只会给验机工具递"过期证书"这一条硬证据。
+    pub expires_soon: bool,
     pub revocation_source: RevocationSource,
     pub revocation_online_error: Option<String>,
     pub keys: Vec<KeyReport>,
     pub errors: Vec<String>,
+}
+
+/// keybox 到期告警窗口（天）。低于它就不再让验机工具走伪造链。
+pub const EXPIRY_WARN_DAYS: i64 = 14;
+
+fn days_until(unix_secs: i64) -> i64 {
+    let now = ASN1Time::now().timestamp();
+    (unix_secs - now).div_euclid(86_400)
 }
 
 pub fn validate_full(data: &[u8]) -> Result<ValidationReport> {
@@ -145,8 +160,14 @@ pub fn validate_full(data: &[u8]) -> Result<ValidationReport> {
     }
 
     let ok = keys.iter().any(|k| k.ok);
+    let leaf_days_left = keys.iter().filter(|k| k.ok).map(|k| k.days_left).min();
+    let expires_soon = leaf_days_left
+        .map(|days| days < EXPIRY_WARN_DAYS)
+        .unwrap_or(false);
     Ok(ValidationReport {
         ok,
+        leaf_days_left,
+        expires_soon,
         revocation_source: revocation.source,
         revocation_online_error: revocation.online_error,
         keys,
@@ -257,6 +278,7 @@ fn check_key(
         leaf_subject: String::new(),
         not_before: String::new(),
         not_after: String::new(),
+        days_left: 0,
         validity_ok: false,
         chain_valid: false,
         chain_len: 0,
@@ -336,6 +358,7 @@ fn check_key(
     report.leaf_subject = leaf.subject().to_string();
     report.not_before = leaf.validity().not_before.to_string();
     report.not_after = leaf.validity().not_after.to_string();
+    report.days_left = days_until(leaf.validity().not_after.timestamp());
     report.validity_ok = check_validity(leaf, &mut report.errors);
     // XECKernel Pro 本地新增：链上其余证书的有效期也要验（见 within_validity 注释）。
     for (idx, cert) in certs.iter().enumerate().skip(1) {

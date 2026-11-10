@@ -59,8 +59,66 @@ pub struct FetchResult {
     pub source: &'static str,
 }
 
+/// 当前生效 keybox 的健康度。
+///
+/// 存在的理由：`fetch()` 过去只看"链能不能验过"，于是出现两类退化——
+/// ① 上游换了一代更早到期的箱子，我们照装，等于提前自杀；
+/// ② 箱子临近到期时，检测工具拿到的每一张伪造链都带过期叶子，比"不伪造"更糟
+///    （工具会明确报"证书已过期/已吊销"）。
+/// 验机工具的路由策略必须以这份健康度为准，而不是"文件存在"。
+#[derive(Debug, Clone, Serialize)]
+pub struct KeyboxHealth {
+    pub ok: bool,
+    pub days_left: i64,
+    pub root: String,
+    pub expires_soon: bool,
+}
+
+pub fn current_health() -> KeyboxHealth {
+    health_of(Path::new(TARGET_KEYBOX))
+}
+
+fn health_of(path: &Path) -> KeyboxHealth {
+    let missing = KeyboxHealth {
+        ok: false,
+        days_left: -1,
+        root: "missing".to_string(),
+        expires_soon: true,
+    };
+    let report = match validate::validate_file_full(path) {
+        Ok(report) => report,
+        Err(_) => return missing,
+    };
+    let root = report
+        .keys
+        .iter()
+        .filter(|k| k.ok)
+        .map(|k| k.root_type.as_snake_case())
+        .next()
+        .unwrap_or("unknown")
+        .to_string();
+    KeyboxHealth {
+        ok: report.ok,
+        days_left: report.leaf_days_left.unwrap_or(-1),
+        root,
+        expires_soon: report.expires_soon,
+    }
+}
+
 pub fn handle_keybox(action: KeyboxAction, cfg: &Config) -> Result<()> {
     match action {
+        KeyboxAction::Health => {
+            let health = current_health();
+            // 一行三列，给 init/service 脚本直接 `set -- $line` 用：
+            //   ok(1/0) days_left root_type
+            println!(
+                "{} {} {}",
+                if health.ok { 1 } else { 0 },
+                health.days_left,
+                health.root
+            );
+            Ok(())
+        }
         KeyboxAction::Fetch => {
             let result = fetch(cfg)?;
             println!("keybox fetched from {}", result.source);
@@ -150,6 +208,20 @@ pub fn fetch(config: &Config) -> Result<FetchResult> {
                     .first()
                     .map(|k| k.root_type.as_snake_case())
                     .unwrap_or("unknown");
+                // 防降级：候选箱子的叶子如果比在用的更早到期，装上去只会让"过期证书"
+                // 这条证据提前出现。唯一例外是在用的箱子已经不合法（那时任何合法箱子都更好）。
+                let candidate_days = report.leaf_days_left.unwrap_or(-1);
+                let installed = health_of(Path::new(TARGET_KEYBOX));
+                if installed.ok
+                    && candidate_days >= 0
+                    && candidate_days < installed.days_left
+                {
+                    warn!(
+                        "keybox from {} expires in {}d, sooner than the installed one ({}d); keeping the installed keybox",
+                        source, candidate_days, installed.days_left
+                    );
+                    continue;
+                }
                 let new_hash = sources::compute_sha256(&data);
                 if !new_hash.is_empty() && Some(&new_hash) == existing_hash.as_ref() {
                     info!("keybox from {} (root={root_type}) identical to installed, skipping", source);
