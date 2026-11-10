@@ -59,10 +59,10 @@ import top.yukonga.miuix.kmp.basic.Text
  */
 
 /** 行内左右留白。MIUI 8 的行是 15dp，比 Material 的 16dp 略窄，为的是多塞一点字符。 */
-private val RowPaddingH = 15.dp
+private val RowPaddingH = 14.dp
 
 /** 行内上下留白。13dp 是"有副标题也撑得住、没副标题也不塌"的那一档。 */
-private val RowPaddingV = 13.dp
+private val RowPaddingV = 12.dp
 
 /** 分组标题：面板之外，左对齐，字号比正文小一档。 */
 @Composable
@@ -206,7 +206,7 @@ fun Xc8Row(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                fontSize = 15.sp,
+                fontSize = 13.sp,
                 color = effectiveTitleColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -215,7 +215,7 @@ fun Xc8Row(
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = subtitle,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     lineHeight = 16.sp,
                     color = subtitleColor,
                     maxLines = 2,

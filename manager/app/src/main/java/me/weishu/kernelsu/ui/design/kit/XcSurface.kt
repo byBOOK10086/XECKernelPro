@@ -129,6 +129,18 @@ fun XcBanner(
     }
 }
 
+/** 文字动作：右侧「详细信息 ›」那种，12sp 主色。 */
+@Composable
+fun XcTextAction(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        color = Xc.colors.accent,
+        fontSize = XcType.body,
+        fontWeight = FontWeight(650),
+        modifier = modifier.clickable { onClick() },
+    )
+}
+
 /**
  * 语义色档。
  *

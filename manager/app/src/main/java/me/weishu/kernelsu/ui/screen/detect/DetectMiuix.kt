@@ -40,14 +40,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.R
-import me.weishu.kernelsu.ui.design.panel.Xc8Button
-import me.weishu.kernelsu.ui.design.panel.Xc8PageHeading
-import me.weishu.kernelsu.ui.design.panel.Xc8Panel
-import me.weishu.kernelsu.ui.design.panel.Xc8Row
-import me.weishu.kernelsu.ui.design.panel.Xc8SectionLabel
-import me.weishu.kernelsu.ui.design.panel.Xc8Tag
-import me.weishu.kernelsu.ui.design.panel.Xc8Tone
+import me.weishu.kernelsu.ui.design.kit.XcCard
+import me.weishu.kernelsu.ui.design.kit.XcHero
+import me.weishu.kernelsu.ui.design.kit.XcListRow
+import me.weishu.kernelsu.ui.design.kit.XcSectionTitle
+import me.weishu.kernelsu.ui.design.kit.XcTextAction
+import me.weishu.kernelsu.ui.design.kit.XcTone
 import me.weishu.kernelsu.ui.design.token.Xc
+import me.weishu.kernelsu.ui.design.token.XcSpace
+import me.weishu.kernelsu.ui.design.token.XcType
 import me.weishu.kernelsu.ui.screen.home.XecScore
 import me.weishu.kernelsu.ui.screen.home.XecScoreItemId
 import me.weishu.kernelsu.ui.screen.home.XecScoreResult
@@ -121,47 +122,65 @@ private fun DetectContent(
                 .scrollEndHaptic()
                 .overScrollVertical()
                 .nestedScroll(scrollBehavior.nestedScrollConnection)
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = XcSpace.pageHorizontal),
             contentPadding = innerPadding,
             overscrollEffect = null,
         ) {
             item {
                 Column(
                     modifier = Modifier.padding(top = 6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
-                    Xc8PageHeading(
+                    // 「减量 XEC」：hero 用左文 + 右状态药丸，不再用自绘的 page heading。
+                    XcHero(
                         kicker = stringResource(R.string.detect_kicker),
                         title = stringResource(R.string.home8_detect),
                         subtitle = stringResource(R.string.detect_desc),
-                        actions = {
-                            Xc8Button(
+                        status = result.rank.name,
+                        statusTone = if (result.isHealthy) XcTone.Success else XcTone.Amber,
+                    )
+
+                    ScorePanel(result = result)
+
+                    XcSectionTitle(
+                        title = stringResource(R.string.detect_checks),
+                        action = {
+                            XcTextAction(
                                 text = stringResource(R.string.detect_run),
-                                primary = true,
                                 onClick = onRefresh,
                             )
                         },
                     )
 
-                    ScorePanel(result = result)
-
-                    Xc8SectionLabel(text = stringResource(R.string.detect_checks))
-                    Xc8Panel {
-                        result.items.forEach { item ->
-                            Xc8Row(
-                                title = stringResource(checkLabel(item.id)),
-                                subtitle = stringResource(R.string.detect_item_weight, item.earned, item.max),
-                                trailing = {
-                                    Xc8Tag(
-                                        text = if (item.ok) {
-                                            stringResource(R.string.detect_tag_pass)
-                                        } else {
-                                            stringResource(R.string.detect_tag_fail)
-                                        },
-                                        tone = if (item.ok) Xc8Tone.Success else Xc8Tone.Danger,
+                    XcCard(contentPadding = 0.dp) {
+                        Column {
+                            result.items.forEachIndexed { index, item ->
+                                if (index > 0) {
+                                    Box(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .height(1.dp)
+                                            .background(Xc.colors.glassRim),
                                     )
-                                },
-                            )
+                                }
+                                XcListRow(
+                                    title = stringResource(checkLabel(item.id)),
+                                    subtitle = stringResource(
+                                        R.string.detect_item_weight,
+                                        item.earned,
+                                        item.max,
+                                    ),
+                                    symbol = if (item.ok) "✓" else "!",
+                                    tone = if (item.ok) XcTone.Accent else XcTone.Danger,
+                                    value = if (item.ok) {
+                                        stringResource(R.string.detect_tag_pass)
+                                    } else {
+                                        stringResource(R.string.detect_tag_fail)
+                                    },
+                                    valueTone = if (item.ok) XcTone.Success else XcTone.Danger,
+                                    modifier = Modifier.padding(horizontal = 14.dp),
+                                )
+                            }
                         }
                     }
 
@@ -188,18 +207,15 @@ private fun DetectContent(
  */
 @Composable
 private fun ScorePanel(result: XecScoreResult) {
-    Xc8Panel {
+    XcCard {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Xc.surface)
-                .padding(horizontal = 15.dp, vertical = 14.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = result.total.toString(),
                 fontSize = 38.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight(650),
                 color = Xc.colors.accent,
             )
             Text(
@@ -214,8 +230,8 @@ private fun ScorePanel(result: XecScoreResult) {
                     text = stringResource(
                         if (result.isHealthy) R.string.detect_all_ok else R.string.detect_some_failed
                     ),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontSize = XcType.body,
+                    fontWeight = FontWeight(620),
                     color = Xc.colors.text,
                 )
                 Text(
@@ -225,7 +241,7 @@ private fun ScorePanel(result: XecScoreResult) {
                         result.items.size,
                         result.rank.name,
                     ),
-                    fontSize = 12.sp,
+                    fontSize = XcType.caption,
                     color = Xc.colors.textSecondary,
                 )
             }
