@@ -43,6 +43,7 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
     var attestation by remember { mutableStateOf<TeeAttestation.Result?>(null) }
     var rkpTool by remember { mutableStateOf<RkpRepair.Tool?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
+    var repairSteps by remember { mutableStateOf<List<TeeDiagnostics.RepairStep>>(emptyList()) }
 
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
 
@@ -277,9 +278,13 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
         )
         Xc8Row(
             title = "重启证明引擎",
-            subtitle = "杀掉 TEESimulator 并重新拉起（改完 target.txt / 换完 keybox 后用）",
+            subtitle = if (snap != null && snap.engineDir == null) {
+                "引擎没装：这一下会从安装包释放内置引擎并启动（就是下面的「一键修复」）"
+            } else {
+                "杀掉 TEESimulator 并重新拉起（改完 target.txt / 换完 keybox 后用）"
+            },
             leading = Icons.Rounded.RestartAlt,
-            enabled = !busy && snap != null,
+            enabled = !busy,
             onClick = {
                 scope.launch {
                     busy = true
@@ -297,19 +302,31 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
                 }
             },
         )
-        // 一键软件修复
+        // 一键修复：引擎没装也能用 —— 从安装包里释放并启动，不刷内核、不重启
         Xc8Row(
-            title = "一键修复（软件路径）",
-            subtitle = "刷新 keybox → 重启引擎 → 重新取证。不动密钥库、不改 target.txt、不写 TEE",
+            title = "一键修复（装引擎 + 立即启动）",
+            subtitle = when {
+                snap == null -> if (busy) "读取中…" else "点一下从安装包释放内置引擎并立即启动，再拉 keybox、回读注入"
+                snap.engineDir == null ->
+                    "引擎没装（三个模块目录都不存在）。点一下从**安装包内**释放内置引擎并立即启动，" +
+                        "不刷内核、不重启"
+                !snap.engineEnabled -> "引擎目录在 ${snap.engineDir}，但被 disable 了：修复会把引擎重新拉起来"
+                else -> "重拉 keybox → 用内置树重启引擎 → 回读 keystore2 注入；不动密钥库、不写 TEE"
+            },
             leading = Icons.Rounded.Build,
-            enabled = !busy && snap != null,
+            enabled = !busy,
             onClick = {
                 scope.launch {
                     val answer = confirm.awaitConfirm(
-                        title = "执行一键软件修复？",
-                        content = "依次执行：重新拉取 keybox → 重启证明引擎 → 重新取一次硬件证明。\n\n" +
-                            "**不会**动你的密钥库、不会改 target.txt、也不会写 TEE。" +
-                            "想真写回 TEE 请用下面的「真·RKP 重签」（需要厂商工具）。",
+                        title = "执行一键修复？",
+                        content = "依次执行：\n\n" +
+                            "1. 把安装包**内置**的引擎与 TA 增强释放到 `/data/adb/ksu/builtin`" +
+                            "（已是最新则不动文件）\n" +
+                            "2. 当场启动引擎（已有的 supervisor 会被先收掉再重拉）\n" +
+                            "3. 拉一次 keybox，回读进程与 keystore2 注入\n\n" +
+                            "**不会**动你的密钥库、不会改 target.txt、也不会写 TEE。\n\n" +
+                            "注意：这条路径绕开了开机的四道闸门（Magisk 残留 / 安全模式 / boot 事务 / " +
+                            "UAPI 不匹配），所以**重启后要再点一次**，或者把闸门清掉。",
                         markdown = true,
                         confirm = "开始",
                         dismiss = "取消",
@@ -321,7 +338,13 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
                     } finally {
                         busy = false
                     }
-                    note = result.fold(onSuccess = { it }, onFailure = { "修复失败：${it.message}" })
+                    repairSteps = result.getOrElse {
+                        listOf(TeeDiagnostics.RepairStep("修复", false, it.message.orEmpty()))
+                    }
+                    note = result.fold(
+                        onSuccess = { steps -> "一键修复：${steps.count { step -> step.ok }}/${steps.size} 步成功" },
+                        onFailure = { "修复失败：${it.message}" },
+                    )
                     toast(note.orEmpty())
                     refresh()
                 }
@@ -469,6 +492,14 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
                     "只能走软件伪造（FORGE/PATCH）。多数国产 ROM 都缺这个工具，不是本管理器能补的",
                 leading = Icons.Rounded.VpnKey,
                 enabled = false,
+            )
+        }
+
+        if (repairSteps.isNotEmpty()) {
+            Xc8Note(
+                "上次一键修复：\n" + repairSteps.joinToString("\n") { step ->
+                    (if (step.ok) "✓ " else "✗ ") + step.label + " — " + step.detail
+                },
             )
         }
 

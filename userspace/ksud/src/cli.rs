@@ -438,6 +438,17 @@ enum BuiltinCmd {
         /// on or off; omit to print the current state
         value: Option<String>,
     },
+
+    /// Materialise the bundled module trees under /data/adb/ksu/builtin
+    ///
+    /// 这是用户显式要求的一次安装，所以**跳过**开机路径上的挂载态 / 安全模式闸门。
+    Install,
+
+    /// Install the bundled trees and (re)start the TEE engine in this session
+    ///
+    /// 管理器「一键修复」的入口：释放内置引擎、跑 stage 脚本、回读引擎进程与
+    /// keystore2 注入。不需要刷内核，也不需要重启。
+    Start,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -920,6 +931,29 @@ pub fn run() -> Result<()> {
                         println!("tee={}", if now { "on" } else { "off" });
                     }
                 }
+                Ok(())
+            }
+            BuiltinCmd::Install => {
+                let report = builtin::install_builtin_modules_forced()?;
+                println!("modules={}", report.modules);
+                println!("rewritten={}", report.rewritten);
+                Ok(())
+            }
+            BuiltinCmd::Start => {
+                let report = builtin::start_tee_engine()?;
+                println!("engine_dir={}", report.engine_dir);
+                println!("modules={}", report.install.modules);
+                println!("rewritten={}", report.install.rewritten);
+                for run in &report.scripts {
+                    println!(
+                        "script={}/{} spawned={}",
+                        run.module,
+                        run.stage,
+                        u8::from(run.spawned)
+                    );
+                }
+                println!("engine_pid={}", report.engine_pid);
+                println!("injected={}", u8::from(report.injected));
                 Ok(())
             }
         },

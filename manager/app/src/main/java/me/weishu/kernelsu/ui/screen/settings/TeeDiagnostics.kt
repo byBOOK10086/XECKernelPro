@@ -4,6 +4,7 @@ import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.ui.util.awaitRootShell
+import me.weishu.kernelsu.ui.util.getKsuDaemonPath
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -270,26 +271,138 @@ object TeeDiagnostics {
 
     // ------------------------------------------------------------------ 动作
 
-    /** 重启引擎进程（不改配置）。主要用于"改了 target.txt/keybox 后让引擎重新加载"。 */
-    suspend fun restartEngine(engineDir: String?): Result<Boolean> = withContext(Dispatchers.IO) {
-        val dir = engineDir ?: return@withContext Result.failure(
-            IllegalStateException("找不到引擎目录（tricky_store 没装？）"),
-        )
-        val shell = awaitRootShell()
-        if (!shell.isRoot) return@withContext Result.failure(IllegalStateException("没有 root"))
-        val script = "killall TEESimulator 2>/dev/null; sleep 1; sh '$dir/service.sh' >/dev/null 2>&1 &"
-        val result = runCatching { shell.newJob().add(script).exec() }.getOrNull()
-            ?: return@withContext Result.failure(IllegalStateException("执行失败"))
-        // 等进程真的起来（最多 12 秒），别让 UI 报"已重启"但其实没起。
-        repeat(24) {
-            val pid = runCatching {
-                shell.newJob().add("pidof TEESimulator 2>/dev/null").exec()
-                    .out.firstOrNull()?.trim()?.toIntOrNull()
-            }.getOrNull() ?: 0
-            if (pid > 0) return@withContext Result.success(true)
-            Thread.sleep(500)
+    /** 「一键修复」里的一步：UI 逐行显示，失败也能看出停在哪一步。 */
+    data class RepairStep(val label: String, val ok: Boolean, val detail: String)
+
+    /** 引擎进程那一步的固定标签 —— [restartEngine] 靠它把结果折回 Boolean。 */
+    private const val STEP_ENGINE = "引擎进程"
+
+    /** 管理器自带的 xudc 路径（= APK 的 `libxeccli.so`）：内置引擎载荷就编在它里面。 */
+    private fun bundledKsud(): String = getKsuDaemonPath()
+
+    /**
+     * 强制把引擎装起来并**当场启动**（「一键修复」的真实现）。
+     *
+     * 以前的一键修复只有"刷新 keybox + 重启引擎"：引擎目录根本不存在时两步必然失败，
+     * 用户看到的就是"一键修复不能用"。而引擎载荷其实一直随 APK 分发：`libxeccli.so`
+     * 用 rust-embed 把 `userspace/ksud/builtin/` 编进了二进制，所以
+     * `xudc builtin start` 能把它释放到 `/data/adb/ksu/builtin`、跑 stage 脚本、
+     * 回读进程与注入 —— 不刷内核、不重启，也不依赖内核认不认这个管理器。
+     *
+     * 开机自动拉起仍走 ksud 的 post-fs-data（那条链有 Magisk 残留 / 安全模式 /
+     * boot 事务 / UAPI 四道闸门）；这里强制生效的是**当前这次**，重启后需要再点一次
+     * 或把闸门清掉。
+     */
+    suspend fun repairEngine(): Result<List<RepairStep>> = withContext(Dispatchers.IO) {
+        val shell = awaitRootShell(timeoutMs = 20_000L)
+        if (!shell.isRoot) {
+            return@withContext Result.failure(
+                IllegalStateException("等了 20 秒还是拿不到 root shell：先在「授权」里给管理器 root"),
+            )
         }
-        Result.success(result.isSuccess)
+        val steps = ArrayList<RepairStep>()
+        // 装 + 起在同一条命令里。timeout 兜底：内核不是本项目时，脚本环境采集里
+        // 的内核调用可能拖住，绝不能让 UI 一直转圈。
+        val result = runCatching {
+            shell.newJob().add(
+                "timeout 240 '${bundledKsud()}' builtin start 2>&1; echo __XEC_EXIT=\$?",
+            ).exec()
+        }.getOrElse { return@withContext Result.failure(it) }
+        val lines = result.out.map { it.trim() }.filter { it.isNotEmpty() }
+        val exit = lines.lastOrNull { it.startsWith("__XEC_EXIT=") }
+            ?.substringAfter('=')?.toIntOrNull()
+        if (lines.none { it.startsWith("engine_dir=") }) {
+            val why = lines.filterNot { it.startsWith("__XEC_EXIT=") }
+                .takeLast(4).joinToString(" / ").ifEmpty { "命令没有任何输出" }
+            return@withContext Result.failure(
+                IllegalStateException("内置引擎没起来（退出码 ${exit ?: -1}）：${why.take(300)}"),
+            )
+        }
+        val modules = value(lines, "modules")?.toIntOrNull()
+        val rewritten = value(lines, "rewritten")?.toIntOrNull()
+        steps += RepairStep(
+            label = "释放内置引擎",
+            ok = true,
+            detail = when {
+                modules == null -> "已释放"
+                rewritten == 0 -> "$modules 个内置树都是最新的，没重写文件"
+                else -> "$modules 个内置树，重写 $rewritten 个"
+            },
+        )
+        for (line in lines.filter { it.startsWith("script=") }) {
+            val body = line.removePrefix("script=")
+            val name = body.substringBefore(" spawned=")
+            val ok = body.substringAfter("spawned=").trim() == "1"
+            steps += RepairStep(
+                label = "启动 ${name.substringBefore('/')} 的 ${name.substringAfter('/')}",
+                ok = ok,
+                detail = if (ok) "已拉起" else "没起来（脚本缺失或 spawn 失败）",
+            )
+        }
+        // keybox：TA 守护每 15s 会镜像一次，这里主动拉一次，省一轮等待。
+        refreshKeybox().fold(
+            onSuccess = { steps += RepairStep("重新拉取 keybox", true, it.take(160)) },
+            onFailure = { steps += RepairStep("重新拉取 keybox", false, it.message.orEmpty().take(160)) },
+        )
+        // 回读：注入是异步的，最多再等 18 秒。
+        var pid = 0
+        var injected = false
+        var waited = 0
+        while (waited < 24) {
+            val probe = runCatching {
+                shell.newJob().add(
+                    "echo P=\$(pidof TEESimulator 2>/dev/null | cut -d' ' -f1); " +
+                        "K=\$(pidof keystore2 2>/dev/null | cut -d' ' -f1); " +
+                        "if [ -n \"\$K\" ] && grep -q libTEESimulator /proc/\$K/maps 2>/dev/null; " +
+                        "then echo I=1; else echo I=0; fi",
+                ).exec().out
+            }.getOrNull().orEmpty()
+            pid = probe.firstOrNull { it.startsWith("P=") }
+                ?.removePrefix("P=")?.trim()?.toIntOrNull() ?: 0
+            injected = probe.any { it.trim() == "I=1" }
+            if (pid > 0 && injected) break
+            waited++
+            Thread.sleep(750)
+        }
+        steps += RepairStep(
+            label = STEP_ENGINE,
+            ok = pid > 0,
+            detail = if (pid > 0) "TEESimulator pid $pid" else "18 秒内没看到 TEESimulator 进程",
+        )
+        steps += RepairStep(
+            label = "keystore2 注入",
+            ok = injected,
+            detail = if (injected) "libTEESimulator 已在 keystore2 的 maps 里" else "keystore2 里还没有注入（引擎没接管）",
+        )
+        Result.success(steps)
+    }
+
+    private fun value(lines: List<String>, key: String): String? =
+        lines.firstOrNull { it.startsWith("$key=") }?.substringAfter('=')
+
+    /** 重启引擎进程（不改配置）。主要用于"改了 target.txt/keybox 后让引擎重新加载"。 */
+    suspend fun restartEngine(engineDir: String?): Result<Boolean> {
+        // 引擎根本没装：重启无从谈起，直接走"从安装包释放并启动"。
+        val dir = engineDir ?: return repairEngine().map { steps ->
+            steps.firstOrNull { it.label == STEP_ENGINE }?.ok == true
+        }
+        return withContext(Dispatchers.IO) {
+            val shell = awaitRootShell()
+            if (!shell.isRoot) return@withContext Result.failure(IllegalStateException("没有 root"))
+            val script = "killall TEESimulator 2>/dev/null; sleep 1; sh '$dir/service.sh' >/dev/null 2>&1 &"
+            val result = runCatching { shell.newJob().add(script).exec() }.getOrNull()
+                ?: return@withContext Result.failure(IllegalStateException("执行失败"))
+            // 等进程真的起来（最多 12 秒），别让 UI 报"已重启"但其实没起。
+            repeat(24) {
+                val pid = runCatching {
+                    shell.newJob().add("pidof TEESimulator 2>/dev/null").exec()
+                        .out.firstOrNull()?.trim()?.toIntOrNull()
+                }.getOrNull() ?: 0
+                if (pid > 0) return@withContext Result.success(true)
+                Thread.sleep(500)
+            }
+            Result.success(result.isSuccess)
+        }
     }
 
     /** 让守护进程拉一次 keybox（它自己带镜像/校验/信任锚判定），成功后再重启引擎。 */
@@ -321,18 +434,34 @@ object TeeDiagnostics {
         else Result.failure(IllegalStateException(result.err.joinToString(" ").ifBlank { "清理失败" }))
     }
 
-    /** 一键软件修复：按"换箱后遗症 / 引擎没接管"的处置顺序串起来 */
-    suspend fun oneTapRepair(engineDir: String?): Result<String> = withContext(Dispatchers.IO) {
-        val steps = ArrayList<String>()
-        refreshKeybox().fold(
-            onSuccess = { steps += "keybox 已刷新（$it）" },
-            onFailure = { steps += "keybox 刷新失败：${it.message}" },
-        )
-        restartEngine(engineDir).fold(
-            onSuccess = { ok -> steps += if (ok) "引擎已重启" else "引擎重启命令已发出，但进程没在 12 秒内出现" },
-            onFailure = { steps += "引擎重启失败：${it.message}" },
-        )
-        Result.success(steps.joinToString("；"))
+    /**
+     * 一键修复：引擎不在就**强制从安装包装出来并启动**。
+     *
+     * 外部模块装的引擎不归我们管（内置引擎在那种情况下会主动让位，抢同一个 keystore2
+     * 只会两败俱伤），所以那条分支只重拉 keybox + 重启它自己的 service.sh。
+     */
+    suspend fun oneTapRepair(engineDir: String?): Result<List<RepairStep>> {
+        if (engineDir?.startsWith("/data/adb/modules/") != true) return repairEngine()
+        return withContext(Dispatchers.IO) {
+            val steps = ArrayList<RepairStep>()
+            refreshKeybox().fold(
+                onSuccess = { steps += RepairStep("重新拉取 keybox", true, it.take(160)) },
+                onFailure = { steps += RepairStep("重新拉取 keybox", false, it.message.orEmpty().take(160)) },
+            )
+            restartEngine(engineDir).fold(
+                onSuccess = { ok ->
+                    steps += RepairStep(
+                        label = STEP_ENGINE,
+                        ok = ok,
+                        detail = if (ok) "外部模块引擎已重启" else "重启命令发出去了，12 秒内没看到进程",
+                    )
+                },
+                onFailure = {
+                    steps += RepairStep(STEP_ENGINE, false, it.message.orEmpty().take(160))
+                },
+            )
+            Result.success(steps)
+        }
     }
 
     /** 远程配置优先开关（用户的硬性裁定：补丁/指纹/远程密钥这套逻辑必须压过 TEE 引擎那套） */

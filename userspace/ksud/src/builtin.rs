@@ -14,7 +14,7 @@
 //! plain module directory the user can inspect, disable or edit like any other
 //! module.
 
-use anyhow::{Context, Result, anyhow, ensure};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use log::{debug, info, warn};
 use std::{
     collections::BTreeMap,
@@ -23,6 +23,7 @@ use std::{
     io::Write,
     os::unix::fs::PermissionsExt,
     path::{Component, Path, PathBuf},
+    time::{Duration, Instant},
 };
 
 use crate::{assets, defs, module, utils};
@@ -135,27 +136,100 @@ fn remove_tree_if_tee_disabled(module_id: &str) {
     }
 }
 
+/// What one install pass did.
+#[derive(Debug, Default)]
+pub struct InstallReport {
+    /// Bundled module trees found inside this xudc build.
+    pub modules: usize,
+    /// Trees that were actually (re)written. A matching stamp with every file
+    /// still present is a no-op, so this is 0 on an untouched device.
+    pub rewritten: usize,
+}
+
+/// Stage of the bundled engine that [`start_tee_engine`] launched.
+#[derive(Debug)]
+pub struct ScriptRun {
+    /// Module id the script belongs to, e.g. `tricky_store`.
+    pub module: String,
+    /// Stage name without the `.sh` suffix, e.g. `post-fs-data`.
+    pub stage: String,
+    /// Whether the script was spawned. A non-zero exit *inside* the script is
+    /// not visible here; the manager reads the engine state afterwards.
+    pub spawned: bool,
+}
+
+/// Result of [`start_tee_engine`]; the CLI prints it as `key=value` lines.
+#[derive(Debug)]
+pub struct StartReport {
+    /// Runtime tree that holds the engine payload.
+    pub engine_dir: String,
+    /// What the install pass did before the scripts ran.
+    pub install: InstallReport,
+    /// Scripts launched, in the order they were launched.
+    pub scripts: Vec<ScriptRun>,
+    /// `TEESimulator` pid after the bounded wait; 0 when it never showed up.
+    pub engine_pid: i32,
+    /// Whether keystore2's maps already contain the injected library.
+    pub injected: bool,
+}
+
+/// How long one stage script may take before `builtin start` moves on.
+///
+/// Every bundled script backgrounds its long-running work (daemon, watchdogs,
+/// 45s probe), so this budget only covers the foreground part of the script.
+const SCRIPT_BUDGET: Duration = Duration::from_secs(45);
+
+/// How long [`start_tee_engine`] waits for the engine process / injection.
+const ENGINE_WAIT: Duration = Duration::from_secs(15);
+
+/// How long a previously running engine gets to disappear.
+const STOP_BUDGET: Duration = Duration::from_secs(8);
+
+/// Poll interval for the `/proc` probes below.
+const POLL_STEP_MS: u64 = 250;
+
 pub fn install_builtin_modules() -> Result<()> {
+    install_builtin_modules_impl(false).map(|_| ())
+}
+
+/// Install the bundled trees even where the boot path would have skipped them.
+///
+/// The mount-state and safe-mode gates only mean "never populate the module set
+/// behind the user's back at boot"; an explicit `xudc builtin install` from the
+/// manager is the opposite situation, so it bypasses both.
+///
+/// # Errors
+///
+/// Returns the first per-module failure after trying every module.
+pub fn install_builtin_modules_forced() -> Result<InstallReport> {
+    install_builtin_modules_impl(true)
+}
+
+fn install_builtin_modules_impl(forced: bool) -> Result<InstallReport> {
     // Mount state (<5.10) hands the whole module tree to Magisk; `/data/adb/modules`
     // there is not ours to populate.
-    if utils::is_mount_state() {
+    if !forced && utils::is_mount_state() {
         info!("mount state, skip built-in modules");
-        return Ok(());
+        return Ok(InstallReport::default());
     }
 
     // Safe mode exists precisely so a broken device boots without modules;
     // installing bundled modules behind the user's back would defeat it.
-    if utils::is_safe_mode() {
+    if !forced && utils::is_safe_mode() {
         warn!("safe mode, skip built-in modules");
-        return Ok(());
+        return Ok(InstallReport::default());
     }
 
     let modules = group_builtin_assets()?;
     if modules.is_empty() {
         info!("no built-in modules bundled");
-        return Ok(());
+        return Ok(InstallReport::default());
     }
 
+    let mut report = InstallReport {
+        modules: modules.len(),
+        rewritten: 0,
+    };
     let mut first_error: Option<anyhow::Error> = None;
     for (module_id, files) in &modules {
         // 用户关掉了内置 TEE/TS 引擎：这两棵树既不安装，存量也要清掉，
@@ -164,14 +238,18 @@ pub fn install_builtin_modules() -> Result<()> {
             remove_tree_if_tee_disabled(module_id);
             continue;
         }
-        if let Err(error) = install_module(module_id, files) {
-            warn!("install built-in module {module_id} failed: {error:#}");
-            first_error
-                .get_or_insert_with(|| error.context(format!("built-in module {module_id}")));
+        match install_module(module_id, files) {
+            Ok(true) => report.rewritten += 1,
+            Ok(false) => {}
+            Err(error) => {
+                warn!("install built-in module {module_id} failed: {error:#}");
+                first_error
+                    .get_or_insert_with(|| error.context(format!("built-in module {module_id}")));
+            }
         }
     }
 
-    first_error.map_or_else(|| Ok(()), Err)
+    first_error.map_or(Ok(report), Err)
 }
 
 /// Group the embedded files by their first path component, the module id.
@@ -200,8 +278,13 @@ fn group_builtin_assets() -> Result<BTreeMap<String, Vec<BuiltinFile>>> {
     Ok(modules)
 }
 
-/// Install one embedded module tree into `/data/adb/modules/<id>/`.
-fn install_module(module_id: &str, files: &[BuiltinFile]) -> Result<()> {
+/// Install one embedded module tree into `/data/adb/ksu/builtin/<id>/`.
+///
+/// Returns whether the tree was (re)written. A stamp alone is not enough to skip
+/// the write: a cleaner that deletes files but leaves the stamp would otherwise
+/// make the tree permanently "installed but broken" - exactly the state where
+/// the engine script fails while every check claims it is up to date.
+fn install_module(module_id: &str, files: &[BuiltinFile]) -> Result<bool> {
     let module_dir = Path::new(ROOT).join(module_id);
 
     // Migration: builds that shipped this tree as a module left it under
@@ -218,18 +301,21 @@ fn install_module(module_id: &str, files: &[BuiltinFile]) -> Result<()> {
     let stamp_body = builtin_stamp(files.len());
     let stamp_path = module_dir.join(STAMP_FILE_NAME);
 
-    // Common path: exactly one small file read. A matching stamp means this
-    // build already wrote the whole tree, so user edits made afterwards are
-    // intentionally left untouched until the next update.
-    if fs::read_to_string(&stamp_path).is_ok_and(|stamp| stamp.trim() == stamp_body) {
+    // Common path: a small stamp read plus one stat per embedded file. A matching
+    // stamp with every file present means this build already wrote the whole
+    // tree, so user edits made afterwards are intentionally left untouched until
+    // the next update.
+    let stamp_ok = fs::read_to_string(&stamp_path).is_ok_and(|stamp| stamp.trim() == stamp_body);
+    if stamp_ok && files.iter().all(|file| module_dir.join(&file.relative).is_file()) {
         debug!("built-in module {module_id} is up to date");
-        return Ok(());
+        return Ok(false);
     }
 
-    // Update path: missing stamp or a different xudc build. Every embedded file
-    // is (re)written, which overwrites local edits inside the module; that is
-    // the bundled-update contract. Nothing is ever deleted: files the user
-    // added, and files an older build shipped but this one no longer does, stay.
+    // Update path: missing stamp, missing file or a different xudc build. Every
+    // embedded file is (re)written, which overwrites local edits inside the
+    // module; that is the bundled-update contract. Nothing is ever deleted: files
+    // the user added, and files an older build shipped but this one no longer
+    // does, stay.
     info!(
         "installing built-in module {module_id} ({} files) into {}",
         files.len(),
@@ -254,7 +340,7 @@ fn install_module(module_id: &str, files: &[BuiltinFile]) -> Result<()> {
     // module instead of treating a half-written tree as installed.
     write_atomic(&stamp_path, stamp_body.as_bytes(), 0o644)?;
     info!("built-in module {module_id} installed");
-    Ok(())
+    Ok(true)
 }
 
 /// Stamp body identifying the embedded tree of this build.
@@ -338,6 +424,189 @@ fn write_atomic(dest: &Path, contents: &[u8], mode: u32) -> Result<()> {
         )
     })?;
     Ok(())
+}
+
+/// `builtin start`: materialise the bundled engine and start it **now**.
+///
+/// This is what the manager's one-click repair calls. It deliberately does not
+/// go through `init_event::run_stage`: that path only exists at boot and is
+/// gated on mount state / Magisk / safe mode, while this one is an explicit
+/// request from the user and has to work in the running session, without a
+/// reboot and without a matching kernel.
+///
+/// # Errors
+///
+/// Fails when the engine switch is off, the payload is not embedded, or another
+/// root solution's module already owns the engine.
+pub fn start_tee_engine() -> Result<StartReport> {
+    ensure!(
+        tee_engine_enabled(),
+        "内置 TEE/TS 引擎总开关是关的：先执行 `xudc builtin tee on`，再修复"
+    );
+
+    if let Some(dir) = external_engine_dir() {
+        bail!(
+            "外部模块 {} 正在接管引擎：内置引擎会让位（不抢同一个 keystore2）。\
+             先禁用它，或直接重刷/重启让它的 service.sh 重新拉起",
+            dir.display()
+        );
+    }
+
+    let install = install_builtin_modules_forced().context("materialise built-in modules")?;
+
+    let engine_dir = Path::new(ROOT).join("tricky_store");
+    ensure!(
+        engine_dir.join("service.sh").is_file(),
+        "内置引擎没有落盘（{} 不存在）：这个 xudc 构建里没有编进内置载荷",
+        engine_dir.display()
+    );
+
+    // 重入安全：先收掉在跑的那一套，否则下面再拉一次 supervisor 就是两个注入器
+    // 抢同一个 keystore2。supervisor 会重启它的 daemon，所以必须先杀 supervisor。
+    stop_engine();
+
+    // 尽力而为：内核不是本项目时这条一定失败，但引擎本身不依赖它
+    // （KernelSU 域的 su 是 permissive + allow-all，注入走的是 ptrace 而不是这些规则）。
+    if let Err(error) = load_sepolicy_rules() {
+        warn!("apply built-in sepolicy failed (engine still starts): {error:#}");
+    }
+
+    let mut scripts = Vec::new();
+    for (module, stage) in [
+        // 顺序与开机**故意不同**：TA 的 post-fs-data/service 都要读
+        // /data/adb/tricky_store（keybox 兼容副本、target.txt），而那个目录要等
+        // tricky_store 的 service.sh 才建出来；新设备上按开机顺序跑会白跑一轮。
+        ("tricky_store", "service"),
+        ("TA_enhanced", "post-fs-data"),
+        ("TA_enhanced", "service"),
+    ] {
+        let script = Path::new(ROOT).join(module).join(format!("{stage}.sh"));
+        let spawned = if script.is_file() {
+            match crate::module::exec_script(
+                &script,
+                crate::module::ScriptWait::Until(Instant::now() + SCRIPT_BUDGET),
+            ) {
+                Ok(()) => true,
+                Err(error) => {
+                    warn!("built-in {module}/{stage} failed to launch: {error:#}");
+                    false
+                }
+            }
+        } else {
+            warn!("built-in script missing: {}", script.display());
+            false
+        };
+        info!("built-in {module}/{stage} spawned={spawned}");
+        scripts.push(ScriptRun {
+            module: module.to_string(),
+            stage: stage.to_string(),
+            spawned,
+        });
+    }
+
+    let engine_pid = wait_for_comm("TEESimulator", ENGINE_WAIT).unwrap_or(0);
+    let injected = wait_for_injection(ENGINE_WAIT);
+
+    Ok(StartReport {
+        engine_dir: engine_dir.display().to_string(),
+        install,
+        scripts,
+        engine_pid,
+        injected,
+    })
+}
+
+/// Another root solution's engine module, if one owns the injection surface.
+///
+/// The bundled `service.sh` already stands down in this case; `builtin start`
+/// has to check the same thing *before* it kills the running engine, otherwise
+/// repairing would leave the device with no engine at all.
+fn external_engine_dir() -> Option<PathBuf> {
+    let modules = Path::new(defs::MODULE_DIR);
+    [modules.join("tricky_store"), modules.join(".tricky_store")]
+        .into_iter()
+        .find(|dir| {
+            dir.join("module.prop").is_file()
+                && !dir.join("disable").exists()
+                && !dir.join("remove").exists()
+        })
+}
+
+/// Kill a previously running engine so a second supervisor cannot race us.
+fn stop_engine() {
+    let supervisor = pid_by_comm("supervisor");
+    if supervisor.is_none() && pid_by_comm("TEESimulator").is_none() {
+        return;
+    }
+    debug!("stopping the running engine (supervisor pid {supervisor:?})");
+    // supervisor restarts its daemon: kill it first, then the daemon it spawned.
+    kill_comm("supervisor");
+    kill_comm("TEESimulator");
+    let deadline = Instant::now() + STOP_BUDGET;
+    while Instant::now() < deadline {
+        if pid_by_comm("supervisor").is_none() && pid_by_comm("TEESimulator").is_none() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(POLL_STEP_MS));
+    }
+    warn!("engine processes still around after {STOP_BUDGET:?}");
+}
+
+fn kill_comm(name: &str) {
+    // toybox `killall` exits non-zero when nothing matches; that is not an error.
+    if let Err(error) = std::process::Command::new("killall").arg(name).status() {
+        debug!("killall {name} failed: {error}");
+    }
+}
+
+/// Find a process by the name in `/proc/<pid>/comm`.
+fn pid_by_comm(name: &str) -> Option<i32> {
+    let entries = fs::read_dir("/proc").ok()?;
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let Some(pid) = file_name.to_str().and_then(|text| text.parse::<i32>().ok()) else {
+            continue;
+        };
+        if fs::read_to_string(format!("/proc/{pid}/comm")).is_ok_and(|comm| comm.trim() == name) {
+            return Some(pid);
+        }
+    }
+    None
+}
+
+fn wait_for_comm(name: &str, budget: Duration) -> Option<i32> {
+    let deadline = Instant::now() + budget;
+    loop {
+        if let Some(pid) = pid_by_comm(name) {
+            return Some(pid);
+        }
+        if Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(POLL_STEP_MS));
+    }
+}
+
+/// Whether keystore2's memory map already contains the injected engine library.
+fn injection_present() -> bool {
+    let Some(pid) = pid_by_comm("keystore2") else {
+        return false;
+    };
+    fs::read_to_string(format!("/proc/{pid}/maps"))
+        .is_ok_and(|maps| maps.contains("libTEESimulator"))
+}
+
+fn wait_for_injection(budget: Duration) -> bool {
+    let deadline = Instant::now() + budget;
+    loop {
+        if injection_present() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(POLL_STEP_MS));
+    }
 }
 
 /// Run `<root>/<id>/<stage>.sh` for every staged built-in tree.
