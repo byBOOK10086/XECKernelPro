@@ -691,14 +691,13 @@ pub fn yield_external_engines() -> Vec<String> {
         if is_own_engine_copy(&dir) {
             let stamp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .map(|elapsed| elapsed.as_secs())
-                .unwrap_or(0);
+                .map_or(0, |elapsed| elapsed.as_secs());
             let backup = Path::new(EXTERNAL_BACKUP_DIR).join(format!("{id}-{stamp}"));
-            if let Some(parent) = backup.parent() {
-                if let Err(error) = fs::create_dir_all(parent) {
-                    warn!("cannot create {}: {error:#}", parent.display());
-                    continue;
-                }
+            if let Some(parent) = backup.parent()
+                && let Err(error) = fs::create_dir_all(parent)
+            {
+                warn!("cannot create {}: {error:#}", parent.display());
+                continue;
             }
             match fs::rename(&dir, &backup) {
                 Ok(()) => {
