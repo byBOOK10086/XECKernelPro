@@ -75,6 +75,16 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
     var note by remember { mutableStateOf<String?>(null) }
     var repairSteps by remember { mutableStateOf<List<TeeDiagnostics.RepairStep>>(emptyList()) }
     var detailsOpen by remember { mutableStateOf(false) }
+    /**
+     * 修复进度。
+     *
+     * 真机反馈（2026-11-11）：「点一键修复后直接变灰」。它确实是"正在跑"，但
+     * `builtin start` 要给三段阶段脚本各 45 秒预算，全程最长两分多钟——只把按钮
+     * 变灰等于让用户以为卡死。这里把阶段名和秒数显示在按钮上，变灰也变"有话说"。
+     */
+    var phase by remember { mutableStateOf("") }
+    var repairStartedAt by remember { mutableStateOf(0L) }
+    var elapsed by remember { mutableStateOf(0) }
 
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
 
@@ -90,6 +100,15 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
     }
 
     LaunchedEffect(Unit) { refresh() }
+
+    // 修复期间每秒刷新一次计时，让"变灰"变成"看得见的进度"。
+    LaunchedEffect(busy, repairStartedAt) {
+        if (!busy || repairStartedAt == 0L) return@LaunchedEffect
+        while (true) {
+            elapsed = ((System.currentTimeMillis() - repairStartedAt) / 1000L).toInt()
+            kotlinx.coroutines.delay(1000L)
+        }
+    }
 
     fun runRepair() {
         scope.launch {
@@ -108,10 +127,23 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
             )
             if (answer != ConfirmResult.Confirmed) return@launch
             busy = true
+            phase = "正在释放并启动引擎"
+            repairStartedAt = System.currentTimeMillis()
+            elapsed = 0
             val result = try {
-                TeeDiagnostics.oneTapRepair(snapshot?.engineDir)
+                // 硬性上限：阶段脚本最多各 45 秒 + 回读，超过 4 分钟一律收尾，别让
+                // 按钮永远灰着（真机反馈的就是这个）。
+                kotlinx.coroutines.withTimeoutOrNull(240_000L) {
+                    TeeDiagnostics.oneTapRepair(snapshot?.engineDir) { next -> phase = next }
+                } ?: Result.failure(
+                    IllegalStateException(
+                        "超过 4 分钟仍未结束：引擎可能还在后台启动，请稍后点右上角刷新看结果",
+                    ),
+                )
             } finally {
                 busy = false
+                repairStartedAt = 0L
+                phase = ""
             }
             repairSteps = result.getOrElse {
                 listOf(TeeDiagnostics.RepairStep("修复", false, it.message.orEmpty()))
@@ -310,13 +342,18 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
                 .padding(top = 16.dp)
                 .height(52.dp)
                 .clip(RoundedCornerShape(9.dp))
-                .background(Xc.colors.accent)
+                .background(if (busy) Xc.colors.accent.copy(alpha = 0.62f) else Xc.colors.accent)
                 .clickable(enabled = !busy) { runRepair() }
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                if (repairSteps.isEmpty()) "一键修复 · 装引擎并立即启动" else "再修一次 · 装引擎并立即启动",
+                when {
+                    busy && phase.isNotEmpty() -> "修复中 ${elapsed}s · $phase"
+                    busy -> "修复中 ${elapsed}s…"
+                    repairSteps.isEmpty() -> "一键修复 · 装引擎并立即启动"
+                    else -> "再修一次 · 装引擎并立即启动"
+                },
                 color = Color.White,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,

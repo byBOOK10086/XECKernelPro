@@ -301,7 +301,10 @@ object TeeDiagnostics {
      * boot 事务 / UAPI 四道闸门）；这里强制生效的是**当前这次**，重启后需要再点一次
      * 或把闸门清掉。
      */
-    suspend fun repairEngine(): Result<List<RepairStep>> = withContext(Dispatchers.IO) {
+    suspend fun repairEngine(
+        onPhase: (String) -> Unit = {},
+    ): Result<List<RepairStep>> = withContext(Dispatchers.IO) {
+        onPhase("正在确认 root 与自启开关")
         val shell = awaitRootShell(timeoutMs = 20_000L)
         if (!shell.isRoot) {
             return@withContext Result.failure(
@@ -332,6 +335,7 @@ object TeeDiagnostics {
         )
         // 装 + 起在同一条命令里。timeout 兜底：内核不是本项目时，脚本环境采集里
         // 的内核调用可能拖住，绝不能让 UI 一直转圈。
+        onPhase("正在释放内置引擎并启动（最长约 2 分钟）")
         val result = runCatching {
             shell.newJob().add(
                 "timeout 240 '${bundledKsud()}' builtin start 2>&1; echo __XEC_EXIT=\$?",
@@ -381,6 +385,7 @@ object TeeDiagnostics {
             onFailure = { steps += RepairStep("重新拉取 keybox", false, it.message.orEmpty().take(160)) },
         )
         // 回读：注入是异步的，最多再等 18 秒。
+        onPhase("正在回读进程与 keystore2 注入")
         var pid = 0
         var injected = false
         var waited = 0
@@ -495,7 +500,10 @@ object TeeDiagnostics {
      * 这里不再按 engineDir 分流——旧逻辑在探到外部副本时只重拉 keybox + 重启那份模块，
      * `builtin start` 永远得不到调用，真机表现就是"一键修复怎么点都修不好"。
      */
-    suspend fun oneTapRepair(engineDir: String?): Result<List<RepairStep>> =
+    suspend fun oneTapRepair(
+        engineDir: String?,
+        onPhase: (String) -> Unit = {},
+    ): Result<List<RepairStep>> =
         withContext(Dispatchers.IO) {
             val steps = ArrayList<RepairStep>()
             // 产品策略（2026-11-11）：内置引擎优先。以前这里按 engineDir 分流——只要探到
@@ -506,11 +514,12 @@ object TeeDiagnostics {
             if (engineDir != null && !engineDir.startsWith("/data/adb/ksu/builtin/")) {
                 steps += RepairStep("外部副本让位", true, engineDir)
             }
+            onPhase("正在拉取 keybox")
             refreshKeybox().fold(
                 onSuccess = { steps += RepairStep("重新拉取 keybox", true, it.take(160)) },
                 onFailure = { steps += RepairStep("重新拉取 keybox", false, it.message.orEmpty().take(160)) },
             )
-            repairEngine().map { repairSteps -> steps + repairSteps }
+            repairEngine(onPhase).map { repairSteps -> steps + repairSteps }
         }
 
     /**
