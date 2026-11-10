@@ -16,6 +16,14 @@ const MAX_PEM_BODY_BYTES: usize = 65_536;
 const PRE_NTP_EPOCH_SECS: u64 = 1_577_836_800;
 
 const ROOT_GOOGLE_PEM: &[u8] = include_bytes!("roots/google.pem");
+// XECKernel Pro 本地新增（2026-11-10）：2025 年起 Google 给"远程配置（RKP）"设备发的
+// 证书链挂在 CN=Key Attestation CA1（EC P-384, 2025-07-17 ~ 2035-07-15）下，它**不是**
+// 上游唯一登记的那张 RSA-4096 "Google Hardware Attestation Root"。缺这一条时，一个
+// 完全合法的 RKP keybox 会被判成 "root certificate not recognized" ⇒ `keybox validate`
+// 失败、daemon 的自动拉取也会把它丢掉（本项目下发的正是这类箱子）。
+// 锚点取自 Google 官方根证书清单，与本项目 `common/keybox_roots.txt` 第 3 条、以及
+// 内置验机工具的 GOOGLE_RKP_ROOT_PUBLIC_KEY 是同一把公钥。
+const ROOT_GOOGLE_RKP_PEM: &[u8] = include_bytes!("roots/google_rkp.pem");
 const ROOT_AOSP_EC_PEM: &[u8] = include_bytes!("roots/aosp_ec.pem");
 const ROOT_AOSP_RSA_PEM: &[u8] = include_bytes!("roots/aosp_rsa.pem");
 const ROOT_KNOX_PEM: &[u8] = include_bytes!("roots/knox.pem");
@@ -36,6 +44,9 @@ const OID_CURVE_P384: &str = "1.3.132.0.34";
 #[serde(rename_all = "snake_case")]
 pub enum KeyboxRootType {
     Google,
+    /// Google RKP 树根（CN=Key Attestation CA1, EC P-384）。本地新增，理由见
+    /// [ROOT_GOOGLE_RKP_PEM] 上的注释。
+    GoogleRkp,
     AospEc,
     AospRsa,
     Knox,
@@ -46,6 +57,7 @@ impl KeyboxRootType {
     pub fn as_snake_case(self) -> &'static str {
         match self {
             Self::Google => "google",
+            Self::GoogleRkp => "google_rkp",
             Self::AospEc => "aosp_ec",
             Self::AospRsa => "aosp_rsa",
             Self::Knox => "knox",
@@ -466,6 +478,7 @@ fn trust_anchors() -> &'static [(KeyboxRootType, Vec<u8>)] {
     CELL.get_or_init(|| {
         let pairs = [
             (KeyboxRootType::Google, ROOT_GOOGLE_PEM),
+            (KeyboxRootType::GoogleRkp, ROOT_GOOGLE_RKP_PEM),
             (KeyboxRootType::AospEc, ROOT_AOSP_EC_PEM),
             (KeyboxRootType::AospRsa, ROOT_AOSP_RSA_PEM),
             (KeyboxRootType::Knox, ROOT_KNOX_PEM),
@@ -533,7 +546,12 @@ fn try_match_rsa(pem: &str, leaf_spki: &[u8], errors: &mut Vec<String>) -> Optio
 
 fn try_match_p256(pem: &str, leaf_spki: &[u8], errors: &mut Vec<String>) -> Option<KeyMatch> {
     use p256::pkcs8::{DecodePrivateKey, EncodePublicKey};
-    let priv_key = p256::SecretKey::from_pkcs8_pem(pem).ok()?;
+    // XECKernel Pro 本地修改（2026-11-10）：keybox.xml 里的 EC 私钥普遍是 SEC1
+    // （`-----BEGIN EC PRIVATE KEY-----`），不是 PKCS#8。上游只试 PKCS#8 ⇒ 一把完全
+    // 匹配的私钥被判成 Mismatched ⇒ 整份 keybox 的 ok=false。SEC1 也要试。
+    let priv_key = p256::SecretKey::from_pkcs8_pem(pem)
+        .ok()
+        .or_else(|| p256::SecretKey::from_sec1_pem(pem).ok())?;
     let pub_key = priv_key.public_key();
     match pub_key.to_public_key_der() {
         Ok(der) => Some(verdict(der.as_bytes(), leaf_spki)),
@@ -546,7 +564,10 @@ fn try_match_p256(pem: &str, leaf_spki: &[u8], errors: &mut Vec<String>) -> Opti
 
 fn try_match_p384(pem: &str, leaf_spki: &[u8], errors: &mut Vec<String>) -> Option<KeyMatch> {
     use p384::pkcs8::{DecodePrivateKey, EncodePublicKey};
-    let priv_key = p384::SecretKey::from_pkcs8_pem(pem).ok()?;
+    // 同 try_match_p256：SEC1 也要接受。
+    let priv_key = p384::SecretKey::from_pkcs8_pem(pem)
+        .ok()
+        .or_else(|| p384::SecretKey::from_sec1_pem(pem).ok())?;
     let pub_key = priv_key.public_key();
     match pub_key.to_public_key_der() {
         Ok(der) => Some(verdict(der.as_bytes(), leaf_spki)),
@@ -759,6 +780,7 @@ mod tests {
     #[test]
     fn root_type_snake_case_consistent() {
         assert_eq!(KeyboxRootType::Google.as_snake_case(), "google");
+        assert_eq!(KeyboxRootType::GoogleRkp.as_snake_case(), "google_rkp");
         assert_eq!(KeyboxRootType::AospEc.as_snake_case(), "aosp_ec");
         assert_eq!(KeyboxRootType::AospRsa.as_snake_case(), "aosp_rsa");
         assert_eq!(KeyboxRootType::Knox.as_snake_case(), "knox");

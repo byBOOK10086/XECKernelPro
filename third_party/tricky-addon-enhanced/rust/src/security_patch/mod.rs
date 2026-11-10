@@ -16,6 +16,27 @@ const SECURITY_PATCH_FILE: &str = "/data/adb/tricky_store/security_patch.txt";
 const DEVCONFIG_TOML: &str = "/data/adb/tricky_store/devconfig.toml";
 const TS_MODULE_PROP: &str = "/data/adb/modules/tricky_store/module.prop";
 
+/// XECKernel Pro 本地新增（2026-11-10）：内置（builtin）布局下引擎装在
+/// `/data/adb/ksu/builtin/tricky_store`，`/data/adb/modules/tricky_store` 根本不存在。
+/// 上游只读后者 ⇒ 变体检测永远落到 `Legacy` ⇒ `security-patch set/update` 不去写
+/// `security_patch.txt`，转而去写系统属性（v5.53.1 起还要依赖 resetprop-rs 固定路径）。
+/// 这里按"内置 → 常规 → 隐藏"顺序找第一份可读的 module.prop。
+fn variant_module_prop() -> String {
+    const CANDIDATES: [&str; 3] = [
+        "/data/adb/ksu/builtin/tricky_store/module.prop",
+        TS_MODULE_PROP,
+        "/data/adb/modules/.tricky_store/module.prop",
+    ];
+    for path in CANDIDATES {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if !content.is_empty() {
+                return content;
+            }
+        }
+    }
+    String::new()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum TrickyStoreVariant {
     James,
@@ -93,7 +114,7 @@ pub fn get_vendor_patch_date() -> Option<String> {
 }
 
 pub fn detect_variant() -> TrickyStoreVariant {
-    let prop_content = std::fs::read_to_string(TS_MODULE_PROP).unwrap_or_default();
+    let prop_content = variant_module_prop();
 
     if prop_content.contains("James") && !prop_content.contains("beakthoven") {
         return TrickyStoreVariant::James;

@@ -29,8 +29,15 @@ import java.nio.charset.StandardCharsets
  */
 internal object TarScan {
 
-    /** 顶层目录名 = 模块 id。和 ksud 的 `module.rs` 用法一致（不接受 `/`、不接受空格）。 */
-    val MODULE_ID = Regex("^[A-Za-z0-9._-]{1,64}$")
+    /**
+     * 顶层目录名 = 模块 id。
+     *
+     * **必须和 ksud 的校验规则一字不差**（`userspace/ksud/src/module.rs:115`：
+     * `^[a-zA-Z][a-zA-Z0-9._-]+$`，首字符必须是字母、长度至少 2）。旧版这里放宽成
+     * `[A-Za-z0-9._-]{1,64}`，于是 `1foo`、`_bar` 这种目录能恢复成功，却在之后
+     * `ksud module uninstall/enable/action` 里被判非法 —— 模块在，但管理器再也管不动它。
+     */
+    val MODULE_ID = Regex("^[A-Za-z][A-Za-z0-9._-]{1,63}$")
 
     /**
      * 归档里的一个条目。

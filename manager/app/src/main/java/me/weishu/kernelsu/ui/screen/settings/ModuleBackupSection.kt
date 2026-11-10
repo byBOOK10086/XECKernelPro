@@ -94,8 +94,8 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
                         val skippedNote = if (done.skipped.isEmpty()) {
                             ""
                         } else {
-                            "\n\n⚠️ 有 ${done.skipped.size} 个没恢复（不是完整模块，缺 module.prop）：" +
-                                done.skipped.joinToString("、")
+                            "\n\n⚠️ 有 ${done.skipped.size} 个没恢复：" +
+                                done.skipped.joinToString("\n") { "· ${it.id} —— ${it.reason}" }
                         }
                         val answer = confirm.awaitConfirm(
                             title = "已放入 $count 个模块",
@@ -103,7 +103,9 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
                                 "不重启就等于没恢复。\n\n" +
                                 "恢复的模块：${done.installed.joinToString("、")}\n\n" +
                                 "注意：恢复是**叠加**的 —— 备份里没有的现有模块不会被删除，" +
-                                "同名模块会被这份备份覆盖。" + skippedNote + "\n\n" +
+                                "同名模块会被这份备份覆盖；备份里带 `disable` 标记的模块恢复后仍是禁用。" +
+                                "带 `initrc/`、`preinit/` 的模块要等到**再下一次**开机才装进 modules.rc。" +
+                                skippedNote + "\n\n" +
                                 "现在重启，还是先退出（退出后重启也会在下次开机生效）？",
                             markdown = true,
                             confirm = "立即重启",

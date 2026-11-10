@@ -125,6 +125,25 @@ if [ -f "$MODPATH/bin/${ABI}/resetprop-rs" ]; then
     fi
 fi
 
+# v5.53.1 起 Rust 侧写属性不再走进程内实现，而是**固定路径** exec 一个 resetprop-rs
+# （third_party/.../rust/src/platform/props.rs 的 RP_PATH =
+#  /data/adb/tricky_store/ta-enhanced/bin/resetprop-rs）。它读的不是我们的 staging
+#  目录，不补这一份的话：region 写入直接失败、security_patch 走属性分支时只告警却返回成功
+#  —— 表现就是"补丁/区域设置改了但设备毫无变化"。
+RP_VENDOR="/data/adb/tricky_store/ta-enhanced/bin/resetprop-rs"
+if [ -x "$RP_STAGE" ]; then
+    mkdir -p "${RP_VENDOR%/*}" 2>/dev/null
+    if cp -f "$RP_STAGE" "${RP_VENDOR}.tmp.$$" 2>/dev/null && \
+       chmod 755 "${RP_VENDOR}.tmp.$$" 2>/dev/null && \
+       mv -f "${RP_VENDOR}.tmp.$$" "$RP_VENDOR" 2>/dev/null; then
+        command -v chcon >/dev/null 2>&1 && \
+            chcon --reference=/data/adb "$RP_VENDOR" 2>/dev/null || true
+    else
+        rm -f "${RP_VENDOR}.tmp.$$" 2>/dev/null
+        _log "WARN" "resetprop-rs 未同步到 vendor 固定路径 $RP_VENDOR（daemon 的属性写入会失败）"
+    fi
+fi
+
 # Preserve module.prop for WebUI version display. Hiding it from the manager
 # list is only done where it cannot invalidate the module: our ksud executes
 # module scripts without requiring module.prop, but Magisk treats a module

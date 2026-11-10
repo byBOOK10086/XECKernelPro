@@ -177,6 +177,13 @@ fun SettingPagerMiuix(
                         ModuleBackupSection()
                     }
 
+                    // 密钥库（TEE）体检：现场取一张硬件证明 + 读引擎/keybox 状态，
+                    // 顺手给出"重启引擎 / 刷新 keybox / 清空密钥库"三个处置动作。
+                    // 同样需要 root（要读 /data/adb、要杀引擎进程）。
+                    KsuIsValid {
+                        TeeStatusSection(modifier = Modifier.padding(top = 12.dp))
+                    }
+
                     // 主题 / 主题商城 / 壁纸都是"进去改外观"的入口，收进同一块面板，
                     // 与上面的开关行保持同一种分组语言（原来是三张 miuix 卡里的箭头行）。
                     Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {

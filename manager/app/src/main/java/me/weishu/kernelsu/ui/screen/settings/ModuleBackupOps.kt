@@ -11,6 +11,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.random.Random
 
 /**
  * 模块备份 / 恢复（2026-11-09 初版；2026-11-09 二轮加固；2026-11-10 三轮修"用不了"）。
@@ -39,9 +40,10 @@ import java.util.Locale
  *
  *  1. 不再直接解到 `modules_update`。ksud 的行为是"先删旧目录再 rename"（module.rs:744-751，
  *     没有回滚），解包中途失败留下的半成品会在下一次开机被当成一次真正的模块更新消费。
- *     现在先解到 `/data/adb/xec/tmp/xec_restore`（**不在** `modules_update` 里 —— 三轮
- *     改的：ksud 的 `foreach_module` 不跳过点开头的目录，暂存区留在 `modules_update`
- *     会被当成一个模块搬到 `modules/.xec_restore`），逐个顶层目录校验后再搬。
+ *     现在先解到 `/data/adb/xec/tmp/restore_<时间>_<随机>`（**不在** `modules_update` 里 ——
+ *     三轮改的：ksud 的 `foreach_module` 不跳过点开头的目录，暂存区留在 `modules_update`
+ *     会被当成一个模块搬到 `modules/.xec_restore`），逐个顶层目录校验后再搬；搬之前把
+ *     目标位置原有的待更新模块挪到暂存区外，搬成功才删，失败就搬回去。
  *  2. tar 条目先校验再解包（见 [TarScan]）。
  *  3. 必须用本树的 root shell（`awaitRootShell()`），并显式判 `isRoot`。
  *  4. 授权表恢复不可能"立即生效"：内核只在开机时读 `.allowlist`，运行期没有 reload，
@@ -60,12 +62,13 @@ object ModuleBackupOps {
     private const val BUSYBOX = "/data/adb/ksu/bin/busybox"
 
     /**
-     * 解包暂存区。**故意放在 `modules_update` 之外**：ksud 的 `foreach_module(Updated)`
+     * 解包暂存区根目录。**故意放在 `modules_update` 之外**：ksud 的 `foreach_module(Updated)`
      * 对目录名不做任何过滤（`userspace/ksud/src/module.rs:209`），留在 `modules_update`
      * 里的半成品会在下次开机被 rename 进 `modules/`，变成一个幽灵模块。
+     *
+     * 每次恢复在它下面开一个 `restore_<时间>_<随机>` 子目录，避免两次恢复互相踩踏。
      */
     private const val STAGE_ROOT = "/data/adb/xec/tmp"
-    private const val STAGE_DIR = "$STAGE_ROOT/xec_restore"
     private const val ALLOW_STAGE = "$KSU_DIR/.xec_allow_stage"
 
     // kernel/policy/allowlist.c:29 `#define FILE_MAGIC 0x7f4b5355`；uapi app_profile.h 版本上限。
@@ -76,8 +79,10 @@ object ModuleBackupOps {
     /** 备份结果：模块 id 列表与归档大小（0 个模块时不会走到成功分支）。 */
     data class BackupResult(val modules: List<String>, val bytes: Long)
 
-    /** 恢复结果：真正搬进 `modules_update` 的模块，以及被跳过的（缺 module.prop / 搬运失败）。 */
-    data class RestoreResult(val installed: List<String>, val skipped: List<String>)
+    /** 恢复结果：真正搬进 `modules_update` 的模块，以及被跳过的（附原因）。 */
+    data class RestoreResult(val installed: List<String>, val skipped: List<Skipped>) {
+        data class Skipped(val id: String, val reason: String)
+    }
 
     /** 带人话的失败原因，UI 直接显示，不再显示英文异常类名。 */
     class Refused(message: String) : IllegalStateException(message)
@@ -126,11 +131,6 @@ object ModuleBackupOps {
         }
 
     /** `id1、id2、id3 等 N 个`，用于提示语。 */
-    private fun humanIds(ids: List<String>, limit: Int = 6): String {
-        val head = ids.take(limit).joinToString("、")
-        return if (ids.size <= limit) head else "$head 等 ${ids.size} 个"
-    }
-
     // ------------------------------------------------------------------ 备份
 
     /** 备份 `/data/adb/modules` 到 [uri]。 */
@@ -247,49 +247,76 @@ object ModuleBackupOps {
                         ),
                     )
                 }
+                // 每次恢复用**独立**暂存目录：固定路径会让两次恢复（或上一个任务被杀后
+                // 留下的残局）互相踩踏，解到一半被另一个进程 rm -rf 掉就是"模块目录凭空消失"。
+                val stageDir = "$STAGE_ROOT/restore_${stamp()}_${Random.nextInt(1000, 9999)}"
                 exec(
                     shell,
-                    "rm -rf '$STAGE_DIR' && mkdir -p '$STAGE_DIR' && mkdir -p '$MODULES_UPDATE_DIR'",
+                    "rm -rf '$stageDir' && mkdir -p '$stageDir' && mkdir -p '$MODULES_UPDATE_DIR'",
                 )
-                val unpack = exec(shell, "$tar -xf '${staged.absolutePath}' -C '$STAGE_DIR'")
+                val unpack = exec(shell, "$tar -xf '${staged.absolutePath}' -C '$stageDir'")
                 if (!unpack.isSuccess) {
-                    exec(shell, "rm -rf '$STAGE_DIR'")
+                    exec(shell, "rm -rf '$stageDir'")
                     return@withContext Result.failure(Refused(detail(unpack, "解包失败")))
                 }
                 val installed = ArrayList<String>()
-                val skipped = ArrayList<String>()
+                val skipped = ArrayList<RestoreResult.Skipped>()
                 try {
                     for (id in ids) {
-                        // id 已经过 TarScan.MODULE_ID 白名单（只含 [A-Za-z0-9._-]），拼命令安全；
-                        // 这里再判一次，纯粹是别让"以后有人放宽正则"变成命令注入。
+                        // id 已经过 TarScan.MODULE_ID 白名单（只含 [A-Za-z0-9._-] 且字母开头），
+                        // 拼命令安全；这里再判一次，纯粹是别让"以后有人放宽正则"变成命令注入。
                         if (!TarScan.MODULE_ID.matches(id)) {
-                            skipped += id
+                            skipped += RestoreResult.Skipped(id, "目录名不是合法的模块 id")
                             continue
                         }
-                        // 真解出来了、而且是合法模块（有 module.prop）才搬：否则 modules_update
-                        // 里会出现一个 ksud 认不出、但照样会被搬进 modules 的垃圾目录。
-                        val ok = exec(
+                        // 真解出来了才搬：否则 modules_update 里会出现一个 ksud 认不出的垃圾目录。
+                        val hasProp = exec(shell, "test -d '$stageDir/$id' && test -f '$stageDir/$id/module.prop'")
+                        if (!hasProp.isSuccess) {
+                            skipped += RestoreResult.Skipped(id, "解包里没有这个目录或没有 module.prop")
+                            continue
+                        }
+                        // ksud 的 list 以 module.prop 的 id= 为准，而合并/脚本执行按**目录名**走
+                        // （`userspace/ksud/src/module.rs:737`）。两者不一致时模块会变成"列表里
+                        // 叫 A、实际目录叫 B"的幽灵：能加载，但 uninstall/enable/action 全指向
+                        // 一个不存在的目录。这种情况宁可不恢复，也不留一个管不动的模块。
+                        val propId = exec(
                             shell,
-                            "test -d '$STAGE_DIR/$id' && test -f '$STAGE_DIR/$id/module.prop'",
-                        ).isSuccess
-                        if (!ok) {
-                            skipped += id
+                            "sed -n 's/^id=//p' '$stageDir/$id/module.prop' 2>/dev/null | head -n1 | tr -d '\\r'",
+                        ).out.firstOrNull()?.trim().orEmpty()
+                        if (propId.isEmpty()) {
+                            skipped += RestoreResult.Skipped(id, "module.prop 里没有 id= 行")
                             continue
                         }
+                        if (propId != id) {
+                            skipped += RestoreResult.Skipped(id, "module.prop 的 id=$propId 与目录名不一致")
+                            continue
+                        }
+                        // 安全替换：`modules_update/<id>` 里可能已经躺着一个待更新模块（用户刚刷过
+                        // 同一个模块还没重启）。旧写法 `rm -rf 目标 && mv` 在 mv 失败时会把那份待
+                        // 更新**永久删掉**；现在先把旧的挪到暂存区外，新的搬成功才删旧的，失败就搬回。
+                        val aside = "$STAGE_ROOT/prev_${id}_${Random.nextInt(1000, 9999)}"
                         val mv = exec(
                             shell,
-                            "rm -rf '$MODULES_UPDATE_DIR/$id' && mv '$STAGE_DIR/$id' '$MODULES_UPDATE_DIR/$id'",
+                            "B='$aside'; U='$MODULES_UPDATE_DIR/$id'; " +
+                                "[ -d \"\$U\" ] && mv \"\$U\" \"\$B\"; " +
+                                "if mv '$stageDir/$id' \"\$U\"; then rm -rf \"\$B\"; echo XEC_OK; " +
+                                "else [ -d \"\$B\" ] && mv \"\$B\" \"\$U\"; echo XEC_FAIL; fi",
                         )
-                        if (mv.isSuccess) installed += id else skipped += id
+                        if (mv.out.any { it.trim() == "XEC_OK" }) {
+                            installed += id
+                        } else {
+                            skipped += RestoreResult.Skipped(id, "搬进 $MODULES_UPDATE_DIR 失败（原有的待更新已放回原处）")
+                        }
                     }
                 } finally {
-                    exec(shell, "rm -rf '$STAGE_DIR'")
+                    exec(shell, "rm -rf '$stageDir'")
                 }
                 if (installed.isEmpty()) {
+                    val why = skipped.joinToString("；") { "${it.id}（${it.reason}）" }
                     return@withContext Result.failure(
                         Refused(
                             "解包成功，但没有一个模块能搬进 $MODULES_UPDATE_DIR" +
-                                if (skipped.isEmpty()) "" else "（缺 module.prop：${humanIds(skipped)}）",
+                                if (why.isEmpty()) "" else "：$why",
                         ),
                     )
                 }

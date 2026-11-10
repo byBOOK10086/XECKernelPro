@@ -10,6 +10,17 @@ const TS_MODULE: &str = "/data/adb/modules/tricky_store";
 const TS_MODULE_HIDDEN: &str = "/data/adb/modules/.tricky_store";
 const HEALTH_STATE: &str = "/data/adb/tricky_store/.health_state";
 
+/// XECKernel Pro 本地新增（2026-11-10）：本项目把引擎作为 **builtin** 模块装到
+/// `/data/adb/ksu/builtin/tricky_store`，`/data/adb/modules/tricky_store` 不会存在。
+/// 上游只认后两条路径 ⇒ `is_engine_enabled()` 恒 false、`detect_nice_name()` 拿不到
+/// service.sh、`check_once()` 直接早退 ⇒ 引擎挂了永远不会被自动拉起。
+/// 所有"引擎在哪"的判断统一走这个列表。
+const TS_MODULE_BUILTIN: &str = "/data/adb/ksu/builtin/tricky_store";
+
+fn engine_dirs() -> [&'static str; 3] {
+    [TS_MODULE, TS_MODULE_HIDDEN, TS_MODULE_BUILTIN]
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EngineStatus {
@@ -91,7 +102,7 @@ pub fn detect_engine() -> String {
             }
         }
     }
-    for dir in [TS_MODULE, TS_MODULE_HIDDEN] {
+    for dir in engine_dirs() {
         let prop = Path::new(dir).join("module.prop");
         if let Ok(content) = std::fs::read_to_string(&prop) {
             if let Some(name) = content.lines().find_map(|l| l.strip_prefix("name=")) {
@@ -106,7 +117,7 @@ pub fn detect_engine() -> String {
 }
 
 pub fn is_engine_enabled() -> bool {
-    for dir in [TS_MODULE, TS_MODULE_HIDDEN] {
+    for dir in engine_dirs() {
         let p = Path::new(dir);
         if p.is_dir() {
             return !p.join("disable").exists();
@@ -116,7 +127,7 @@ pub fn is_engine_enabled() -> bool {
 }
 
 fn detect_nice_name() -> Option<String> {
-    for dir in [TS_MODULE, TS_MODULE_HIDDEN] {
+    for dir in engine_dirs() {
         let service_sh = Path::new(dir).join("service.sh");
         if let Ok(content) = std::fs::read_to_string(&service_sh) {
             for line in content.lines() {
@@ -158,7 +169,7 @@ pub fn tee_status() -> anyhow::Result<HealthState> {
 }
 
 pub fn check_once(state: &mut HealthState, cfg: &Config) -> anyhow::Result<bool> {
-    if !Path::new(TS_MODULE).is_dir() && !Path::new(TS_MODULE_HIDDEN).is_dir() {
+    if !engine_dirs().iter().any(|d| Path::new(d).is_dir()) {
         return Ok(true);
     }
 
@@ -258,7 +269,7 @@ pub fn check_once(state: &mut HealthState, cfg: &Config) -> anyhow::Result<bool>
 pub fn restart_engine(engine_name: &str) -> anyhow::Result<()> {
     let _ = Command::new("killall").arg(engine_name).output();
 
-    let service_sh = [TS_MODULE, TS_MODULE_HIDDEN].iter()
+    let service_sh = engine_dirs().iter()
         .map(|d| Path::new(d).join("service.sh"))
         .find(|p| p.exists());
 
