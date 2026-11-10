@@ -64,7 +64,7 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
                 busy = true
                 val message = if (which == BackupKind.Modules) {
                     ModuleBackupOps.backupModules(context, uri).fold(
-                        onSuccess = { "已备份 ${it.count} 个模块（${it.bytes / 1024} KB）" },
+                        onSuccess = { "已备份 ${it.modules.size} 个模块（${it.bytes / 1024} KB）：${it.modules.joinToString("、")}" },
                         onFailure = { "备份失败：${it.message}" },
                     )
                 } else {
@@ -89,13 +89,21 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
                 if (which == BackupKind.Modules) {
                     val result = ModuleBackupOps.restoreModules(context, uri)
                     busy = false
-                    result.onSuccess { count ->
+                    result.onSuccess { done ->
+                        val count = done.installed.size
+                        val skippedNote = if (done.skipped.isEmpty()) {
+                            ""
+                        } else {
+                            "\n\n⚠️ 有 ${done.skipped.size} 个没恢复（不是完整模块，缺 module.prop）：" +
+                                done.skipped.joinToString("、")
+                        }
                         val answer = confirm.awaitConfirm(
                             title = "已放入 $count 个模块",
                             content = "它们被解到 `modules_update`，**重启后**才由 ksud 合并生效；" +
                                 "不重启就等于没恢复。\n\n" +
+                                "恢复的模块：${done.installed.joinToString("、")}\n\n" +
                                 "注意：恢复是**叠加**的 —— 备份里没有的现有模块不会被删除，" +
-                                "同名模块会被这份备份覆盖。\n\n" +
+                                "同名模块会被这份备份覆盖。" + skippedNote + "\n\n" +
                                 "现在重启，还是先退出（退出后重启也会在下次开机生效）？",
                             markdown = true,
                             confirm = "立即重启",

@@ -7,15 +7,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.ui.util.awaitRootShell
 import me.weishu.kernelsu.ui.util.getRootShell
-import java.io.BufferedInputStream
-import java.io.DataInputStream
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * 模块备份 / 恢复（2026-11-09；2026-11-09 第二轮按审计结论加固）。
+ * 模块备份 / 恢复（2026-11-09 初版；2026-11-09 二轮加固；2026-11-10 三轮修"用不了"）。
  *
  * 能力来自 KernelSU-Next 的 `BackupRestore.kt`（GPL-3.0，见 THIRD_PARTY_NOTICES.md
  * 「模块备份与恢复」一节）：把 `/data/adb/modules` 打成一个 tar 交给用户，恢复时**解到
@@ -23,29 +21,35 @@ import java.util.Locale
  * （`userspace/ksud/src/module.rs:730 handle_updated_modules`），于是"恢复"是可撤销的：
  * 刷完先重启才生效，中途反悔只要不开机就还在。
  *
- * 第二轮改掉的四个真问题（都是审计里核到代码的，不是"看起来更安全"）：
+ * ## 三轮修的"恢复永远失败"
  *
- *  1. **不能直接解到 `modules_update`**。ksud 的行为是"先删旧目录再 rename"
- *     （module.rs:744-751，没有回滚），所以解包中途失败留下的半成品，会在下一次开机被
- *     当成一次真正的模块更新消费 —— 旧模块被删、新的不完整，直接开机异常。
- *     现在先解到 `modules_update/.xec_restore`，**逐个顶层目录**搬进 `modules_update`，
- *     任何一步失败就整体丢弃，`modules_update` 里只会出现完整模块。
- *  2. **tar 条目先校验再解包**。绝对路径、`..` 段、硬链接一律拒绝，相对符号链接
- *     逃出备份根的也拒绝 —— 否则"恢复一个别人给的 tar" = 以 root 往任意路径写文件。
- *  3. **必须用本树的 root shell**。之前用 libsu 默认的 `Shell.cmd`，而本树从不
- *     `setDefaultBuilder`：那条壳可能是非 root 的 `sh`（"重启丢 root" 就是它），
- *     拿它去读 `/data/adb/modules` 只会失败。现在一律 `awaitRootShell()` 并显式判
- *     `isRoot`，拿不到 root 就说"没有 root"，不猜。
- *  4. **授权表恢复不可能"立即生效"**。内核只在开机初始化时读
- *     `/data/adb/ksu/.allowlist`（`kernel/core/init.c:210`、`kernel/runtime/boot_event.c:30`），
- *     运行期没有 reload 超级调用；而且**任何一次授权变更都会把内核内存里的旧表整表写回
- *     这个文件**（`kernel/supercall/dispatch.c:441` → `ksu_persistent_allow_list()`），
- *     覆盖掉刚恢复的内容。所以这里改成：原子写入（临时文件 + rename）、先校验
- *     magic/version（写错=重启后整表被内核拒绝=所有 root 消失）、保留一份 `.bak`，
- *     并且 UI 明说"重启后生效、重启前别再改授权"。
+ * 用户报「备份模块用不了、识别不出 /data/adb/modules 里的模块」。核到两层：
  *
- * 与上游另外两处按本树实际情况的差异：tar 按 toybox -> busybox 探测（不假设装了
- * busybox）；tar 先落 app 私有 cacheDir 再流进 SAF 的 Uri（SAF Uri 不能给 root shell 用）。
+ *  1. **根因（100% 必现）**：备份是用 `tar -cf x.tar -C /data/adb/modules .` 打的，
+ *     tar 把条目名存成 `./mod_a/`。旧代码取顶层目录用 `substringBefore('/')`，拿到的是
+ *     `"."`，紧接着被 `!= "."` 过滤掉 ⇒ 顶层列表恒为空 ⇒ 恢复自己的备份也必然报
+ *     「这个 tar 里没有模块目录」。现在条目解析全部交给 [TarScan]，`./` 前缀、
+ *     PAX `path=` 覆盖、GNU `K` 长链接都按真实语义处理。
+ *  2. **计数靠字符串**：备份前用 `ls -1 /data/adb/modules | wc -l` 判断"有没有模块"，
+ *     这条管道一旦失败（PATH 里没有 wc、目录不可读、SELinux）就得到空串 ⇒ 被当成
+ *     "0 个模块" ⇒ 报「目录是空的」。现在**以打出来的归档本身为准**：tar 成功后再自己
+ *     解析归档拿模块 id，失败就把 tar 的原始 stderr 如实报给用户，不猜。
+ *
+ * ## 二轮（按审计结论加固）留下的四条
+ *
+ *  1. 不再直接解到 `modules_update`。ksud 的行为是"先删旧目录再 rename"（module.rs:744-751，
+ *     没有回滚），解包中途失败留下的半成品会在下一次开机被当成一次真正的模块更新消费。
+ *     现在先解到 `/data/adb/xec/tmp/xec_restore`（**不在** `modules_update` 里 —— 三轮
+ *     改的：ksud 的 `foreach_module` 不跳过点开头的目录，暂存区留在 `modules_update`
+ *     会被当成一个模块搬到 `modules/.xec_restore`），逐个顶层目录校验后再搬。
+ *  2. tar 条目先校验再解包（见 [TarScan]）。
+ *  3. 必须用本树的 root shell（`awaitRootShell()`），并显式判 `isRoot`。
+ *  4. 授权表恢复不可能"立即生效"：内核只在开机时读 `.allowlist`，运行期没有 reload，
+ *     且任何一次授权变更都会把内存里的旧表整表写回。这里改成原子写入 + 先验 magic/version
+ *     + 留 `.bak`，UI 明说"重启后生效、重启前别再改授权"。
+ *
+ * 与上游另外两处按本树实际情况的差异：tar 按 toybox -> busybox 探测（不假设装了 busybox）；
+ * tar 先落 app 私有 cacheDir 再流进 SAF 的 Uri（SAF Uri 不能给 root shell 用）。
  */
 object ModuleBackupOps {
 
@@ -55,8 +59,13 @@ object ModuleBackupOps {
     private const val ALLOWLIST = ".allowlist"
     private const val BUSYBOX = "/data/adb/ksu/bin/busybox"
 
-    /** 解包暂存区；以 `.` 开头，ksud 的 `next_boot_modules` 只会把它当一个模块 id 跳过。 */
-    private const val STAGE_DIR = "$MODULES_UPDATE_DIR/.xec_restore"
+    /**
+     * 解包暂存区。**故意放在 `modules_update` 之外**：ksud 的 `foreach_module(Updated)`
+     * 对目录名不做任何过滤（`userspace/ksud/src/module.rs:209`），留在 `modules_update`
+     * 里的半成品会在下次开机被 rename 进 `modules/`，变成一个幽灵模块。
+     */
+    private const val STAGE_ROOT = "/data/adb/xec/tmp"
+    private const val STAGE_DIR = "$STAGE_ROOT/xec_restore"
     private const val ALLOW_STAGE = "$KSU_DIR/.xec_allow_stage"
 
     // kernel/policy/allowlist.c:29 `#define FILE_MAGIC 0x7f4b5355`；uapi app_profile.h 版本上限。
@@ -64,11 +73,11 @@ object ModuleBackupOps {
     private const val ALLOW_VERSION_MIN = 2L
     private const val ALLOW_VERSION_MAX = 4L
 
-    private const val MAX_ENTRIES = 20_000
-    private const val MAX_PAYLOAD = 8L * 1024 * 1024 * 1024
+    /** 备份结果：模块 id 列表与归档大小（0 个模块时不会走到成功分支）。 */
+    data class BackupResult(val modules: List<String>, val bytes: Long)
 
-    /** 备份结果：打包了多少个模块目录（0 表示没有可备份的东西）。 */
-    data class BackupResult(val count: Int, val bytes: Long)
+    /** 恢复结果：真正搬进 `modules_update` 的模块，以及被跳过的（缺 module.prop / 搬运失败）。 */
+    data class RestoreResult(val installed: List<String>, val skipped: List<String>)
 
     /** 带人话的失败原因，UI 直接显示，不再显示英文异常类名。 */
     class Refused(message: String) : IllegalStateException(message)
@@ -76,6 +85,18 @@ object ModuleBackupOps {
     private fun stamp(): String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
 
     private fun exec(shell: Shell, cmd: String): Shell.Result = shell.newJob().add(cmd).exec()
+
+    /** 把 root shell 的报错原样带出来（截断），不要只留一句"失败"。 */
+    private fun detail(result: Shell.Result, what: String): String {
+        val text = (result.err + result.out)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString(" / ")
+        return if (text.isEmpty()) what else "$what：${text.take(240)}"
+    }
+
+    private fun firstNumber(text: String): Long? =
+        Regex("(\\d+)").find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()
 
     /** 找一个能用的 tar。返回完整命令行前缀（含 busybox 调用形式）；都不行返回 null。 */
     private fun tarCmd(shell: Shell): String? {
@@ -104,6 +125,12 @@ object ModuleBackupOps {
             }.getOrDefault(false).also { file.delete() }
         }
 
+    /** `id1、id2、id3 等 N 个`，用于提示语。 */
+    private fun humanIds(ids: List<String>, limit: Int = 6): String {
+        val head = ids.take(limit).joinToString("、")
+        return if (ids.size <= limit) head else "$head 等 ${ids.size} 个"
+    }
+
     // ------------------------------------------------------------------ 备份
 
     /** 备份 `/data/adb/modules` 到 [uri]。 */
@@ -115,24 +142,49 @@ object ModuleBackupOps {
             }
             val tar = tarCmd(shell)
                 ?: return@withContext Result.failure(Refused("这个系统上没有可用的 tar（toybox/busybox 都没有）"))
-            val count = exec(shell, "ls -1 $MODULES_DIR | wc -l").out
-                .firstOrNull()?.trim()?.toIntOrNull() ?: 0
-            if (count <= 0) {
-                return@withContext Result.failure(Refused("$MODULES_DIR 是空的，没有可备份的模块"))
+            if (!exec(shell, "test -d '$MODULES_DIR'").isSuccess) {
+                return@withContext Result.failure(Refused("$MODULES_DIR 不存在：这台机器还没装过模块"))
+            }
+            // 空间预检：模块目录动辄几百 MB，写满 /data 会把系统拖垮。
+            val needKb = exec(shell, "du -sk '$MODULES_DIR' 2>/dev/null").out
+                .firstOrNull()?.let { firstNumber(it) }
+            if (needKb != null && needKb > 0) {
+                val freeKb = context.cacheDir.usableSpace / 1024L
+                if (needKb > freeKb) {
+                    return@withContext Result.failure(
+                        Refused(
+                            "$MODULES_DIR 约 ${needKb / 1024} MB，比临时目录可用的 " +
+                                "${freeKb / 1024} MB 大，打包会中途写满存储 —— 先清一点空间再备份",
+                        ),
+                    )
+                }
             }
             val out = File(context.cacheDir, "modules_${stamp()}.tar")
-            val packed = exec(shell, "$tar -cf '${out.absolutePath}' -C $MODULES_DIR .")
+            val packed = exec(shell, "$tar -cf '${out.absolutePath}' -C '$MODULES_DIR' .")
             if (!packed.isSuccess || !out.isFile || out.length() == 0L) {
                 out.delete()
+                return@withContext Result.failure(Refused(detail(packed, "tar 打包失败")))
+            }
+            // 以归档本身为准：能解析出模块 id 才算备份成功，"ls | wc -l" 不再参与判断。
+            val entries = TarScan.readEntries(out)
+            if (entries == null) {
+                out.delete()
                 return@withContext Result.failure(
-                    Refused(packed.err.joinToString("\n").ifBlank { "tar 打包失败" }),
+                    Refused("打出来的 tar 我们自己读不了（tar 实现不兼容），已放弃这次备份"),
+                )
+            }
+            val ids = TarScan.moduleIds(entries)
+            if (ids.isEmpty()) {
+                out.delete()
+                return@withContext Result.failure(
+                    Refused("$MODULES_DIR 里没有模块目录（只有散文件或空目录）"),
                 )
             }
             val bytes = out.length()
             if (!streamToUri(context, out, uri)) {
                 return@withContext Result.failure(Refused("写入你选的文件失败"))
             }
-            Result.success(BackupResult(count, bytes))
+            Result.success(BackupResult(ids, bytes))
         }
 
     /** 备份超级用户授权表（`/data/adb/ksu/.allowlist`）。 */
@@ -143,14 +195,14 @@ object ModuleBackupOps {
                 return@withContext Result.failure(Refused("没有 root，授权表读不了"))
             }
             val tar = tarCmd(shell) ?: return@withContext Result.failure(Refused("没有可用的 tar"))
-            if (!exec(shell, "test -f $KSU_DIR/$ALLOWLIST").isSuccess) {
+            if (!exec(shell, "test -f '$KSU_DIR/$ALLOWLIST'").isSuccess) {
                 return@withContext Result.failure(Refused("$KSU_DIR/$ALLOWLIST 不存在：这台机器还没有任何授权记录"))
             }
             val out = File(context.cacheDir, "allowlist_${stamp()}.tar")
-            val packed = exec(shell, "$tar -cf '${out.absolutePath}' -C $KSU_DIR $ALLOWLIST")
+            val packed = exec(shell, "$tar -cf '${out.absolutePath}' -C '$KSU_DIR' '$ALLOWLIST'")
             if (!packed.isSuccess || !out.isFile || out.length() == 0L) {
                 out.delete()
-                return@withContext Result.failure(Refused("tar 打包授权表失败"))
+                return@withContext Result.failure(Refused(detail(packed, "tar 打包授权表失败")))
             }
             val bytes = out.length()
             if (!streamToUri(context, out, uri)) {
@@ -164,67 +216,88 @@ object ModuleBackupOps {
     /**
      * 从 [uri] 恢复模块：先校验 tar 条目，再解到暂存区，最后把完整模块目录搬进
      * `modules_update`，开机时由 ksud 合并。任何一步失败都不会在 `modules_update`
-     * 里留下半成品。
+     * 里留下半成品，也不会在 `modules` 里留下幽灵目录。
      */
-    suspend fun restoreModules(context: Context, uri: Uri): Result<Int> = withContext(Dispatchers.IO) {
-        val shell = rootShell()
-        if (!shell.isRoot) {
-            return@withContext Result.failure(Refused("没有 root，无法写入 $MODULES_UPDATE_DIR"))
-        }
-        val tar = tarCmd(shell) ?: return@withContext Result.failure(Refused("没有可用的 tar"))
-        val staged = File(context.cacheDir, "restore_${stamp()}.tar")
-        if (!copyUriTo(context, uri, staged)) {
-            staged.delete()
-            return@withContext Result.failure(Refused("读取你选的文件失败（可能不是本地文件，或已被移动）"))
-        }
-        try {
-            val entries = scanTar(staged)
-                ?: return@withContext Result.failure(
-                    Refused("这不是有效的 tar，或里面有越界条目（绝对路径 / ../ / 硬链接 / 逃出根目录的软链接），已拒绝导入"),
-                )
-            val top = entries.asSequence()
-                .map { it.trimEnd('/') }
-                .filter { it.isNotEmpty() && it != "." }
-                .map { it.substringBefore('/') }
-                .filter { it != "." && it != ".." }
-                .distinct()
-                .toList()
-            if (top.isEmpty()) {
-                return@withContext Result.failure(Refused("这个 tar 里没有模块目录"))
+    suspend fun restoreModules(context: Context, uri: Uri): Result<RestoreResult> =
+        withContext(Dispatchers.IO) {
+            val shell = rootShell()
+            if (!shell.isRoot) {
+                return@withContext Result.failure(Refused("没有 root，无法写入 $MODULES_UPDATE_DIR"))
             }
-
-            exec(shell, "rm -rf '$STAGE_DIR' && mkdir -p '$STAGE_DIR'")
-            val unpack = exec(shell, "$tar -xf '${staged.absolutePath}' -C '$STAGE_DIR'")
-            if (!unpack.isSuccess) {
-                exec(shell, "rm -rf '$STAGE_DIR'")
-                return@withContext Result.failure(
-                    Refused(unpack.err.joinToString("\n").ifBlank { "解包失败" }),
-                )
+            val tar = tarCmd(shell) ?: return@withContext Result.failure(Refused("没有可用的 tar"))
+            val staged = File(context.cacheDir, "restore_${stamp()}.tar")
+            if (!copyUriTo(context, uri, staged)) {
+                staged.delete()
+                return@withContext Result.failure(Refused("读取你选的文件失败（可能不是本地文件，或已被移动）"))
             }
-            // 逐个顶层目录搬：先删同名旧目录再 rename（ksud 自己也是这个顺序），
-            // 但只有解包完全成功才会走到这里，所以不会出现"删了旧的、新的没搬进去"。
-            val moved = ArrayList<String>()
             try {
-                for (id in top) {
-                    if (!id.matches(Regex("^[A-Za-z0-9._-]{1,64}$"))) continue
-                    val mv = exec(
-                        shell,
-                        "if [ -d '$STAGE_DIR/$id' ]; then " +
-                            "rm -rf '$MODULES_UPDATE_DIR/$id' && mv '$STAGE_DIR/$id' '$MODULES_UPDATE_DIR/$id'; fi",
+                val entries = TarScan.readEntries(staged)
+                    ?: return@withContext Result.failure(
+                        Refused(
+                            "这不是有效的 tar，或里面有越界条目（绝对路径 / ../ / 硬链接 / " +
+                                "设备节点 / 逃出根目录的软链接），已拒绝导入",
+                        ),
                     )
-                    if (mv.isSuccess) moved += id
+                val ids = TarScan.moduleIds(entries)
+                if (ids.isEmpty()) {
+                    return@withContext Result.failure(
+                        Refused(
+                            "这个 tar 里没有模块目录 —— 顶层应当是一个个模块目录（像 " +
+                                "$MODULES_DIR 那样），不是散文件",
+                        ),
+                    )
                 }
+                exec(
+                    shell,
+                    "rm -rf '$STAGE_DIR' && mkdir -p '$STAGE_DIR' && mkdir -p '$MODULES_UPDATE_DIR'",
+                )
+                val unpack = exec(shell, "$tar -xf '${staged.absolutePath}' -C '$STAGE_DIR'")
+                if (!unpack.isSuccess) {
+                    exec(shell, "rm -rf '$STAGE_DIR'")
+                    return@withContext Result.failure(Refused(detail(unpack, "解包失败")))
+                }
+                val installed = ArrayList<String>()
+                val skipped = ArrayList<String>()
+                try {
+                    for (id in ids) {
+                        // id 已经过 TarScan.MODULE_ID 白名单（只含 [A-Za-z0-9._-]），拼命令安全；
+                        // 这里再判一次，纯粹是别让"以后有人放宽正则"变成命令注入。
+                        if (!TarScan.MODULE_ID.matches(id)) {
+                            skipped += id
+                            continue
+                        }
+                        // 真解出来了、而且是合法模块（有 module.prop）才搬：否则 modules_update
+                        // 里会出现一个 ksud 认不出、但照样会被搬进 modules 的垃圾目录。
+                        val ok = exec(
+                            shell,
+                            "test -d '$STAGE_DIR/$id' && test -f '$STAGE_DIR/$id/module.prop'",
+                        ).isSuccess
+                        if (!ok) {
+                            skipped += id
+                            continue
+                        }
+                        val mv = exec(
+                            shell,
+                            "rm -rf '$MODULES_UPDATE_DIR/$id' && mv '$STAGE_DIR/$id' '$MODULES_UPDATE_DIR/$id'",
+                        )
+                        if (mv.isSuccess) installed += id else skipped += id
+                    }
+                } finally {
+                    exec(shell, "rm -rf '$STAGE_DIR'")
+                }
+                if (installed.isEmpty()) {
+                    return@withContext Result.failure(
+                        Refused(
+                            "解包成功，但没有一个模块能搬进 $MODULES_UPDATE_DIR" +
+                                if (skipped.isEmpty()) "" else "（缺 module.prop：${humanIds(skipped)}）",
+                        ),
+                    )
+                }
+                Result.success(RestoreResult(installed, skipped))
             } finally {
-                exec(shell, "rm -rf '$STAGE_DIR'")
+                staged.delete()
             }
-            if (moved.isEmpty()) {
-                return@withContext Result.failure(Refused("解包成功，但没有一个模块目录能搬进 $MODULES_UPDATE_DIR"))
-            }
-            Result.success(moved.size)
-        } finally {
-            staged.delete()
         }
-    }
 
     /**
      * 从 [uri] 恢复授权表：校验 → 解到暂存目录 → 校验文件头 → 原子 rename 覆盖。
@@ -245,10 +318,10 @@ object ModuleBackupOps {
                 return@withContext Result.failure(Refused("读取你选的文件失败"))
             }
             try {
-                val entries = scanTar(staged)
+                val entries = TarScan.readEntries(staged)
                     ?: return@withContext Result.failure(Refused("这不是有效的 tar，已拒绝导入"))
                 val hasAllowlist = entries.any {
-                    it.trimStart('/') == ALLOWLIST || it.trimEnd('/').endsWith("/$ALLOWLIST")
+                    it.name == ALLOWLIST || it.name.endsWith("/$ALLOWLIST")
                 }
                 if (!hasAllowlist) {
                     return@withContext Result.failure(Refused("这个 tar 里没有 $ALLOWLIST"))
@@ -257,7 +330,7 @@ object ModuleBackupOps {
                 val unpack = exec(shell, "$tar -xf '${staged.absolutePath}' -C '$ALLOW_STAGE'")
                 if (!unpack.isSuccess) {
                     exec(shell, "rm -rf '$ALLOW_STAGE'")
-                    return@withContext Result.failure(Refused("解包失败"))
+                    return@withContext Result.failure(Refused(detail(unpack, "解包失败")))
                 }
                 val stagedAllow = "$ALLOW_STAGE/$ALLOWLIST"
                 // 只认普通文件：tar 里把 .allowlist 做成软链接，`mv` 搬过去的就是链接本身，
@@ -270,7 +343,6 @@ object ModuleBackupOps {
                 }
                 // 内核读文件时先看 magic 再看 version（allowlist.c:537/548）：
                 // 任一项不对，整张表会被直接丢掉 —— 等于重启后所有 root 都没了。
-                // 所以这里先替内核验一遍，验不过就不落地。
                 val head = exec(shell, "od -An -tu4 -N8 '$stagedAllow'").out
                     .joinToString(" ")
                     .trim()
@@ -311,151 +383,5 @@ object ModuleBackupOps {
     fun reboot() {
         val shell = getRootShell()
         if (shell.isRoot) exec(shell, "svc power reboot || reboot")
-    }
-
-    // ------------------------------------------------------------------ tar 校验
-
-    /**
-     * 只读 tar 头，返回条目名；结构无法解析或含越界条目时返回 null。
-     *
-     * 这是"恢复别人给的备份"唯一的防线：解包是全 root 的，条目名直接决定落地路径。
-     * 拒绝三类：绝对路径、含 `..` 段的路径、指向备份根之外的软链接；硬链接直接拒绝
-     * （目标是任意路径且不受控）。PAX / GNU longname 头会按其 size 跳过，长名本身照样校验。
-     */
-    private fun scanTar(file: File): List<String>? {
-        if (!file.isFile || file.length() < 1024) return null
-        val names = ArrayList<String>()
-        var pendingName: String? = null
-        DataInputStream(BufferedInputStream(file.inputStream())).use { input ->
-            val header = ByteArray(512)
-            var entries = 0
-            while (true) {
-                if (!readFully(input, header)) return null
-                if (header.all { it.toInt() == 0 }) break
-                if (++entries > MAX_ENTRIES) return null
-
-                val stored = fieldOctal(header, 148, 8) ?: return null
-                var sum = 0L
-                for (i in header.indices) {
-                    sum += if (i in 148..155) 32 else (header[i].toInt() and 0xFF)
-                }
-                if (sum != stored) return null
-
-                val size = fieldOctal(header, 124, 12) ?: return null
-                if (size < 0 || size > MAX_PAYLOAD) return null
-                val type = header[156].toInt().toChar()
-                val name = fieldString(header, 0, 100)
-                val prefix = fieldString(header, 345, 155)
-                val full = if (prefix.isEmpty()) name else "$prefix/$name"
-
-                when (type) {
-                    'L', 'K' -> {
-                        val payload = readPayload(input, size) ?: return null
-                        pendingName = payload.trimEnd('\u0000', '/')
-                    }
-                    'x', 'g' -> if (!skipPayload(input, size)) return null
-                    '1' -> return null // 硬链接
-                    else -> {
-                        val resolved = pendingName ?: full
-                        pendingName = null
-                        if (!entryIsSafe(resolved)) return null
-                        if (type == '2' && !linkIsSafe(resolved, fieldString(header, 157, 100))) return null
-                        names += resolved
-                        if (!skipPayload(input, size)) return null
-                    }
-                }
-            }
-        }
-        return names
-    }
-
-    private fun readFully(input: DataInputStream, buf: ByteArray): Boolean {
-        var off = 0
-        while (off < buf.size) {
-            val n = input.read(buf, off, buf.size - off)
-            if (n <= 0) return false
-            off += n
-        }
-        return true
-    }
-
-    private fun fieldString(header: ByteArray, off: Int, len: Int): String {
-        var end = off
-        val limit = off + len
-        while (end < limit && header[end] != 0.toByte()) end++
-        return String(header, off, end - off, Charsets.UTF_8)
-    }
-
-    /** 八进制字段（tar 老格式）；全空格/NUL 视为 0，base-256 编码直接判不认识。 */
-    private fun fieldOctal(header: ByteArray, off: Int, len: Int): Long? {
-        if (((header[off].toInt() and 0xFF) and 0x80) != 0) return null
-        var i = off
-        val limit = off + len
-        var value = 0L
-        var digits = 0
-        while (i < limit) {
-            val c = header[i].toInt() and 0xFF
-            when {
-                c == 0 || c == ' '.code -> if (digits == 0) { i++; continue } else break
-                c < '0'.code || c > '7'.code -> return null
-                else -> {
-                    value = value * 8 + (c - '0'.code)
-                    digits++
-                    i++
-                }
-            }
-        }
-        return value
-    }
-
-    private fun paddedSize(size: Long): Long = (size + 511L) / 512L * 512L
-
-    private fun skipRaw(input: DataInputStream, bytes: Long): Boolean {
-        var left = bytes
-        val sink = ByteArray(8192)
-        while (left > 0) {
-            val want = minOf(left, sink.size.toLong()).toInt()
-            val n = input.read(sink, 0, want)
-            if (n <= 0) return false
-            left -= n
-        }
-        return true
-    }
-
-    private fun skipPayload(input: DataInputStream, size: Long): Boolean =
-        skipRaw(input, paddedSize(size))
-
-    private fun readPayload(input: DataInputStream, size: Long): String? {
-        if (size < 0 || size > 64 * 1024) return null
-        val buf = ByteArray(size.toInt())
-        if (!readFully(input, buf)) return null
-        if (!skipRaw(input, paddedSize(size) - size)) return null
-        return String(buf, Charsets.UTF_8)
-    }
-
-    /** 条目路径必须相对、且不含 `..`。 */
-    private fun entryIsSafe(name: String): Boolean {
-        if (name.isEmpty()) return false
-        if (name.startsWith('/') || name.startsWith('\\')) return false
-        if (name.contains('\u0000') || name.contains('\\')) return false
-        return name.split('/').none { it == ".." }
-    }
-
-    /** 相对软链接不能把落点带出备份根。 */
-    private fun linkIsSafe(entry: String, target: String): Boolean {
-        if (target.isEmpty()) return false
-        if (target.startsWith('/')) return false
-        var depth = entry.trimEnd('/').split('/').count { it.isNotEmpty() && it != "." } - 1
-        for (part in target.split('/')) {
-            when {
-                part.isEmpty() || part == "." -> continue
-                part == ".." -> {
-                    depth -= 1
-                    if (depth < 0) return false
-                }
-                else -> depth += 1
-            }
-        }
-        return true
     }
 }
