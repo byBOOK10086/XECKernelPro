@@ -58,6 +58,9 @@ fun XcTheme(
         LocalXcBlocks provides (theme?.blocks ?: emptyMap()),
         LocalXcThemeId provides (theme?.id.orEmpty()),
         LocalXcMotion provides XcMotionDefault,
+        // 系统"减少动态效果"只在这一层算一次（内部注册了一个 ContentObserver），
+        // 之后所有 `xcDuration()` / `xcSpec()` 读 local —— 避免每个调用点各注册一个观察者。
+        LocalXcReducedMotion provides rememberReducedMotion(),
         LocalXcElevations provides XcElevationsDefault,
         LocalXcTypography provides XcTypographyDefault,
         content = content,
