@@ -288,10 +288,11 @@ fn install_module(module_id: &str, files: &[BuiltinFile]) -> Result<bool> {
     let module_dir = Path::new(ROOT).join(module_id);
 
     // Migration: builds that shipped this tree as a module left it under
-    // /data/adb/modules/<id>. Remove that copy once so the device converges on a
-    // single, module-free layout.
+    // /data/adb/modules/<id>. Remove **only** copies this installer owns: a
+    // user-installed module with the same id (even a disabled one) is theirs,
+    // and deleting it here would throw away their own target.txt/keybox edits.
     let legacy = Path::new(defs::MODULE_DIR).join(module_id);
-    if legacy.exists() {
+    if legacy.join(STAMP_FILE_NAME).is_file() {
         match fs::remove_dir_all(&legacy) {
             Ok(()) => info!("removed the module-era copy at {}", legacy.display()),
             Err(error) => warn!("failed to remove {}: {error}", legacy.display()),
@@ -461,9 +462,10 @@ pub fn start_tee_engine() -> Result<StartReport> {
         engine_dir.display()
     );
 
-    // 重入安全：先收掉在跑的那一套，否则下面再拉一次 supervisor 就是两个注入器
-    // 抢同一个 keystore2。supervisor 会重启它的 daemon，所以必须先杀 supervisor。
-    stop_engine();
+    // 重入安全：先把上一次拉起来的一切收掉。脚本会 fork 出一堆后台循环
+    // （5 分钟看护 / 15 秒对账 / TA 的 keybox 守护），只杀 supervisor 的话它们会在
+    // 下一次修复后继续跑，几轮下来就是多份看护一起重拉 supervisor。
+    stop_previous_run();
 
     // 尽力而为：内核不是本项目时这条一定失败，但引擎本身不依赖它
     // （KernelSU 域的 su 是 permissive + allow-all，注入走的是 ptrace 而不是这些规则）。
@@ -581,46 +583,102 @@ fn external_engine_dir() -> Option<PathBuf> {
         })
 }
 
-/// Kill a previously running engine so a second supervisor cannot race us.
-fn stop_engine() {
-    let supervisor = pid_by_comm("supervisor");
-    if supervisor.is_none() && pid_by_comm("TEESimulator").is_none() {
+/// Kill everything the previous run of the bundled scripts left behind.
+///
+/// Only processes whose argv carries a built-in tree path are matched by path,
+/// plus the three names our own payloads re-exec into. That matters: the scripts
+/// fork a pile of background loops (tricky_store's 5-minute watchdog and 15s
+/// config sync, TA's keybox guardian), and their argv is inherited from the
+/// script, so the path match catches them. `supervisor`, the Java daemon and
+/// `ta-enhanced` have been exec'd, so the process name is the only clue there.
+///
+/// **Never kill by process group**: `detach_process_group(true)` puts the child
+/// into init's process group when the kernel call succeeds, so a group kill
+/// would take the whole system down.
+fn stop_previous_run() {
+    let me = std::process::id();
+    let mut targets = Vec::new();
+    for pid in proc_pids() {
+        if u32::try_from(pid).ok() == Some(me) {
+            continue;
+        }
+        let Some(cmdline) = fs::read_to_string(format!("/proc/{pid}/cmdline")).ok() else {
+            continue;
+        };
+        if cmdline.contains(ROOT)
+            && (cmdline.contains("/tricky_store/") || cmdline.contains("/TA_enhanced/"))
+        {
+            targets.push(pid);
+        }
+    }
+    for name in ["supervisor", "TEESimulator", "ta-enhanced"] {
+        targets.extend(pids_by_comm(name));
+    }
+    targets.sort_unstable();
+    targets.dedup();
+    if targets.is_empty() {
         return;
     }
-    debug!("stopping the running engine (supervisor pid {supervisor:?})");
-    // supervisor restarts its daemon: kill it first, then the daemon it spawned.
-    kill_comm("supervisor");
-    kill_comm("TEESimulator");
+
+    debug!("stopping {} engine process(es) of the previous run", targets.len());
+    for &pid in &targets {
+        signal(pid, libc::SIGTERM);
+    }
     let deadline = Instant::now() + STOP_BUDGET;
     while Instant::now() < deadline {
-        if pid_by_comm("supervisor").is_none() && pid_by_comm("TEESimulator").is_none() {
+        if targets.iter().all(|&pid| !proc_alive(pid)) {
             return;
         }
         std::thread::sleep(Duration::from_millis(POLL_STEP_MS));
     }
-    warn!("engine processes still around after {STOP_BUDGET:?}");
+    // 还有活的就强杀：留下旧 daemon 会和新 supervisor 抢同一个 keystore2。
+    for &pid in &targets {
+        if proc_alive(pid) {
+            signal(pid, libc::SIGKILL);
+        }
+    }
 }
 
-fn kill_comm(name: &str) {
-    // toybox `killall` exits non-zero when nothing matches; that is not an error.
-    if let Err(error) = std::process::Command::new("killall").arg(name).status() {
-        debug!("killall {name} failed: {error}");
+fn signal(pid: i32, sig: i32) {
+    // SAFETY: libc::kill 只接受两个整数，不解引用任何指针；pid 来自 /proc 扫描。
+    let _ = unsafe { libc::kill(pid, sig) };
+}
+
+fn proc_alive(pid: i32) -> bool {
+    Path::new(&format!("/proc/{pid}")).exists()
+}
+
+fn proc_pids() -> Vec<i32> {
+    let mut out = Vec::new();
+    let Ok(entries) = fs::read_dir("/proc") else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        if let Some(pid) = file_name.to_str().and_then(|text| text.parse::<i32>().ok()) {
+            out.push(pid);
+        }
     }
+    out
+}
+
+fn comm_of(pid: i32) -> Option<String> {
+    fs::read_to_string(format!("/proc/{pid}/comm"))
+        .ok()
+        .map(|comm| comm.trim().to_string())
+}
+
+/// Every process whose `/proc/<pid>/comm` equals `name`.
+fn pids_by_comm(name: &str) -> Vec<i32> {
+    proc_pids()
+        .into_iter()
+        .filter(|&pid| comm_of(pid).is_some_and(|comm| comm == name))
+        .collect()
 }
 
 /// Find a process by the name in `/proc/<pid>/comm`.
 fn pid_by_comm(name: &str) -> Option<i32> {
-    let entries = fs::read_dir("/proc").ok()?;
-    for entry in entries.flatten() {
-        let file_name = entry.file_name();
-        let Some(pid) = file_name.to_str().and_then(|text| text.parse::<i32>().ok()) else {
-            continue;
-        };
-        if fs::read_to_string(format!("/proc/{pid}/comm")).is_ok_and(|comm| comm.trim() == name) {
-            return Some(pid);
-        }
-    }
-    None
+    pids_by_comm(name).into_iter().next()
 }
 
 fn wait_for_comm(name: &str, budget: Duration) -> Option<i32> {

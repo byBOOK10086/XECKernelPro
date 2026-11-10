@@ -324,7 +324,9 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
                             "（已是最新则不动文件）\n" +
                             "2. 当场启动引擎（已有的 supervisor 会被先收掉再重拉）\n" +
                             "3. 拉一次 keybox，回读进程与 keystore2 注入\n\n" +
-                            "**不会**动你的密钥库、不会改 target.txt、也不会写 TEE。\n\n" +
+                            "**不会**动你的密钥库、不写 TEE、也不删你的模块。注意引擎自己的 " +
+                            "`service.sh` 开机时本来就会按 baseline 合并/对账 `target.txt`" +
+                            "（只增不删）并可能拉一次 keybox，这里跑的是同一段脚本。\n\n" +
                             "注意：这条路径绕开了开机的四道闸门（Magisk 残留 / 安全模式 / boot 事务 / " +
                             "UAPI 不匹配），所以**重启后要再点一次**，或者把闸门清掉。",
                         markdown = true,
