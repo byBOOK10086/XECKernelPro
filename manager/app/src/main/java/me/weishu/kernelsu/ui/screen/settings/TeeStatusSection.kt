@@ -58,10 +58,13 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
 
     suspend fun refresh() {
         busy = true
+        try {
         attestation = runCatching { TeeAttestation.probe() }.getOrNull()
         snapshot = runCatching { TeeDiagnostics.probe() }.getOrNull()
         rkpTool = runCatching { RkpRepair.probeTool() }.getOrNull()
-        busy = false
+        } finally {
+            busy = false
+        }
     }
 
     LaunchedEffect(Unit) { refresh() }
@@ -80,8 +83,11 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
             )
             if (answer != ConfirmResult.Confirmed) return@launch
             busy = true
-            val result = RkpRepair.installFromUri(context, uri)
-            busy = false
+            val result = try {
+                RkpRepair.installFromUri(context, uri)
+            } finally {
+                busy = false
+            }
             note = result.fold(onSuccess = { it }, onFailure = { "重签失败：${it.message}" })
             toast(note.orEmpty())
             refresh()
@@ -177,8 +183,11 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
             onClick = {
                 scope.launch {
                     busy = true
-                    val result = TeeDiagnostics.addVerifierToTarget()
-                    busy = false
+                    val result = try {
+                        TeeDiagnostics.addVerifierToTarget()
+                    } finally {
+                        busy = false
+                    }
                     note = result.fold(
                         onSuccess = { "已把 wu.keyChain.test 加入拦截表，正在重启引擎让它生效" },
                         onFailure = { "写入失败：${it.message}" },
@@ -223,8 +232,11 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
             onClick = {
                 scope.launch {
                     busy = true
-                    val result = TeeDiagnostics.refreshKeybox()
-                    busy = false
+                    val result = try {
+                        TeeDiagnostics.refreshKeybox()
+                    } finally {
+                        busy = false
+                    }
                     note = result.fold(
                         onSuccess = { "已让守护进程重新拉取 keybox：$it" },
                         onFailure = { "拉取失败：${it.message}" },
@@ -274,8 +286,11 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
             onClick = {
                 scope.launch {
                     busy = true
-                    val result = TeeDiagnostics.restartEngine(snap?.engineDir)
-                    busy = false
+                    val result = try {
+                        TeeDiagnostics.restartEngine(snap?.engineDir)
+                    } finally {
+                        busy = false
+                    }
                     note = result.fold(
                         onSuccess = { if (it) "引擎已重新拉起" else "重启命令发出去了，但进程没在 12 秒内出现" },
                         onFailure = { "重启失败：${it.message}" },
@@ -305,8 +320,11 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
                     )
                     if (answer != ConfirmResult.Confirmed) return@launch
                     busy = true
-                    val result = TeeDiagnostics.clearKeyStore()
-                    busy = false
+                    val result = try {
+                        TeeDiagnostics.clearKeyStore()
+                    } finally {
+                        busy = false
+                    }
                     result.fold(
                         onSuccess = {
                             ModuleBackupOps.reboot()
@@ -342,8 +360,11 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
                         )
                         if (answer != ConfirmResult.Confirmed) return@launch
                         busy = true
-                        val result = RkpRepair.installLive()
-                        busy = false
+                        val result = try {
+                            RkpRepair.installLive()
+                        } finally {
+                            busy = false
+                        }
                         note = result.fold(onSuccess = { it }, onFailure = { "重签失败：${it.message}" })
                         toast(note.orEmpty())
                         refresh()
