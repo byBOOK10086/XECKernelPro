@@ -97,6 +97,12 @@ jobs:
       - name: Ghostlock kernel profile index agrees with the assets
         run: python3 scripts/check_ghostlock_profiles.py
 
+      # 许可证矩阵：根 LICENSE=AGPL-3.0（我们的代码）/ LICENSE-GPL-3.0（KernelSU 派生文件）/
+      # kernel/LICENSE=GPL-2.0。三份正文、矩阵文件、两个 README 的口径必须一致，否则二次分发者
+      # 拿到的条款与实际不符；同时断言仓库里没有混进自定义许可的 Oh My Keymint。
+      - name: Licence matrix is self-consistent
+        run: python3 scripts/check_license_matrix.py
+
       # GitHub 对坏掉的 workflow 是静默拒绝：run 照样建出来，但 jobs 为空、没有一行
       # shell 报错，看上去和普通变红没区别，所以没人会去点开。GKI 流水线就是这样从
       # 2026-10-31 死到 11-06 —— 一个反斜杠被写成了真换行。

@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img alt="license" src="https://img.shields.io/badge/license-GPL--3.0-12b886">
+  <img alt="license" src="https://img.shields.io/badge/license-AGPL--3.0-3b5bff">
   <img alt="android" src="https://img.shields.io/badge/Android-12%2B-0ea5e9">
   <img alt="ui" src="https://img.shields.io/badge/UI-Jetpack%20Compose%20%2F%20Miuix-8b5cf6">
   <img alt="kernel" src="https://img.shields.io/badge/kernel-KernelSU%20GPL--2.0-64748b">
@@ -90,8 +90,12 @@ Kernel、LKM、GKI SUSFS 内核均由 `.github/workflows/` 构建；签名密钥
 
 | 部分 | 许可证 | 说明 |
 |---|---|---|
-| `kernel/`（内核模块） | GPL-2.0（见 [kernel/LICENSE](kernel/LICENSE)） | 源自 tiann/KernelSU（作者 weishu / tiann 及社区贡献者），上游版权注释（如 `kernel/core/init.c` 的 `MODULE_AUTHOR("weishu")`）予以保留 |
-| `manager/`、`userspace/`、`uapi/`、`website/` 等用户态部分 | GPL-3.0（见 [LICENSE](LICENSE)） | 基于 tiann/KernelSU 用户态代码修改开发 |
+| **本项目原创代码**（含 `server/` 服务器端） | **AGPL-3.0-or-later**（见 [LICENSE](LICENSE)） | 本项目主许可证；通过网络提供服务时按 §13 提供对应源码，所以服务器端代码也在本仓 |
+| `kernel/`（内核模块） | GPL-2.0（见 [kernel/LICENSE](kernel/LICENSE)） | 源自 tiann/KernelSU（作者 weishu / tiann 及社区贡献者），上游版权注释（如 `kernel/core/init.c` 的 `MODULE_AUTHOR("weishu")`）予以保留；按独立作品分发，不并入 AGPL 组合 |
+| `manager/`、`userspace/`、`uapi/`、`website/` 中**源自 tiann/KernelSU 的文件** | GPL-3.0（见 [LICENSE-GPL-3.0](LICENSE-GPL-3.0)） | 基于上游用户态代码修改开发，上游版权与许可原样保留；与 AGPL-3.0 部分依 AGPL-3.0 §13 组合分发 |
+| `third_party/*` | 各自原许可证 | 见各目录 `LICENSE`，本项目不改写 |
+
+逐目录的完整矩阵（含每个 vendor 组件、以及本项目**刻意不 vendor** 的 Oh My Keymint 及其原因）见 [LICENSE-MATRIX.md](LICENSE-MATRIX.md)。
 
 感谢 KernelSU 及其社区的上游工作。`docs/` 内保留了上游 KernelSU 的原版 README（含 tiann/KernelSU 链接），一并作为归属声明。
 

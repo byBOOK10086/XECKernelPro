@@ -7,7 +7,7 @@
 A kernel-based root solution for Android with its own manager: kernel-level `su`, modules, App Profile, a built-in TEE engine, and a UI that reports device health instead of hiding it.
 
 [![Latest release](https://img.shields.io/github/v/release/byBOOK10086/XECKernelPro?label=Release&logo=github)](https://github.com/byBOOK10086/XECKernelPro/releases/latest)
-[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-orange.svg?logo=gnu)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg?logo=gnu)](LICENSE)
 [![Kernel: GPL v2](https://img.shields.io/badge/Kernel-GPL%20v2-64748b.svg)](kernel/LICENSE)
 [![Android](https://img.shields.io/badge/Android-12%2B-0ea5e9.svg)](https://www.android.com)
 [![Website](https://img.shields.io/badge/Website-42.193.123.248-12b886.svg)](http://42.193.123.248/)
@@ -80,7 +80,10 @@ CI: [`.github/workflows/build-xecpro.yml`](.github/workflows/build-xecpro.yml) b
 
 This project builds on work by others. Every upstream, its license and its vendored revision are listed in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) — including KernelSU, KernelPatch, GhostLock, TEESimulator-RS, tricky-addon-enhanced, Magisk (payload, GPL-3.0), APatch, miuix and the KernelSU-Next module backup feature.
 
-- Kernel side: GPL-2.0 ([`kernel/LICENSE`](kernel/LICENSE))
-- Userspace and manager: GPL-3.0 ([`LICENSE`](LICENSE))
+- Project licence (our own code, including `server/`): **AGPL-3.0-or-later** ([`LICENSE`](LICENSE))
+- Kernel side: GPL-2.0 ([`kernel/LICENSE`](kernel/LICENSE)), distributed as a separate work
+- Files derived from `tiann/KernelSU` under `manager/`, `userspace/`, `uapi/`, `website/`: GPL-3.0 ([`LICENSE-GPL-3.0`](LICENSE-GPL-3.0)), combined with the AGPL-3.0 work under AGPL-3.0 §13
+
+The per-directory breakdown — including every vendored third-party component and the upstream *Oh My Keymint* module we deliberately do **not** vendor — is in [`LICENSE-MATRIX.md`](LICENSE-MATRIX.md).
 
 The Chinese README keeps the long-form technical notes: [`README_ZH.md`](README_ZH.md).

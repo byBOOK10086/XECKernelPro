@@ -3,13 +3,20 @@
 本项目（XECKernel Pro）包含或分发以下第三方作品。各作品的许可证均未被改变，
 感谢原作者。如你是权利人且不希望被列于此或被随本项目分发，请提交 issue，我们会立即处理。
 
-## 开源协议合规（GPL / LGPL / Apache / MIT）
+## 开源协议合规（AGPL / GPL / LGPL / Apache / MIT）
 
-许可证划分与上游 KernelSU 一致：**内核模块 `kernel/` 为 GPL-2.0**
-（[kernel/LICENSE](kernel/LICENSE)），**用户态（`manager/`、`userspace/`、`uapi/`、
-`website/` 等）为 GPL-3.0**（[LICENSE](LICENSE)）。上游 tiann/KernelSU 采用同一划分
-（其根 `LICENSE` 为 GPL-3.0、`kernel/LICENSE` 为 GPL-2.0）；本项目不改变任何上游组件的
-许可条款，也不对其施加任何额外限制。
+本项目**自身原创代码的主许可证为 AGPL-3.0-or-later**（[LICENSE](LICENSE)），
+逐目录划分见 [LICENSE-MATRIX.md](LICENSE-MATRIX.md)。要点：
+
+- **内核模块 `kernel/` 为 GPL-2.0**（[kernel/LICENSE](kernel/LICENSE)），Linux 内核派生物，
+  按独立作品分发，不并入 AGPL 组合。
+- **源自上游 tiann/KernelSU 的用户态文件**（`manager/`、`userspace/`、`uapi/`、`website/`）
+  保持 **GPL-3.0**（[LICENSE-GPL-3.0](LICENSE-GPL-3.0)），上游版权与许可原样保留；
+  它们与 AGPL-3.0 部分依据 AGPL-3.0 §13 组合分发（GPLv3 部分仍为 GPLv3）。
+- **`server/` 服务器端代码**与主体同许可（AGPL-3.0-or-later）；AGPL §13 要求通过网络
+  提供服务时向使用者提供对应源码，这正是把服务器端放进本仓的原因。
+- 上游 KernelSU 采用「根 LICENSE=GPL-3.0 / kernel/LICENSE=GPL-2.0」的划分；本项目不改变
+  任何上游组件的许可条款，也不对其施加任何额外限制。
 
 对 GPL-3.0 素材的实际履约方式：
 
