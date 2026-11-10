@@ -58,7 +58,7 @@ import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.design.panel.Xc8Chevron
 import me.weishu.kernelsu.ui.design.panel.Xc8Panel
 import me.weishu.kernelsu.ui.screen.settings.PifSection
-import me.weishu.kernelsu.ui.screen.settings.TeeStatusSection
+import me.weishu.kernelsu.ui.screen.settings.TeePanelSection
 import me.weishu.kernelsu.ui.design.panel.Xc8Row
 import me.weishu.kernelsu.ui.design.panel.Xc8SectionLabel
 import me.weishu.kernelsu.ui.design.panel.Xc8Switch
@@ -238,7 +238,7 @@ fun ToolsScreen() {
                         text = "密钥库与指纹（自检）",
                         modifier = Modifier.padding(top = 22.dp),
                     )
-                    TeeStatusSection()
+                    TeePanelSection()
                     PifSection(modifier = Modifier.padding(top = 12.dp))
                 }
             }
