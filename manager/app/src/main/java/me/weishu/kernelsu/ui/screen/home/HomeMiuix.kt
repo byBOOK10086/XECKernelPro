@@ -496,7 +496,13 @@ private fun DeviceSection(state: HomeUiState, onRefresh: () -> Unit) {
         Xc8Row(
             title = stringResource(R.string.home_kernel),
             leading = Icons.Rounded.DeveloperBoard,
-            trailing = { Xc8Value(state.systemInfo.kernelVersion) },
+            trailing = {
+                // 2026-11-11 用户要求：这里只显示「6.12.23」这种三段式版本号，
+                // 不再带 `-android12-9` 之类后缀。KernelVersion.toString() 正好是这个形状。
+                Xc8Value(
+                    if (state.kernelVersion.major >= 0) state.kernelVersion.toString() else "—",
+                )
+            },
         )
         Xc8Row(
             title = stringResource(R.string.home_device_model),
@@ -513,11 +519,8 @@ private fun DeviceSection(state: HomeUiState, onRefresh: () -> Unit) {
                 )
             },
         )
-        Xc8Row(
-            title = stringResource(R.string.home_manager_version),
-            leading = Icons.Rounded.Download,
-            trailing = { Xc8Value(state.systemInfo.managerVersion) },
-        )
+        // 2026-11-11 用户要求：删掉「管理器版本」这一行，设备表只留
+        // 内核版本 / 设备型号 / SELinux 状态。
     }
 }
 
