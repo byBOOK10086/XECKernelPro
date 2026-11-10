@@ -73,14 +73,22 @@ label_data_path() {
 # 自己当成外部 TrickyStore、直接 stand down，引擎永远不启动（原来的隐藏布局下这个
 # 判定成立，因为内置引擎跑在 /dev/.xudc_hidden 里）。
 SELF_DIR="${MODPATH%/}"
+BUILTIN_DIR=/data/adb/ksu/builtin/tricky_store
 
+# 2026-11-11 产品裁定（用户）：**管理器内置引擎优先**，外部一律让位、始终不运行；
+# 只有用户关掉 TEE 引擎（`xudc builtin tee off`）时才轮到外部。于是这里取代 11-05
+# 那版"谁看见谁都退"的互让——真机上内置树和模块版互相 stand down，结果 keystore2
+# 谁都没接管，bootloader 一直显示未锁定。
+#
+# 两条硬规则：
+#   1. 内置那份（SELF_DIR == $BUILTIN_DIR）**永远不让位**；
+#   2. 模块那份（装进 /data/adb/modules/<id> 的副本）见到内置树就退，绝不抢同一个
+#      keystore2。
 external_engine_active() {
     local dir
-    # /data/adb/modules/tricky_store is where a normal module install lands; the dotted
-    # name is what an earlier build used. Missing the first one let a user-installed
-    # TrickyStore and this engine inject into keystore2 at the same time.
-    for dir in /data/adb/ksu/builtin/tricky_store \
-               /data/adb/modules/tricky_store \
+    [ "$SELF_DIR" = "$BUILTIN_DIR" ] && return 1
+    [ -f "$BUILTIN_DIR/module.prop" ] && return 0
+    for dir in /data/adb/modules/tricky_store \
                /data/adb/modules/.tricky_store; do
         [ "$dir" = "$SELF_DIR" ] && continue
         [ -f "$dir/module.prop" ] || continue
@@ -99,7 +107,7 @@ label_data_path "$RUNTIME"
 # Any active external module owns the same injection surface. Do not start a
 # second engine or overwrite its files.
 if external_engine_active; then
-    log_line "INFO builtin TEERS stand down: external module directory is present"
+    log_line "INFO TEERS stand down: the built-in engine owns the keystore2 injection surface (self=$SELF_DIR)"
     exit 0
 fi
 

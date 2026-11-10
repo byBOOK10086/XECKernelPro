@@ -14,7 +14,7 @@
 //! plain module directory the user can inspect, disable or edit like any other
 //! module.
 
-use anyhow::{Context, Result, anyhow, bail, ensure};
+use anyhow::{Context, Result, anyhow, ensure};
 use log::{debug, info, warn};
 use std::{
     collections::BTreeMap,
@@ -23,7 +23,7 @@ use std::{
     io::Write,
     os::unix::{fs::PermissionsExt, process::CommandExt},
     path::{Component, Path, PathBuf},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use crate::{assets, defs, module, utils};
@@ -148,6 +148,8 @@ pub fn set_tee_engine_enabled(enabled: bool) -> Result<bool> {
             Err(error) => warn!("failed to remove {}: {error:#}", tree.display()),
         }
     }
+    // 内置引擎关了，轮到外部：把被我们压住的第三方模块原样放回。
+    release_external_engines();
     Ok(false)
 }
 
@@ -256,6 +258,18 @@ fn install_builtin_modules_impl(forced: bool) -> Result<InstallReport> {
         return Ok(InstallReport::default());
     }
 
+    // 产品策略：内置引擎优先。开机路径也要先把外部引擎压下去，否则它会跟内置树
+    // 各自 stand down（见 `yield_external_engines` 的注释）。
+    if tee_engine_enabled() {
+        let yielded = yield_external_engines();
+        if !yielded.is_empty() {
+            info!(
+                "external engines yielded at install time: {}",
+                yielded.join(", ")
+            );
+        }
+    }
+
     let mut report = InstallReport {
         modules: modules.len(),
         rewritten: 0,
@@ -337,7 +351,11 @@ fn install_module(module_id: &str, files: &[BuiltinFile]) -> Result<bool> {
     // tree, so user edits made afterwards are intentionally left untouched until
     // the next update.
     let stamp_ok = fs::read_to_string(&stamp_path).is_ok_and(|stamp| stamp.trim() == stamp_body);
-    if stamp_ok && files.iter().all(|file| module_dir.join(&file.relative).is_file()) {
+    if stamp_ok
+        && files
+            .iter()
+            .all(|file| module_dir.join(&file.relative).is_file())
+    {
         debug!("built-in module {module_id} is up to date");
         return Ok(false);
     }
@@ -467,8 +485,9 @@ fn write_atomic(dest: &Path, contents: &[u8], mode: u32) -> Result<()> {
 ///
 /// # Errors
 ///
-/// Fails when the engine switch is off, the payload is not embedded, or another
-/// root solution's module already owns the engine.
+/// Fails when the engine switch is off or the payload is not embedded. An external
+/// engine module no longer fails this call: the built-in engine has priority and
+/// makes the external one yield (see [`yield_external_engines`]).
 ///
 /// `wait_for_engine` 只影响最后的回读：管理器要立刻告诉用户结果，所以等；
 /// 开机钩子不在乎这一两秒，先返回，引擎自己会起来。
@@ -478,11 +497,14 @@ pub fn start_tee_engine(wait_for_engine: bool) -> Result<StartReport> {
         "内置 TEE/TS 引擎总开关是关的：先执行 `xudc builtin tee on`，再修复"
     );
 
-    if let Some(dir) = external_engine_dir() {
-        bail!(
-            "外部模块 {} 正在接管引擎：内置引擎会让位（不抢同一个 keystore2）。\
-             先禁用它，或直接重刷/重启让它的 service.sh 重新拉起",
-            dir.display()
+    // 产品策略（2026-11-11 用户裁定）：内置引擎优先，外部一律让位。
+    // 这里不能再"看到外部就 bail"——真机上内置树和模块版会互相 stand down，
+    // 结果 keystore2 谁都没接管，bootloader 一直显示未锁定。
+    let yielded = yield_external_engines();
+    if !yielded.is_empty() {
+        info!(
+            "external engines yielded to the built-in one: {}",
+            yielded.join(", ")
         );
     }
 
@@ -542,7 +564,10 @@ pub fn start_tee_engine(wait_for_engine: bool) -> Result<StartReport> {
             wait_for_injection(ENGINE_WAIT),
         )
     } else {
-        (pid_by_comm("TEESimulator").unwrap_or(0), injection_present())
+        (
+            pid_by_comm("TEESimulator").unwrap_or(0),
+            injection_present(),
+        )
     };
 
     Ok(StartReport {
@@ -608,18 +633,111 @@ fn spawn_stage_script(script: &Path, module_id: &str, deadline: Instant) -> Resu
 
 /// Another root solution's engine module, if one owns the injection surface.
 ///
-/// The bundled `service.sh` already stands down in this case; `builtin start`
-/// has to check the same thing *before* it kills the running engine, otherwise
-/// repairing would leave the device with no engine at all.
-fn external_engine_dir() -> Option<PathBuf> {
-    let modules = Path::new(defs::MODULE_DIR);
-    [modules.join("tricky_store"), modules.join(".tricky_store")]
-        .into_iter()
-        .find(|dir| {
-            dir.join("module.prop").is_file()
-                && !dir.join("disable").exists()
-                && !dir.join("remove").exists()
-        })
+/// **2026-11-11 产品裁定（用户）：管理器内置引擎优先，外部一律让位、始终不运行；
+/// 只有用户关掉内置引擎（`builtin tee off`）时才轮到外部。** 因此这里不再"发现外部
+/// 就让位"——那会造成两份同源引擎互相 stand down、谁都不跑（真机事故：内置树 stand
+/// down + 模块版也 stand down，keystore2 没人接管，bootloader 一直显示未锁定）。
+const EXTERNAL_ENGINE_DIRS: [&str; 2] = ["tricky_store", ".tricky_store"];
+
+/// 我们自己那份引擎副本在 `module.prop` 里留下的指纹。
+///
+/// 打包时把 `name`/`description` 改成了中性中文（见
+/// `userspace/ksud/builtin/tricky_store/module.prop`），第三方 TrickyStore 不会用这套
+/// 文案；靠它区分"本产品的另一份副本"与"别人的模块"。
+const OWN_COPY_MARKERS: [&str; 2] = ["系统密钥组件", "密钥证明链的本机组件"];
+
+/// 被内置引擎压住的第三方模块会带上这个文件；用户关掉内置引擎时据此原样放回。
+const SUPPRESSED_MARKER: &str = ".xudc_suppressed_by_builtin";
+
+/// 我们自己的重复副本搬到哪儿（不删用户数据，方便回退）。
+const EXTERNAL_BACKUP_DIR: &str = "/data/adb/backup";
+
+fn module_prop_text(dir: &Path) -> Option<String> {
+    match fs::read_to_string(dir.join("module.prop")) {
+        Ok(text) => Some(text),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            warn!("cannot read {}/module.prop: {error:#}", dir.display());
+            None
+        }
+    }
+}
+
+/// 这个目录是不是我们自己引擎的另一份副本（模块时代的布局，或本项目发的模块 zip）。
+fn is_own_engine_copy(dir: &Path) -> bool {
+    module_prop_text(dir)
+        .is_some_and(|text| OWN_COPY_MARKERS.iter().any(|marker| text.contains(marker)))
+}
+
+/// 让外部引擎让位（内置引擎优先），返回被处理掉的目录。
+///
+/// * 我们自己的另一份副本 → 搬到 [`EXTERNAL_BACKUP_DIR`]：两份同源代码并存只会互相
+///   让位，谁都不跑；
+/// * 第三方模块 → 写 `disable` + [`SUPPRESSED_MARKER`]，[`release_external_engines`]
+///   会在用户关掉内置引擎时把它原样放回。
+pub fn yield_external_engines() -> Vec<String> {
+    let mut handled = Vec::new();
+    for id in EXTERNAL_ENGINE_DIRS {
+        let dir = Path::new(defs::MODULE_DIR).join(id);
+        if !dir.is_dir() || module_prop_text(&dir).is_none() {
+            continue;
+        }
+        if is_own_engine_copy(&dir) {
+            let stamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_secs())
+                .unwrap_or(0);
+            let backup = Path::new(EXTERNAL_BACKUP_DIR).join(format!("{id}-{stamp}"));
+            if let Some(parent) = backup.parent() {
+                if let Err(error) = fs::create_dir_all(parent) {
+                    warn!("cannot create {}: {error:#}", parent.display());
+                    continue;
+                }
+            }
+            match fs::rename(&dir, &backup) {
+                Ok(()) => {
+                    info!(
+                        "our own engine copy at {} yields to the built-in one (moved to {})",
+                        dir.display(),
+                        backup.display()
+                    );
+                    handled.push(dir.display().to_string());
+                }
+                Err(error) => warn!("failed to move {}: {error:#}", dir.display()),
+            }
+            continue;
+        }
+        if dir.join("disable").exists() || dir.join(SUPPRESSED_MARKER).exists() {
+            continue;
+        }
+        match fs::write(dir.join("disable"), b"built-in TEE engine has priority\n")
+            .and_then(|()| fs::write(dir.join(SUPPRESSED_MARKER), b"1\n"))
+        {
+            Ok(()) => {
+                info!(
+                    "external engine module {} suppressed: the built-in engine has priority",
+                    dir.display()
+                );
+                handled.push(dir.display().to_string());
+            }
+            Err(error) => warn!("failed to suppress {}: {error:#}", dir.display()),
+        }
+    }
+    handled
+}
+
+/// 用户关掉内置引擎时调用：把被我们压住的第三方模块原样放回。
+pub fn release_external_engines() {
+    for id in EXTERNAL_ENGINE_DIRS {
+        let dir = Path::new(defs::MODULE_DIR).join(id);
+        let marker = dir.join(SUPPRESSED_MARKER);
+        if !marker.exists() {
+            continue;
+        }
+        let _ = fs::remove_file(dir.join("disable"));
+        let _ = fs::remove_file(&marker);
+        info!("released external engine module {}", dir.display());
+    }
 }
 
 /// 运行时目录里那条伪造证明链涉及的三个位置：内置树、引擎运行时、TA 增强。
@@ -797,7 +915,10 @@ pub fn exec_stage_script(stage: &str, wait: crate::module::ScriptWait) -> Result
         }
         info!("built-in stage script: {}", script.display());
         if let Err(error) = crate::module::exec_script(&script, wait) {
-            warn!("built-in {stage} script failed ({}): {error:#}", script.display());
+            warn!(
+                "built-in {stage} script failed ({}): {error:#}",
+                script.display()
+            );
         }
     }
     Ok(())
