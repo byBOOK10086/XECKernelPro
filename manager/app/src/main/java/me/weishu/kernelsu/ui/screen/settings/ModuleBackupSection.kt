@@ -9,6 +9,7 @@ import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Unarchive
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,8 +23,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import me.weishu.kernelsu.ui.component.dialog.ConfirmResult
 import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
+import me.weishu.kernelsu.ui.design.panel.Xc8Note
 import me.weishu.kernelsu.ui.design.panel.Xc8Panel
 import me.weishu.kernelsu.ui.design.panel.Xc8Row
+import me.weishu.kernelsu.ui.util.awaitRootShell
 
 /** 模块与授权表的备份 / 恢复面板（设置页）。 */
 private enum class BackupKind { Modules, Allowlist }
@@ -51,6 +54,15 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
     val confirm = rememberConfirmDialog()
     var kind by rememberSaveable { mutableStateOf(BackupKind.Modules) }
     var busy by remember { mutableStateOf(false) }
+
+    // 2026-11-10（真机反馈"设置里根本没有备份入口"）：这段不再由 KsuIsValid 包住。
+    // 备份/恢复只需要 root shell —— 内核接口没被认成 manager 时它照样能用，而旧写法
+    // 会让整段静默消失。这里自己探一次 root，探不到就禁用并说明原因。
+    var rootGranted by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(Unit) {
+        rootGranted = runCatching { awaitRootShell(timeoutMs = 4_000L).isRoot }.getOrDefault(false)
+    }
+    val rootReady = rootGranted != false
 
     fun say(text: String) {
         Toast.makeText(context, text, Toast.LENGTH_LONG).show()
@@ -161,7 +173,7 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
             title = "备份模块",
             subtitle = "把 /data/adb/modules 打成一个 tar，存到你指定的位置",
             leading = Icons.Rounded.Archive,
-            enabled = !busy,
+            enabled = !busy && rootReady,
             onClick = {
                 kind = BackupKind.Modules
                 createLauncher.launch("xec-modules.tar")
@@ -171,7 +183,7 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
             title = "恢复模块",
             subtitle = "选一个备份 tar；解到 modules_update，重启后生效、不重启可反悔",
             leading = Icons.Rounded.Unarchive,
-            enabled = !busy,
+            enabled = !busy && rootReady,
             onClick = {
                 kind = BackupKind.Modules
                 openLauncher.launch(arrayOf("application/x-tar", "application/octet-stream", "*/*"))
@@ -181,7 +193,7 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
             title = "备份超级用户授权",
             subtitle = "导出 /data/adb/ksu/.allowlist（谁有 root、各自什么策略）",
             leading = Icons.Rounded.Security,
-            enabled = !busy,
+            enabled = !busy && rootReady,
             onClick = {
                 kind = BackupKind.Allowlist
                 createLauncher.launch("xec-allowlist.tar")
@@ -191,11 +203,18 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
             title = "恢复超级用户授权",
             subtitle = "从备份写回授权表；内核只在开机时读它，重启后生效",
             leading = Icons.Rounded.Security,
-            enabled = !busy,
+            enabled = !busy && rootReady,
             onClick = {
                 kind = BackupKind.Allowlist
                 openLauncher.launch(arrayOf("application/x-tar", "application/octet-stream", "*/*"))
             },
         )
+        if (rootGranted == false) {
+            Xc8Note(
+                text = "当前拿不到 root shell，四项操作都不可用：请先在「授权」里确认本管理器有 " +
+                    "root，或换上与安装包同一版本的内核（管理器没被内核认成 manager 时，页面上" +
+                    "的模块更新检查等设置也会一并消失）。",
+            )
+        }
     }
 }

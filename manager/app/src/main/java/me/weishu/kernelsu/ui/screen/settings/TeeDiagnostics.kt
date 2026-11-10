@@ -47,6 +47,8 @@ object TeeDiagnostics {
         val engineDir: String?,
         val engineEnabled: Boolean,
         val enginePid: Int,
+        /** keystore2 的 maps 里是否已有 libTEESimulator：目录被删/模块被卸后，旧注入仍会残留到进程重启。 */
+        val engineInjected: Boolean,
         val daemonBinary: Boolean,
         val daemonPid: Int,
         val keyboxPresent: Boolean,
@@ -101,6 +103,11 @@ object TeeDiagnostics {
             append(" echo \"ENGINE_DIR=\$E\";")
             append(" if [ -n \"\$E\" ] && [ -f \"\$E/disable\" ]; then echo 'ENGINE_DISABLED=1'; else echo 'ENGINE_DISABLED=0'; fi;")
             append(" echo \"ENGINE_PID=\$(pidof TEESimulator 2>/dev/null | cut -d' ' -f1)\";")
+            // 2026-11-10 真机反馈："检测页 TEE 注入是绿的，但工具箱说没有引擎"。
+            // 两者可以同时成立：模块目录被删/被卸后，keystore2 里旧的注入仍然残留，
+            // 直到 keystore2 重启才失效。把这件事显式探出来，UI 才能说人话。
+            append(" KPID=\$(pidof keystore2 2>/dev/null | cut -d' ' -f1);")
+            append(" if [ -n \"\$KPID\" ] && grep -q libTEESimulator /proc/\$KPID/maps 2>/dev/null; then echo 'ENGINE_INJECTED=1'; else echo 'ENGINE_INJECTED=0'; fi;")
             append(" if [ -x '$BIN' ]; then echo 'DAEMON_BIN=1'; else echo 'DAEMON_BIN=0'; fi;")
             append(" echo \"DAEMON_PID=\$(pidof ta-enhanced 2>/dev/null | cut -d' ' -f1)\";")
             append(" if [ -f '$TS/keybox.xml' ]; then echo 'KEYBOX=1';")
@@ -161,6 +168,7 @@ object TeeDiagnostics {
             engineDir = engineDir,
             engineEnabled = engineDir != null && values["ENGINE_DISABLED"] != "1",
             enginePid = values["ENGINE_PID"]?.toIntOrNull() ?: 0,
+            engineInjected = values["ENGINE_INJECTED"] == "1",
             daemonBinary = daemonBinary,
             daemonPid = values["DAEMON_PID"]?.toIntOrNull() ?: 0,
             keyboxPresent = keyboxPresent,
@@ -193,6 +201,7 @@ object TeeDiagnostics {
         engineDir = null,
         engineEnabled = false,
         enginePid = 0,
+        engineInjected = false,
         daemonBinary = false,
         daemonPid = 0,
         keyboxPresent = false,

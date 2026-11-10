@@ -171,11 +171,11 @@ fun SettingPagerMiuix(
                     }
 
                     // 备份与恢复：一年用两次，但用的时候都是在救机器（误删模块、换机搬家、
-                    // 刷坏之后想回到上一个可用组合）。它需要 root，所以和其余 root 项一样
-                    // 包在 KsuIsValid 里 —— 没 root 时整段不出现，而不是点了才报错。
-                    KsuIsValid {
-                        ModuleBackupSection()
-                    }
+                    // 刷坏之后想回到上一个可用组合）。
+                    // 2026-11-10：不再包在 KsuIsValid 里 —— 它只依赖 root shell，而内核接口
+                    // 没被认成 manager（isManager=false）时这段会整段静默消失，真机上表现为
+                    // "设置里根本没有备份入口"。面板自己探 root、探不到就禁用并写明原因。
+                    ModuleBackupSection()
 
                     // 密钥库 / 指纹自检已移到「工具箱」（那是排障工具，不是日常设置项）。
 

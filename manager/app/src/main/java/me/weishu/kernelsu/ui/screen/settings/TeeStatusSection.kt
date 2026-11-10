@@ -117,6 +117,9 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
             title = "证明引擎",
             subtitle = when {
                 snap == null -> if (busy) "读取中…" else "还没检测"
+                snap.engineDir == null && snap.engineInjected ->
+                    "找不到引擎目录，但 keystore2 里仍有旧注入（libTEESimulator 还在 maps 里）：" +
+                        "重启 keystore2 或重启设备后就会失效。请重新装内核/内置模块。"
                 snap.engineDir == null -> "没有找到 tricky_store 引擎（内置模块可能没装或已停用）"
                 !snap.engineEnabled -> "引擎模块在 ${snap.engineDir}，但被 disable 了"
                 else -> "${snap.engineDir}\n" +
@@ -126,9 +129,13 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
             },
             leading = Icons.Rounded.Memory,
             trailing = {
-                if (snap != null && snap.engineDir != null) {
-                    if (snap.enginePid > 0) Xc8Tag("在跑", tone = Xc8Tone.Success)
-                    else Xc8Tag("没跑", tone = Xc8Tone.Danger)
+                if (snap != null) {
+                    when {
+                        snap.engineDir != null && snap.enginePid > 0 -> Xc8Tag("在跑", tone = Xc8Tone.Success)
+                        snap.engineDir != null -> Xc8Tag("没跑", tone = Xc8Tone.Danger)
+                        snap.engineInjected -> Xc8Tag("残留注入", tone = Xc8Tone.Danger)
+                        else -> Unit
+                    }
                 }
             },
         )
