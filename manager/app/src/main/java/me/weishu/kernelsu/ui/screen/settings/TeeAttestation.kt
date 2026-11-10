@@ -12,29 +12,7 @@ import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.security.spec.ECGenParameterSpec
 
-/**
- * 真·密钥库取证（2026-11-10）。
- *
- * 为什么要自己生成一把带 attestation challenge 的密钥：**这是唯一能证明"这台机器的
- * TEE 到底有没有在工作"的证据**。管理器读配置文件只能知道"引擎想干什么"，读日志只能
- * 知道"引擎说过什么"，只有让 keystore 现场签一张带 KeyDescription 的证书，才能看到
- * 检测方真正会看到的东西：
- *
- *  - `attestationSecurityLevel` = Software(0) / TEE(1) / StrongBox(2)
- *      → 0 表示这张证明是**纯软件伪造**的（引擎在 FORGE 模式给出：TEE 坏了或者目标包
- *        在 target.txt 里带 `!`）；1/2 表示真的走了硬件密钥库。
- *  - `verifiedBootState`（0 Verified / 1 SelfSigned / 2 Unverified / 3 Failed）
- *      → 检测方判"BL 是否解锁"看的就是这一位。属性可以被 resetprop 改，
- *        **这一位改不了**（它在 TEE 里签），所以它才是可信的那一半。
- *  - `deviceLocked`、`osVersion`、`osPatchLevel`
- *      → 前两个是 Play Integrity DEVICE 判定的输入；patchLevel 是厂商安全补丁级别。
- *
- * 这里只做**读**：生成一把临时密钥（alias 固定，测完立刻删），解析证书链里的
- * KeyDescription 扩展（OID 1.3.6.1.4.1.11129.2.1.17）。不写配置、不改任何状态。
- *
- * 挂在 TEESimulator 引擎上时，拿到的正是"被引擎替换后的证明" —— 也就是说用户看到的
- * 就是检测方看到的，不会出现"本地显示 TEE 正常、验机工具却报软件证明"的错位。
- */
+/** 现场取硬件证明：生成带 attestation challenge 的密钥，解析证书里的 KeyDescription。 */
 object TeeAttestation {
 
     private const val ALIAS = "xec_tee_probe"

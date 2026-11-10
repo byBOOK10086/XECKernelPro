@@ -11,23 +11,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * 真·RKP 重签（2026-11-10）。
- *
- * **这是唯一一条能"真修"TEE 的路径**：把 keybox 通过厂商工具真正写回 TEE/RKP 存储，
- * 而不是像 FORGE 模式那样在软件层伪造证明。它只在厂商随系统提供了
- * `KmInstallKeybox`（Pixel 与部分 OEM 有，多数国产 ROM 没有）时才可用 —— 没有工具时
- * 这里**不会**给出假按钮，只如实说明"这台机器只能软件伪造"。
- *
- * 安全约束（每一条都对应一种真实的翻车方式）：
- *  1. 工具本身必须是 root 属主、且组/其他人不可写（`stat -c '%U %a'`）。否则等于以
- *     root 执行一个可以被别的应用替换掉的程序。
- *  2. keybox 文件必须先落盘并通过结构检查（XML 里有 `Keybox` 与 `DeviceID`），
- *     `DeviceID` 直接取文件里的值 —— 传错 ID 会让写进去的箱子对不上设备。
- *  3. 动手前把现有 `/data/adb/tricky_store/keybox.xml` 备份成 `.bak-<时间>`。
- *  4. 工具调用带超时（120s），失败原样回显 stdout/stderr，不吞成"已修复"。
- *  5. 写回之后重启证明引擎并**等它真的起来**，再让 UI 重新取证。
- */
+/** 厂商 RKP 重签：把 keybox 真正写回 TEE。仅 KmInstallKeybox 在位的机型可用。 */
 object RkpRepair {
 
     /** 厂商工具候选路径。真修复只有这一条入口。 */

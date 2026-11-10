@@ -25,7 +25,7 @@ import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.design.panel.Xc8Panel
 import me.weishu.kernelsu.ui.design.panel.Xc8Row
 
-/** 备份/恢复的是哪一类东西 —— 两个 SAF 启动器共用一套回调，靠它分流。 */
+/** 模块与授权表的备份 / 恢复面板（设置页）。 */
 private enum class BackupKind { Modules, Allowlist }
 
 /**

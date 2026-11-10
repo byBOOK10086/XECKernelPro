@@ -4,6 +4,10 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Tune
+import me.weishu.kernelsu.ui.design.panel.Xc8Switch
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Refresh
@@ -28,21 +32,7 @@ import me.weishu.kernelsu.ui.design.panel.Xc8Row
 import me.weishu.kernelsu.ui.design.panel.Xc8Tag
 import me.weishu.kernelsu.ui.design.panel.Xc8Tone
 
-/**
- * 密钥库（TEE）体检面板（2026-11-10）。
- *
- * 这一屏只做两件事：**如实显示**这台机器现在给出的是什么证明，以及**允许用户修**。
- * 显示分三层，从"最不可伪造"到"最可伪造"：
- *
- *  1. [TeeAttestation] 现场生成一把密钥、解析证书里的 KeyDescription —— 检测方看到的
- *     就是这一份（安全级别是软件/TEE/StrongBox、锁态是 verified/unverified）。
- *     属性可以被 resetprop 改，**这一位改不了**。
- *  2. [TeeDiagnostics] 引擎进程、拦截表、keybox 的密码学校验结论（daemon 自己给的 JSON）。
- *  3. 系统属性（verifiedbootstate / flash.locked）—— 只有对照价值：它和 1 不一致，
- *     就说明伪装只停留在属性层，真正的证明没换过来。
- *
- * 危险动作（清空密钥库）一律二次确认，且文案里写清后果。
- */
+/** 密钥库自检面板（工具箱）：证明 / 引擎 / keybox / 锁态，以及修复与 RKP 重签入口。 */
 @Composable
 fun TeeStatusSection(modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -300,6 +290,93 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
                 }
             },
         )
+        // 一键软件修复
+        Xc8Row(
+            title = "一键修复（软件路径）",
+            subtitle = "刷新 keybox → 重启引擎 → 重新取证。不动密钥库、不改 target.txt、不写 TEE",
+            leading = Icons.Rounded.Build,
+            enabled = !busy && snap != null,
+            onClick = {
+                scope.launch {
+                    val answer = confirm.awaitConfirm(
+                        title = "执行一键软件修复？",
+                        content = "依次执行：重新拉取 keybox → 重启证明引擎 → 重新取一次硬件证明。\n\n" +
+                            "**不会**动你的密钥库、不会改 target.txt、也不会写 TEE。" +
+                            "想真写回 TEE 请用下面的「真·RKP 重签」（需要厂商工具）。",
+                        markdown = true,
+                        confirm = "开始",
+                        dismiss = "取消",
+                    )
+                    if (answer != ConfirmResult.Confirmed) return@launch
+                    busy = true
+                    val result = try {
+                        TeeDiagnostics.oneTapRepair(snap?.engineDir)
+                    } finally {
+                        busy = false
+                    }
+                    note = result.fold(onSuccess = { it }, onFailure = { "修复失败：${it.message}" })
+                    toast(note.orEmpty())
+                    refresh()
+                }
+            },
+        )
+
+        // 远程配置优先（补丁/指纹/远程密钥 压过 TEE 引擎）
+        Xc8Row(
+            title = "远程配置优先",
+            subtitle = when {
+                snap == null -> if (busy) "读取中…" else "还没检测"
+                snap.remotePriority -> "已开启：每次开机把安全补丁钉成每 2 小时、keybox 自动拉取打开"
+                else -> "已关闭：补丁与 keybox 周期以模块 WebUI 配置为准（**2 小时保证失效**）"
+            },
+            leading = Icons.Rounded.Settings,
+            trailing = {
+                snap?.let { s ->
+                    Xc8Switch(
+                        checked = s.remotePriority,
+                        enabled = !busy,
+                        onCheckedChange = { on ->
+                            scope.launch {
+                                busy = true
+                                val result = try {
+                                    TeeDiagnostics.setRemotePriority(on)
+                                } finally {
+                                    busy = false
+                                }
+                                note = result.fold(
+                                    onSuccess = {
+                                        if (on) "已开启：下次开机把补丁钉成 2 小时" else "已关闭：周期以 WebUI 配置为准"
+                                    },
+                                    onFailure = { "写入失败：${it.message}" },
+                                )
+                                toast(note.orEmpty())
+                                refresh()
+                            }
+                        },
+                    )
+                }
+            },
+        )
+
+        // 按应用补丁覆盖（只读展示，编辑在模块 WebUI）
+        Xc8Row(
+            title = "按应用补丁覆盖",
+            subtitle = when {
+                snap == null -> if (busy) "读取中…" else "还没检测"
+                snap.patchPerPackage == 0 -> "没有按应用覆盖，所有被拦截的包用全局补丁级别"
+                else -> "有 ${snap.patchPerPackage} 个包单独设了补丁级别（编辑入口在模块 WebUI）"
+            },
+            leading = Icons.Rounded.Tune,
+            trailing = {
+                if (snap != null) {
+                    Xc8Tag(
+                        if (snap.patchPerPackage == 0) "全局" else "${snap.patchPerPackage} 个",
+                        tone = Xc8Tone.Neutral,
+                    )
+                }
+            },
+        )
+
         Xc8Row(
             title = "清空密钥库（危险）",
             subtitle = "删掉所有应用的 AndroidKeyStore 密钥与引擎生成的持久密钥，然后重启。" +

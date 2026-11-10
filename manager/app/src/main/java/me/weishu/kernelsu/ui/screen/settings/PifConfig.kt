@@ -9,24 +9,7 @@ import me.weishu.kernelsu.ui.util.awaitRootShell
 import org.json.JSONObject
 import java.io.File
 
-/**
- * 构建指纹伪装（PIF）的配置层（2026-11-10）。
- *
- * 这一层只做"把一份 pif.json 翻译成设备上的属性表"，**不解析、不写入任何东西在
- * 应用进程里独立生效** —— 真正的写入由模块脚本 `pif.sh` 在开机早期做（见
- * `userspace/ksud/builtin/TA_enhanced/pif.sh` 的注释：为什么不在脚本里解析 JSON）。
- *
- * 三层数据：
- *  - 来源：已装 PIF 模块的 `pif.json`、用户选的 JSON 文件、我们内置的机型 profile
- *  - 产物：`/data/adb/.xudc_secure/pif/props.txt`（`ro.xxx=值`，一行一条）
- *  - 开关：`/data/adb/.xudc_secure/pif/enabled`（存在=启用）
- *
- * Play Integrity 的 DEVICE/STRONG 判定要的是"整机身份 + 补丁 + 锁态"三件自洽：
- * 指纹里的品牌/机型/版本/构建号必须和 `ro.product.*`、`ro.build.version.*` 对得上，
- * 否则验机工具会判"指纹不一致"。所以这里把 pif.json 的每一项**展开到所有分区级
- * 属性**（Android 12+ 应用读的是 `ro.product.system.*` / `ro.product.vendor.*`），
- * 而不是只写 `ro.build.fingerprint` 一条。
- */
+/** 构建指纹（PIF）配置：把 pif.json 翻成白名单属性表，供模块脚本开机写入。 */
 object PifConfig {
 
     private const val PIF_DIR = "/data/adb/.xudc_secure/pif"
@@ -204,12 +187,7 @@ object PifConfig {
             }
         }
 
-    /**
-     * 把一份 JSON 翻译成属性表并落盘。
-     *
-     * 只接受"扁平 key/value"（PIF 的 pif.json 就是这种形态）；未知键忽略，
-     * 缺 FINGERPRINT 直接拒绝 —— 没有指纹等于什么都没做，不能给用户一个假成功。
-     */
+    /** 把一份 JSON 翻译成属性表并落盘 */
     private suspend fun installJson(context: Context, jsonFile: File, sourceName: String): Result<String> {
         val shell = awaitRootShell()
         if (!shell.isRoot) return Result.failure(Refused("没有 root"))
@@ -285,13 +263,7 @@ object PifConfig {
 
     // ------------------------------------------------------------------ 映射
 
-    /**
-     * pif.json（扁平字段）→ 属性表。
-     *
-     * 每个身份字段都展开到**所有分区级属性**：Android 12+ 的应用读
-     * `ro.product.system.*` / `ro.product.vendor.*`，只写 `ro.product.model`
-     * 会出现"应用里机型没变"的假象。
-     */
+    /** pif */
     private fun toProps(obj: JSONObject, fingerprint: String): LinkedHashMap<String, String> {
         val out = LinkedHashMap<String, String>()
         fun put(name: String, value: String) {

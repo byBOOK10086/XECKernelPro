@@ -1,33 +1,6 @@
 package me.weishu.kernelsu.ui.screen.settings
 
-/**
- * KeyMint `KeyDescription`（X.509 扩展 OID 1.3.6.1.4.1.11129.2.1.17）的极简解析器。
- *
- * 单独成一个**纯 Kotlin**（无 Android 依赖）文件，是为了能脱离设备单独跑测试 ——
- * 这一段解析错了，TEE 面板就会给出一个"看起来很确定但其实错"的结论：
- * 把软件伪造读成硬件证明、把未锁定的机器读成已回锁。所以它必须在本地就能被喂
- * 构造好的 DER 验证（见 `_scratch/kd_test` 的 harness）。
- *
- * ```text
- * KeyDescription ::= SEQUENCE {
- *   attestationVersion       INTEGER,
- *   attestationSecurityLevel ENUMERATED,   -- 0 Software / 1 TEE / 2 StrongBox
- *   keymasterVersion         INTEGER,
- *   keymasterSecurityLevel   ENUMERATED,
- *   attestationChallenge     OCTET STRING,
- *   uniqueId                 OCTET STRING,
- *   softwareEnforced         AuthorizationList,
- *   teeEnforced              AuthorizationList
- * }
- * AuthorizationList = SEQUENCE of context-tagged values; 704=rootOfTrust, 705=osVersion,
- *                     706=osPatchLevel；rootOfTrust 内部 [0]=verifiedBootState, [1]=deviceLocked
- * ```
- *
- * **设计要点（踩过的坑）**：每个 [Der] 节点自己持有"它被解析时的那段字节"，取值和取
- * 子节点都不需要再传数组。早期版本让调用方传数组，而节点的偏移量其实是相对**子切片**
- * 算的 —— 于是 `fields[1].bytesOf(der)` 少读了一个 SEQUENCE 头，把 ENUMERATED 的
- * **tag 字节** 0x0A 当成了安全级别（结果永远是 10）。这种事只有构造数据跑一遍才抓得到。
- */
+/** KeyMint KeyDescription（OID 1.3.6.1.4.1.11129.2.1.17）解析器。纯 Kotlin，可单测（_scratch/kd_test）。 */
 internal object KeyDescription {
 
     object Level {

@@ -123,6 +123,13 @@ vbhash 提取功能由源码构建的 ta-enhanced 守护进程（`rust/src/vbhas
      上游的版本显示 / status 上报 / WebUI 元数据读的是这个路径，只放我们自己的备份目录
      会让版本号落到 crate 版本、状态任务拿不到元数据。
 
+- **2026-11-10（远程配置优先开关）**：service.sh 新增 $REMOTE_PRIO_OFF 门控 ——
+  文件 /data/adb/.xudc_secure/remote_priority_off **不存在**时（默认），每次开机把
+  security_patch.auto_update=true / security_patch.interval=7200 与
+  keybox.enabled=true / keybox.interval=180 钉住；用户显式关闭后这些值以 WebUI 配置
+  为准（日志写明"已由用户关闭"）。这是把"补丁/指纹/远程密钥逻辑优先于 TEE 引擎配置"
+  这条裁定落成可切换的事实，而不是散落在各脚本里的隐式约定。
+
 许可证不由本项目改变：本模块整体仍按 **GPL-3.0** 分发，对应源码（含上述修改）随本仓库
 一同提供；完整对应源码获取方式见根目录 `THIRD_PARTY_NOTICES.md`。
 

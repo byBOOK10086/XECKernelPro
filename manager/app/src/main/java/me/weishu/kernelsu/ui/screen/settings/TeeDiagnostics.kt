@@ -9,23 +9,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * TEE / 密钥库体检（2026-11-10）。
- *
- * 只在**读**：把"引擎在不在、keybox 可不可信、拦截了几个包、锁态属性是什么、
- * 厂商有没有真修复工具"这些事实收集齐，交给 UI 显示。所有判断都以**证据**为单位
- * （文件存在性、进程 pid、daemon 自己吐的 JSON），不做"看起来应该没问题"的推断。
- *
- * 三个数据源：
- *  1. 文件系统 —— `/data/adb/tricky_store` 是引擎（TEESimulator）的配置目录，
- *     `/data/adb/.xudc_secure` 是本项目自己的状态目录（daemon 二进制、keybox 状态、
- *     日志）。
- *  2. 守护进程 CLI —— `/data/adb/.xudc_secure/ta-enhanced/bin/ta-enhanced`，v5.51+
- *     提供 `keybox validate`（输出 JSON：链是否可信、叶子到期时间、是否被吊销、
- *     根是哪一类）。
- *  3. 系统属性 —— 锁态三项，用于和 [TeeAttestation] 拿到的**硬件证明**对照：属性可以
- *     被 resetprop 改，TEE 签出来的那一位改不了，两者不一致就是"伪装只在属性层"的铁证。
- */
+/** TEE / 密钥库体检：引擎、keybox 校验、锁态、拦截模式。只读。 */
 object TeeDiagnostics {
 
     private const val TS = "/data/adb/tricky_store"
@@ -83,6 +67,10 @@ object TeeDiagnostics {
         val deviceStateProp: String?,
         val warrantyProp: String?,
         val logLines: List<String>,
+        /** 远程配置优先（补丁 2h / keybox 自动拉取由本项目钉住）是否开启。 */
+        val remotePriority: Boolean,
+        /** security_patch.txt 里按应用覆盖的段数（`[包名]`）。 */
+        val patchPerPackage: Int,
         val keybox: KeyboxReport?,
         val realRepairTool: String?,
         val errors: List<String>,
@@ -133,6 +121,8 @@ object TeeDiagnostics {
             RKP_TOOLS.forEachIndexed { index, path ->
                 append(" [ -x '$path' ] && echo 'RKP_TOOL_$index=$path';")
             }
+            append(" if [ -f '$SEC/remote_priority_off' ]; then echo 'REMOTE_PRIO=0'; else echo 'REMOTE_PRIO=1'; fi;")
+            append(" echo \"PATCH_PKGS=\$(grep -cE '^[[:space:]]*\\[[A-Za-z0-9_.-]+\\][[:space:]]*\$' '$TS/security_patch.txt' 2>/dev/null)\";")
             append(" echo '---LOG---';")
             append(" grep -iE 'ERROR|WARN' '$LOG' 2>/dev/null | tail -n 4;")
         }
@@ -191,6 +181,8 @@ object TeeDiagnostics {
             deviceStateProp = values["P_DEVICE_STATE"]?.takeIf { it.isNotEmpty() },
             warrantyProp = values["P_WARRANTY"]?.takeIf { it.isNotEmpty() },
             logLines = logLines,
+            remotePriority = values["REMOTE_PRIO"] != "0",
+            patchPerPackage = values["PATCH_PKGS"]?.toIntOrNull() ?: 0,
             keybox = report,
             realRepairTool = RKP_TOOLS.indices.firstNotNullOfOrNull { values["RKP_TOOL_$it"] },
             errors = errors,
@@ -219,18 +211,14 @@ object TeeDiagnostics {
         deviceStateProp = null,
         warrantyProp = null,
         logLines = emptyList(),
+        remotePriority = true,
+        patchPerPackage = 0,
         keybox = null,
         realRepairTool = null,
         errors = listOf(reason),
     )
 
-    /**
-     * 让守护进程自己校验现场 keybox。v5.51+ 会做真密码学校验（X.509 链签名、
-     * 叶子有效期、私钥匹配、四类信任锚、在线吊销），结果以 JSON 打到 stdout。
-     *
-     * 注意：**校验失败时进程会非零退出**，但 JSON 已经打完了 —— 所以这里不看退出码，
-     * 只看能不能解析出 JSON。
-     */
+    /** 让守护进程自己校验现场 keybox */
     private fun validateKeybox(shell: Shell, errors: MutableList<String>): KeyboxReport? {
         val result = runCatching { shell.newJob().add("'$BIN' keybox validate 2>&1").exec() }
             .getOrElse {
@@ -309,13 +297,7 @@ object TeeDiagnostics {
         }
     }
 
-    /**
-     * 清空 AndroidKeyStore 与引擎生成的持久密钥。
-     *
-     * **破坏性**：所有应用的密钥都会消失（银行/支付/部分登录态要重新授权）。只在
-     * "证明判定异常、怀疑旧密钥被引擎写坏"时用，且必须立刻重启 —— keystore2 还开着
-     * 旧库的时候删文件不会即时生效。
-     */
+    /** 清空 AndroidKeyStore 与引擎生成的持久密钥 */
     suspend fun clearKeyStore(): Result<Unit> = withContext(Dispatchers.IO) {
         val shell = awaitRootShell()
         if (!shell.isRoot) return@withContext Result.failure(IllegalStateException("没有 root"))
@@ -330,13 +312,36 @@ object TeeDiagnostics {
         else Result.failure(IllegalStateException(result.err.joinToString(" ").ifBlank { "清理失败" }))
     }
 
-    /**
-     * 把内置验机工具（`wu.keyChain.test`）加入拦截表。
-     *
-     * 引擎是"穷举白名单"：不在 `target.txt` 里的包**完全不被拦截**，拿到的是设备真实
-     * TEE 证明。验机工具因此必须被覆盖，否则用户看到的是"真实但未伪装"的结果，
-     * 会误判成引擎没工作。
-     */
+    /** 一键软件修复：按"换箱后遗症 / 引擎没接管"的处置顺序串起来 */
+    suspend fun oneTapRepair(engineDir: String?): Result<String> = withContext(Dispatchers.IO) {
+        val steps = ArrayList<String>()
+        refreshKeybox().fold(
+            onSuccess = { steps += "keybox 已刷新（$it）" },
+            onFailure = { steps += "keybox 刷新失败：${it.message}" },
+        )
+        restartEngine(engineDir).fold(
+            onSuccess = { ok -> steps += if (ok) "引擎已重启" else "引擎重启命令已发出，但进程没在 12 秒内出现" },
+            onFailure = { steps += "引擎重启失败：${it.message}" },
+        )
+        Result.success(steps.joinToString("；"))
+    }
+
+    /** 远程配置优先开关（用户的硬性裁定：补丁/指纹/远程密钥这套逻辑必须压过 TEE 引擎那套） */
+    suspend fun setRemotePriority(enabled: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
+        val shell = awaitRootShell()
+        if (!shell.isRoot) return@withContext Result.failure(IllegalStateException("没有 root"))
+        val cmd = if (enabled) {
+            "rm -f '$SEC/remote_priority_off'; mkdir -p '$SEC'; : > '$SEC/remote_priority'; echo done"
+        } else {
+            "mkdir -p '$SEC'; : > '$SEC/remote_priority_off'; echo done"
+        }
+        val result = runCatching { shell.newJob().add(cmd).exec() }.getOrNull()
+            ?: return@withContext Result.failure(IllegalStateException("执行失败"))
+        if (result.isSuccess) Result.success(Unit)
+        else Result.failure(IllegalStateException(result.err.joinToString(" ").ifBlank { "写入开关失败" }))
+    }
+
+    /** 把内置验机工具（`wu */
     suspend fun addVerifierToTarget(): Result<Unit> = withContext(Dispatchers.IO) {
         val shell = awaitRootShell()
         if (!shell.isRoot) return@withContext Result.failure(IllegalStateException("没有 root"))

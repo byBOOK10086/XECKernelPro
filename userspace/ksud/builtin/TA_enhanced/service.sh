@@ -200,11 +200,32 @@ fi
 # 明文 XML，vendor 的 validate 能过；yurikey 原始源是 base64，不能给 vendor 用），
 # 真正的多镜像轮换与可信核验由 common/keybox.sh 负责。
 #
-# interval/enabled 每次开机强制对齐；source/custom_url 只在用户没设过时补默认值
+# ---------------------------------------------------------------------------
+# 远程配置优先（用户裁定："补丁/指纹/远程密钥这套逻辑必须压过 TEE 引擎那套"）
+# ---------------------------------------------------------------------------
+# 这条裁定在实现上就是"**谁拥有哪个旋钮**"，脚本里用这两个文件表达，别处不许再抢：
+#   /data/adb/.xudc_secure/remote_priority     存在 = 远程配置优先（默认，首次开机落盘）
+#   /data/adb/.xudc_secure/remote_priority_off 存在 = 用户显式关掉（尊重 WebUI 里的值）
+# 默认优先的理由：2 小时补丁是硬性要求，用户随手把 interval 改成 86400 会让 DEVICE 判定
+# 掉回 BASIC；关掉之后由用户自己负责，日志里会明说。
+REMOTE_PRIO_OFF="/data/adb/.xudc_secure/remote_priority_off"
+REMOTE_PRIO_ON="/data/adb/.xudc_secure/remote_priority"
+if [ ! -f "$REMOTE_PRIO_OFF" ]; then
+    mkdir -p "/data/adb/.xudc_secure" 2>/dev/null
+    : > "$REMOTE_PRIO_ON" 2>/dev/null
+    REMOTE_PRIORITY=true
+    _log "INFO" "远程配置优先：开启（补丁 2h / keybox 自动拉取 由本项目钉住）"
+else
+    REMOTE_PRIORITY=false
+    _log "INFO" "远程配置优先：已由用户关闭（补丁/keybox 的周期以 WebUI 配置为准）"
+fi
+# interval/enabled 每次开机强制对齐（仅在远程优先开启时）；source/custom_url 只在用户没设过时补默认值
 # （WebUI 里选过的源属于用户状态，不能被开机脚本覆盖）。
 if [ -d "$TS" ] || [ -d "/data/adb/modules/.tricky_store" ] || [ -d "/data/adb/ksu/builtin/tricky_store" ]; then
-    "$BIN" config set keybox.enabled true >/dev/null 2>&1 || _log "WARN" "keybox.enabled set failed"
-    "$BIN" config set keybox.interval 180 >/dev/null 2>&1 || _log "WARN" "keybox.interval set failed"
+    if [ "$REMOTE_PRIORITY" = "true" ]; then
+        "$BIN" config set keybox.enabled true >/dev/null 2>&1 || _log "WARN" "keybox.enabled set failed"
+        "$BIN" config set keybox.interval 180 >/dev/null 2>&1 || _log "WARN" "keybox.interval set failed"
+    fi
 
     # daemon 日志目录统一到 shell/WebUI 都在看的那一个路径，否则 fetch 失败原因
     # 只写在另一个目录里，排查时永远看不到。
@@ -250,10 +271,12 @@ _log "INFO" "Daemon launched"
 # Play Integrity 的 DEVICE 判定会因为补丁太旧掉到 BASIC。
 # 白名单里留下 60/3600 等其他取值范围，是为了不让"用户在 WebUI 里选的值"被
 # 无条件覆盖 —— 这里只在开机时写一次默认策略，运行期用户可以改。
-"$BIN" config set security_patch.auto_update true >/dev/null 2>&1 \
-    || _log "WARN" "security_patch.auto_update set failed"
-"$BIN" config set security_patch.interval 7200 >/dev/null 2>&1 \
-    || _log "WARN" "security_patch.interval set failed"
+if [ "$REMOTE_PRIORITY" = "true" ]; then
+    "$BIN" config set security_patch.auto_update true >/dev/null 2>&1 \
+        || _log "WARN" "security_patch.auto_update set failed"
+    "$BIN" config set security_patch.interval 7200 >/dev/null 2>&1 \
+        || _log "WARN" "security_patch.interval set failed"
+fi
 _log "INFO" "安全补丁自动更新：enabled=$(read_config security_patch.auto_update true) interval=$(read_config security_patch.interval 7200)s"
 
 # ---------------------------------------------------------------------------

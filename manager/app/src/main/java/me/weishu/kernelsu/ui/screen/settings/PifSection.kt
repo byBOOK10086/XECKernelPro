@@ -25,19 +25,7 @@ import me.weishu.kernelsu.ui.design.panel.Xc8Panel
 import me.weishu.kernelsu.ui.design.panel.Xc8Row
 import me.weishu.kernelsu.ui.design.panel.Xc8Switch
 
-/**
- * 构建指纹伪装（PIF）面板（2026-11-10）。
- *
- * 为什么需要它：Play Integrity 的 DEVICE/STRONG 判定不只看 TEE 证明，还要看
- * "这台机器的身份自洽" —— 指纹里的品牌/机型/版本/构建号必须和 build 属性对得上，
- * 安全补丁也不能太旧。TEE 侧（证明引擎 + keybox）只解决前一半，这是后一半。
- *
- * 数据流向（全部落在 `/data/adb/.xudc_secure/pif/`，由模块脚本在开机早期应用）：
- *   已装 PIF 模块的 pif.json / 用户选的 JSON / 内置机型 profile
- *     → props.txt（`ro.xxx=值`）
- *     → 开关文件 enabled
- *     → 模块 `pif.sh` 开机早期 resetprop（脚本里只做白名单 + 写入，不碰 JSON）
- */
+/** 指纹伪装面板（工具箱）。 */
 @Composable
 fun PifSection(modifier: Modifier = Modifier) {
     val context = LocalContext.current
