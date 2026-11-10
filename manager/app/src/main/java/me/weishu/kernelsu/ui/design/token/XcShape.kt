@@ -82,6 +82,16 @@ object XcRadius {
     val xl = 20.dp
     /** 12dp：顶栏 / 导航栏 / 悬浮栏。 */
     val bar = 12.dp
+    /** 17dp：参考稿「减量 XEC」的卡面圆角。 */
+    val card = 17.dp
+    /** 14dp：轻量大卡 / banner / 提示条。 */
+    val banner = 14.dp
+    /** 11dp：行首图标方块。 */
+    val iconBox = 11.dp
+    /** 13dp：搜索框 / 输入框。 */
+    val field = 13.dp
+    /** 20dp：状态药丸 / 小按钮（参考稿口径，与 xl 同值但语义不同）。 */
+    val pill = 20.dp
 }
 
 val LocalXcShapes = staticCompositionLocalOf { XcShapesDefault }
