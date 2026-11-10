@@ -519,7 +519,9 @@ fun SettingPagerMiuix(
                         onDismissRequest = { showSendLogDialog.value = false },
                         loadingDialog = loadingDialog
                     )
-                    Spacer(Modifier.height(bottomInnerPadding))
+                    // 2026-11-11：与首页一致，最后一项再留 12dp 呼吸位。
+                    // 只给"底栏高度"的话，最后一行会紧贴托盘上沿，看着仍像被压住。
+                    Spacer(Modifier.height(bottomInnerPadding + 12.dp))
                 }
             }
         }

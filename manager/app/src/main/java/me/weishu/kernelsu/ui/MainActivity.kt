@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -665,6 +666,9 @@ fun MainScreen(
         mainPagerState.syncPage()
     }
 
+    // 底栏实测高度（px）。见下方 pagerContent 处的说明：内容区底部余量要用它兜底。
+    var dockHeightPx by remember { mutableIntStateOf(0) }
+
 
     MainScreenBackHandler(mainPagerState, navController)
 
@@ -737,7 +741,9 @@ fun MainScreen(
                         moduleBadge = navigationBadge.moduleUpdatableCount
                             .takeIf { it > 0 } ?: navigationBadge.moduleEnabledCount,
                         superuserCount = navigationBadge.superuserCount,
-                        modifier = Modifier.align(Alignment.BottomCenter),
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .onSizeChanged { dockHeightPx = it.height },
                     )
                 }
             }
@@ -746,7 +752,16 @@ fun MainScreen(
                 bottomBar = bottomBar,
                 containerColor = Color.Transparent,
             ) { innerPadding ->
-                pagerContent(innerPadding.calculateBottomPadding())
+                // 2026-11-11 第三轮：内容区底部安全余量取「Scaffold 给的值」与
+                // 「底栏实测高度」的**较大者**。
+                //
+                // 悬浮底栏是自绘的：理论上 Scaffold 的 bottomBar 槽已经把它算进
+                // innerPadding，但这条链只要有一环不成立（Scaffold 实现差异、
+                // bottomBar 里套了 align/offset 之类的装饰），最后一行就会被压在
+                // 托盘下面 —— 而且**从代码上看不出来是哪儿算错了**。真机反馈的
+                // 「安全状态列表被挡」就是这一类。直接把高度量一次，依赖就断了。
+                val measured = with(LocalDensity.current) { dockHeightPx.toDp() }
+                pagerContent(maxOf(innerPadding.calculateBottomPadding(), measured))
             }
         }
     }
