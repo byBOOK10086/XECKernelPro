@@ -91,6 +91,7 @@ fun XcListRow(
                 title,
                 color = Xc.colors.text,
                 fontSize = XcType.body,
+                lineHeight = 22.sp,
                 fontWeight = FontWeight(620),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -99,7 +100,8 @@ fun XcListRow(
                 Text(
                     subtitle,
                     color = Xc.colors.textMuted,
-                    fontSize = XcType.caption,
+                    fontSize = XcType.sub,
+                    lineHeight = 18.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp),
@@ -107,7 +109,15 @@ fun XcListRow(
             }
         }
         if (value != null) {
-            Text(value, color = valueTone.ink, fontSize = XcType.caption, fontWeight = FontWeight(600))
+            Text(
+                value,
+                color = valueTone.ink,
+                fontSize = XcType.sub,
+                lineHeight = 18.sp,
+                fontWeight = FontWeight(500),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         if (showChevron) {
             Icon(
@@ -144,12 +154,18 @@ fun XcStatStrip(items: List<XcStat>, modifier: Modifier = Modifier) {
                 )
             }
             Column(Modifier.weight(1f).padding(horizontal = 13.dp)) {
-                Text(stat.label, color = Xc.colors.textMuted, fontSize = XcType.caption)
+                Text(
+                    stat.label,
+                    color = Xc.colors.textMuted,
+                    fontSize = XcType.caption,
+                    lineHeight = 16.sp,
+                )
                 Text(
                     stat.value,
                     color = Xc.colors.text,
                     fontSize = XcType.stat,
-                    fontWeight = FontWeight(650),
+                    lineHeight = 30.sp,
+                    fontWeight = FontWeight(600),
                     modifier = Modifier.padding(top = 6.dp),
                 )
                 if (stat.caption != null) {
@@ -157,6 +173,7 @@ fun XcStatStrip(items: List<XcStat>, modifier: Modifier = Modifier) {
                         stat.caption,
                         color = Xc.colors.accent,
                         fontSize = XcType.caption,
+                        lineHeight = 16.sp,
                         modifier = Modifier.padding(top = 2.dp),
                     )
                 }

@@ -90,7 +90,7 @@ fun XecScoreCard(
             ) {
                 Text(
                     text = shownScore.toString(),
-                    fontSize = 62.sp,
+                    fontSize = 32.sp,
                     lineHeight = 62.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = (-3).sp,

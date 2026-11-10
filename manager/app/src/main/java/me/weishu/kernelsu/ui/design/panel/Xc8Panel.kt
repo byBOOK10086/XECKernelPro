@@ -206,7 +206,8 @@ fun Xc8Row(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                fontSize = 13.sp,
+                fontSize = 15.sp,
+                lineHeight = 22.sp,
                 color = effectiveTitleColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -215,8 +216,8 @@ fun Xc8Row(
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = subtitle,
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
                     color = subtitleColor,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,

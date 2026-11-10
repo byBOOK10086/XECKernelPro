@@ -50,17 +50,20 @@ fun MiuixKernelSUTheme(
     // 这里把正文一系压到 Xc 字阶：main / paragraph / body1 / body2 / button /
     // footnote* / headline*。标题档（title1..4）保持 miuix 原值不动，避免
     // 顶栏标题和弹窗标题整站缩水一截。
+    // 2026-11-11 字体规范：Miuix 的字阶全部映射到 XcTypography 的 9 个角色。
+    // 上一版只是把正文压到 14sp，剩下的档位还是 miuix 默认（17/16sp），于是同一台
+    // 手机里"页面标题 24、分组标题 17、正文 14"三套节奏打架。
     val xcTextStyles = defaultTextStyles(
-        main = Xc.typography.body,
-        paragraph = Xc.typography.body,
-        body1 = Xc.typography.body,
-        body2 = Xc.typography.body,
-        button = Xc.typography.body.copy(fontWeight = FontWeight.SemiBold),
+        main = Xc.typography.listTitle,
+        paragraph = Xc.typography.listTitle,
+        body1 = Xc.typography.listTitle,
+        body2 = Xc.typography.caption,
+        button = Xc.typography.listTitle.copy(fontWeight = FontWeight.Medium),
         footnote1 = Xc.typography.caption,
-        footnote2 = Xc.typography.micro,
-        headline1 = Xc.typography.subtitle,
-        headline2 = Xc.typography.body.copy(fontWeight = FontWeight.SemiBold),
-        subtitle = Xc.typography.body,
+        footnote2 = Xc.typography.label,
+        headline1 = Xc.typography.section,
+        headline2 = Xc.typography.listTitle.copy(fontWeight = FontWeight.Medium),
+        subtitle = Xc.typography.listTitle,
     )
 
     val miuixPaletteStyle = try {

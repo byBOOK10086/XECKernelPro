@@ -214,7 +214,7 @@ private fun ScorePanel(result: XecScoreResult) {
         ) {
             Text(
                 text = result.total.toString(),
-                fontSize = 38.sp,
+                fontSize = 32.sp,
                 fontWeight = FontWeight(650),
                 color = Xc.colors.accent,
             )

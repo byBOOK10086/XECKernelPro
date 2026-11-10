@@ -92,16 +92,39 @@ object XcSpace {
 // 圆角不在这里另起一套：数值圆角统一挂在 XcShape.kt 的 XcRadius 上，
 // 参考稿需要的 17 / 14 / 11 / 13 四档已补进那个对象。
 
-/** 字号：8 档，全部整数。 */
+/**
+ * 字号：与 [XcTypography] 的 9 个角色一一对应。
+ *
+ * 保留这个对象只是为了让布局代码（行高、图标尺寸、间距）能直接拿到数值，
+ * **真正决定文字长相的是 [XcTypography]**；两边的数字必须一致，改一处要改两处。
+ */
 object XcType {
-    val h1 = 24.sp
-    val hero = 22.sp
-    val stat = 19.sp
-    val section = 14.sp
-    val body = 12.sp
-    val sub = 11.sp
-    val caption = 10.sp
-    val nav = 9.sp
+    /** 26sp · 页面名称。 */
+    val h1 = 26.sp
+
+    /** 28sp · 主标题。 */
+    val hero = 28.sp
+
+    /** 24sp · 数据数字。 */
+    val stat = 24.sp
+
+    /** 32sp · 主数值（评分）。 */
+    val statHero = 32.sp
+
+    /** 15sp · 分组标题。 */
+    val section = 15.sp
+
+    /** 15sp · 列表主文字。 */
+    val body = 15.sp
+
+    /** 13sp · 辅助说明。 */
+    val sub = 13.sp
+
+    /** 12sp · 状态标签。 */
+    val caption = 12.sp
+
+    /** 11sp · 底栏标签。 */
+    val nav = 11.sp
 }
 
 /** 字重：参考稿只有 650 / 620 / 600 三档。 */

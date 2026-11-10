@@ -337,7 +337,7 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
             Spacer(Modifier.width(8.dp))
             Text(
                 text = stringResource(statusLabel),
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = 1.sp,
                 color = Xc.colors.textMuted,
@@ -379,7 +379,7 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
         }
         Text(
             text = "$modeText · SELinux $selinuxText",
-            fontSize = 12.sp,
+            fontSize = 13.sp,
             color = Xc.colors.textMuted,
             modifier = Modifier.padding(top = 9.dp),
         )
@@ -438,14 +438,14 @@ private fun StatCell(value: String, label: String, modifier: Modifier = Modifier
     Column(modifier = modifier.padding(start = 2.dp)) {
         Text(
             text = value,
-            fontSize = 19.sp,
+            fontSize = 24.sp,
             fontWeight = FontWeight.SemiBold,
             color = Xc.colors.text,
         )
         Spacer(Modifier.height(6.dp))
         Text(
             text = label,
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             color = Xc.colors.textMuted,
         )
     }
@@ -484,7 +484,7 @@ private fun DeviceSection(state: HomeUiState, onRefresh: () -> Unit) {
             ) {
                 Text(
                     text = stringResource(R.string.home_refresh),
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Xc.colors.accent,
                 )
@@ -568,7 +568,7 @@ private fun UpdateCard(
                             R.string.new_version_available,
                             newVersion.versionCode.toString(),
                         ),
-                        fontSize = 14.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Medium,
                         color = Xc.colors.text,
                         maxLines = 1,
@@ -577,7 +577,7 @@ private fun UpdateCard(
                     Spacer(Modifier.height(5.dp))
                     Text(
                         text = stringResource(R.string.home_update_tap_hint),
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         color = Xc.colors.textMuted,
                     )
                 }
@@ -590,7 +590,7 @@ private fun UpdateCard(
                 ) {
                     Text(
                         text = updateText,
-                        fontSize = 12.5.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White,
                     )
@@ -745,7 +745,7 @@ private fun SupportPanel(
         Text(
             text = stringResource(R.string.home_developers_list),
             color = Xc.colors.textSecondary,
-            fontSize = 14.sp,
+            fontSize = 15.sp,
             lineHeight = 22.sp,
             modifier = Modifier
                 .padding(top = 8.dp)

@@ -366,7 +366,7 @@ private fun AboutContent(
                 text = state.appName,
                 color = colorScheme.onBackground,
                 fontWeight = FontWeight.Bold,
-                fontSize = 35.sp,
+                fontSize = 28.sp,
             )
             Text(
                 modifier = Modifier
