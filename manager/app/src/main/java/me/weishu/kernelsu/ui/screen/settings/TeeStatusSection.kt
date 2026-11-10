@@ -1,6 +1,8 @@
 package me.weishu.kernelsu.ui.screen.settings
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Memory
@@ -49,6 +51,7 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
     var busy by remember { mutableStateOf(false) }
     var snapshot by remember { mutableStateOf<TeeDiagnostics.Snapshot?>(null) }
     var attestation by remember { mutableStateOf<TeeAttestation.Result?>(null) }
+    var rkpTool by remember { mutableStateOf<RkpRepair.Tool?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
 
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
@@ -57,10 +60,33 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
         busy = true
         attestation = runCatching { TeeAttestation.probe() }.getOrNull()
         snapshot = runCatching { TeeDiagnostics.probe() }.getOrNull()
+        rkpTool = runCatching { RkpRepair.probeTool() }.getOrNull()
         busy = false
     }
 
     LaunchedEffect(Unit) { refresh() }
+
+    val rkpLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val answer = confirm.awaitConfirm(
+                title = "把这份 keybox 写进 TEE？",
+                content = "会用厂商工具 `KmInstallKeybox` 把文件真正写回 TEE/RKP 存储，然后重启证明引擎。\n\n" +
+                    "这一步不可撤销（旧箱子会自动备份成 `keybox.xml.bak-时间`），写错箱子会让" +
+                    "验机工具判证明无效。只在**确认这份 keybox 与机型匹配**时继续。",
+                markdown = true,
+                confirm = "写入 TEE",
+                dismiss = "取消",
+            )
+            if (answer != ConfirmResult.Confirmed) return@launch
+            busy = true
+            val result = RkpRepair.installFromUri(context, uri)
+            busy = false
+            note = result.fold(onSuccess = { it }, onFailure = { "重签失败：${it.message}" })
+            toast(note.orEmpty())
+            refresh()
+        }
+    }
 
     val snap = snapshot
     val att = attestation
@@ -238,12 +264,51 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
             },
         )
 
-        // ---------------------------------------------------------------- 6. 真修复门控
-        snap?.realRepairTool?.let { tool ->
+        // ---------------------------------------------------------------- 6. 真修复（RKP 重签）
+        if (rkpTool != null) {
             Xc8Row(
-                title = "真·RKP 重签（厂商工具在）",
-                subtitle = "检测到 $tool —— 这条路能把 keybox 真正写回 TEE，而不是软件伪造。" +
-                    "下一步会在这里接一个带二次确认的重签按钮",
+                title = "真·RKP 重签（写回 TEE）",
+                subtitle = if (rkpTool!!.usable) {
+                    "厂商工具 ${rkpTool!!.path}（root:${rkpTool!!.mode}）在位 —— " +
+                        "把当前在用的 keybox 真正写回 TEE，而不是软件伪造"
+                } else {
+                    "找到 ${rkpTool!!.path}，但不可用：${rkpTool!!.reason}"
+                },
+                leading = Icons.Rounded.VpnKey,
+                enabled = !busy && rkpTool!!.usable,
+                onClick = {
+                    scope.launch {
+                        val answer = confirm.awaitConfirm(
+                            title = "把当前 keybox 写回 TEE？",
+                            content = "会调用厂商工具 `KmInstallKeybox`，把 `/data/adb/tricky_store/keybox.xml` " +
+                                "真正写进 TEE/RKP 存储，然后重启证明引擎。旧箱子会备份成 `keybox.xml.bak-时间`。\n\n" +
+                                "这是**真修复**：写成功后 TEE 会自己签证明，不再依赖软件伪造。",
+                            markdown = true,
+                            confirm = "写回 TEE",
+                            dismiss = "取消",
+                        )
+                        if (answer != ConfirmResult.Confirmed) return@launch
+                        busy = true
+                        val result = RkpRepair.installLive()
+                        busy = false
+                        note = result.fold(onSuccess = { it }, onFailure = { "重签失败：${it.message}" })
+                        toast(note.orEmpty())
+                        refresh()
+                    }
+                },
+            )
+            Xc8Row(
+                title = "选一个 keybox 写进 TEE",
+                subtitle = "先选文件再写回；适合刚换了一张箱子、想直接落到 TEE 的情况",
+                leading = Icons.Rounded.VpnKey,
+                enabled = !busy && rkpTool!!.usable,
+                onClick = { rkpLauncher.launch(arrayOf("text/xml", "application/xml", "text/plain", "*/*")) },
+            )
+        } else {
+            Xc8Row(
+                title = "真·RKP 重签",
+                subtitle = "这台机器没有厂商重签工具（/vendor/bin/KmInstallKeybox）—— " +
+                    "只能走软件伪造（FORGE/PATCH）。多数国产 ROM 都缺这个工具，不是本管理器能补的",
                 leading = Icons.Rounded.VpnKey,
                 enabled = false,
             )
