@@ -670,8 +670,15 @@ fun MainScreen(
 
     // 工具箱这类 NavDisplay 独立 entry 通过事件通道请求切主分页（见 MainPagerBus）：
     // 它们读不到 LocalMainPagerState，所以只能发请求、由这里真正执行。
+    // 2026-11-10：通道改成"粘滞待办"——工具箱压在上面时本页已退出组合，旧 SharedFlow
+    // 会把请求丢掉，回到主分页后仍停在原页（真机故障：XEC SCORE 卡点了没反应）。
     LaunchedEffect(mainPagerState) {
-        MainPagerBus.requests.collect { page -> mainPagerState.animateToPage(page) }
+        MainPagerBus.pending.collect { page ->
+            if (page != null) {
+                mainPagerState.animateToPage(page)
+                MainPagerBus.consume()
+            }
+        }
     }
 
     CompositionLocalProvider(

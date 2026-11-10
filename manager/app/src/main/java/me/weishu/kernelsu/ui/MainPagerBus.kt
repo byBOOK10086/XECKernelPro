@@ -1,32 +1,37 @@
 package me.weishu.kernelsu.ui
 
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * 跨页面切主分页的请求通道（2026-11-09）。
+ * 跨页面切主分页的请求通道（2026-11-09 建立，2026-11-10 改为"粘滞待办"）。
  *
  * 为什么不是直接读 `LocalMainPagerState`：它的 provider 在 `MainScreen` 里，
  * 而工具箱这类页面是 NavDisplay 的**独立 entry**，不在那棵子树里 —— 读它会命中
  * `error("LocalMainPagerState not provided")`（审计 P0）。
  *
- * 把 pager 状态整体上提到 NavDisplay 之上是治本方案，但会动 4 个 nav entry 的
- * 构造参数；这一版先用一条**有界**的单向事件通道：MainScreen 订阅、其它页面只能
- * 发"请切到第 N 页"。通道容量 1、满则丢旧值 —— 连点只会落到最后一页，不会堆积。
+ * 2026-11-10 真机故障："工具箱 → XEC SCORE 卡点了进不去检测页"。
+ * 旧实现是 `MutableSharedFlow(replay = 0)`：工具箱压在主分页之上时 `MainScreen`
+ * 已经退出组合、收集者不在，`tryEmit` 的值**当场被丢弃**；随后 `navigator.pop()`
+ * 回到主分页，仍停在原来那页 —— 表现为"点了没反应"。
+ *
+ * 改成 StateFlow 保存**待办**：请求留在那里，等主分页重新组合、收集者上线时立刻
+ * 消费一次，然后清空（避免每次重组都重复切页）。
  *
  * 分页索引与 [me.weishu.kernelsu.ui.viewmodel.MainPagerConfig] 一致。
  */
 object MainPagerBus {
 
-    private val _requests = MutableSharedFlow<Int>(
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
-    )
-
-    val requests: SharedFlow<Int> = _requests
+    private val _pending = MutableStateFlow<Int?>(null)
+    val pending: StateFlow<Int?> = _pending.asStateFlow()
 
     fun jumpTo(page: Int) {
-        _requests.tryEmit(page)
+        _pending.value = page
+    }
+
+    /** 主分页已执行这条请求，清空待办。 */
+    fun consume() {
+        _pending.value = null
     }
 }
