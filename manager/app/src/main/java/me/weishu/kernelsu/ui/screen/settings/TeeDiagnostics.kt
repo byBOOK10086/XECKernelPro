@@ -71,6 +71,12 @@ object TeeDiagnostics {
         val keyboxCompat: Boolean,
         val keyboxGood: Boolean,
         val targetCount: Int,
+        /** target.txt 里三种模式各自的条目数：`!`=强制 FORGE（软件生成）、`?`=强制 PATCH、其余=AUTO。 */
+        val targetForge: Int,
+        val targetPatch: Int,
+        val targetAuto: Int,
+        /** 内置验机工具（wu.keyChain.test）是否在拦截表里 —— 不在表里它看到的是真实 TEE。 */
+        val targetHasVerifier: Boolean,
         val patchLine: String?,
         val bootStateProp: String?,
         val flashLockedProp: String?,
@@ -116,6 +122,9 @@ object TeeDiagnostics {
             append(" if [ -f '$SEC/keybox.xml' ]; then echo 'KEYBOX_COMPAT=1'; else echo 'KEYBOX_COMPAT=0'; fi;")
             append(" if [ -f '$SEC/keybox/good.xml' ]; then echo 'KEYBOX_GOOD=1'; else echo 'KEYBOX_GOOD=0'; fi;")
             append(" echo \"TARGET_COUNT=\$(grep -cvE '^[[:space:]]*(#|\$)' '$TS/target.txt' 2>/dev/null)\";")
+            append(" echo \"TARGET_FORGE=\$(grep -cE '!\$' '$TS/target.txt' 2>/dev/null)\";")
+            append(" echo \"TARGET_PATCH=\$(grep -cE '\\?\$' '$TS/target.txt' 2>/dev/null)\";")
+            append(" if grep -qxF 'wu.keyChain.test' '$TS/target.txt' 2>/dev/null; then echo 'TARGET_VERIFIER=1'; else echo 'TARGET_VERIFIER=0'; fi;")
             append(" echo \"PATCH_LINE=\$(head -n1 '$TS/security_patch.txt' 2>/dev/null)\";")
             append(" echo \"P_VBS=\$(getprop ro.boot.verifiedbootstate)\";")
             append(" echo \"P_FLASH_LOCKED=\$(getprop ro.boot.flash.locked)\";")
@@ -170,6 +179,12 @@ object TeeDiagnostics {
             keyboxCompat = values["KEYBOX_COMPAT"] == "1",
             keyboxGood = values["KEYBOX_GOOD"] == "1",
             targetCount = values["TARGET_COUNT"]?.toIntOrNull() ?: 0,
+            targetForge = values["TARGET_FORGE"]?.toIntOrNull() ?: 0,
+            targetPatch = values["TARGET_PATCH"]?.toIntOrNull() ?: 0,
+            targetAuto = ((values["TARGET_COUNT"]?.toIntOrNull() ?: 0) -
+                (values["TARGET_FORGE"]?.toIntOrNull() ?: 0) -
+                (values["TARGET_PATCH"]?.toIntOrNull() ?: 0)).coerceAtLeast(0),
+            targetHasVerifier = values["TARGET_VERIFIER"] == "1",
             patchLine = values["PATCH_LINE"]?.takeIf { it.isNotEmpty() },
             bootStateProp = values["P_VBS"]?.takeIf { it.isNotEmpty() },
             flashLockedProp = values["P_FLASH_LOCKED"]?.takeIf { it.isNotEmpty() },
@@ -194,6 +209,10 @@ object TeeDiagnostics {
         keyboxCompat = false,
         keyboxGood = false,
         targetCount = 0,
+        targetForge = 0,
+        targetPatch = 0,
+        targetAuto = 0,
+        targetHasVerifier = false,
         patchLine = null,
         bootStateProp = null,
         flashLockedProp = null,
@@ -309,6 +328,26 @@ object TeeDiagnostics {
             ?: return@withContext Result.failure(IllegalStateException("执行失败"))
         if (result.isSuccess) Result.success(Unit)
         else Result.failure(IllegalStateException(result.err.joinToString(" ").ifBlank { "清理失败" }))
+    }
+
+    /**
+     * 把内置验机工具（`wu.keyChain.test`）加入拦截表。
+     *
+     * 引擎是"穷举白名单"：不在 `target.txt` 里的包**完全不被拦截**，拿到的是设备真实
+     * TEE 证明。验机工具因此必须被覆盖，否则用户看到的是"真实但未伪装"的结果，
+     * 会误判成引擎没工作。
+     */
+    suspend fun addVerifierToTarget(): Result<Unit> = withContext(Dispatchers.IO) {
+        val shell = awaitRootShell()
+        if (!shell.isRoot) return@withContext Result.failure(IllegalStateException("没有 root"))
+        val script =
+            "T='$TS/target.txt'; mkdir -p '$TS'; touch \"\$T\"; " +
+                "if ! grep -qxF 'wu.keyChain.test' \"\$T\"; then echo 'wu.keyChain.test' >> \"\$T\"; fi; " +
+                "chmod 644 \"\$T\" 2>/dev/null; echo done"
+        val result = runCatching { shell.newJob().add(script).exec() }.getOrNull()
+            ?: return@withContext Result.failure(IllegalStateException("执行失败"))
+        if (result.isSuccess) Result.success(Unit)
+        else Result.failure(IllegalStateException(result.err.joinToString(" ").ifBlank { "写入 target.txt 失败" }))
     }
 
     // ------------------------------------------------------------------ 格式化

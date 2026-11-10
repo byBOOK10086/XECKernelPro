@@ -137,6 +137,59 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
             },
         )
 
+        // ---------------------------------------------------------------- 2b. 拦截模式
+        Xc8Row(
+            title = "拦截模式（target.txt）",
+            subtitle = when {
+                snap == null -> if (busy) "读取中…" else "还没检测"
+                snap.targetCount == 0 -> "拦截表是空的 —— 引擎是穷举白名单，空表等于**一个包都不管**"
+                else -> "AUTO ${snap.targetAuto} · PATCH ${snap.targetPatch} · " +
+                    "FORGE ${snap.targetForge}\n" +
+                    "AUTO = TEE 好就 PATCH、坏了自动 FORGE；FORGE 是纯软件生成，不碰硬件"
+            },
+            leading = Icons.Rounded.Memory,
+            trailing = {
+                if (snap != null && snap.targetForge > 0) {
+                    Xc8Tag("有 FORGE", tone = Xc8Tone.Warning)
+                } else if (snap != null && snap.targetCount > 0) {
+                    Xc8Tag("全 AUTO/PATCH", tone = Xc8Tone.Success)
+                }
+            },
+        )
+
+        // ---------------------------------------------------------------- 2c. 验机工具覆盖
+        Xc8Row(
+            title = "验机工具是否被拦截",
+            subtitle = when {
+                snap == null -> if (busy) "读取中…" else "还没检测"
+                snap.targetHasVerifier -> "wu.keyChain.test 在拦截表里 —— 验机工具看到的是引擎给出的证明"
+                else -> "wu.keyChain.test 不在拦截表里 —— 验机工具看到的是**设备真实 TEE**，" +
+                    "容易被误读成「引擎没生效」。点一下把它加进去"
+            },
+            leading = Icons.Rounded.VerifiedUser,
+            trailing = {
+                if (snap != null) {
+                    if (snap.targetHasVerifier) Xc8Tag("已覆盖", tone = Xc8Tone.Success)
+                    else Xc8Tag("未覆盖", tone = Xc8Tone.Warning)
+                }
+            },
+            enabled = !busy && snap != null && !(snap?.targetHasVerifier ?: true),
+            onClick = {
+                scope.launch {
+                    busy = true
+                    val result = TeeDiagnostics.addVerifierToTarget()
+                    busy = false
+                    note = result.fold(
+                        onSuccess = { "已把 wu.keyChain.test 加入拦截表，正在重启引擎让它生效" },
+                        onFailure = { "写入失败：${it.message}" },
+                    )
+                    toast(note.orEmpty())
+                    if (result.isSuccess) TeeDiagnostics.restartEngine(snap?.engineDir)
+                    refresh()
+                }
+            },
+        )
+
         // ---------------------------------------------------------------- 3. keybox
         val kb = snap?.keybox
         Xc8Row(
