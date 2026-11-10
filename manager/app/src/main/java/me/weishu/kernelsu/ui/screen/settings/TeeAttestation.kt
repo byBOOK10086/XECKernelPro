@@ -42,19 +42,19 @@ object TeeAttestation {
 
     /** KeyDescription 的 SecurityLevel 枚举。 */
     object Level {
-        const val SOFTWARE = 0
-        const val TEE = 1
-        const val STRONGBOX = 2
-        const val UNKNOWN = -1
+        const val SOFTWARE = KeyDescription.Level.SOFTWARE
+        const val TEE = KeyDescription.Level.TEE
+        const val STRONGBOX = KeyDescription.Level.STRONGBOX
+        const val UNKNOWN = KeyDescription.Level.UNKNOWN
     }
 
     /** verifiedBootState 枚举（AOSP VerifiedBootState）。 */
     object BootState {
-        const val VERIFIED = 0
-        const val SELF_SIGNED = 1
-        const val UNVERIFIED = 2
-        const val FAILED = 3
-        const val UNKNOWN = -1
+        const val VERIFIED = KeyDescription.BootState.VERIFIED
+        const val SELF_SIGNED = KeyDescription.BootState.SELF_SIGNED
+        const val UNVERIFIED = KeyDescription.BootState.UNVERIFIED
+        const val FAILED = KeyDescription.BootState.FAILED
+        const val UNKNOWN = KeyDescription.BootState.UNKNOWN
     }
 
     data class Result(
@@ -180,149 +180,18 @@ object TeeAttestation {
 
     // ------------------------------------------------------------------ KeyDescription
 
-    private class Description(
-        val securityLevel: Int,
-        val keymasterLevel: Int,
-        val verifiedBootState: Int,
-        val deviceLocked: Boolean?,
-        val osVersion: Int?,
-        val osPatchLevel: Int?,
-    )
-
     /**
-     * 从叶子证书里取出 KeyDescription。
+     * 从叶子证书里取出 KeyDescription。解析本体在 [KeyDescription]（纯 Kotlin，可单测）。
      *
      * `getExtensionValue()` 返回的是 **DER OCTET STRING 包着 KeyDescription**（X.509
-     * 扩展的规矩），所以要先剥一层 OCTET STRING 再解析 SEQUENCE。
+     * 扩展的规矩），所以要先剥一层 OCTET STRING 再交给解析器。
      */
-    private fun readKeyDescription(cert: X509Certificate): Description? = try {
+    private fun readKeyDescription(cert: X509Certificate): KeyDescription.Parsed? = try {
         val raw = cert.getExtensionValue(KEY_DESCRIPTION_OID) ?: return null
-        val outer = Der.parse(raw)
-        if (outer.size != 1) return null
-        // 剥 OCTET STRING
-        val octets = outer[0].children(raw) ?: return null
-        val inner = Der.parse(octets)
-        if (inner.isEmpty()) return null
-        val fields = Der.parse(inner[0].children(octets) ?: return null)
-        var securityLevel = Level.UNKNOWN
-        var keymasterLevel = Level.UNKNOWN
-        if (fields.size >= 4) {
-            securityLevel = Der.smallInt(fields[1].bytesOf(octets)) ?: Level.UNKNOWN
-            keymasterLevel = Der.smallInt(fields[3].bytesOf(octets)) ?: Level.UNKNOWN
-        }
-        // softwareEnforced / teeEnforced 两个 AuthorizationList 里找 rootOfTrust / osVersion
-        var bootState = BootState.UNKNOWN
-        var locked: Boolean? = null
-        var osVersion: Int? = null
-        var osPatch: Int? = null
-        for (i in 6 until fields.size) {
-            val list = Der.parse(fields[i].children(octets) ?: continue)
-            for (item in list) {
-                when (item.tag) {
-                    TAG_ROOT_OF_TRUST -> {
-                        val rot = Der.parse(item.children(octets) ?: continue)
-                        for (sub in rot) {
-                            when (sub.tag) {
-                                TAG_BOOT_STATE -> bootState =
-                                    Der.smallInt(sub.bytesOf(octets)) ?: BootState.UNKNOWN
-                                TAG_DEVICE_LOCKED -> locked = Der.bool(sub.bytesOf(octets))
-                            }
-                        }
-                    }
-                    TAG_OS_VERSION -> osVersion = Der.integer(item.bytesOf(octets))
-                    TAG_OS_PATCH_LEVEL -> osPatch = Der.integer(item.bytesOf(octets))
-                }
-            }
-        }
-        Description(securityLevel, keymasterLevel, bootState, locked, osVersion, osPatch)
+        val octets = KeyDescription.unwrapOctetString(raw) ?: return null
+        KeyDescription.parse(octets)
     } catch (_: Throwable) {
         null
-    }
-
-    // KeyMint AuthorizationList 的 tag 号（AOSP KeymasterDefs / KeyMint tags）。
-    private const val TAG_ROOT_OF_TRUST = 704
-    private const val TAG_OS_VERSION = 705
-    private const val TAG_OS_PATCH_LEVEL = 706
-    // RootOfTrust 内部字段是隐式标签 [0]/[1]。
-    private const val TAG_BOOT_STATE = 0
-    private const val TAG_DEVICE_LOCKED = 1
-
-    /**
-     * 极简 DER 走查器。只要"读 tag / 长度 / 子节点"三件事，够解析 KeyDescription，
-     * 不需要通用 ASN.1 库（那会把 APK 撑大几十 KB，而且我们只读自己签出来的结构）。
-     */
-    private class Der private constructor(
-        val tag: Int,
-        private val valueStart: Int,
-        private val valueEnd: Int,
-        private val start: Int,
-        private val end: Int,
-    ) {
-        fun bytesOf(src: ByteArray): ByteArray = src.copyOfRange(valueStart, valueEnd)
-
-        /** 构造类型节点的内容（对它再跑一次 [parse] 就得到子节点）。 */
-        fun children(src: ByteArray): ByteArray? =
-            if (constructed) src.copyOfRange(valueStart, valueEnd) else null
-
-        private val constructed: Boolean
-            get() = tagClassConstructed and 0x20 != 0
-
-        /** 首字节原始值，用来判 constructed 位。 */
-        private var tagClassConstructed: Int = 0
-
-        companion object {
-            fun parse(src: ByteArray, from: Int = 0, to: Int = src.size): List<Der> {
-                val out = ArrayList<Der>()
-                var i = from
-                while (i < to) {
-                    val first = src[i].toInt() and 0xFF
-                    var cursor = i + 1
-                    var tagNumber = first and 0x1F
-                    if (tagNumber == 0x1F) {
-                        tagNumber = 0
-                        while (cursor < to) {
-                            val b = src[cursor].toInt() and 0xFF
-                            cursor++
-                            tagNumber = (tagNumber shl 7) or (b and 0x7F)
-                            if (b and 0x80 == 0) break
-                        }
-                    }
-                    if (cursor >= to) break
-                    val lenByte = src[cursor].toInt() and 0xFF
-                    cursor++
-                    val length: Int
-                    if (lenByte and 0x80 == 0) {
-                        length = lenByte
-                    } else {
-                        val n = lenByte and 0x7F
-                        if (n <= 0 || n > 4 || cursor + n > to) break
-                        var value = 0
-                        for (k in 0 until n) {
-                            value = (value shl 8) or (src[cursor + k].toInt() and 0xFF)
-                        }
-                        cursor += n
-                        length = value
-                    }
-                    if (length < 0 || cursor + length > to) break
-                    out += Der(tagNumber, cursor, cursor + length, i, cursor + length)
-                        .also { it.tagClassConstructed = first }
-                    i = cursor + length
-                }
-                return out
-            }
-
-            fun smallInt(bytes: ByteArray): Int? {
-                if (bytes.isEmpty() || bytes.size > 4) return null
-                var v = 0
-                for (b in bytes) v = (v shl 8) or (b.toInt() and 0xFF)
-                return v
-            }
-
-            fun integer(bytes: ByteArray): Int? = smallInt(bytes)
-
-            fun bool(bytes: ByteArray): Boolean? =
-                if (bytes.isEmpty()) null else bytes[0].toInt() != 0
-        }
     }
 
     /** 给 UI 用的一句话结论。 */

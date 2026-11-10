@@ -248,6 +248,10 @@ kb_vendor_verify() {
             _log "WARN" "keybox: daemon 校验链签名失败（chain_valid=false）——丢弃候选"
             return 1
             ;;
+        *'"validity_ok": false'*)
+            _log "WARN" "keybox: daemon 校验发现证书已过期/未生效（validity_ok=false）——丢弃候选"
+            return 1
+            ;;
         *'"key_match": "mismatched"'*)
             _log "WARN" "keybox: daemon 校验私钥与证书不匹配（key_match=mismatched）——丢弃候选"
             return 1

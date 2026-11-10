@@ -14,11 +14,13 @@ const HEALTH_STATE: &str = "/data/adb/tricky_store/.health_state";
 /// `/data/adb/ksu/builtin/tricky_store`，`/data/adb/modules/tricky_store` 不会存在。
 /// 上游只认后两条路径 ⇒ `is_engine_enabled()` 恒 false、`detect_nice_name()` 拿不到
 /// service.sh、`check_once()` 直接早退 ⇒ 引擎挂了永远不会被自动拉起。
-/// 所有"引擎在哪"的判断统一走这个列表。
+///
+/// 顺序：**内置优先**（本项目的默认布局），外置模块与隐藏模块作为兼容候选。
+/// 自愈重启时还会跳过带 `disable` 标记的目录，避免把一个已停用的树拉起来。
 const TS_MODULE_BUILTIN: &str = "/data/adb/ksu/builtin/tricky_store";
 
 fn engine_dirs() -> [&'static str; 3] {
-    [TS_MODULE, TS_MODULE_HIDDEN, TS_MODULE_BUILTIN]
+    [TS_MODULE_BUILTIN, TS_MODULE, TS_MODULE_HIDDEN]
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -269,9 +271,13 @@ pub fn check_once(state: &mut HealthState, cfg: &Config) -> anyhow::Result<bool>
 pub fn restart_engine(engine_name: &str) -> anyhow::Result<()> {
     let _ = Command::new("killall").arg(engine_name).output();
 
-    let service_sh = engine_dirs().iter()
-        .map(|d| Path::new(d).join("service.sh"))
-        .find(|p| p.exists());
+    // 只挑"脚本存在且模块没被 disable"的那一份：把一个已停用的引擎树拉起来，
+    // 等于绕过用户的开关（而且它的 service.sh 可能指向已经卸载的二进制）。
+    let service_sh = engine_dirs()
+        .iter()
+        .map(|d| (Path::new(d), Path::new(d).join("service.sh")))
+        .find(|(dir, script)| script.exists() && !dir.join("disable").exists())
+        .map(|(_, script)| script);
 
     if let Some(sh) = service_sh {
         let out = Command::new("sh").arg(&sh).output()?;

@@ -22,11 +22,28 @@ const TS_MODULE_PROP: &str = "/data/adb/modules/tricky_store/module.prop";
 /// `security_patch.txt`，转而去写系统属性（v5.53.1 起还要依赖 resetprop-rs 固定路径）。
 /// 这里按"内置 → 常规 → 隐藏"顺序找第一份可读的 module.prop。
 fn variant_module_prop() -> String {
+    // 优先级：**在用的那一份优先**。外置模块（`/data/adb/modules/tricky_store`）如果
+    // 存在且没被 disable，它就是真正在跑的引擎；只有它缺失/被停用时才轮到内置
+    // （`/data/adb/ksu/builtin/tricky_store`）。反过来把内置放第一，会在用户同时装了
+    // 外置模块（可能是 James 变体）时把变体判成 Standard —— 补丁就会写到错误的文件格式里。
     const CANDIDATES: [&str; 3] = [
-        "/data/adb/ksu/builtin/tricky_store/module.prop",
         TS_MODULE_PROP,
+        "/data/adb/ksu/builtin/tricky_store/module.prop",
         "/data/adb/modules/.tricky_store/module.prop",
     ];
+    for path in CANDIDATES {
+        let dir = std::path::Path::new(path).parent();
+        let disabled = dir.map(|d| d.join("disable").exists()).unwrap_or(false);
+        if disabled {
+            continue;
+        }
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if !content.is_empty() {
+                return content;
+            }
+        }
+    }
+    // 全都被停用：仍然给出第一份可读的，让变体检测退化成"按内容猜"而不是恒为 Legacy。
     for path in CANDIDATES {
         if let Ok(content) = std::fs::read_to_string(path) {
             if !content.is_empty() {
