@@ -48,9 +48,10 @@ build_ta_enhanced() {
     local llvm_bin wrap_api="" api
     llvm_bin="$(ndk_llvm_bin)"
     export PATH="$llvm_bin:$PATH"
-    # .cargo/config.toml from upstream main pins android26 wrappers, but the
-    # vendored v5.27.0 tree has no config.toml and newer NDKs may drop old
-    # wrapper APIs — pick the lowest wrapper that exists and override via env.
+    # 上游 v5.53.1 自带 .cargo/config.toml，把 linker 钉成 android26 wrapper；
+    # 我们 vendor 时刻意没有收这个文件（见 third_party/tricky-addon-enhanced/UPSTREAM.md），
+    # 因为新 NDK 可能不提供那个 wrapper。这里按实际存在的 wrapper 选，并通过
+    # CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER 覆盖，保证换 NDK 也能编。
     for api in 26 24 28 29 21 23; do
         if [ -f "$llvm_bin/aarch64-linux-android${api}-clang" ]; then
             wrap_api="$api"

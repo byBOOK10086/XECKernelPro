@@ -7,7 +7,7 @@ use serde::{Serialize, Deserialize};
 
 pub static SELF_WRITE: AtomicBool = AtomicBool::new(false);
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub general: GeneralConfig,
@@ -19,30 +19,9 @@ pub struct Config {
     pub vbhash: VbhashConfig,
     pub conflict: ConflictConfig,
     pub props: PropsConfig,
-    pub propclean: PropCleanConfig,
     pub region: RegionConfig,
     pub logging: LoggingConfig,
     pub ui: UiConfig,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            general: GeneralConfig::default(),
-            keybox: KeyboxConfig::default(),
-            security_patch: SecurityPatchConfig::default(),
-            automation: AutomationConfig::default(),
-            health: HealthConfig::default(),
-            status: StatusConfig::default(),
-            vbhash: VbhashConfig::default(),
-            conflict: ConflictConfig::default(),
-            props: PropsConfig::default(),
-            propclean: PropCleanConfig::default(),
-            region: RegionConfig::default(),
-            logging: LoggingConfig::default(),
-            ui: UiConfig::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,33 +169,13 @@ impl Default for ConflictConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PropsConfig {
-    pub enabled: bool,
     pub custom_props: Vec<[String; 2]>,
 }
 
-impl Default for PropsConfig {
-    fn default() -> Self {
-        Self { enabled: true, custom_props: Vec::new() }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct PropCleanConfig {
-    pub enabled: bool,
-    pub interval: u32,
-}
-
-impl Default for PropCleanConfig {
-    fn default() -> Self {
-        Self { enabled: true, interval: 3600 }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RegionConfig {
     pub enabled: bool,
@@ -302,8 +261,6 @@ const ALL_KEYS: &[&str] = &[
     "status.enabled", "status.interval", "status.emoji",
     "vbhash.enabled",
     "conflict.enabled", "conflict.auto_remove",
-    "props.enabled",
-    "propclean.enabled", "propclean.interval",
     "region.enabled", "region.hwc", "region.hwcountry", "region.mod_device", "region.hardware_sku",
     "logging.level", "logging.max_size_mb", "logging.max_files", "logging.log_dir",
     "ui.language",
@@ -388,9 +345,6 @@ impl Config {
             "vbhash.enabled" => Some(self.vbhash.enabled.to_string()),
             "conflict.enabled" => Some(self.conflict.enabled.to_string()),
             "conflict.auto_remove" => Some(self.conflict.auto_remove.to_string()),
-            "props.enabled" => Some(self.props.enabled.to_string()),
-            "propclean.enabled" => Some(self.propclean.enabled.to_string()),
-            "propclean.interval" => Some(self.propclean.interval.to_string()),
             "region.enabled" => Some(self.region.enabled.to_string()),
             "region.hwc" => Some(self.region.hwc.clone()),
             "region.hwcountry" => Some(self.region.hwcountry.clone()),
@@ -439,9 +393,6 @@ impl Config {
             "vbhash.enabled" => self.vbhash.enabled = parse_bool(value)?,
             "conflict.enabled" => self.conflict.enabled = parse_bool(value)?,
             "conflict.auto_remove" => self.conflict.auto_remove = parse_bool(value)?,
-            "props.enabled" => self.props.enabled = parse_bool(value)?,
-            "propclean.enabled" => self.propclean.enabled = parse_bool(value)?,
-            "propclean.interval" => self.propclean.interval = value.parse()?,
             "region.enabled" => self.region.enabled = parse_bool(value)?,
             "region.hwc" => self.region.hwc = value.to_string(),
             "region.hwcountry" => self.region.hwcountry = value.to_string(),
@@ -480,7 +431,6 @@ impl Config {
         clamp_min!(self.automation.interval, 5, "automation.interval");
         clamp_min!(self.health.interval, 5, "health.interval");
         clamp_min!(self.status.interval, 10, "status.interval");
-        clamp_min!(self.propclean.interval, 300, "propclean.interval");
 
         self.keybox.boot_retries = self.keybox.boot_retries.clamp(1, 30);
         self.keybox.retry_delay = self.keybox.retry_delay.clamp(1, 30);
@@ -493,18 +443,23 @@ impl Config {
         self.logging.max_files = self.logging.max_files.clamp(1, 10);
 
         match self.keybox.source.as_str() {
-            "yurikey" | "upstream" | "integritybox" | "custom" => {}
-            _ => self.keybox.source = "yurikey".into(),
+            "yurikey" | "upstream" | "custom" => {}
+            other => {
+                warnings.push(format!("keybox.source: legacy value '{}' migrated to 'yurikey'", other));
+                self.keybox.source = "yurikey".into();
+            }
         }
         match self.logging.level.as_str() {
             "error" | "warn" | "info" | "debug" | "trace" => {}
             _ => self.logging.level = "info".into(),
         }
         if !is_supported_lang(&self.ui.language) {
+            let prev = std::mem::take(&mut self.ui.language);
+            warnings.push(format!("ui.language: unsupported value '{}' reset to 'en'", prev));
             self.ui.language = "en".into();
         }
         if !self.logging.log_dir.starts_with("/data/adb/") {
-            warnings.push(format!("logging.log_dir: reset to default (must be under /data/adb/)"));
+            warnings.push("logging.log_dir: reset to default (must be under /data/adb/)".to_string());
             self.logging.log_dir = "/data/adb/tricky_store/ta-enhanced/logs".into();
         }
 
@@ -587,5 +542,13 @@ pub fn handle_config(
         ConfigAction::Dump { json } => cfg.dump(json),
         ConfigAction::Defaults => Config::defaults(),
         ConfigAction::Restore => Config::restore(None),
+        ConfigAction::PropsCustom => {
+            for pair in &cfg.props.custom_props {
+                if pair.len() == 2 && !pair[0].is_empty() {
+                    println!("{}\t{}", pair[0], pair[1]);
+                }
+            }
+            Ok(())
+        }
     }
 }

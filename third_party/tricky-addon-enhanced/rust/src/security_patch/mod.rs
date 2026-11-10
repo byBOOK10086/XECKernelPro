@@ -9,7 +9,7 @@ use tracing::{info, warn};
 use crate::cli::SecurityPatchAction;
 use crate::config::Config;
 use crate::platform::fs::atomic_write;
-use crate::platform::props::{getprop_once as getprop, set_once as resetprop};
+use crate::platform::props::{getprop, set as prop_set};
 
 const TS_DIR: &str = "/data/adb/tricky_store";
 const SECURITY_PATCH_FILE: &str = "/data/adb/tricky_store/security_patch.txt";
@@ -129,7 +129,26 @@ pub fn set(config: &Config) -> Result<()> {
 
     let variant = detect_variant();
     info!("detected TrickyStore variant: {variant}");
+    if patch_file_already_matches(&variant, &dates) {
+        return Ok(());
+    }
     write_patch_dates(&variant, &dates)
+}
+
+fn patch_file_already_matches(variant: &TrickyStoreVariant, dates: &PatchDates) -> bool {
+    match variant {
+        TrickyStoreVariant::Standard => {
+            let Ok(content) = std::fs::read_to_string(SECURITY_PATCH_FILE) else { return false; };
+            content.contains(&format!("system={}", dates.system))
+                && content.contains(&format!("boot={}", dates.boot))
+                && content.contains(&format!("vendor={}", dates.vendor))
+        }
+        TrickyStoreVariant::James => {
+            let Ok(content) = std::fs::read_to_string(DEVCONFIG_TOML) else { return false; };
+            content.contains(&format!("securityPatch = \"{}\"", dates.system))
+        }
+        TrickyStoreVariant::Legacy => false,
+    }
 }
 
 pub fn set_custom(system: &str, boot: &str, vendor: &str) -> Result<()> {
@@ -148,6 +167,10 @@ pub fn update(config: &Config) -> Result<()> {
     if !config.security_patch.auto_update {
         info!("security patch auto-update is disabled");
         return Ok(());
+    }
+    if !config.security_patch.custom_date.is_empty() {
+        info!("enforcing user custom patch: {}", config.security_patch.custom_date);
+        return set(config);
     }
     update_force()
 }
@@ -244,12 +267,10 @@ fn write_james(dates: &PatchDates) -> Result<()> {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    } else if content.is_empty() {
+        new_line
     } else {
-        if content.is_empty() {
-            new_line
-        } else {
-            format!("{content}\n{new_line}")
-        }
+        format!("{content}\n{new_line}")
     };
 
     atomic_write(path, updated.as_bytes())
@@ -280,15 +301,15 @@ fn write_standard(dates: &PatchDates) -> Result<()> {
 }
 
 fn write_legacy(dates: &PatchDates) -> Result<()> {
-    if let Err(e) = resetprop("ro.build.version.security_patch", &dates.system) {
-        warn!("resetprop system patch failed: {e}");
+    if let Err(e) = prop_set("ro.build.version.security_patch", &dates.system) {
+        warn!("resetprop-rs system patch failed: {e}");
     }
     if !dates.vendor.is_empty() {
-        if let Err(e) = resetprop("ro.vendor.build.security_patch", &dates.vendor) {
-            warn!("resetprop vendor patch failed: {e}");
+        if let Err(e) = prop_set("ro.vendor.build.security_patch", &dates.vendor) {
+            warn!("resetprop-rs vendor patch failed: {e}");
         }
     }
-    info!("applied security patch via resetprop");
+    info!("applied security patch via resetprop-rs");
     Ok(())
 }
 

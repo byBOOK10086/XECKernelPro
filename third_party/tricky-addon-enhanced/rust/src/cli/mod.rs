@@ -17,7 +17,6 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     Version,
-    Props,
     Daemon {
         #[arg(long)]
         manager: Option<String>,
@@ -87,6 +86,8 @@ pub enum ConfigAction {
     },
     Defaults,
     Restore,
+    #[command(name = "props-custom")]
+    PropsCustom,
 }
 
 #[derive(Subcommand)]
