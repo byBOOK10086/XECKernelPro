@@ -21,7 +21,7 @@ use std::{
     ffi::OsString,
     fs::{self, File, Permissions},
     io::Write,
-    os::unix::fs::PermissionsExt,
+    os::unix::{fs::PermissionsExt, process::CommandExt},
     path::{Component, Path, PathBuf},
     time::{Duration, Instant},
 };
@@ -482,10 +482,7 @@ pub fn start_tee_engine() -> Result<StartReport> {
     ] {
         let script = Path::new(ROOT).join(module).join(format!("{stage}.sh"));
         let spawned = if script.is_file() {
-            match crate::module::exec_script(
-                &script,
-                crate::module::ScriptWait::Until(Instant::now() + SCRIPT_BUDGET),
-            ) {
+            match spawn_stage_script(&script, module, Instant::now() + SCRIPT_BUDGET) {
                 Ok(()) => true,
                 Err(error) => {
                     warn!("built-in {module}/{stage} failed to launch: {error:#}");
@@ -514,6 +511,58 @@ pub fn start_tee_engine() -> Result<StartReport> {
         engine_pid,
         injected,
     })
+}
+
+/// Spawn one bundled stage script and wait for its foreground part.
+///
+/// `module::exec_script` always launches our own busybox, which only lands on disk
+/// after `post-fs-data` extracted the bin assets. A device whose boot pipeline
+/// bailed at an early gate (Magisk leftover / safe mode) has no
+/// `/data/adb/ksu/bin/busybox`, so going through it would mean "repair installs
+/// the engine and then starts nothing". Fall back to the system shell there.
+fn spawn_stage_script(script: &Path, module_id: &str, deadline: Instant) -> Result<()> {
+    let busybox = crate::assets::busybox_path();
+    if Path::new(&busybox).is_file() {
+        return crate::module::exec_script(script, crate::module::ScriptWait::Until(deadline));
+    }
+
+    info!(
+        "busybox missing at {busybox}, spawning {} with /system/bin/sh",
+        script.display()
+    );
+    let mut command = std::process::Command::new("/system/bin/sh");
+    command
+        .arg(script)
+        .current_dir(script.parent().unwrap_or_else(|| Path::new("/")))
+        .envs(crate::module::get_common_script_envs(Some(module_id)))
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    // SAFETY: 子进程里只做两件异步信号安全的事 —— 脱离进程组（su 退出时不连带 HUP）
+    // 和写 cgroup 文件，与开机路径 `module::exec_script` 的 pre_exec 完全一致；
+    // 出错通过返回 io::Error 处理，不在子进程里分配或加锁。
+    unsafe {
+        command.pre_exec(|| {
+            crate::utils::detach_process_group(true);
+            crate::utils::switch_cgroups();
+            Ok(())
+        });
+    }
+    let mut child = command
+        .spawn()
+        .with_context(|| format!("spawn {}", script.display()))?;
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(_)) => return Ok(()),
+            Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+            Err(error) => return Err(anyhow!("wait {}: {error}", script.display())),
+        }
+    }
+    debug!(
+        "stage script {} still running after its budget",
+        script.display()
+    );
+    Ok(())
 }
 
 /// Another root solution's engine module, if one owns the injection surface.
