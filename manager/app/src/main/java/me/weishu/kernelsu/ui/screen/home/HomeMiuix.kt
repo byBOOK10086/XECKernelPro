@@ -2,6 +2,11 @@ package me.weishu.kernelsu.ui.screen.home
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -55,7 +60,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -89,6 +96,9 @@ import me.weishu.kernelsu.ui.design.panel.Xc8Value
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.design.token.XcBlockBackground
 import me.weishu.kernelsu.ui.design.token.XcBlocks
+import me.weishu.kernelsu.ui.design.token.XcEasing
+import me.weishu.kernelsu.ui.design.token.XcMotionDefault
+import me.weishu.kernelsu.ui.design.token.rememberReducedMotion
 import me.weishu.kernelsu.ui.util.getSuperuserCount
 import me.weishu.kernelsu.ui.viewmodel.ModuleViewModel
 import me.weishu.kernelsu.ui.util.module.LatestVersionInfo
@@ -147,7 +157,7 @@ fun HomePagerMiuix(
 
     Scaffold(
         containerColor = Color.Transparent,
-        topBar = { HomeHeader(onRefresh = actions.onRefresh) },
+        topBar = { HomeHeader(isRefreshing = state.isRefreshing, onRefresh = actions.onRefresh) },
         popupHost = { },
         contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout)
             .only(WindowInsetsSides.Horizontal),
@@ -278,8 +288,27 @@ fun HomePagerMiuix(
  */
 @Composable
 private fun HomeHeader(
+    isRefreshing: Boolean,
     onRefresh: () -> Unit,
 ) {
+    // 刷新图标转圈：只在真的刷新时转（设计要求「加载期间显示真实刷新状态」）。
+    // 之前 `HomeHeader` 根本拿不到 isRefreshing —— 状态链是通的，只是没接线，
+    // 所以图标永远是静止的，用户看不出点没点上。
+    val reduced = rememberReducedMotion()
+    val spin = if (isRefreshing && !reduced) {
+        val turn = rememberInfiniteTransition(label = "refreshSpin")
+        turn.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(XcMotionDefault.refreshTurn, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "refreshAngle",
+        ).value
+    } else {
+        0f
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -304,14 +333,18 @@ private fun HomeHeader(
                 .size(38.dp)
                 .clip(Xc.shapes.md)
                 .border(1.dp, Xc.colors.glassRim, Xc.shapes.md)
-                .clickable(onClick = onRefresh),
+                // 刷新期间禁用点击：ViewModel 那边有重入合并，但按钮自己能给回执更好
+                // —— 禁用态 + 转圈 = "正在跑，别急"。
+                .clickable(enabled = !isRefreshing, onClick = onRefresh),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.Rounded.Refresh,
                 contentDescription = stringResource(R.string.home_refresh),
-                tint = Xc.colors.textSecondary,
-                modifier = Modifier.size(18.dp),
+                tint = if (isRefreshing) Xc.colors.accent else Xc.colors.textSecondary,
+                modifier = Modifier
+                    .size(18.dp)
+                    .rotate(spin),
             )
         }
     }
@@ -366,10 +399,34 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
     }
 
     Column(modifier = Modifier.padding(top = 10.dp)) {
+        // 呼吸点：设计要求「ROOT 就绪指示点加入非常轻微的呼吸效果，周期 2.5–3.5s，
+        // 只改变指示点的透明度，不要整块闪烁」。所以动画只作用在这颗 7dp 的圆上。
+        //
+        // 三个闸门缺一不可：
+        //  * 只有 [active]（root 真的可用）才呼吸 —— 灰点/红点不该有"活着"的暗示；
+        //  * 系统要求减少动态效果时直接静止；
+        //  * 无限动画**不受** Compose 运行时的 durationScale 管辖（它走
+        //    withInfiniteAnimationFrameNanos），必须自己判 [reduced]。
+        val reduced = rememberReducedMotion()
+        val dotAlpha = if (active && !reduced) {
+            val breath = rememberInfiniteTransition(label = "heroBreath")
+            breath.animateFloat(
+                initialValue = 1f,
+                targetValue = 0.42f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(XcMotionDefault.breath / 2, easing = XcEasing.standard),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "heroDotAlpha",
+            ).value
+        } else {
+            1f
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
                     .size(7.dp)
+                    .alpha(dotAlpha)
                     .clip(CircleShape)
                     .background(statusColor),
             )
@@ -418,7 +475,10 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
         }
         Text(
             text = subtitle,
-            fontSize = 14.sp,
+            // 第三轮：14 → 13。设计要求把「辅助说明」钉在 12–13sp，上一版的 14 是
+            // 唯一一个落在令牌表外的值（全 manager 只剩这一处，其余 14 都在
+            // FileManager / 终端这类不归排版体系管的界面上）。
+            fontSize = 13.sp,
             lineHeight = 20.sp,
             color = Xc.colors.textMuted,
             modifier = Modifier.padding(top = 9.dp),

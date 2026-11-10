@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.animation.togetherWith
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.CompositionLocalProvider
@@ -88,6 +89,8 @@ import me.weishu.kernelsu.ui.design.liquid.XDropletHost
 import me.weishu.kernelsu.ui.design.panel.Xc8Dock
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.design.token.XcTheme
+import me.weishu.kernelsu.ui.design.token.xcPageEnter
+import me.weishu.kernelsu.ui.design.token.xcPageExit
 import me.weishu.kernelsu.ui.navigation3.IntentDispatcher
 import me.weishu.kernelsu.ui.navigation3.LocalNavigator
 import me.weishu.kernelsu.ui.navigation3.Navigator
@@ -369,8 +372,20 @@ open class MainActivity : ComponentActivity() {
                                 }
 
                                 val navDisplay = @Composable {
+                                    // 转场只能在这里先算好：transitionSpec 的 lambda 不是
+                                    // @Composable，里面调不了 xcPageEnter()（它要读 density
+                                    // 才能把 8dp 换算成像素）。外层捕获是唯一干净的接法。
+                                    val pageEnter = xcPageEnter()
+                                    val pageExit = xcPageExit()
                                     NavDisplay(
                                         backStack = navigator.backStack,
+                                        // 2026-11-11 第三轮：显式接管转场。
+                                        // 不传的话走 miuix-navigation3-ui 的默认值 ——
+                                        // 500ms 横向滑动 + 背景压暗 0.5 + 圆角裁切，
+                                        // 三个数都不是我们的设计稿。设计要求是
+                                        // 220–300ms + 6–10dp 的**纵向**位移。
+                                        transitionSpec = { pageEnter togetherWith pageExit },
+                                        popTransitionSpec = { pageEnter togetherWith pageExit },
                                         entryDecorators = listOf(
                                             rememberSaveableStateHolderNavEntryDecorator(),
                                             rememberViewModelStoreNavEntryDecorator()
