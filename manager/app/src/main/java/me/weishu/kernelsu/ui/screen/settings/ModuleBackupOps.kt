@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.ui.util.awaitRootShell
 import me.weishu.kernelsu.ui.util.getRootShell
@@ -76,6 +77,9 @@ object ModuleBackupOps {
     private const val ALLOW_VERSION_MIN = 2L
     private const val ALLOW_VERSION_MAX = 4L
 
+    /** 单次恢复允许复制的最大字节数（2 GiB）。 */
+    private const val MAX_ARCHIVE_BYTES = 2L * 1024 * 1024 * 1024
+
     /** 备份结果：模块 id 列表与归档大小（0 个模块时不会走到成功分支）。 */
     data class BackupResult(val modules: List<String>, val bytes: Long)
 
@@ -115,11 +119,35 @@ object ModuleBackupOps {
 
     private suspend fun rootShell(): Shell = awaitRootShell()
 
-    private fun copyUriTo(context: Context, uri: Uri, dest: File): Boolean = runCatching {
+    /**
+     * 把用户选的 Uri 复制进应用私有目录，**带总字节上限**。
+     *
+     * 恢复流程的后半段全是 root 操作，无法中途取消；如果先把一个 20 GB 的流写进
+     * cacheDir 再开始校验，等于让用户自己把 /data 写满。所以边复制边计数，
+     * 超限立刻放弃（此时还没创建任何 root 侧文件）。
+     */
+    private fun copyUriTo(context: Context, uri: Uri, dest: File, maxBytes: Long): Boolean = runCatching {
+        var total = 0L
         context.contentResolver.openInputStream(uri)?.use { input ->
-            dest.outputStream().use { input.copyTo(it) }
+            dest.outputStream().use { sink ->
+                val buf = ByteArray(1 shl 16)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n <= 0) break
+                    total += n
+                    if (total > maxBytes) return@runCatching false
+                    sink.write(buf, 0, n)
+                }
+            }
         } != null && dest.length() > 0L
     }.getOrDefault(false)
+
+    /** 这次恢复最多允许多大：2 GiB，且不超过当前可用空间的一半（别把 /data 写满）。 */
+    private fun archiveCap(context: Context): Long {
+        val free = context.cacheDir.usableSpace
+        val half = if (free > 0) free / 2 else MAX_ARCHIVE_BYTES
+        return minOf(MAX_ARCHIVE_BYTES, maxOf(half, 1L * 1024 * 1024))
+    }
 
     private suspend fun streamToUri(context: Context, file: File, uri: Uri): Boolean =
         withContext(Dispatchers.IO) {
@@ -159,32 +187,34 @@ object ModuleBackupOps {
                     )
                 }
             }
+            // 临时归档必须在**任何**退出路径上清掉（包括 TarScan 抛 IOException、
+            // streamToUri 之前被取消），所以从创建那一刻就进 try/finally。
             val out = File(context.cacheDir, "modules_${stamp()}_${System.nanoTime() % 100000}.tar")
-            val packed = exec(shell, "$tar -cf '${out.absolutePath}' -C '$MODULES_DIR' .")
-            if (!packed.isSuccess || !out.isFile || out.length() == 0L) {
+            try {
+                val packed = exec(shell, "$tar -cf '${out.absolutePath}' -C '$MODULES_DIR' .")
+                if (!packed.isSuccess || !out.isFile || out.length() == 0L) {
+                    return@withContext Result.failure(Refused(detail(packed, "tar 打包失败")))
+                }
+                ensureActive()
+                // 以归档本身为准：能解析出模块 id 才算备份成功，"ls | wc -l" 不再参与判断。
+                val entries = TarScan.readEntries(out)
+                    ?: return@withContext Result.failure(
+                        Refused("打出来的 tar 我们自己读不了（tar 实现不兼容），已放弃这次备份"),
+                    )
+                val ids = TarScan.moduleIds(entries)
+                if (ids.isEmpty()) {
+                    return@withContext Result.failure(
+                        Refused("$MODULES_DIR 里没有模块目录（只有散文件或空目录）"),
+                    )
+                }
+                val bytes = out.length()
+                if (!streamToUri(context, out, uri)) {
+                    return@withContext Result.failure(Refused("写入你选的文件失败"))
+                }
+                Result.success(BackupResult(ids, bytes))
+            } finally {
                 out.delete()
-                return@withContext Result.failure(Refused(detail(packed, "tar 打包失败")))
             }
-            // 以归档本身为准：能解析出模块 id 才算备份成功，"ls | wc -l" 不再参与判断。
-            val entries = TarScan.readEntries(out)
-            if (entries == null) {
-                out.delete()
-                return@withContext Result.failure(
-                    Refused("打出来的 tar 我们自己读不了（tar 实现不兼容），已放弃这次备份"),
-                )
-            }
-            val ids = TarScan.moduleIds(entries)
-            if (ids.isEmpty()) {
-                out.delete()
-                return@withContext Result.failure(
-                    Refused("$MODULES_DIR 里没有模块目录（只有散文件或空目录）"),
-                )
-            }
-            val bytes = out.length()
-            if (!streamToUri(context, out, uri)) {
-                return@withContext Result.failure(Refused("写入你选的文件失败"))
-            }
-            Result.success(BackupResult(ids, bytes))
         }
 
     /** 备份超级用户授权表（`/data/adb/ksu/.allowlist`）。 */
@@ -198,17 +228,20 @@ object ModuleBackupOps {
             if (!exec(shell, "test -f '$KSU_DIR/$ALLOWLIST'").isSuccess) {
                 return@withContext Result.failure(Refused("$KSU_DIR/$ALLOWLIST 不存在：这台机器还没有任何授权记录"))
             }
-            val out = File(context.cacheDir, "allowlist_${stamp()}.tar")
-            val packed = exec(shell, "$tar -cf '${out.absolutePath}' -C '$KSU_DIR' '$ALLOWLIST'")
-            if (!packed.isSuccess || !out.isFile || out.length() == 0L) {
+            val out = File(context.cacheDir, "allowlist_${stamp()}_${System.nanoTime() % 100000}.tar")
+            try {
+                val packed = exec(shell, "$tar -cf '${out.absolutePath}' -C '$KSU_DIR' '$ALLOWLIST'")
+                if (!packed.isSuccess || !out.isFile || out.length() == 0L) {
+                    return@withContext Result.failure(Refused(detail(packed, "tar 打包授权表失败")))
+                }
+                val bytes = out.length()
+                if (!streamToUri(context, out, uri)) {
+                    return@withContext Result.failure(Refused("写入你选的文件失败"))
+                }
+                Result.success(bytes)
+            } finally {
                 out.delete()
-                return@withContext Result.failure(Refused(detail(packed, "tar 打包授权表失败")))
             }
-            val bytes = out.length()
-            if (!streamToUri(context, out, uri)) {
-                return@withContext Result.failure(Refused("写入你选的文件失败"))
-            }
-            Result.success(bytes)
         }
 
     // ------------------------------------------------------------------ 恢复
@@ -226,7 +259,7 @@ object ModuleBackupOps {
             }
             val tar = tarCmd(shell) ?: return@withContext Result.failure(Refused("没有可用的 tar"))
             val staged = File(context.cacheDir, "restore_${stamp()}_${System.nanoTime() % 100000}.tar")
-            if (!copyUriTo(context, uri, staged)) {
+            if (!copyUriTo(context, uri, staged, archiveCap(context))) {
                 staged.delete()
                 return@withContext Result.failure(Refused("读取你选的文件失败（可能不是本地文件，或已被移动）"))
             }
@@ -267,15 +300,16 @@ object ModuleBackupOps {
                 if (stageDir.isEmpty()) {
                     return@withContext Result.failure(Refused("占不到临时目录（$STAGE_ROOT 不可写？）"))
                 }
-                val unpack = exec(shell, "$tar -xf '${staged.absolutePath}' -C '$stageDir'")
-                if (!unpack.isSuccess) {
-                    exec(shell, "rm -rf '$stageDir'")
-                    return@withContext Result.failure(Refused(detail(unpack, "解包失败")))
-                }
                 val installed = ArrayList<String>()
                 val skipped = ArrayList<RestoreResult.Skipped>()
                 try {
+                    val unpack = exec(shell, "$tar -xf '${staged.absolutePath}' -C '$stageDir'")
+                    if (!unpack.isSuccess) {
+                        return@withContext Result.failure(Refused(detail(unpack, "解包失败")))
+                    }
+                    ensureActive()
                     for (id in ids) {
+                        ensureActive()
                         // id 已经过 TarScan.MODULE_ID 白名单（只含 [A-Za-z0-9._-] 且字母开头），
                         // 拼命令安全；这里再判一次，纯粹是别让"以后有人放宽正则"变成命令注入。
                         if (!TarScan.MODULE_ID.matches(id)) {
@@ -358,7 +392,7 @@ object ModuleBackupOps {
             }
             val tar = tarCmd(shell) ?: return@withContext Result.failure(Refused("没有可用的 tar"))
             val staged = File(context.cacheDir, "restore_allow_${stamp()}_${System.nanoTime() % 100000}.tar")
-            if (!copyUriTo(context, uri, staged)) {
+            if (!copyUriTo(context, uri, staged, archiveCap(context))) {
                 staged.delete()
                 return@withContext Result.failure(Refused("读取你选的文件失败"))
             }
@@ -371,10 +405,20 @@ object ModuleBackupOps {
                 if (!hasAllowlist) {
                     return@withContext Result.failure(Refused("这个 tar 里没有 $ALLOWLIST"))
                 }
-                // 每次恢复用独立暂存目录：固定路径会让两次恢复互相踩踏（一个把另一个
-                // 正在校验的 .allowlist 删掉，最后落地的就成了半份）。
-                val allowStage = "${ALLOW_STAGE_PREFIX}_${System.nanoTime() % 100000}"
-                exec(shell, "rm -rf '$allowStage' && mkdir -p '$allowStage'")
+                // 每次恢复用独立暂存目录，并且用**不带 -p 的 mkdir 原子占用**：固定路径或
+                // "先 rm -rf 再 mkdir" 都可能把另一个任务正在用的目录删掉。
+                var allowStage = ""
+                var attempt = 0
+                while (attempt < 4 && allowStage.isEmpty()) {
+                    attempt++
+                    val candidate = "${ALLOW_STAGE_PREFIX}_${Random.nextInt(100000, 999999)}"
+                    if (exec(shell, "mkdir '$candidate' 2>/dev/null").isSuccess) {
+                        allowStage = candidate
+                    }
+                }
+                if (allowStage.isEmpty()) {
+                    return@withContext Result.failure(Refused("占不到授权表暂存目录（$KSU_DIR 不可写？）"))
+                }
                 val unpack = exec(shell, "$tar -xf '${staged.absolutePath}' -C '$allowStage'")
                 if (!unpack.isSuccess) {
                     exec(shell, "rm -rf '$allowStage'")
@@ -427,9 +471,15 @@ object ModuleBackupOps {
             }
         }
 
-    /** 恢复/刷模块后重启，让 ksud 在开机时合并 modules_update。 */
-    fun reboot() {
+    /**
+     * 恢复/刷模块后重启，让 ksud 在开机时合并 modules_update。
+     *
+     * **必须挂起在 IO 上**：里面的 exec 会等 root shell 把命令跑完，在主线程直接调等于
+     * 让 UI 陪着等（命令卡住就冻屏）。调用方都是协程，改挂起没有代价。
+     */
+    suspend fun reboot() = withContext(Dispatchers.IO) {
         val shell = getRootShell()
         if (shell.isRoot) exec(shell, "svc power reboot || reboot")
+        Unit
     }
 }

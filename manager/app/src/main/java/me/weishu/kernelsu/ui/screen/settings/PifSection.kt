@@ -18,6 +18,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import me.weishu.kernelsu.ui.design.panel.Xc8Note
 import me.weishu.kernelsu.ui.design.panel.Xc8Panel
@@ -56,13 +57,21 @@ fun PifSection(modifier: Modifier = Modifier) {
     fun launchAction(action: suspend () -> Result<String>) {
         scope.launch {
             busy = true
-            val result = action()
-            busy = false
-            note = result.fold(
-                onSuccess = { it },
-                onFailure = { "失败：${it.message}" },
-            )
-            toast(note.orEmpty())
+            try {
+                val result = action()
+                note = result.fold(
+                    onSuccess = { it },
+                    onFailure = { "失败：${it.message}" },
+                )
+                toast(note.orEmpty())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                note = "操作失败：${t.message ?: t.javaClass.simpleName}"
+                toast(note.orEmpty())
+            } finally {
+                busy = false
+            }
             reload()
         }
     }

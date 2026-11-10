@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import me.weishu.kernelsu.ui.component.dialog.ConfirmResult
 import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
@@ -55,13 +56,31 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
         Toast.makeText(context, text, Toast.LENGTH_LONG).show()
     }
 
+    /**
+     * 所有"按一下就跑很久"的操作都从这里进：**busy 一定会在 finally 里复位**，
+     * 异常一定变成一句人话，取消一定原样抛回（否则协程取消会被吞成"操作失败"）。
+     * 早版本是散在各处的 `busy = true … busy = false`，中间任何异常都会让整页永远转圈。
+     */
+    fun launchBusy(action: suspend () -> Unit) {
+        scope.launch {
+            busy = true
+            try {
+                action()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                say("操作失败：${t.message ?: t.javaClass.simpleName}")
+            } finally {
+                busy = false
+            }
+        }
+    }
     val createLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/x-tar"),
     ) { uri ->
         if (uri != null) {
             val which = kind
-            scope.launch {
-                busy = true
+            launchBusy {
                 val message = if (which == BackupKind.Modules) {
                     ModuleBackupOps.backupModules(context, uri).fold(
                         onSuccess = { "已备份 ${it.modules.size} 个模块（${it.bytes / 1024} KB）：${it.modules.joinToString("、")}" },
@@ -73,7 +92,6 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
                         onFailure = { "备份失败：${it.message}" },
                     )
                 }
-                busy = false
                 say(message)
             }
         }
@@ -84,11 +102,9 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
     ) { uri ->
         if (uri != null) {
             val which = kind
-            scope.launch {
-                busy = true
+            launchBusy {
                 if (which == BackupKind.Modules) {
                     val result = ModuleBackupOps.restoreModules(context, uri)
-                    busy = false
                     result.onSuccess { done ->
                         val count = done.installed.size
                         val skippedNote = if (done.skipped.isEmpty()) {
@@ -106,7 +122,8 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
                                 "同名模块会被这份备份覆盖；备份里带 `disable` 标记的模块恢复后仍是禁用。" +
                                 "带 `initrc/`、`preinit/` 的模块要等到**再下一次**开机才装进 modules.rc。" +
                                 skippedNote + "\n\n" +
-                                "现在重启，还是先退出（退出后重启也会在下次开机生效）？",
+                                "现在重启，还是稍后自己重启？（模块已经排队，**下次开机一定生效**；" +
+                                "「稍后」只是把重启推后，不是撤销）",
                             markdown = true,
                             confirm = "立即重启",
                             dismiss = "稍后",
@@ -117,7 +134,6 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
                     }.onFailure { say("恢复失败：${it.message}") }
                 } else {
                     val result = ModuleBackupOps.restoreAllowlist(context, uri)
-                    busy = false
                     result.onSuccess {
                         val answer = confirm.awaitConfirm(
                             title = "授权表已写入",

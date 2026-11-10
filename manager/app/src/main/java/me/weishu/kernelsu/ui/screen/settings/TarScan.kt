@@ -75,14 +75,34 @@ internal object TarScan {
     private const val MAX_NAME = 4096
 
     /**
+     * 允许出现在 PAX 扩展头里的键。
+     *
+     * 只有"纯元数据"的键能进来：**`size` / `GNU.sparse.*` / `SCHILY.*` / 未知键一律拒绝**。
+     * 原因：扫描器是按 ustar 头里的 size 往后跳数据的，而设备上的 tar 可能按 PAX 的
+     * `size` 解释 —— 两边对"下一条目从哪里开始"的理解一不一致，校验过的条目序列就不是
+     * 实际解包的序列。这类键在正常的模块归档里根本不会出现，fail closed 没有代价。
+     */
+    private val PAX_META_KEYS = setOf(
+        "mtime", "atime", "ctime", "uid", "gid", "uname", "gname", "comment", "charset",
+    )
+
+    /**
      * 读条目表。**任何一处不合规就返回 null**（调用方当成"这个备份不能用"处理），
      * 不做"跳过坏条目继续解"的容错 —— 半个模块落地比不落地危险。
+     *
+     * 除了"名字本身要相对、不含 `..`"，这里还维护一张**链接图**：先建出来的软链接不能
+     * 成为后续条目的祖先（`aa -> .` 再写 `aa/etc/x` 就能转义），也不能和已有条目
+     * 同名不同类型（同一路径既是目录又是链接）。仅靠词法深度判断是不够的 ——
+     * 词法上安全的 `aa/bb` 在文件系统里可能是穿过链接的路径。
      */
     fun readEntries(file: File): List<Entry>? {
         if (!file.isFile || file.length() < 512) return null
         val out = ArrayList<Entry>()
         var pendingName: String? = null
         var pendingLink: String? = null
+        // 路径 -> 类型字符；用来发现"同名不同类型"和"链接成为别人祖先"。
+        val seen = HashMap<String, Char>()
+        val symlinks = HashSet<String>()
         DataInputStream(BufferedInputStream(file.inputStream(), 1 shl 16)).use { input ->
             val header = ByteArray(512)
             var entries = 0
@@ -114,22 +134,24 @@ internal object TarScan {
                             pendingLink = payload.trimEnd('\u0000')
                         }
                     }
-                    // 扩展头：`x` 是下一条目专属，`g` 是全局（全局头不许改 path，忽略其记录）。
+                    // 扩展头：`x` 是下一条目专属；`size`/sparse 等影响解包语义的键直接拒绝。
                     'x' -> {
                         val records = readPax(input, size) ?: return null
                         for ((key, value) in records) {
-                            when (key) {
-                                "path" -> {
+                            when {
+                                key == "path" -> {
                                     val name = normalize(value) ?: return null
                                     if (name.isEmpty()) return null
                                     pendingName = name
                                 }
-                                "linkpath" -> pendingLink = value
-                                else -> Unit
+                                key == "linkpath" -> pendingLink = value
+                                key in PAX_META_KEYS -> Unit
+                                else -> return null
                             }
                         }
                     }
-                    'g' -> if (!skipPayload(input, size)) return null
+                    // 全局扩展头会改变"后面所有条目"的解释，而我们不实现它的语义：拒绝。
+                    'g' -> return null
 
                     // 只接受普通文件、目录、相对软链接。
                     '0', '\u0000', '7', '5', '2' -> {
@@ -144,8 +166,29 @@ internal object TarScan {
                             if (type != '5') return null
                             continue
                         }
+                        // 祖先不能是已经建出来的软链接（否则这条目的落点由链接决定）。
+                        var slash = name.indexOf('/')
+                        while (slash > 0) {
+                            if (name.substring(0, slash) in symlinks) return null
+                            slash = name.indexOf('/', slash + 1)
+                        }
+                        val previousType = seen[name]
+                        if (previousType != null && previousType != type) return null
+                        seen[name] = type
                         if (type == '2') {
                             if (!isSafeLink(name, link)) return null
+                            // 新链接不能是已有条目的祖先（解包顺序不同结果不同，直接拒）。
+                            if (seen.keys.any { it.length > name.length && it.startsWith("$name/") }) {
+                                return null
+                            }
+                            // 链接目标本身也不能穿过另一个软链接。
+                            val resolved = resolveLink(name, link) ?: return null
+                            var cut = resolved.indexOf('/')
+                            while (cut > 0) {
+                                if (resolved.substring(0, cut) in symlinks) return null
+                                cut = resolved.indexOf('/', cut + 1)
+                            }
+                            symlinks += name
                         } else if (link.isNotEmpty()) {
                             return null
                         }
@@ -158,6 +201,24 @@ internal object TarScan {
             }
         }
         return out
+    }
+
+    /**
+     * 把软链接目标按词法解析成归档内的相对路径（`..` 到顶即失败）。
+     * 只用于"目标是否会穿过另一个链接"的判断，不碰文件系统。
+     */
+    private fun resolveLink(entry: String, target: String): String? {
+        val parts = ArrayList<String>()
+        val dir = entry.substringBeforeLast('/', "")
+        if (dir.isNotEmpty()) parts += dir.split('/').filter { it.isNotEmpty() }
+        for (part in target.split('/')) {
+            when {
+                part.isEmpty() || part == "." -> Unit
+                part == ".." -> if (parts.isEmpty()) return null else parts.removeAt(parts.size - 1)
+                else -> parts += part
+            }
+        }
+        return parts.joinToString("/")
     }
 
     /**
