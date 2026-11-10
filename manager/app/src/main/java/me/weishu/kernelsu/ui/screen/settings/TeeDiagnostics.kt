@@ -1,11 +1,13 @@
 package me.weishu.kernelsu.ui.screen.settings
 
+import android.content.Context
 import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.ui.util.awaitRootShell
 import me.weishu.kernelsu.ui.util.getKsuDaemonPath
 import org.json.JSONObject
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -316,9 +318,10 @@ object TeeDiagnostics {
             label = "重启后强制自启",
             ok = kernelState == "on",
             detail = when (kernelState) {
-                "on" -> "开关已写入；这个内核认它，下次开机会自动拉起引擎"
-                "off" -> "开关已写入但内核侧读回是 off：内核还不认这个开关"
-                else -> "开关已预先写入；当前内核不认它（还没刷带钩子的 KMI），刷入后开机才会自动拉起"
+                "on" -> "开关已写入；/data/adb/xudc 认它，下次开机会自动拉起引擎"
+                "off" -> "开关已写入，但 /data/adb/xudc 读回是 off"
+                else -> "开关已预先写入；/data/adb/xudc 还是旧版（不认这个开关）—— " +
+                    "点「刷新开机守护进程」换成新版即可，不用刷内核"
             },
         )
         // 装 + 起在同一条命令里。timeout 兜底：内核不是本项目时，脚本环境采集里
@@ -455,6 +458,47 @@ object TeeDiagnostics {
             ?: return@withContext Result.failure(IllegalStateException("执行失败"))
         if (result.isSuccess) Result.success(Unit)
         else Result.failure(IllegalStateException(result.err.joinToString(" ").ifBlank { "清理失败" }))
+    }
+
+    /**
+     * 刷新开机真正执行的那个守护进程 `/data/adb/xudc`。
+     *
+     * 开机 rc 跑的是 `/data/adb/xudc`（`kernel/ksud.h` 的 `KSUD_PATH`），而它是 APK 里的
+     * `libxeccli.so` 在 `xudc install` 时拷过去的 —— 所以「重启后强制自启」认不认，
+     * 取决于这个文件是不是新版本，**跟内核镜像无关**。换它不需要重启，也不需要刷机。
+     */
+    suspend fun refreshBootDaemon(context: Context): Result<String> = withContext(Dispatchers.IO) {
+        val shell = awaitRootShell(timeoutMs = 20_000L)
+        if (!shell.isRoot) {
+            return@withContext Result.failure(
+                IllegalStateException("没有 root，换不了 /data/adb/xudc"),
+            )
+        }
+        val info = context.applicationInfo
+        val libadbroot = File(info.nativeLibraryDir, "libadbroot.so").absolutePath
+        val args = buildString {
+            append("install")
+            if (File(libadbroot).isFile) append(" --libadbroot '$libadbroot'")
+            append(" --data-path '${info.deviceProtectedDataDir}'")
+        }
+        val result = runCatching { shell.newJob().add("'${bundledKsud()}' $args 2>&1").exec() }
+            .getOrElse { return@withContext Result.failure(it) }
+        val text = result.out.map { it.trim() }.filter { it.isNotEmpty() }
+            .takeLast(3).joinToString(" / ")
+        if (!result.isSuccess) {
+            return@withContext Result.failure(
+                IllegalStateException("刷新失败：${text.ifEmpty { "退出码 ${result.code}" }}"),
+            )
+        }
+        // 回读：新守护进程必须认识 `builtin force-boot`，否则等于没换上。
+        val state = runCatching {
+            shell.newJob().add("'/data/adb/xudc' builtin force-boot 2>&1").exec()
+        }.getOrNull()?.out?.map { it.trim() }?.firstOrNull { it == "on" || it == "off" }
+        if (state == null) {
+            Result.success("已替换；新守护进程还没答上开关状态，重启后再看一次")
+        } else {
+            Result.success("已替换：/data/adb/xudc 现在认这个开关（当前 $state）")
+        }
     }
 
     /**

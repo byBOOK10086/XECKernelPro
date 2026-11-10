@@ -328,8 +328,9 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
                             "`service.sh` 开机时本来就会按 baseline 合并/对账 `target.txt`" +
                             "（只增不删）并可能拉一次 keybox，这里跑的是同一段脚本。\n\n" +
                             "重启后：这条路径绕开了开机的四道闸门（Magisk 残留 / 安全模式 / boot 事务 / " +
-                            "UAPI），所以**旧内核重启后要再点一次**；「重启后强制自启」的开关会预先写好，" +
-                            "刷入带钩子的 KMI 内核后由内核在开机时自动拉起，旧内核会忽略它。",
+                            "UAPI），所以**旧守护进程重启后要再点一次**；「重启后强制自启」的开关会预先写好，" +
+                            "把 `/data/adb/xudc` 换成当前 APK 的版本（下面「刷新开机守护进程」一次点击）" +
+                            "之后，每次开机都会自动拉起 —— 跟内核镜像无关，不用刷 KMI。",
                         markdown = true,
                         confirm = "开始",
                         dismiss = "取消",
@@ -356,6 +357,28 @@ fun TeeStatusSection(modifier: Modifier = Modifier) {
                         },
                         onFailure = { "修复失败：${it.message}" },
                     )
+                    toast(note.orEmpty())
+                    refresh()
+                }
+            },
+        )
+
+        // 开机守护进程：强制自启的开关由它读，跟内核镜像无关
+        Xc8Row(
+            title = "刷新开机守护进程",
+            subtitle = "开机跑的是 /data/adb/xudc（随 APK 更新，不是内核镜像）：" +
+                "换成当前 APK 的版本后，「重启后强制自启」才会在开机时生效",
+            leading = Icons.Rounded.Refresh,
+            enabled = !busy,
+            onClick = {
+                scope.launch {
+                    busy = true
+                    val result = try {
+                        TeeDiagnostics.refreshBootDaemon(context)
+                    } finally {
+                        busy = false
+                    }
+                    note = result.fold(onSuccess = { it }, onFailure = { "刷新失败：${it.message}" })
                     toast(note.orEmpty())
                     refresh()
                 }
