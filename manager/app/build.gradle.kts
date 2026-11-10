@@ -265,7 +265,7 @@ dependencies {
 
     // GhostLock profile pipeline (vendored under com.ghostlock.app.*): HOCON
     // parsing for the bundled kernel_profiles assets.
-    implementation("com.typesafe:config:1.4.3")
+    implementation("com.typesafe:config:1.4.10")
 }
 
 kotlin {
