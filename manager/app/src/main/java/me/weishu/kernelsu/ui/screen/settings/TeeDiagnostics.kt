@@ -412,7 +412,7 @@ object TeeDiagnostics {
             val shell = awaitRootShell()
             if (!shell.isRoot) return@withContext Result.failure(IllegalStateException("没有 root"))
             val script = "killall TEESimulator 2>/dev/null; sleep 1; sh '$dir/service.sh' >/dev/null 2>&1 &"
-            val result = runCatching { shell.newJob().add(script).exec() }.getOrNull()
+            runCatching { shell.newJob().add(script).exec() }.getOrNull()
                 ?: return@withContext Result.failure(IllegalStateException("执行失败"))
             // 等进程真的起来（最多 12 秒），别让 UI 报"已重启"但其实没起。
             repeat(24) {
@@ -423,7 +423,8 @@ object TeeDiagnostics {
                 if (pid > 0) return@withContext Result.success(true)
                 Thread.sleep(500)
             }
-            Result.success(result.isSuccess)
+            // 命令发出去了但进程没出现：这是失败，不是"成功"。
+            Result.failure(IllegalStateException("重启命令发出去了，但 12 秒内没看到 TEESimulator"))
         }
     }
 

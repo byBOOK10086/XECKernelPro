@@ -622,14 +622,24 @@ fn external_engine_dir() -> Option<PathBuf> {
         })
 }
 
+/// 运行时目录里那条伪造证明链涉及的三个位置：内置树、引擎运行时、TA 增强。
+///
+/// 收进程时只认"命令行里出现这三个路径之一"的进程，**绝不按进程名**：`supervisor`
+/// 和 `TEESimulator` 这种名字任何应用都可能撞上，按名杀就是误伤。
+const ENGINE_MARKERS: [&str; 3] = [
+    "/data/adb/ksu/builtin",
+    "/data/adb/tricky_store",
+    "/data/adb/.xudc_secure/ta-enhanced",
+];
+
 /// Kill everything the previous run of the bundled scripts left behind.
 ///
-/// Only processes whose argv carries a built-in tree path are matched by path,
-/// plus the three names our own payloads re-exec into. That matters: the scripts
-/// fork a pile of background loops (tricky_store's 5-minute watchdog and 15s
-/// config sync, TA's keybox guardian), and their argv is inherited from the
-/// script, so the path match catches them. `supervisor`, the Java daemon and
-/// `ta-enhanced` have been exec'd, so the process name is the only clue there.
+/// Only processes whose argv carries one of [`ENGINE_MARKERS`] are touched. That
+/// covers every shape the engine takes: the stage scripts and the shells they
+/// fork (`.../builtin/tricky_store/service.sh`), the supervisor and the Java
+/// daemon (`./supervisor ./daemon /data/adb/tricky_store`), and TA's daemon
+/// (`.../xudc_secure/ta-enhanced/bin/ta-enhanced daemon`). Matching by process
+/// name alone would also hit unrelated users of `supervisor`/`TEESimulator`.
 ///
 /// **Never kill by process group**: `detach_process_group(true)` puts the child
 /// into init's process group when the kernel call succeeds, so a group kill
@@ -644,22 +654,18 @@ fn stop_previous_run() {
         let Some(cmdline) = fs::read_to_string(format!("/proc/{pid}/cmdline")).ok() else {
             continue;
         };
-        if cmdline.contains(ROOT)
-            && (cmdline.contains("/tricky_store/") || cmdline.contains("/TA_enhanced/"))
-        {
+        if ENGINE_MARKERS.iter().any(|marker| cmdline.contains(marker)) {
             targets.push(pid);
         }
     }
-    for name in ["supervisor", "TEESimulator", "ta-enhanced"] {
-        targets.extend(pids_by_comm(name));
-    }
-    targets.sort_unstable();
-    targets.dedup();
     if targets.is_empty() {
         return;
     }
 
-    debug!("stopping {} engine process(es) of the previous run", targets.len());
+    debug!(
+        "stopping {} engine process(es) of the previous run",
+        targets.len()
+    );
     for &pid in &targets {
         signal(pid, libc::SIGTERM);
     }
