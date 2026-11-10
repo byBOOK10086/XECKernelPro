@@ -71,7 +71,7 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
     var busy by remember { mutableStateOf(false) }
     var snapshot by remember { mutableStateOf<TeeDiagnostics.Snapshot?>(null) }
     var attestation by remember { mutableStateOf<TeeAttestation.Result?>(null) }
-    var rkpTool by remember { mutableStateOf(RkpRepair.Tool?>(null) }
+    var rkpTool by remember { mutableStateOf<RkpRepair.Tool?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
     var repairSteps by remember { mutableStateOf<List<TeeDiagnostics.RepairStep>>(emptyList()) }
     var detailsOpen by remember { mutableStateOf(false) }
@@ -190,7 +190,7 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
                         .weight(1f)
                         .fillMaxWidth()
                         .height(7.dp)
-                        .background(toneColor(seg)),
+                        .background(toneColor(seg.state)),
                 )
             }
         }
@@ -782,6 +782,7 @@ private fun TeeTileBox(tile: TeeTile, modifier: Modifier = Modifier) {
     }
 }
 
+@Composable
 private fun toneColor(state: S): Color = when (state) {
     S.Ok -> Xc.colors.success
     S.Warn -> Xc.colors.warning
