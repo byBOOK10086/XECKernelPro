@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -59,6 +60,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -75,7 +77,9 @@ import me.weishu.kernelsu.ui.component.miuix.WarningCard
 import me.weishu.kernelsu.ui.component.statustag.StatusTag
 import me.weishu.kernelsu.ui.design.glass.xGlassBody
 import me.weishu.kernelsu.ui.design.panel.Xc8Dropdown
+import me.weishu.kernelsu.ui.design.token.LocalXcReducedMotion
 import me.weishu.kernelsu.ui.design.token.Xc
+import me.weishu.kernelsu.ui.design.token.XcMotionDefault
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.util.BlurredBar
 import me.weishu.kernelsu.ui.util.SulogEntry
@@ -435,6 +439,8 @@ private fun LazyListScope.sulogEntriesSection(
     backdrop: LayerBackdrop? = null,
     onEntryClick: (SulogEntry) -> Unit,
 ) {
+    // 与 entries 一一对应的稳定 key。放在 when 之前算一次，两个分支都不重复计算。
+    val keys = stableEntryKeys(entries)
     when {
         errorMessage != null -> item {
             SulogMessageCard(
@@ -444,24 +450,53 @@ private fun LazyListScope.sulogEntriesSection(
             )
         }
 
-        else -> itemsIndexed(entries, key = { index, entry -> "$index-${entry.key}" }) { index, entry ->
+        // 2026-11-11 第三轮：key 去掉 index（否则新日志插到最前时所有既有项的
+        // 下标 +1、key 全变，animateItem 会把整表当新项重放），并补入场动画。
+        // 重复 key 会让 LazyColumn 直接抛异常，所以用 [stableEntryKeys] 做一次
+        // 「只在真重复时加后缀」的去重 —— 后缀与出现次序绑定，前缀项仍然稳定。
+        else -> itemsIndexed(entries, key = { index, _ -> keys[index] }) { index, entry ->
+            val reduced = LocalXcReducedMotion.current
+            val fade = if (reduced) null else tween<Float>(XcMotionDefault.listIn)
+            val place = if (reduced) null else tween<IntOffset>(XcMotionDefault.listIn)
             SulogEntryCard(
                 entry = entry,
                 backdrop = backdrop,
                 onClick = { onEntryClick(entry) },
+                modifier = Modifier.animateItem(
+                    fadeInSpec = fade,
+                    placementSpec = place,
+                    fadeOutSpec = fade,
+                ),
             )
         }
+    }
+}
+
+/**
+ * 给一批日志算稳定 key。
+ *
+ * [SulogEntry.key] 本身是 `seq`（或原始行），正常情况下唯一；但 `dropped` 这类
+ * 没有 seq 的条目可能撞车，而 LazyColumn 对重复 key 是**直接抛异常**的。这里只在
+ * 真的撞车时追加 `#n`，保证既稳定又唯一。
+ */
+private fun stableEntryKeys(entries: List<SulogEntry>): List<String> {
+    val seen = HashMap<String, Int>(entries.size)
+    return entries.map { entry ->
+        val n = seen.getOrDefault(entry.key, 0)
+        seen[entry.key] = n + 1
+        if (n == 0) entry.key else "${entry.key}#$n"
     }
 }
 
 @Composable
 private fun SulogEntryCard(
     entry: SulogEntry,
+    modifier: Modifier = Modifier,
     backdrop: LayerBackdrop? = null,
     onClick: () -> Unit,
 ) {
     Card(cornerRadius = XcRadius.md, 
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
             .padding(bottom = 12.dp)
