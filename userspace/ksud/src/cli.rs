@@ -928,7 +928,11 @@ pub fn run() -> Result<()> {
                     None => {
                         println!(
                             "{}",
-                            if builtin::tee_engine_enabled() { "on" } else { "off" }
+                            if builtin::tee_engine_enabled() {
+                                "on"
+                            } else {
+                                "off"
+                            }
                         );
                     }
                     Some(raw) => {
@@ -964,6 +968,11 @@ pub fn run() -> Result<()> {
                 }
                 println!("engine_pid={}", report.engine_pid);
                 println!("injected={}", u8::from(report.injected));
+                // 产品策略：内置引擎优先，外部副本让位。把让位结果打出来，管理器
+                // 才能在"以前不起、现在起了"时解释清楚发生了什么。
+                for dir in &report.yielded {
+                    println!("yielded={dir}");
+                }
                 Ok(())
             }
             BuiltinCmd::ForceBoot { value } => {
@@ -971,7 +980,11 @@ pub fn run() -> Result<()> {
                     None => {
                         println!(
                             "{}",
-                            if builtin::force_boot_enabled() { "on" } else { "off" }
+                            if builtin::force_boot_enabled() {
+                                "on"
+                            } else {
+                                "off"
+                            }
                         );
                     }
                     Some(raw) => {

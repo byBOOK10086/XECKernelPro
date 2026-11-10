@@ -203,6 +203,11 @@ pub struct StartReport {
     pub engine_pid: i32,
     /// Whether keystore2's maps already contain the injected library.
     pub injected: bool,
+    /// External engine copies this run made yield (moved away or suppressed).
+    ///
+    /// Surfaced so the manager can show *why* an engine that used to be quiet now
+    /// starts: the built-in engine owns the injection surface.
+    pub yielded: Vec<String>,
 }
 
 /// How long one stage script may take before `builtin start` moves on.
@@ -576,6 +581,7 @@ pub fn start_tee_engine(wait_for_engine: bool) -> Result<StartReport> {
         scripts,
         engine_pid,
         injected,
+        yielded,
     })
 }
 

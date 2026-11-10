@@ -20,11 +20,17 @@ object TeeDiagnostics {
     private const val BIN = "$SEC/ta-enhanced/bin/ta-enhanced"
     private const val LOG = "$SEC/ta-enhanced/logs/main.log"
 
-    /** 引擎模块可能落地的三个位置：正常模块、隐藏模块、ksud 内置源目录。 */
+    /**
+     * 引擎可能落地的位置：**内置那份在最前面**。
+     *
+     * 2026-11-11 产品裁定：管理器随包分发的内置引擎优先，`/data/adb/modules` 下的
+     * 副本一律让位。检测顺序必须跟着这个优先级走，否则 UI 会把外部副本当成"当前
+     * 引擎"，后续动作（重启 / 一键修复）全都打到那份不会运行的副本上。
+     */
     private val ENGINE_DIRS = listOf(
+        "/data/adb/ksu/builtin/tricky_store",
         "/data/adb/modules/tricky_store",
         "/data/adb/modules/.tricky_store",
-        "/data/adb/ksu/builtin/tricky_store",
     )
 
     /** 厂商真修复工具（RKP 重签）的候选路径。没有它就只能软件伪造，见 [realRepairTool]。 */
@@ -352,6 +358,13 @@ object TeeDiagnostics {
                 else -> "$modules 个内置树，重写 $rewritten 个"
             },
         )
+        for (line in lines.filter { it.startsWith("yielded=") }) {
+            steps += RepairStep(
+                label = "外部引擎让位",
+                ok = true,
+                detail = line.removePrefix("yielded=").take(160),
+            )
+        }
         for (line in lines.filter { it.startsWith("script=") }) {
             val body = line.removePrefix("script=")
             val name = body.substringBefore(" spawned=")
@@ -404,32 +417,6 @@ object TeeDiagnostics {
 
     private fun value(lines: List<String>, key: String): String? =
         lines.firstOrNull { it.startsWith("$key=") }?.substringAfter('=')
-
-    /** 重启引擎进程（不改配置）。主要用于"改了 target.txt/keybox 后让引擎重新加载"。 */
-    suspend fun restartEngine(engineDir: String?): Result<Boolean> {
-        // 引擎根本没装：重启无从谈起，直接走"从安装包释放并启动"。
-        val dir = engineDir ?: return repairEngine().map { steps ->
-            steps.firstOrNull { it.label == STEP_ENGINE }?.ok == true
-        }
-        return withContext(Dispatchers.IO) {
-            val shell = awaitRootShell()
-            if (!shell.isRoot) return@withContext Result.failure(IllegalStateException("没有 root"))
-            val script = "killall TEESimulator 2>/dev/null; sleep 1; sh '$dir/service.sh' >/dev/null 2>&1 &"
-            runCatching { shell.newJob().add(script).exec() }.getOrNull()
-                ?: return@withContext Result.failure(IllegalStateException("执行失败"))
-            // 等进程真的起来（最多 12 秒），别让 UI 报"已重启"但其实没起。
-            repeat(24) {
-                val pid = runCatching {
-                    shell.newJob().add("pidof TEESimulator 2>/dev/null").exec()
-                        .out.firstOrNull()?.trim()?.toIntOrNull()
-                }.getOrNull() ?: 0
-                if (pid > 0) return@withContext Result.success(true)
-                Thread.sleep(500)
-            }
-            // 命令发出去了但进程没出现：这是失败，不是"成功"。
-            Result.failure(IllegalStateException("重启命令发出去了，但 12 秒内没看到 TEESimulator"))
-        }
-    }
 
     /** 让守护进程拉一次 keybox（它自己带镜像/校验/信任锚判定），成功后再重启引擎。 */
     suspend fun refreshKeybox(): Result<String> = withContext(Dispatchers.IO) {
@@ -504,31 +491,59 @@ object TeeDiagnostics {
     /**
      * 一键修复：引擎不在就**强制从安装包装出来并启动**。
      *
-     * 外部模块装的引擎不归我们管（内置引擎在那种情况下会主动让位，抢同一个 keystore2
-     * 只会两败俱伤），所以那条分支只重拉 keybox + 重启它自己的 service.sh。
+     * 2026-11-11 产品裁定：内置引擎优先，`/data/adb/modules` 下的副本一律让位。所以
+     * 这里不再按 engineDir 分流——旧逻辑在探到外部副本时只重拉 keybox + 重启那份模块，
+     * `builtin start` 永远得不到调用，真机表现就是"一键修复怎么点都修不好"。
      */
-    suspend fun oneTapRepair(engineDir: String?): Result<List<RepairStep>> {
-        if (engineDir?.startsWith("/data/adb/modules/") != true) return repairEngine()
-        return withContext(Dispatchers.IO) {
+    suspend fun oneTapRepair(engineDir: String?): Result<List<RepairStep>> =
+        withContext(Dispatchers.IO) {
             val steps = ArrayList<RepairStep>()
+            // 产品策略（2026-11-11）：内置引擎优先。以前这里按 engineDir 分流——只要探到
+            // `/data/adb/modules/...` 的副本就只刷新 keybox + 重启那份外部模块，`builtin
+            // start` 永远得不到调用，外部副本也就永远不会让位。真机就是这个死循环：一键
+            // 修复"执行成功"，引擎却一直没起来。现在统一走 [repairEngine]：它执行的
+            // `builtin start` 会先把外部副本搬走 / 压制，再释放并拉起内置引擎。
+            if (engineDir != null && !engineDir.startsWith("/data/adb/ksu/builtin/")) {
+                steps += RepairStep("外部副本让位", true, engineDir)
+            }
             refreshKeybox().fold(
                 onSuccess = { steps += RepairStep("重新拉取 keybox", true, it.take(160)) },
                 onFailure = { steps += RepairStep("重新拉取 keybox", false, it.message.orEmpty().take(160)) },
             )
-            restartEngine(engineDir).fold(
-                onSuccess = { ok ->
-                    steps += RepairStep(
-                        label = STEP_ENGINE,
-                        ok = ok,
-                        detail = if (ok) "外部模块引擎已重启" else "重启命令发出去了，12 秒内没看到进程",
-                    )
-                },
-                onFailure = {
-                    steps += RepairStep(STEP_ENGINE, false, it.message.orEmpty().take(160))
-                },
-            )
-            Result.success(steps)
+            repairEngine().map { repairSteps -> steps + repairSteps }
         }
+
+    /**
+     * 重启引擎。
+     *
+     * 统一走内置的 `builtin start`：内置引擎优先，外部副本由它自己让位。以前这里对
+     * 外部模块目录直接 `sh $dir/service.sh`，而那份脚本在新规则下会 stand down，
+     * 于是"重启"永远看不到进程。
+     */
+    suspend fun restartEngine(engineDir: String?): Result<Boolean> = withContext(Dispatchers.IO) {
+        val shell = awaitRootShell(timeoutMs = 15_000L)
+        if (!shell.isRoot) return@withContext Result.failure(IllegalStateException("没有 root"))
+        val lines = runCatching {
+            shell.newJob().add("timeout 240 '${bundledKsud()}' builtin start 2>&1")
+                .exec().out
+        }.getOrElse { return@withContext Result.failure(it) }.map { it.trim() }
+        val pid = lines.firstOrNull { it.startsWith("engine_pid=") }
+            ?.substringAfter('=')?.toIntOrNull() ?: 0
+        if (pid > 0) return@withContext Result.success(true)
+        // `builtin start` 自己等了 15 秒；这里再兜一轮，别把"还在起"报成"没起"。
+        repeat(20) {
+            val alive = runCatching {
+                shell.newJob().add("pidof TEESimulator 2>/dev/null").exec()
+                    .out.firstOrNull()?.trim()?.toIntOrNull() ?: 0
+            }.getOrDefault(0)
+            if (alive > 0) return@withContext Result.success(true)
+            Thread.sleep(600)
+        }
+        Result.failure(
+            IllegalStateException(
+                "引擎没起来：${lines.takeLast(3).joinToString(" / ").take(240)}",
+            ),
+        )
     }
 
     /** 远程配置优先开关（用户的硬性裁定：补丁/指纹/远程密钥这套逻辑必须压过 TEE 引擎那套） */
