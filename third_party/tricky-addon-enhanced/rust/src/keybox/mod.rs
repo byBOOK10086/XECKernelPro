@@ -85,7 +85,9 @@ fn health_of(path: &Path) -> KeyboxHealth {
         root: "missing".to_string(),
         expires_soon: true,
     };
-    let report = match validate::validate_file_full(path) {
+    // 健康检查走离线校验：断网时 load_revocation() 会等 12 秒，而这条路径在开机
+    // 和每 5 分钟的巡检里都会跑。内置吊销表足以判断"过期/根类型/私钥匹配"。
+    let report = match validate::validate_file_full_offline(path) {
         Ok(report) => report,
         Err(_) => return missing,
     };

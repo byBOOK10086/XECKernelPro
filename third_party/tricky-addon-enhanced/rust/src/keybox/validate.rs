@@ -127,6 +127,31 @@ fn days_until(unix_secs: i64) -> i64 {
 }
 
 pub fn validate_full(data: &[u8]) -> Result<ValidationReport> {
+    validate_full_with_revocation(data, load_revocation())
+}
+
+/// 离线校验：只用内置吊销表，不联网、不等待。
+///
+/// 开机路径与周期性健康检查必须走这条：`load_revocation()` 断网时最多会卡 12 秒，
+/// 把它放进 `service.sh` 的开机流程等于让开机等一次网络超时。
+pub fn validate_full_offline(data: &[u8]) -> Result<ValidationReport> {
+    validate_full_with_revocation(data, embedded_revocation())
+}
+
+fn embedded_revocation() -> Revocation {
+    let data = serde_json::from_slice(EMBEDDED_REVOCATION)
+        .unwrap_or_else(|_| serde_json::json!({"entries": {}}));
+    Revocation {
+        source: RevocationSource::Embedded,
+        online_error: None,
+        data,
+    }
+}
+
+fn validate_full_with_revocation(
+    data: &[u8],
+    revocation: Revocation,
+) -> Result<ValidationReport> {
     if data.is_empty() {
         bail!("keybox data is empty");
     }
@@ -141,7 +166,6 @@ pub fn validate_full(data: &[u8]) -> Result<ValidationReport> {
         bail!("no <Keybox> elements found");
     }
 
-    let revocation = load_revocation();
     let entries_map = revocation
         .data
         .get("entries")
@@ -199,6 +223,12 @@ pub fn validate_file_full(path: &Path) -> Result<ValidationReport> {
     let data = std::fs::read(path)
         .with_context(|| format!("reading keybox file {}", path.display()))?;
     validate_full(&data)
+}
+
+pub fn validate_file_full_offline(path: &Path) -> Result<ValidationReport> {
+    let data = std::fs::read(path)
+        .with_context(|| format!("reading keybox file {}", path.display()))?;
+    validate_full_offline(&data)
 }
 
 mod xml_model {
