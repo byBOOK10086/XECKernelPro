@@ -46,6 +46,9 @@ ALLOW_FILES = (
     'userspace/ksud/builtin/tricky_store/keybox.xml',
     # handover doc: has to name the working branch
     'COLLAB-STATE.md',
+    # 官网生成器里有一段"历史 release 正文过滤"：老版本的更新说明里写过 KPM/
+    # 防格机，站点需要在渲染时把这些行剔掉。这是展示层的过滤规则，不是装载面。
+    'server/gen_site.py',
 )
 
 SKIP_DIRS = {'.git', 'node_modules', 'target', 'build', '.gradle', '.idea'}
