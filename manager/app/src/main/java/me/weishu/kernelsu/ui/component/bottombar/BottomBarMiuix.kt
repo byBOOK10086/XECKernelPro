@@ -124,7 +124,7 @@ fun BottomBarMiuix(
                     }
                     Text(
                         text = item.label,
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         lineHeight = 14.sp,
                         maxLines = 1,
                         softWrap = false,

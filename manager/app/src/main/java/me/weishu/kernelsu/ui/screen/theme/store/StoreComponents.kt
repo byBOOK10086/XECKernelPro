@@ -125,7 +125,7 @@ fun StoreSectionTitle(
     ) {
         Text(
             text = title,
-            fontSize = 17.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
             color = Xc.colors.text,
             modifier = Modifier.weight(1f),
@@ -138,7 +138,7 @@ fun StoreSectionTitle(
                     .padding(horizontal = 6.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(text = actionLabel, fontSize = 12.sp, color = Xc.colors.textSecondary)
+                Text(text = actionLabel, fontSize = 13.sp, color = Xc.colors.textSecondary)
                 Icon(
                     imageVector = Icons.Rounded.ChevronRight,
                     contentDescription = null,
@@ -160,7 +160,7 @@ fun StoreBadge(
 ) {
     Text(
         text = text,
-        fontSize = 9.sp,
+        fontSize = 11.sp,
         fontWeight = FontWeight.Medium,
         color = contentColor,
         maxLines = 1,
@@ -195,7 +195,7 @@ fun StoreChipsRow(
             val selected = chip.id == selectedId
             Text(
                 text = chip.label,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
                 color = if (selected) Xc.colors.onSemanticSolid else Xc.colors.textSecondary,
                 maxLines = 1,
@@ -293,7 +293,7 @@ fun StoreBannerCarousel(
                     ) {
                         Text(
                             text = banner.title.ifEmpty { theme?.name.orEmpty() },
-                            fontSize = 18.sp,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White,
                             maxLines = 1,
@@ -311,7 +311,7 @@ fun StoreBannerCarousel(
                     if (subtitle.isNotEmpty()) {
                         Text(
                             text = subtitle,
-                            fontSize = 12.sp,
+                            fontSize = 13.sp,
                             color = Color.White.copy(alpha = 0.86f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -382,7 +382,7 @@ fun StoreShortcutRow(
                     )
                 }
                 Spacer(Modifier.height(6.dp))
-                Text(text = entry.label, fontSize = 11.sp, color = Xc.colors.textSecondary)
+                Text(text = entry.label, fontSize = 12.sp, color = Xc.colors.textSecondary)
             }
         }
     }
@@ -512,7 +512,7 @@ fun StoreThemeCard(
                     if (subtitle.isNotEmpty()) {
                         Text(
                             text = subtitle,
-                            fontSize = 10.sp,
+                            fontSize = 12.sp,
                             color = Color.White.copy(alpha = 0.82f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -533,19 +533,19 @@ fun StoreThemeCard(
                 when (downloadState) {
                     is StoreDownloadState.Queued -> Text(
                         text = stringResource(R.string.store_download_queued),
-                        fontSize = 10.sp,
+                        fontSize = 12.sp,
                         color = Xc.colors.textMuted,
                     )
 
                     is StoreDownloadState.Failed -> Text(
                         text = stringResource(R.string.store_download_failed),
-                        fontSize = 10.sp,
+                        fontSize = 12.sp,
                         color = Xc.colors.danger,
                     )
 
                     is StoreDownloadState.Cancelled -> Text(
                         text = stringResource(R.string.store_download_cancelled),
-                        fontSize = 10.sp,
+                        fontSize = 12.sp,
                         color = Xc.colors.textMuted,
                     )
 
@@ -555,7 +555,7 @@ fun StoreThemeCard(
                         } else {
                             stringResource(R.string.themes_download)
                         },
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         color = Xc.colors.accent,
                         modifier = Modifier
@@ -619,7 +619,7 @@ fun StoreShelfCard(
                 stringResource(R.string.store_downloads_count, formatCount(theme.downloads))
                     .takeIf { theme.downloads > 0 },
             ).joinToString(" · "),
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             color = Xc.colors.textMuted,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -663,7 +663,7 @@ fun StoreRankRow(
                 ) {
                     Text(
                         text = rank.toString(),
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White,
                     )
@@ -671,7 +671,7 @@ fun StoreRankRow(
             } else {
                 Text(
                     text = rank.toString(),
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     color = Xc.colors.textMuted,
                 )
             }
@@ -695,7 +695,7 @@ fun StoreRankRow(
         ) {
             Text(
                 text = theme.name,
-                fontSize = 14.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
                 color = Xc.colors.text,
                 maxLines = 1,
@@ -706,7 +706,7 @@ fun StoreRankRow(
                     theme.author.takeIf { it.isNotEmpty() },
                     theme.tags.firstOrNull(),
                 ).joinToString(" · "),
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 color = Xc.colors.textMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -723,7 +723,7 @@ fun StoreRankRow(
                     )
                     Text(
                         text = String.format(java.util.Locale.US, "%.1f", theme.rating),
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         color = Xc.colors.textSecondary,
                     )
                 }
@@ -734,7 +734,7 @@ fun StoreRankRow(
                         R.string.store_downloads_count,
                         formatCount(theme.downloads),
                     ),
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     color = Xc.colors.textMuted,
                 )
             }
@@ -773,7 +773,7 @@ fun StoreProgressRing(progress: Int, diameter: Dp = 44.dp) {
         }
         Text(
             text = "$clamped%",
-            fontSize = 10.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             color = Color.White,
         )
@@ -894,7 +894,7 @@ fun StoreEmptyState(
         Spacer(Modifier.height(10.dp))
         Text(
             text = title,
-            fontSize = 14.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
             color = Xc.colors.textSecondary,
             textAlign = TextAlign.Center,
@@ -903,7 +903,7 @@ fun StoreEmptyState(
             Spacer(Modifier.height(4.dp))
             Text(
                 text = subtitle,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 color = Xc.colors.textMuted,
                 textAlign = TextAlign.Center,
             )
@@ -949,7 +949,7 @@ fun StoreErrorState(
         Spacer(Modifier.height(10.dp))
         Text(
             text = title,
-            fontSize = 14.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
             color = Xc.colors.textSecondary,
             textAlign = TextAlign.Center,
@@ -958,7 +958,7 @@ fun StoreErrorState(
             Spacer(Modifier.height(4.dp))
             Text(
                 text = detail,
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 color = Xc.colors.textMuted,
                 textAlign = TextAlign.Center,
                 maxLines = 3,
@@ -995,10 +995,10 @@ fun StoreMetaRow(label: String, value: String) {
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = label, fontSize = 12.sp, color = Xc.colors.textMuted, modifier = Modifier.width(84.dp))
+        Text(text = label, fontSize = 13.sp, color = Xc.colors.textMuted, modifier = Modifier.width(84.dp))
         Text(
             text = value,
-            fontSize = 12.sp,
+            fontSize = 13.sp,
             color = Xc.colors.textSecondary,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -1029,7 +1029,7 @@ fun StoreFavoriteButton(isFavorite: Boolean, onClick: () -> Unit) {
             text = stringResource(
                 if (isFavorite) R.string.store_action_saved else R.string.store_action_save
             ),
-            fontSize = 12.sp,
+            fontSize = 13.sp,
             color = if (isFavorite) Xc.colors.accent else Xc.colors.textSecondary,
         )
     }

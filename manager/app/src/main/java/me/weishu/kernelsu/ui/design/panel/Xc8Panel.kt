@@ -79,7 +79,7 @@ fun Xc8SectionLabel(
     ) {
         Text(
             text = text,
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 1.2.sp,
             color = Xc.colors.textMuted,
@@ -242,7 +242,7 @@ fun Xc8Value(text: String, modifier: Modifier = Modifier, tint: Color = Xc.color
     Text(
         text = text,
         modifier = modifier,
-        fontSize = 14.sp,
+        fontSize = 15.sp,
         color = tint,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -286,7 +286,7 @@ fun Xc8Tag(text: String, modifier: Modifier = Modifier, tone: Xc8Tone = Xc8Tone.
             .clip(Xc.shapes.xs)
             .background(background)
             .padding(horizontal = 7.dp, vertical = 2.dp),
-        fontSize = 11.sp,
+        fontSize = 12.sp,
         color = foreground,
         maxLines = 1,
     )
@@ -307,7 +307,7 @@ fun Xc8Note(text: String, modifier: Modifier = Modifier) {
     ) {
         Text(
             text = text,
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             lineHeight = 16.sp,
             color = Xc.colors.textMuted,
             modifier = Modifier.padding(start = RowPaddingH, end = RowPaddingH, top = 2.dp, bottom = 10.dp),
@@ -321,7 +321,7 @@ fun Xc8KeyValueCell(label: String, value: String, modifier: Modifier = Modifier)
     Column(modifier = modifier.padding(horizontal = RowPaddingH, vertical = 9.dp)) {
         Text(
             text = label,
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             color = Xc.colors.textMuted,
             maxLines = 1,
         )
@@ -420,12 +420,12 @@ fun Xc8PageHeading(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             if (kicker != null) {
-                Text(text = kicker, fontSize = 11.sp, color = Xc.colors.textMuted, maxLines = 1)
+                Text(text = kicker, fontSize = 12.sp, color = Xc.colors.textMuted, maxLines = 1)
                 Spacer(Modifier.height(2.dp))
             }
             Text(
                 text = title,
-                fontSize = 21.sp,
+                fontSize = 24.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Xc.colors.text,
                 maxLines = 1,
@@ -435,7 +435,7 @@ fun Xc8PageHeading(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = subtitle,
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     lineHeight = 17.sp,
                     color = Xc.colors.textSecondary,
                 )

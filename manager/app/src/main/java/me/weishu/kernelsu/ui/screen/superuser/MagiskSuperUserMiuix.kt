@@ -163,7 +163,7 @@ private fun HintCard(text: String) {
     ) {
         Text(
             text = text,
-            fontSize = 12.sp,
+            fontSize = 13.sp,
             color = colorScheme.onSurfaceVariantSummary,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
         )
@@ -192,7 +192,7 @@ private fun RouteCard(
             )
             Text(
                 text = stringResource(R.string.magisk_su_route_summary),
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 color = colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
@@ -211,14 +211,14 @@ private fun RouteCard(
                 // 先给原始错误文本（诊断信息），再按错误类型补一条可操作的说明。
                 Text(
                     text = error,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     color = colorScheme.error,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
                 if (error.contains(CLI_MISSING_MARKER)) {
                     Text(
                         text = stringResource(R.string.magisk_su_cli_missing),
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         color = colorScheme.onSurfaceVariantSummary,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     )
@@ -240,7 +240,7 @@ private fun RouteCard(
             )
             Text(
                 text = stringResource(R.string.magisk_su_sync_note),
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 color = colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
@@ -255,7 +255,7 @@ private fun RouteCard(
                 // 按钮会整块消失；这时必须说清去哪儿批准本管理器，否则这一页看起来就是坏的。
                 Text(
                     text = stringResource(R.string.magisk_su_hidden_note),
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     color = colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
@@ -280,7 +280,7 @@ private fun InfoRow(label: String, value: String) {
         )
         Text(
             text = value,
-            fontSize = 12.sp,
+            fontSize = 13.sp,
             color = colorScheme.onSurfaceVariantSummary,
         )
     }
@@ -302,7 +302,7 @@ private fun ToggleRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(text = title, fontSize = 13.sp, color = colorScheme.onSurface)
-            Text(text = summary, fontSize = 11.sp, color = colorScheme.onSurfaceVariantSummary)
+            Text(text = summary, fontSize = 12.sp, color = colorScheme.onSurfaceVariantSummary)
         }
         Switch(
             enabled = enabled,
@@ -388,7 +388,7 @@ private fun PolicyCard(
                     .padding(bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(text = stringResource(R.string.magisk_su_logging), fontSize = 12.sp)
+                Text(text = stringResource(R.string.magisk_su_logging), fontSize = 13.sp)
                 Spacer(Modifier.size(8.dp))
                 Switch(
                     enabled = enabled,
@@ -396,7 +396,7 @@ private fun PolicyCard(
                     onCheckedChange = { actions.onSetLogging(entry.uid, it) },
                 )
                 Spacer(Modifier.size(12.dp))
-                Text(text = stringResource(R.string.magisk_su_notification), fontSize = 12.sp)
+                Text(text = stringResource(R.string.magisk_su_notification), fontSize = 13.sp)
                 Spacer(Modifier.size(8.dp))
                 Switch(
                     enabled = enabled,

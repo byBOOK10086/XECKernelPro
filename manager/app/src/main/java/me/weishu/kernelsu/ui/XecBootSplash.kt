@@ -137,20 +137,20 @@ fun XecBootSplash(visible: Boolean) {
                 Text(
                     text = "XECKernelPro",
                     color = Xc.colors.text,
-                    fontSize = 20.sp,
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
                     text = "LIQUID HOME",
                     color = Xc.colors.textMuted,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                 )
             }
             Text(
                 text = "设备安全，第一眼可见",
                 color = Xc.colors.textMuted,
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 54.dp),

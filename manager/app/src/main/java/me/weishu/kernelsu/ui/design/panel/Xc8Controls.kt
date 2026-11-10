@@ -379,7 +379,7 @@ fun Xc8Badge(
     ) {
         Text(
             text = if (count > 99) "99+" else count.toString(),
-            fontSize = 10.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             color = Color.White,
             maxLines = 1,
@@ -413,14 +413,14 @@ fun Xc8TextField(
         keyboardOptions = keyboardOptions,
         textStyle = TextStyle(
             color = Xc.colors.text,
-            fontSize = 14.sp,
+            fontSize = 15.sp,
         ),
         cursorBrush = SolidColor(Xc.colors.accent),
         decorationBox = { inner ->
             if (value.isEmpty() && placeholder != null) {
                 Text(
                     text = placeholder,
-                    fontSize = 14.sp,
+                    fontSize = 15.sp,
                     color = Xc.colors.textMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -459,13 +459,13 @@ fun Xc8SearchBar(
             onValueChange = onQueryChange,
             modifier = Modifier.weight(1f),
             singleLine = true,
-            textStyle = TextStyle(color = Xc.colors.text, fontSize = 13.5.sp),
+            textStyle = TextStyle(color = Xc.colors.text, fontSize = 13.sp),
             cursorBrush = SolidColor(Xc.colors.accent),
             decorationBox = { inner ->
                 if (query.isEmpty() && placeholder != null) {
                     Text(
                         text = placeholder,
-                        fontSize = 13.5.sp,
+                        fontSize = 13.sp,
                         color = Xc.colors.textMuted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

@@ -107,7 +107,7 @@ fun Xc8Dialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 6.dp),
-                    fontSize = 17.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Medium,
                     color = Xc.colors.text,
                     textAlign = TextAlign.Center,

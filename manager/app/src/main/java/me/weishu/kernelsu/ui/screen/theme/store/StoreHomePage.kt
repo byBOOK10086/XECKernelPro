@@ -192,7 +192,7 @@ internal fun StoreFooter(state: StoreState, onRefresh: () -> Unit) {
                 } else {
                     stringResource(R.string.themes_source, source)
                 },
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 color = Xc.colors.textMuted,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
@@ -202,7 +202,7 @@ internal fun StoreFooter(state: StoreState, onRefresh: () -> Unit) {
         if (stamp.isNotEmpty()) {
             Text(
                 text = stringResource(R.string.store_updated_at, stamp),
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 color = Xc.colors.textMuted,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
@@ -211,7 +211,7 @@ internal fun StoreFooter(state: StoreState, onRefresh: () -> Unit) {
         if (state.fromCache) {
             Text(
                 text = stringResource(R.string.themes_offline),
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 color = Xc.colors.warning,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(top = 2.dp),

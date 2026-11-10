@@ -156,7 +156,7 @@ fun HideEnvListScreen() {
                             Spacer(Modifier.height(2.dp))
                             Text(
                                 text = stringResource(env.descRes),
-                                fontSize = 12.sp,
+                                fontSize = 13.sp,
                                 color = Xc.colors.textSecondary,
                             )
                         }
@@ -171,7 +171,7 @@ fun HideEnvListScreen() {
             horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = if (hiding) stringResource(R.string.hide_env_running) else (hideResult ?: ""),
-                fontSize = 14.sp, color = Xc.colors.text, textAlign = TextAlign.Center,
+                fontSize = 15.sp, color = Xc.colors.text, textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
             )
             if (!hiding) {

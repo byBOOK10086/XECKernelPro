@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.sp
  *  * **最高字重 600**，标题不再用 Bold；
  *  * **每个角色都带行高**，中文行高 = 字号 × 1.4–1.5；
  *  * 数字一律 `tnum`（等宽数字），右侧数值列才能竖着对齐；
- *  * 字号只许来自这里 —— 页面里不再出现裸 `fontSize = 14.sp`。
+ *  * 字号只许来自这里 —— 页面里不再出现裸 `fontSize = 15.sp`。
  *
  * 角色顺序即视觉层级，从大到小：
  * ```
@@ -114,7 +114,7 @@ val XcTypographyDefault = XcTypography(
         fontFeatureSettings = TABULAR,
     ),
     label = TextStyle(
-        fontSize = 12.sp,
+        fontSize = 13.sp,
         lineHeight = 16.sp,
         fontWeight = FontWeight.Medium,
         letterSpacing = 0.6.sp,

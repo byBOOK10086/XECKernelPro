@@ -208,7 +208,7 @@ fun AppProfileTemplateScreenMiuix(
             ) {
                 if (state.offline) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = stringResource(R.string.network_offline), color = colorScheme.onSurfaceVariantSummary, fontSize = 16.sp)
+                        Text(text = stringResource(R.string.network_offline), color = colorScheme.onSurfaceVariantSummary, fontSize = 15.sp)
                         Spacer(Modifier.height(12.dp))
                         TextButton(
                             modifier = Modifier
@@ -326,7 +326,7 @@ private fun TemplateItem(
             Text(
                 text = "${template.id}${if (template.author.isEmpty()) "" else " by @${template.author}"}",
                 modifier = Modifier.padding(top = 1.dp),
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight(550),
                 color = colorScheme.onSurfaceVariantSummary,
             )
@@ -335,7 +335,7 @@ private fun TemplateItem(
 
             Text(
                 text = template.description,
-                fontSize = 14.sp,
+                fontSize = 15.sp,
                 color = colorScheme.onSurfaceVariantSummary,
             )
 
@@ -377,7 +377,7 @@ private fun InfoChip(icon: ImageVector, text: String) {
         Text(
             modifier = Modifier.padding(start = 4.dp),
             text = text,
-            fontSize = 12.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight(550),
             color = colorScheme.onSurfaceSecondary
         )

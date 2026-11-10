@@ -79,7 +79,7 @@ fun StoreBrowsePage(state: StoreState, actions: StoreActions) {
         val items = state.browseItems
         Text(
             text = stringResource(R.string.store_result_count, items.size),
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             color = Xc.colors.textMuted,
             modifier = Modifier.padding(start = 16.dp, top = 2.dp, bottom = 2.dp),
         )

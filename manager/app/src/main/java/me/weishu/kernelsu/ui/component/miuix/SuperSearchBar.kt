@@ -262,7 +262,7 @@ fun SearchBar(
         singleLine = true,
         textStyle = TextStyle(
             fontWeight = FontWeight.Medium,
-            fontSize = 17.sp,
+            fontSize = 15.sp,
             color = colorScheme.onSurface
         ),
         cursorBrush = SolidColor(colorScheme.primary),

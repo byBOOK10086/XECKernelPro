@@ -177,7 +177,7 @@ fun IslandTopBar(
                             if (!islandLive.isNullOrEmpty()) {
                                 Text(
                                     text = islandLive,
-                                    fontSize = 10.sp,
+                                    fontSize = 12.sp,
                                     color = Color.White.copy(alpha = 0.66f),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -185,7 +185,7 @@ fun IslandTopBar(
                             } else {
                                 Text(
                                     text = " ",
-                                    fontSize = 10.sp,
+                                    fontSize = 12.sp,
                                 )
                             }
                         }

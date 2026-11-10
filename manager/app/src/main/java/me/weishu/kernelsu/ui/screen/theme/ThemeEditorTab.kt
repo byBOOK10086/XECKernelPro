@@ -396,7 +396,7 @@ private fun ModeBadgeCard(
             ?: Xc.colors.text
         Text(
             text = stringResource(R.string.theme_editor_badge_preview, badge?.prefix.orEmpty(), badge?.suffix.orEmpty()),
-            fontSize = 14.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
             color = previewColor,
             modifier = Modifier.padding(top = 10.dp),
@@ -548,7 +548,7 @@ private fun stepGlass(current: Float, direction: Int): Float {
 private fun StepRow(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(text = label, fontSize = 13.sp, color = Xc.colors.text, modifier = Modifier.weight(1f))
-        Text(text = value, fontSize = 12.sp, color = Xc.colors.textSecondary)
+        Text(text = value, fontSize = 13.sp, color = Xc.colors.textSecondary)
         TextButton(text = "-", onClick = onMinus)
         TextButton(text = "+", onClick = onPlus)
     }
@@ -588,7 +588,7 @@ private fun NeonCard(
                 )
                 MutedText(stringResource(R.string.theme_editor_neon_hint))
             }
-            Text(text = if (expanded) "-" else "+", fontSize = 16.sp, color = Xc.colors.textSecondary)
+            Text(text = if (expanded) "-" else "+", fontSize = 15.sp, color = Xc.colors.textSecondary)
         }
         if (expanded) {
             XC_NEON_TOKENS.forEach { token ->
@@ -881,7 +881,7 @@ private fun ColorPickerDialog(
             SwatchBox(color = preview, size = 30.dp)
             Text(
                 text = normalized ?: "",
-                fontSize = 12.sp, color = Xc.colors.textSecondary,
+                fontSize = 13.sp, color = Xc.colors.textSecondary,
                 modifier = Modifier.padding(start = 10.dp),
             )
         }
@@ -958,7 +958,7 @@ private fun ThemeCard(backdrop: LayerBackdrop?, content: @Composable () -> Unit)
 /** 小号说明文字。 */
 @Composable
 private fun MutedText(text: String, modifier: Modifier = Modifier) {
-    Text(text = text, fontSize = 11.sp, lineHeight = 15.sp, color = Xc.colors.textMuted, modifier = modifier)
+    Text(text = text, fontSize = 12.sp, lineHeight = 15.sp, color = Xc.colors.textMuted, modifier = modifier)
 }
 
 /**

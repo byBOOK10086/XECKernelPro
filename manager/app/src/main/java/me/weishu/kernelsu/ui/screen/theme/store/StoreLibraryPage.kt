@@ -99,7 +99,7 @@ private fun SourceEntry(state: StoreState, onClick: () -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.store_source_title),
-                    fontSize = 14.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Medium,
                     color = Xc.colors.text,
                 )
@@ -109,7 +109,7 @@ private fun SourceEntry(state: StoreState, onClick: () -> Unit) {
                     } else {
                         state.sourceUrl
                     },
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     color = Xc.colors.textMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -136,13 +136,13 @@ private fun SourceDialog(state: StoreState, actions: StoreActions) {
     ) {
         Text(
             text = stringResource(R.string.store_source_title),
-            fontSize = 16.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
             color = Xc.colors.text,
         )
         Text(
             text = stringResource(R.string.store_source_hint),
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             color = Xc.colors.textMuted,
             modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
         )
@@ -193,13 +193,13 @@ private fun PublishEntry(themeCount: Int, onClick: () -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.themes_publish_entry_title),
-                    fontSize = 14.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Medium,
                     color = Xc.colors.text,
                 )
                 Text(
                     text = stringResource(R.string.themes_publish_entry_summary, themeCount),
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     color = Xc.colors.textMuted,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -290,7 +290,7 @@ private fun DownloadRow(
         ) {
             Text(
                 text = theme.name,
-                fontSize = 14.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
                 color = Xc.colors.text,
                 maxLines = 1,
@@ -298,7 +298,7 @@ private fun DownloadRow(
             )
             Text(
                 text = downloadStateLabel(download),
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 color = when (download) {
                     is StoreDownloadState.Failed -> Xc.colors.danger
                     is StoreDownloadState.Installed -> Xc.colors.success

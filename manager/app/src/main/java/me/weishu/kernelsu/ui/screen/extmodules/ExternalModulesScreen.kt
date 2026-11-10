@@ -192,7 +192,7 @@ fun ExternalModulesScreen() {
             item {
                 Text(
                     text = stringResource(R.string.ext_modules_intro),
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     lineHeight = 17.sp,
                     color = colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
@@ -256,7 +256,7 @@ private fun InstallableModuleCard(
             Spacer(Modifier.height(8.dp))
             Text(
                 text = stringResource(module.sourceRes),
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 color = colorScheme.onSurfaceVariantSummary,
             )
             if (statusText != null) {
@@ -274,7 +274,7 @@ private fun InstallableModuleCard(
                     }
                     Text(
                         text = statusText,
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         color = statusColor,
                     )
                 }
@@ -313,7 +313,7 @@ private fun LinkOnlyModuleCard(
             Spacer(Modifier.height(8.dp))
             Text(
                 text = stringResource(module.sourceRes),
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 color = colorScheme.onSurfaceVariantSummary,
             )
             Spacer(Modifier.height(10.dp))
@@ -328,7 +328,7 @@ private fun LinkOnlyModuleCard(
             if (linkFailed) {
                 Text(
                     text = stringResource(R.string.ext_modules_no_browser),
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     color = colorScheme.error,
                     modifier = Modifier.padding(top = 6.dp),
                 )
@@ -342,7 +342,7 @@ private fun ModuleHeader(module: ExternalModule, installable: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = stringResource(module.titleRes),
-            fontSize = 17.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight(550),
             color = colorScheme.onSurface,
             modifier = Modifier.weight(1f),
@@ -351,7 +351,7 @@ private fun ModuleHeader(module: ExternalModule, installable: Boolean) {
             text = stringResource(
                 if (installable) R.string.ext_modules_kind_install else R.string.ext_modules_kind_link
             ),
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             color = if (installable) colorScheme.primary else colorScheme.onSurfaceVariantSummary,
             modifier = Modifier.padding(start = 8.dp),
         )

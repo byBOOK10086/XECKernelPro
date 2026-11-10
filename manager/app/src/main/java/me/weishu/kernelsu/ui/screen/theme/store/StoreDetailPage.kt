@@ -137,7 +137,7 @@ fun StoreDetailPage(state: StoreState, actions: StoreActions, themeId: String) {
             item(key = "meta-footer") {
                 Text(
                     text = stringResource(R.string.store_detail_checksum, theme.sha256.take(16)),
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     color = Xc.colors.textMuted,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -178,7 +178,7 @@ fun StoreDetailPage(state: StoreState, actions: StoreActions, themeId: String) {
                     pagerState.currentPage + 1,
                     images.size,
                 ),
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 color = Xc.colors.textMuted,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -256,7 +256,7 @@ private fun DetailHeader(theme: StoreTheme) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = theme.name,
-                fontSize = 20.sp,
+                fontSize = 24.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Xc.colors.text,
                 maxLines = 2,
@@ -300,7 +300,7 @@ private fun DetailHeader(theme: StoreTheme) {
         if (subtitle.isNotEmpty()) {
             Text(
                 text = subtitle,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 color = Xc.colors.textMuted,
                 modifier = Modifier.padding(top = 4.dp),
             )
@@ -321,7 +321,7 @@ private fun DetailHeader(theme: StoreTheme) {
             }
             Text(
                 text = listOf(downloadText, ratingText).filter { it.isNotEmpty() }.joinToString(" · "),
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 color = Xc.colors.textMuted,
                 modifier = Modifier.padding(top = 2.dp),
             )
@@ -387,13 +387,13 @@ private fun DetailText(
     ) {
         Text(
             text = title,
-            fontSize = 14.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
             color = Xc.colors.text,
         )
         Text(
             text = body,
-            fontSize = 12.sp,
+            fontSize = 13.sp,
             color = Xc.colors.textSecondary,
             maxLines = if (expanded) Int.MAX_VALUE else 3,
             overflow = TextOverflow.Ellipsis,
@@ -404,7 +404,7 @@ private fun DetailText(
                 text = stringResource(
                     if (expanded) R.string.store_detail_collapse else R.string.store_detail_expand
                 ),
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 color = Xc.colors.accent,
                 modifier = Modifier
                     .padding(top = 4.dp)

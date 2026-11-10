@@ -201,7 +201,7 @@ fun Xc8Segmented(
                     .padding(horizontal = 10.dp, vertical = 4.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(text = option, fontSize = 11.5.sp, color = foreground, maxLines = 1)
+                Text(text = option, fontSize = 12.sp, color = foreground, maxLines = 1)
             }
         }
     }

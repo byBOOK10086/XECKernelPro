@@ -99,7 +99,7 @@ fun XecScoreCard(
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = "/ 100",
-                    fontSize = 14.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Xc.colors.textMuted,
                     modifier = Modifier.padding(bottom = 9.dp),
@@ -113,7 +113,7 @@ fun XecScoreCard(
                 } else {
                     "$passed / $total 项通过，点开看明细"
                 },
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 color = Xc.colors.textSecondary,
                 modifier = Modifier.padding(top = 9.dp),
             )
@@ -188,7 +188,7 @@ private fun RankBadge(rank: String, healthy: Boolean) {
     ) {
         Text(
             text = "$rank 级",
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 0.5.sp,
             color = tint,
@@ -206,13 +206,13 @@ private fun ScoreMetric(label: String, value: String) {
     ) {
         Text(
             text = label,
-            fontSize = 11.5.sp,
+            fontSize = 12.sp,
             color = Xc.colors.textSecondary,
             modifier = Modifier.weight(1f),
         )
         Text(
             text = value,
-            fontSize = 11.5.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             color = Xc.colors.text,
         )

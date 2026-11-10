@@ -395,7 +395,7 @@ private fun SelectInstallMethod(
         state.rootModeTip?.let { tip ->
             Text(
                 text = tip,
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 color = colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(bottom = 6.dp),
             )

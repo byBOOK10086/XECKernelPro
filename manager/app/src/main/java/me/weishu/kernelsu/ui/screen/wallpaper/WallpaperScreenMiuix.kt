@@ -191,14 +191,14 @@ fun WallpaperScreenMiuix(
                         Column(modifier = Modifier.padding(14.dp)) {
                             Text(
                                 text = stringResource(R.string.wallpaper_note_title),
-                                fontSize = 14.sp,
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = Xc.colors.text,
                             )
                             Spacer(Modifier.height(6.dp))
                             Text(
                                 text = stringResource(R.string.wallpaper_note),
-                                fontSize = 12.sp,
+                                fontSize = 13.sp,
                                 lineHeight = 18.sp,
                                 color = Xc.colors.textSecondary,
                             )
@@ -281,7 +281,7 @@ private fun WallpaperSlotCard(
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = summary,
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         color = Xc.colors.textSecondary,
                     )
                 }
@@ -378,7 +378,7 @@ private fun WallpaperThumbnail(name: String) {
             } else {
                 Text(
                     text = stringResource(R.string.wallpaper_builtin_short),
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     color = Xc.colors.textMuted,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 4.dp),
@@ -422,7 +422,7 @@ private fun WallpaperBlurCard(
                     )
                     Text(
                         text = stringResource(R.string.wallpaper_blur_summary),
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         lineHeight = 18.sp,
                         color = Xc.colors.textSecondary,
                     )

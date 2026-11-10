@@ -168,7 +168,7 @@ fun FlashScreenMiuix(
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                         text = state.text,
                         color = Xc.colors.text,
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         fontFamily = FontFamily.Monospace,
                     )
                     Spacer(

@@ -490,7 +490,7 @@ private fun SulogEntryCard(
                 sulogEntryDescription(entry)?.let {
                     Text(
                         text = it,
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         color = colorScheme.onSurfaceVariantSummary,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -500,7 +500,7 @@ private fun SulogEntryCard(
                     Text(
                         text = it,
                         modifier = Modifier.basicMarquee(),
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight(550),
                         color = colorScheme.onSurfaceVariantSummary,
                         maxLines = 1,
@@ -523,7 +523,7 @@ private fun SulogEntryCard(
                 Text(
                     text = it,
                     color = colorScheme.onSurfaceVariantActions,
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight(550),
                     maxLines = 1,
                     softWrap = false,
@@ -558,14 +558,14 @@ private fun SulogMessageCard(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = title,
-                fontSize = 17.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight(550),
                 color = colorScheme.onSurfaceVariantSummary,
             )
             if (summary != null) {
                 Text(
                     text = summary,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     color = colorScheme.onSurfaceVariantSummary,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
@@ -597,7 +597,7 @@ private fun SulogDetailDialog(
             ) {
                 Text(
                     text = sulogEntryDetailText(displayEntry),
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     fontFamily = FontFamily.Monospace,
                 )
             }

@@ -188,7 +188,7 @@ private fun EmptyHint() {
     ) {
         Text(
             text = stringResource(R.string.themes_empty),
-            fontSize = 14.sp,
+            fontSize = 15.sp,
             color = Xc.colors.textMuted,
         )
     }
@@ -234,13 +234,13 @@ private fun ThemeEntryCard(
                     if (spec.author.isNotEmpty()) {
                         Text(
                             text = stringResource(R.string.themes_by, spec.author),
-                            fontSize = 12.sp,
+                            fontSize = 13.sp,
                             color = Xc.colors.textSecondary,
                         )
                     }
                     Text(
                         text = "v" + spec.version,
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         color = Xc.colors.textMuted,
                     )
                     // 三个色块就是这张卡片的"外观摘要"：深色强调色 / 深色底 / 浅色底。

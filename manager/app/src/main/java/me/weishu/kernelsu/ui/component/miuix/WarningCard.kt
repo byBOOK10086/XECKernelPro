@@ -69,7 +69,7 @@ fun WarningCard(
         ) {
             Text(
                 text = message,
-                fontSize = 14.sp
+                fontSize = 15.sp
             )
             action?.invoke()
         }

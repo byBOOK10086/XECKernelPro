@@ -93,7 +93,7 @@ fun StoreSearchPage(state: StoreState, actions: StoreActions) {
                 item(key = "search-count") {
                     Text(
                         text = stringResource(R.string.store_result_count, state.searchResults.size),
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         color = Xc.colors.textMuted,
                         modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 4.dp),
                     )

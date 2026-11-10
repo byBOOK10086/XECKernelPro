@@ -277,7 +277,7 @@ private fun SuperkeyDialog(onDismiss: () -> Unit) {
             )
             Text(
                 text = stringResource(R.string.superkey_dialog_hint),
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 lineHeight = 17.sp,
                 color = colorScheme.onSurfaceVariantSummary,
             )
@@ -307,13 +307,13 @@ private fun SuperkeyDialog(onDismiss: () -> Unit) {
                 Spacer(Modifier.weight(1f))
             }
             message?.let {
-                Text(it, fontSize = 12.sp, color = colorScheme.onSurfaceVariantSummary,
+                Text(it, fontSize = 13.sp, color = colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(vertical = 4.dp))
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(R.string.superkey_arm_guard),
-                    fontSize = 14.sp,
+                    fontSize = 15.sp,
                     modifier = Modifier.weight(1f),
                 )
                 Switch(

@@ -183,7 +183,7 @@ fun ModeBadge(
         }
         Text(
             text = "${style.prefix}$keyword${style.suffix}",
-            fontSize = 16.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
             fontFamily = font,
             color = color ?: Color.Unspecified,

@@ -224,7 +224,7 @@ fun ModuleActionSheet(
                         Text(
                             text = data.name,
                             color = neon.textMain,
-                            fontSize = 20.sp,
+                            fontSize = 24.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 2,
                         )
@@ -243,13 +243,13 @@ fun ModuleActionSheet(
                         Text(
                             text = stringResource(R.string.module_description),
                             color = neon.textSub,
-                            fontSize = 14.sp,
+                            fontSize = 15.sp,
                             modifier = Modifier.padding(bottom = 8.dp),
                         )
                         Text(
                             text = data.description,
                             color = neon.textMain,
-                            fontSize = 14.sp,
+                            fontSize = 15.sp,
                             lineHeight = 22.sp, // leading-relaxed ≈ 1.625 × 14
                         )
                         Spacer(Modifier.height(12.dp))
@@ -261,7 +261,7 @@ fun ModuleActionSheet(
                             Text(
                                 text = stringResource(R.string.module_update_url),
                                 color = neon.textSub,
-                                fontSize = 14.sp,
+                                fontSize = 15.sp,
                                 modifier = Modifier.padding(bottom = 8.dp),
                             )
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -274,7 +274,7 @@ fun ModuleActionSheet(
                                 Text(
                                     text = displayedUpdateUrl,
                                     color = neon.accentCyan,
-                                    fontSize = 14.sp,
+                                    fontSize = 15.sp,
                                     modifier = Modifier.padding(start = 4.dp),
                                 )
                             }
@@ -333,7 +333,7 @@ fun ModuleActionSheet(
                     Text(
                         text = stringResource(R.string.module_sheet_capability_hint),
                         color = neon.textSub.copy(alpha = 0.50f),
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -341,7 +341,7 @@ fun ModuleActionSheet(
                         Text(
                             text = stringResource(R.string.module_sheet_background_clear_hint),
                             color = neon.textSub.copy(alpha = 0.50f),
-                            fontSize = 11.sp,
+                            fontSize = 12.sp,
                             textAlign = TextAlign.Center,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -362,13 +362,13 @@ private fun DetailRow(label: String, value: String) {
         Text(
             text = label,
             color = neon.textSub,
-            fontSize = 14.sp,
+            fontSize = 15.sp,
         )
         Spacer(Modifier.width(16.dp))
         Text(
             text = value,
             color = neon.textMain,
-            fontSize = 14.sp,
+            fontSize = 15.sp,
             textAlign = TextAlign.End,
             modifier = Modifier.weight(1f),
         )
@@ -470,7 +470,7 @@ private fun RowScope.SheetActionButton(
         Text(
             text = label,
             color = dim(neon.textMain),
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             maxLines = 1,
             textAlign = TextAlign.Center,
         )

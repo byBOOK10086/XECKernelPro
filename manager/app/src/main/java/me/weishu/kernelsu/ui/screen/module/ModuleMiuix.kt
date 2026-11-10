@@ -980,7 +980,7 @@ fun ModuleItem(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = module.name,
-                    fontSize = 18.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = neon.textMain,
                     textDecoration = textDecoration,
@@ -991,7 +991,7 @@ fun ModuleItem(
                 if (module.metamodule) {
                     Text(
                         text = "META",
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         color = neon.metaText,
                         fontWeight = FontWeight(750),
                         modifier = Modifier
@@ -1029,7 +1029,7 @@ fun ModuleItem(
 
             Text(
                 text = "${stringResource(R.string.module_version)}: ${module.version} · ${stringResource(R.string.module_author)}: ${module.author}",
-                fontSize = 14.sp,
+                fontSize = 13.sp,
                 modifier = Modifier.padding(top = 4.dp),
                 color = neon.textSub,
                 textDecoration = textDecoration,
@@ -1038,7 +1038,7 @@ fun ModuleItem(
             if (hasDescription) {
                 Text(
                     text = module.description,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     modifier = Modifier.padding(top = 12.dp),
                     color = neon.textSub,
                     lineHeight = 22.sp,
@@ -1184,13 +1184,13 @@ private fun ModuleEntryCard(
             Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
                 Text(
                     text = title,
-                    fontSize = 16.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = neon.textMain,
                 )
                 Text(
                     text = subtitle,
-                    fontSize = 11.sp,
+                    fontSize = 13.sp,
                     color = neon.textSub,
                 )
             }

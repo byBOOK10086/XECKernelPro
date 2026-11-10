@@ -162,7 +162,7 @@ fun HomeModeCard(
         ) {
             Text(
                 text = stringResource(R.string.home8_mode_label),
-                fontSize = 11.5.sp,
+                fontSize = 12.sp,
                 color = Xc.colors.textMuted,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
@@ -180,7 +180,7 @@ fun HomeModeCard(
                     } else {
                         stringResource(R.string.home8_expand)
                     },
-                    fontSize = 11.5.sp,
+                    fontSize = 12.sp,
                     color = Xc.colors.textSecondary,
                     maxLines = 1,
                 )
@@ -253,14 +253,14 @@ fun HomeModeCard(
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = title,
-                    fontSize = 16.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Xc.colors.text,
                     maxLines = 1,
                 )
                 Text(
                     text = description,
-                    fontSize = 12.5.sp,
+                    fontSize = 13.sp,
                     lineHeight = 17.sp,
                     color = Xc.colors.textSecondary,
                 )
@@ -286,7 +286,7 @@ fun HomeModeCard(
                     } else {
                         stringResource(R.string.home8_inactive)
                     },
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     color = if (active) Xc.colors.onSuccessTint else Xc.colors.textSecondary,
                     maxLines = 1,
                 )

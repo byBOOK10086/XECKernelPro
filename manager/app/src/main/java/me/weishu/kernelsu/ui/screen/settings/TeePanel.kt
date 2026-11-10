@@ -186,7 +186,7 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
                 Text(
                     "工具箱 · TEE 证明链",
                     color = Xc.colors.textMuted,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     letterSpacing = 1.sp,
                     modifier = Modifier.padding(top = 4.dp),
                 )
@@ -246,7 +246,7 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
                     Text(
                         node.label,
                         color = Xc.colors.textMuted,
-                        fontSize = 10.sp,
+                        fontSize = 12.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 7.dp),
@@ -254,7 +254,7 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
                     Text(
                         node.value,
                         color = if (node.state == S.Bad) Xc.colors.danger else Xc.colors.text,
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -292,14 +292,14 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
                         Text(
                             stat.unit,
                             color = Xc.colors.textMuted,
-                            fontSize = 11.sp,
+                            fontSize = 12.sp,
                             modifier = Modifier.padding(start = 2.dp, bottom = 3.dp),
                         )
                     }
                     Text(
                         stat.label,
                         color = Xc.colors.textMuted,
-                        fontSize = 10.sp,
+                        fontSize = 12.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 3.dp),
@@ -324,7 +324,7 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
                 if (view.tiles.count { it.state == S.Bad } == 0) "全部通过" else
                     "${view.tiles.count { it.state == S.Bad }} 项异常",
                 color = Xc.colors.textMuted,
-                fontSize = 10.sp,
+                fontSize = 12.sp,
             )
         }
         Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -355,11 +355,11 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
                     else -> "再修一次 · 装引擎并立即启动"
                 },
                 color = Color.White,
-                fontSize = 14.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f),
             )
-            Text("→", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("→", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         }
 
         // ---------------------------------------------------------------- 流水线
@@ -378,7 +378,7 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
                 Text(
                     "${repairSteps.size} 步 · ${repairSteps.count { !it.ok }} 步失败",
                     color = if (repairSteps.any { !it.ok }) Xc.colors.danger else Xc.colors.success,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                 )
             }
             Column(Modifier.padding(top = 8.dp)) {
@@ -405,7 +405,7 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
                             Text(
                                 step.label,
                                 color = Xc.colors.text,
-                                fontSize = 12.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -413,7 +413,7 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
                             Text(
                                 step.detail,
                                 color = Xc.colors.textMuted,
-                                fontSize = 10.sp,
+                                fontSize = 12.sp,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.padding(top = 2.dp),
@@ -422,7 +422,7 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
                         Text(
                             if (step.ok) "完成" else "失败",
                             color = if (step.ok) Xc.colors.success else Xc.colors.danger,
-                            fontSize = 10.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
@@ -441,14 +441,14 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
             Text(
                 if (detailsOpen) "收起详情与操作" else "展开详情与操作",
                 color = Xc.colors.accent,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.weight(1f),
             )
             Text(
                 if (detailsOpen) "︿" else "﹀",
                 color = Xc.colors.accent,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
             )
         }
 
@@ -470,7 +470,7 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
             Text(
                 text = it,
                 color = Xc.colors.textMuted,
-                fontSize = 10.sp,
+                fontSize = 12.sp,
                 modifier = Modifier.padding(top = 10.dp, start = 2.dp, end = 2.dp),
             )
         }
@@ -552,11 +552,11 @@ private fun TeeDetails(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text("远程配置优先", color = Xc.colors.text, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Text("远程配置优先", color = Xc.colors.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                 Text(
                     "每次开机把安全补丁钉成每 2 小时、keybox 自动拉取",
                     color = Xc.colors.textMuted,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
@@ -632,7 +632,7 @@ private fun TeeDetails(
             "说明：属性（verifiedbootstate 等）可以被 resetprop 改，但检测方看的是 keystore " +
                 "现场签的那份证明 —— 所以这一页以「引擎 + keybox + 注入」三项为准。",
             color = Xc.colors.textMuted,
-            fontSize = 10.sp,
+            fontSize = 12.sp,
             lineHeight = 15.sp,
         )
     }
@@ -644,13 +644,13 @@ private fun TeeDetailLine(label: String, value: String) {
         Text(
             label,
             color = Xc.colors.textMuted,
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             modifier = Modifier.width(96.dp),
         )
         Text(
             value,
             color = Xc.colors.text,
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             modifier = Modifier.weight(1f),
         )
     }
@@ -676,19 +676,19 @@ private fun TeeActionRow(
             Text(
                 title,
                 color = if (danger) Xc.colors.danger else Xc.colors.text,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
             )
             Text(
                 subtitle,
                 color = Xc.colors.textMuted,
-                fontSize = 10.sp,
+                fontSize = 12.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 2.dp),
             )
         }
-        Text("›", color = Xc.colors.textMuted, fontSize = 14.sp)
+        Text("›", color = Xc.colors.textMuted, fontSize = 15.sp)
     }
 }
 
@@ -804,7 +804,7 @@ private fun TeeTileBox(tile: TeeTile, modifier: Modifier = Modifier) {
         Text(
             tile.name,
             color = Xc.colors.textSecondary,
-            fontSize = 10.sp,
+            fontSize = 12.sp,
             modifier = Modifier.weight(1f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -812,7 +812,7 @@ private fun TeeTileBox(tile: TeeTile, modifier: Modifier = Modifier) {
         Text(
             tile.value,
             color = color,
-            fontSize = 10.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
         )

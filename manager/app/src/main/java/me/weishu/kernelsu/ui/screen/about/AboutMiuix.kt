@@ -384,7 +384,7 @@ private fun AboutContent(
                     },
                 color = colorScheme.onSurfaceVariantSummary,
                 text = state.versionName,
-                fontSize = 14.sp,
+                fontSize = 15.sp,
                 textAlign = TextAlign.Center,
             )
         }

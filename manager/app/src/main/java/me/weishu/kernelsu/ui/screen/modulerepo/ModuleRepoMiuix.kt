@@ -359,14 +359,14 @@ fun ModuleRepoScreenMiuix(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             text = module.moduleName,
-                                            fontSize = 17.sp,
+                                            fontSize = 15.sp,
                                             fontWeight = FontWeight(550),
                                             color = colorScheme.onSurface
                                         )
                                         if (module.metamodule) {
                                             Text(
                                                 text = "META",
-                                                fontSize = 12.sp,
+                                                fontSize = 13.sp,
                                                 color = metaTint,
                                                 modifier = Modifier
                                                     .padding(start = 6.dp)
@@ -388,7 +388,7 @@ fun ModuleRepoScreenMiuix(
                                                 )
                                                 Text(
                                                     text = module.stargazerCount.toString(),
-                                                    fontSize = 12.sp,
+                                                    fontSize = 13.sp,
                                                     color = colorScheme.onSurfaceVariantSummary,
                                                     modifier = Modifier.padding(start = 4.dp)
                                                 )
@@ -399,14 +399,14 @@ fun ModuleRepoScreenMiuix(
                                 if (module.moduleId.isNotEmpty()) {
                                     Text(
                                         text = "ID: ${module.moduleId}",
-                                        fontSize = 12.sp,
+                                        fontSize = 13.sp,
                                         fontWeight = FontWeight(550),
                                         color = colorScheme.onSurfaceVariantSummary,
                                     )
                                 }
                                 Text(
                                     text = "${stringResource(id = R.string.module_author)}: ${module.authors}",
-                                    fontSize = 12.sp,
+                                    fontSize = 13.sp,
                                     modifier = Modifier.padding(bottom = 1.dp),
                                     fontWeight = FontWeight(550),
                                     color = colorScheme.onSurfaceVariantSummary,
@@ -414,7 +414,7 @@ fun ModuleRepoScreenMiuix(
                                 if (module.summary.isNotEmpty()) {
                                     Text(
                                         text = module.summary,
-                                        fontSize = 14.sp,
+                                        fontSize = 15.sp,
                                         color = colorScheme.onSurfaceVariantSummary,
                                         modifier = Modifier.padding(top = 2.dp),
                                         overflow = TextOverflow.Ellipsis,
@@ -485,7 +485,7 @@ fun ModuleRepoScreenMiuix(
                                 Text(
                                     text = stringResource(R.string.network_offline),
                                     color = colorScheme.onSurfaceVariantSummary,
-                                    fontSize = 16.sp
+                                    fontSize = 15.sp
                                 )
                                 Spacer(Modifier.height(12.dp))
                                 TextButton(
@@ -530,7 +530,7 @@ fun ModuleRepoScreenMiuix(
                                     } else {
                                         stringResource(R.string.module_repos_source_current, sourceHost)
                                     },
-                                    fontSize = 12.sp,
+                                    fontSize = 13.sp,
                                     color = colorScheme.onSurfaceVariantSummary,
                                     modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp),
                                 )
@@ -553,14 +553,14 @@ fun ModuleRepoScreenMiuix(
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Text(
                                                     text = module.moduleName,
-                                                    fontSize = 17.sp,
+                                                    fontSize = 15.sp,
                                                     fontWeight = FontWeight(550),
                                                     color = colorScheme.onSurface
                                                 )
                                                 if (module.metamodule) {
                                                     Text(
                                                         text = "META",
-                                                        fontSize = 12.sp,
+                                                        fontSize = 13.sp,
                                                         color = metaTint,
                                                         modifier = Modifier
                                                             .padding(start = 6.dp)
@@ -576,14 +576,14 @@ fun ModuleRepoScreenMiuix(
                                         if (module.moduleId.isNotEmpty()) {
                                             Text(
                                                 text = "ID: ${module.moduleId}",
-                                                fontSize = 12.sp,
+                                                fontSize = 13.sp,
                                                 fontWeight = FontWeight(550),
                                                 color = colorScheme.onSurfaceVariantSummary,
                                             )
                                         }
                                         Text(
                                             text = "$moduleAuthor: ${module.authors}",
-                                            fontSize = 12.sp,
+                                            fontSize = 13.sp,
                                             modifier = Modifier.padding(bottom = 1.dp),
                                             fontWeight = FontWeight(550),
                                             color = colorScheme.onSurfaceVariantSummary,
@@ -591,7 +591,7 @@ fun ModuleRepoScreenMiuix(
                                         if (module.summary.isNotEmpty()) {
                                             Text(
                                                 text = module.summary,
-                                                fontSize = 14.sp,
+                                                fontSize = 15.sp,
                                                 color = colorScheme.onSurfaceVariantSummary,
                                                 modifier = Modifier.padding(top = 2.dp),
                                                 overflow = TextOverflow.Ellipsis,
@@ -618,7 +618,7 @@ fun ModuleRepoScreenMiuix(
                                                         )
                                                         Text(
                                                             text = module.stargazerCount.toString(),
-                                                            fontSize = 12.sp,
+                                                            fontSize = 13.sp,
                                                             color = colorScheme.onSurfaceVariantSummary,
                                                             modifier = Modifier.padding(start = 4.dp)
                                                         )
@@ -628,7 +628,7 @@ fun ModuleRepoScreenMiuix(
                                                 if (module.latestReleaseTime.isNotEmpty()) {
                                                     Text(
                                                         text = module.latestReleaseTime,
-                                                        fontSize = 12.sp,
+                                                        fontSize = 13.sp,
                                                         color = colorScheme.onSurfaceVariantSummary,
                                                         textAlign = TextAlign.End
                                                     )
@@ -717,7 +717,7 @@ private fun ReadmePage(
                     ) {
                         Text(
                             text = stringResource(R.string.module_repos_detail_no_readme),
-                            fontSize = 14.sp,
+                            fontSize = 15.sp,
                             color = colorScheme.onSurfaceVariantSummary,
                         )
                     }
@@ -779,7 +779,7 @@ fun ReleasesPage(
                     ) {
                         Text(
                             text = stringResource(R.string.module_repos_detail_no_release),
-                            fontSize = 14.sp,
+                            fontSize = 15.sp,
                             color = colorScheme.onSurfaceVariantSummary,
                         )
                     }
@@ -809,11 +809,11 @@ fun ReleasesPage(
                                         .weight(1f)
                                 ) {
                                     Text(
-                                        text = title, fontSize = 17.sp, fontWeight = FontWeight(550), color = colorScheme.onSurface
+                                        text = title, fontSize = 15.sp, fontWeight = FontWeight(550), color = colorScheme.onSurface
                                     )
                                     Text(
                                         text = rel.tagName,
-                                        fontSize = 12.sp,
+                                        fontSize = 13.sp,
                                         fontWeight = FontWeight(550),
                                         color = colorScheme.onSurfaceVariantSummary,
                                         modifier = Modifier.padding(top = 2.dp)
@@ -821,7 +821,7 @@ fun ReleasesPage(
                                 }
                                 Text(
                                     text = rel.publishedAt,
-                                    fontSize = 12.sp,
+                                    fontSize = 13.sp,
                                     color = colorScheme.onSurfaceVariantSummary,
                                     modifier = Modifier
                                         .padding(start = 16.dp, end = 16.dp, top = 16.dp)
@@ -963,11 +963,11 @@ fun ReleasesPage(
                                                     .weight(1f)
                                             ) {
                                                 Text(
-                                                    text = fileName, fontSize = 14.sp, color = colorScheme.onSurface
+                                                    text = fileName, fontSize = 15.sp, color = colorScheme.onSurface
                                                 )
                                                 Text(
                                                     text = sizeAndDownloads,
-                                                    fontSize = 12.sp,
+                                                    fontSize = 13.sp,
                                                     color = colorScheme.onSurfaceVariantSummary,
                                                     modifier = Modifier.padding(top = 2.dp)
                                                 )
@@ -1106,7 +1106,7 @@ fun InfoPage(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Text(
-                                        text = author.name, fontSize = 14.sp, color = colorScheme.onSurface, modifier = Modifier.weight(1f)
+                                        text = author.name, fontSize = 15.sp, color = colorScheme.onSurface, modifier = Modifier.weight(1f)
                                     )
                                     val clickable = author.link.isNotEmpty()
                                     val tint = if (clickable) actionIconTint else actionIconTint.copy(alpha = 0.35f)
@@ -1162,7 +1162,7 @@ fun InfoPage(
                         ) {
                             Text(
                                 text = sourceUrl,
-                                fontSize = 16.sp,
+                                fontSize = 15.sp,
                                 color = colorScheme.onSurface,
                                 modifier = Modifier.weight(1f),
                                 maxLines = 1,

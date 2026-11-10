@@ -186,7 +186,7 @@ fun ThemeScreenMiuix(
         if (state.mine.isEmpty()) {
             Text(
                 text = stringResource(R.string.themes_publish_picker_empty),
-                fontSize = 14.sp,
+                fontSize = 15.sp,
                 lineHeight = 20.sp,
                 color = Xc.colors.textSecondary,
                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp),
@@ -218,7 +218,7 @@ fun ThemeScreenMiuix(
                             Text(
                                 // 版本与 id 一起显示：重名主题靠 id 区分，用户提交 issue 时也要填它。
                                 text = "v" + entry.spec.version + "  ·  " + entry.spec.id,
-                                fontSize = 12.sp,
+                                fontSize = 13.sp,
                                 color = Xc.colors.textMuted,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -258,7 +258,7 @@ fun ThemeScreenMiuix(
         Column(Modifier.padding(horizontal = 18.dp, vertical = 6.dp)) {
             Text(
                 text = publishLink.orEmpty(),
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 color = Xc.colors.textSecondary,
             )
         }

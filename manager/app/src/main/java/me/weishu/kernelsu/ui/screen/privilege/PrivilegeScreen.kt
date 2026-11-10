@@ -350,7 +350,7 @@ private fun DeviceCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(R.string.privilege_device),
-                    fontSize = 16.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
@@ -360,7 +360,7 @@ private fun DeviceCard(
                         text = stringResource(
                             if (supported) R.string.privilege_supported else R.string.privilege_unsupported
                         ),
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                         color = if (supported) Color(0xFF4CAF50) else Color(0xFFFFB300),
                     )
@@ -381,7 +381,7 @@ private fun DeviceCard(
                             R.string.privilege_probing_root
                         }
                     ),
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     lineHeight = 18.sp,
                     color = colorScheme.onSurfaceVariantSummary,
                 )
@@ -417,7 +417,7 @@ private fun RiskCard() {
     ) {
         Text(
             text = stringResource(R.string.privilege_risk_warning),
-            fontSize = 12.sp,
+            fontSize = 13.sp,
             lineHeight = 18.sp,
             color = colorScheme.onSurfaceVariantSummary,
             modifier = Modifier.padding(16.dp),
@@ -468,7 +468,7 @@ private fun CpuPairCard(
                     ) {
                         Text(
                             text = label,
-                            fontSize = 12.sp,
+                            fontSize = 13.sp,
                             color = if (isSelected) colorScheme.primary else colorScheme.onSurfaceVariantSummary,
                         )
                     }
@@ -523,7 +523,7 @@ private fun RunCard(
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = stringResource(R.string.privilege_unsupported_hint),
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     lineHeight = 18.sp,
                     color = colorScheme.onSurfaceVariantSummary,
                     textAlign = TextAlign.Center,
@@ -564,7 +564,7 @@ private fun LogCard(lines: List<String>) {
                 Text(
                     text = if (lines.isEmpty()) "—" else lines.joinToString("\n"),
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     lineHeight = 14.sp,
                     color = Color(0xFF9BE8B0),
                 )
@@ -619,7 +619,7 @@ private fun ManualCard(
             if (importedNames.isNotEmpty()) {
                 Text(
                     text = stringResource(R.string.privilege_imported, importedNames.size),
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     color = colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(top = 8.dp),
                 )
@@ -630,7 +630,7 @@ private fun ManualCard(
                     ) {
                         Text(
                             text = name,
-                            fontSize = 12.sp,
+                            fontSize = 13.sp,
                             color = colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -638,7 +638,7 @@ private fun ManualCard(
                         )
                         Text(
                             text = stringResource(R.string.privilege_delete),
-                            fontSize = 12.sp,
+                            fontSize = 13.sp,
                             color = Color(0xFFEF5350),
                             modifier = Modifier.clickable(
                                 interactionSource = remember { MutableInteractionSource() },
@@ -652,7 +652,7 @@ private fun ManualCard(
             Spacer(Modifier.height(6.dp))
             Text(
                 text = stringResource(R.string.privilege_open_upstream),
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 color = colorScheme.primary,
                 modifier = Modifier.clickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -706,7 +706,7 @@ private fun BootloaderCard(state: BootlockStatus.State) {
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = stringResource(R.string.bl_card_title),
-                    fontSize = 16.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
@@ -719,14 +719,14 @@ private fun BootloaderCard(state: BootlockStatus.State) {
                             else -> R.string.bl_state_unknown
                         }
                     ),
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = if (state.locked == false) Color(0xFF4CAF50) else Color(0xFFFFB300),
                 )
             }
             Text(
                 text = state.source,
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 color = colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(top = 4.dp),
             )
@@ -746,14 +746,14 @@ private fun BootloaderCard(state: BootlockStatus.State) {
                             UnlockChannels.Availability.CLOSED -> R.string.bl_avail_closed
                         }
                     ),
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     color = colorScheme.onSurfaceVariantSummary,
                 )
             }
             if (state.locked != false) {
                 Text(
                     text = stringResource(R.string.permanent_needs_unlock),
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     lineHeight = 18.sp,
                     color = colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(top = 8.dp),
@@ -762,7 +762,7 @@ private fun BootloaderCard(state: BootlockStatus.State) {
             if (channel.url != null) {
                 Text(
                     text = stringResource(R.string.bl_open_link),
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     color = colorScheme.primary,
                     modifier = Modifier
                         .padding(top = 8.dp)
@@ -808,13 +808,13 @@ private fun PermanentCard(
         Column(Modifier.padding(16.dp)) {
             Text(
                 text = stringResource(R.string.permanent_title),
-                fontSize = 16.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = colorScheme.onSurface,
             )
             Text(
                 text = stringResource(R.string.permanent_summary),
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 lineHeight = 18.sp,
                 color = colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(top = 4.dp),

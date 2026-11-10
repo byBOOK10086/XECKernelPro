@@ -109,7 +109,7 @@ private fun StoreTopBar(state: StoreState, actions: StoreActions) {
                 )
                 Text(
                     text = stringResource(R.string.store_search_title),
-                    fontSize = 16.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Xc.colors.text,
                     modifier = Modifier.weight(1f),
@@ -124,7 +124,7 @@ private fun StoreTopBar(state: StoreState, actions: StoreActions) {
                 )
                 Text(
                     text = state.detailTheme?.name ?: stringResource(R.string.store_detail_title),
-                    fontSize = 16.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Xc.colors.text,
                     maxLines = 1,
@@ -241,7 +241,7 @@ private fun StoreNavItem(
         }
         Text(
             text = label,
-            fontSize = 10.sp,
+            fontSize = 12.sp,
             color = tint,
             modifier = Modifier.padding(top = 2.dp),
         )

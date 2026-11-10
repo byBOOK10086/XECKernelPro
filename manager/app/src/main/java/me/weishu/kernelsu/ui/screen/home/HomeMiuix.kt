@@ -337,7 +337,7 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
             Spacer(Modifier.width(8.dp))
             Text(
                 text = stringResource(statusLabel),
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = 1.sp,
                 color = Xc.colors.textMuted,
@@ -445,7 +445,7 @@ private fun StatCell(value: String, label: String, modifier: Modifier = Modifier
         Spacer(Modifier.height(6.dp))
         Text(
             text = label,
-            fontSize = 12.sp,
+            fontSize = 13.sp,
             color = Xc.colors.textMuted,
         )
     }
@@ -577,7 +577,7 @@ private fun UpdateCard(
                     Spacer(Modifier.height(5.dp))
                     Text(
                         text = stringResource(R.string.home_update_tap_hint),
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         color = Xc.colors.textMuted,
                     )
                 }

@@ -248,7 +248,7 @@ private fun AppProfileInner(
                     if (isSpecialApp) {
                         Text(
                             text = packageName,
-                            fontSize = 12.sp,
+                            fontSize = 13.sp,
                             color = colorScheme.onSurfaceVariantSummary,
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier.basicMarquee(),
@@ -258,7 +258,7 @@ private fun AppProfileInner(
                     } else if (!isUidGroup) {
                         Text(
                             text = "$appVersionName ($appVersionCode)",
-                            fontSize = 12.sp,
+                            fontSize = 13.sp,
                             color = colorScheme.onSurfaceVariantSummary,
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier
@@ -268,7 +268,7 @@ private fun AppProfileInner(
                         )
                         Text(
                             text = packageName,
-                            fontSize = 12.sp,
+                            fontSize = 13.sp,
                             color = colorScheme.onSurfaceVariantSummary,
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier
@@ -280,7 +280,7 @@ private fun AppProfileInner(
                         if (sharedUserId.isNotEmpty()) {
                             Text(
                                 text = sharedUserId,
-                                fontSize = 12.sp,
+                                fontSize = 13.sp,
                                 color = colorScheme.onSurfaceVariantSummary,
                                 fontWeight = FontWeight.Medium,
                                 modifier = Modifier
@@ -291,7 +291,7 @@ private fun AppProfileInner(
                         }
                         Text(
                             text = stringResource(R.string.group_contains_apps, affectedApps.size),
-                            fontSize = 12.sp,
+                            fontSize = 13.sp,
                             color = colorScheme.onSurfaceVariantSummary,
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier
@@ -690,14 +690,14 @@ private fun UtsSpoofCard(
             Text(
                 text = stringResource(id = R.string.uts_spoof_title),
                 modifier = Modifier.padding(horizontal = 16.dp),
-                fontSize = 16.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = colorScheme.onBackground,
             )
             Text(
                 text = stringResource(id = R.string.uts_spoof_summary),
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 lineHeight = 17.sp,
                 color = colorScheme.onSurfaceVariantSummary,
             )
@@ -726,7 +726,7 @@ private fun UtsSpoofCard(
             Text(
                 text = stringResource(id = R.string.uts_spoof_hint),
                 modifier = Modifier.padding(horizontal = 16.dp),
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 lineHeight = 17.sp,
                 color = colorScheme.onSurfaceVariantSummary,
             )
@@ -787,7 +787,7 @@ private fun ExecPolicyCard(
                     Spacer(Modifier.height(8.dp))
                     Text(
                         text = stringResource(id = R.string.exec_policy_hint),
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         lineHeight = 17.sp,
                         color = colorScheme.onSurfaceVariantSummary,
                     )

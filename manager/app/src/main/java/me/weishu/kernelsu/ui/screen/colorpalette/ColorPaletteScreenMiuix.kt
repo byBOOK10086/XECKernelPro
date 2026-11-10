@@ -466,7 +466,7 @@ private fun ThemePreviewCardMiuix(
                     ) {
                         Text(
                             text = stringResource(id = R.string.app_name),
-                            fontSize = 12.sp,
+                            fontSize = 13.sp,
                             color = textColor
                         )
                     }

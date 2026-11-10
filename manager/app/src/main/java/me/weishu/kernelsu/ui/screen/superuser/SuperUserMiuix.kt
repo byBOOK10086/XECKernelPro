@@ -607,7 +607,7 @@ private fun GroupItem(
                     },
                     modifier = Modifier
                         .basicMarquee(),
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight(550),
                     color = colorScheme.onSurfaceVariantSummary,
                     maxLines = 1,

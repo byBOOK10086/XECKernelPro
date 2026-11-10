@@ -324,7 +324,7 @@ fun OneTapHideScreen() {
                         items(count = logLines.size) { i ->
                             Text(
                                 text = logLines[i],
-                                fontSize = 11.sp,
+                                fontSize = 12.sp,
                                 lineHeight = 15.sp,
                                 color = Xc.colors.textSecondary,
                             )
