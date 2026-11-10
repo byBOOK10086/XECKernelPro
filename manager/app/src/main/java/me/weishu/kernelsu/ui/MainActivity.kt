@@ -756,7 +756,9 @@ fun MainScreen(
 /** 模块操作面板贴底时为底栏让位：导航栏 inset + 底栏高度（含悬浮 margin）的安全余量。 */
 @Composable
 private fun bottomBarClearPadding(): Dp =
-    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 96.dp
+    // 2026-11-11：96dp 在悬浮底栏下会让最后一行被压在导航条上（安全状态列表被挡）。
+    // 悬浮栏本体 56–64dp + 上下留白，112dp 才能保证滚到底时最后一项完整可见。
+    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 112.dp
 
 @Composable
 private fun MainScreenBackHandler(

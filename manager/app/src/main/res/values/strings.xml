@@ -1150,4 +1150,6 @@ See the log below for details.</string>
     <string name="tools_section_tools">Tools</string>
     <string name="home_hero_probing">Getting root</string>
     <string name="home_hero_ready_install">Ready to install</string>
+    <string name="home_hero_ready_title">Ready to go</string>
+    <string name="home_hero_ready_subtitle">System environment is healthy — installation can start</string>
 </resources>

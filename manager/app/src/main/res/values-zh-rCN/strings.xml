@@ -1152,4 +1152,6 @@ XEC 项目组
     <string name="tools_section_tools">工具</string>
     <string name="home_hero_probing">正在获取 Root</string>
     <string name="home_hero_ready_install">已准备就绪，可以直接安装</string>
+    <string name="home_hero_ready_title">已准备就绪</string>
+    <string name="home_hero_ready_subtitle">系统环境正常，可以开始安装</string>
 </resources>

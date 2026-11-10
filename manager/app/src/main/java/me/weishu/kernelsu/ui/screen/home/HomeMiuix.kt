@@ -307,10 +307,12 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
         probing -> Xc.colors.textMuted
         else -> Xc.colors.danger
     }
+    // 2026-11-11 用户要求：主/副标题拆成两层，主标题只放短句，杜绝
+    // 「已准备就绪，可以直接 / 安装」这种把最后两个字挤到下一行的断行。
     val title = when {
         running -> stringResource(R.string.home_hero_running)
         mount -> stringResource(R.string.home_hero_mount)
-        canInstall -> stringResource(R.string.home_hero_ready_install)
+        canInstall -> stringResource(R.string.home_hero_ready_title)
         else -> stringResource(R.string.home_hero_inactive)
     }
     val modeText = when {
@@ -324,6 +326,11 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
         "Permissive" -> stringResource(R.string.selinux_status_permissive)
         "Disabled" -> stringResource(R.string.selinux_status_disabled)
         else -> stringResource(R.string.selinux_status_unknown)
+    }
+    // 副标题：可安装这一档换成一句完整的话；其它档沿用「模式 · SELinux」。
+    val subtitle = when {
+        canInstall -> stringResource(R.string.home_hero_ready_subtitle)
+        else -> "$modeText · SELinux $selinuxText"
     }
 
     Column(modifier = Modifier.padding(top = 10.dp)) {
@@ -378,8 +385,9 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
             )
         }
         Text(
-            text = "$modeText · SELinux $selinuxText",
-            fontSize = 13.sp,
+            text = subtitle,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
             color = Xc.colors.textMuted,
             modifier = Modifier.padding(top = 9.dp),
         )
