@@ -285,13 +285,21 @@ fun Xc8Loading(
     modifier: Modifier = Modifier,
     size: androidx.compose.ui.unit.Dp = 22.dp,
 ) {
-    val transition = rememberInfiniteTransition(label = "xc8Loading")
-    val angle by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
-        label = "xc8LoadingAngle",
-    )
+    // §九：减少动态效果时不要转圈。转圈是"正在加载"的唯一视觉线索，所以不能
+    // 直接不画（那样会变成一块空白）——把它停在 0°，圆弧本身仍然可见。
+    val reduced = me.weishu.kernelsu.ui.design.token.LocalXcReducedMotion.current
+    val angle: Float
+    if (reduced) {
+        angle = 0f
+    } else {
+        val transition = rememberInfiniteTransition(label = "xc8Loading")
+        angle = transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
+            label = "xc8LoadingAngle",
+        ).value
+    }
     // 同上：Canvas 的绘制 lambda 不是 @Composable。
     val arcColor = Xc.colors.accent
     Canvas(

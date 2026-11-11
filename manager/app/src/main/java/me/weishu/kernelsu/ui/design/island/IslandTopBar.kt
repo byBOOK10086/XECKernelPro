@@ -146,19 +146,27 @@ fun IslandTopBar(
                         horizontalArrangement = Arrangement.Center,
                     ) {
                         // 状态点：root 活性，呼吸明暗。
-                        val breath = rememberInfiniteTransition(label = "islandBreath").animateFloat(
-                            initialValue = 0.45f,
-                            targetValue = 1f,
-                            animationSpec = infiniteRepeatable(
-                                tween(800, easing = FastOutSlowInEasing),
-                                RepeatMode.Reverse,
-                            ),
-                            label = "islandBreathAlpha",
-                        )
+                        // §九：减少动态效果时不呼吸（无限动画不受系统 durationScale 管辖），
+                        // 但点本身保持满不透明，状态色仍然可读。
+                        val islandReduced =
+                            me.weishu.kernelsu.ui.design.token.LocalXcReducedMotion.current
+                        val breathAlpha = if (islandReduced) {
+                            1f
+                        } else {
+                            rememberInfiniteTransition(label = "islandBreath").animateFloat(
+                                initialValue = 0.45f,
+                                targetValue = 1f,
+                                animationSpec = infiniteRepeatable(
+                                    tween(800, easing = FastOutSlowInEasing),
+                                    RepeatMode.Reverse,
+                                ),
+                                label = "islandBreathAlpha",
+                            ).value
+                        }
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
-                                .alpha(breath.value)
+                                .alpha(breathAlpha)
                                 .background(
                                     if (statusActive) Color(0xFF66BB6A) else Color(0xFFFFB300),
                                     CircleShape,
