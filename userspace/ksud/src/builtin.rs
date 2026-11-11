@@ -217,7 +217,11 @@ pub struct StartReport {
 const SCRIPT_BUDGET: Duration = Duration::from_secs(45);
 
 /// How long [`start_tee_engine`] waits for the engine process / injection.
-const ENGINE_WAIT: Duration = Duration::from_secs(15);
+// 2026-11-11: 15s 在真机上不够。实测 `builtin start` 返回 engine_pid=0、
+// injected=0，而几秒后的 ps 里两个 TEESimulator 已经跑着。引擎启动前要先解析
+// keybox、起 certgen，冷启动慢于 15s 是常态 —— 于是状态被误报成"没跑"。
+// 看门狗应当是"真死了"才报，不是"刚启动"。
+const ENGINE_WAIT: Duration = Duration::from_secs(30);
 
 /// How long a previously running engine gets to disappear.
 const STOP_BUDGET: Duration = Duration::from_secs(8);
