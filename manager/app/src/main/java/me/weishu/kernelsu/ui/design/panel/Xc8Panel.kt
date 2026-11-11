@@ -1,7 +1,9 @@
 package me.weishu.kernelsu.ui.design.panel
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -162,9 +164,25 @@ fun Xc8Row(
     )
     val effectiveTitleColor = if (enabled) titleColor else Xc.colors.textMuted
     val subtitleColor = if (enabled) Xc.colors.textSecondary else Xc.colors.textMuted
+    // §七.5：可点行按下时轻微缩到 0.98，与「压暗一档」叠加而不是替换 ——
+    // 压暗是这套面板原本的按下语言，缩放只补一层"被按住了"的物理感。
+    //
+    // 用 graphicsLayer 而不是 animateContentSize/尺寸动画：scale 只影响绘制，
+    // 不参与测量，列表行高与滚动位置都不会因为按下而抖动。
+    // 减少动态效果时不做缩放（缩放属于装饰，不是状态信息）。
+    val rowReduced = me.weishu.kernelsu.ui.design.token.LocalXcReducedMotion.current
+    val rowScale by animateFloatAsState(
+        targetValue = if (pressed && clickable && !rowReduced) 0.98f else 1f,
+        animationSpec = tween(Xc8Motion.press),
+        label = "xc8RowScale",
+    )
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = rowScale
+                scaleY = rowScale
+            }
             .background(background)
             .drawBehind {
                 drawLine(
