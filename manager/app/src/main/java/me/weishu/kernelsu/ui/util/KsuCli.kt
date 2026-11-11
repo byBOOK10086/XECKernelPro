@@ -411,34 +411,31 @@ fun Uri.getFileName(context: Context): String? {
 
 fun createRootShell(globalMnt: Boolean = false): Shell {
     Shell.enableVerboseLogging = BuildConfig.DEBUG
-    val builder = Shell.Builder.create()
-    // 挂载态（<5.10，方案甲 = Magisk 路线）：内核里没有 KSU 驱动，`libxeccli.so debug su`
-    // 这个进程永远拿不到 root（它只能靠内核驱动提权），再试一遍只会得到一个空壳。
-    // 直接走设备上的 `su`，也就是 Magisk 的 su —— 管理器的 root 和其它 app 完全同一条
-    // 通道：授权记在 /data/adb/magisk.db 的 policies 表里，Magisk 应用既能看到本管理器，
-    // 也能随时收回它的 root；本管理器反过来也能改同一张表（超级用户页）。
-    // 内核态一个字都不改：驱动在就还是先走 ksud。
-    return try {
-        if (globalMnt) {
-            builder.build(getKsuDaemonPath(), "debug", "su", "-g")
-        } else {
-            builder.build(getKsuDaemonPath(), "debug", "su")
-        }
-    } catch (e: Throwable) {
-        Log.w(TAG, "ksu failed: ", e)
-        try {
-            if (globalMnt) {
-                builder.build("su", "-mm")
-            } else {
-                builder.build("su")
-            }
-        } catch (e: Throwable) {
-            Log.e(TAG, "su failed: ", e)
-            builder.build("sh")
-        }
+    // 2026-11-11: 这里原来靠 try/catch 判断"这个壳能不能用" —— 那是错的。
+    // libsu 的 Shell.Builder.build() 在进程根本没起来时**不抛异常**，它返回一个
+    // 没有后端进程的 Shell，之后每个 job 都返回 code = 0 + 空输出。
+    // 于是"xudc debug su 失败"这件事永远不会走到 catch，管理器拿着一个假壳
+    // 继续跑，界面上表现为：引擎目录"不存在"、命令"没有任何输出"、退出码 -1。
+    //
+    // 现在建成之后就真的跑一条 `id -u` 验：拿到 0 才算 root 壳；不是就换下一个候选。
+    val candidates = buildList {
+        add(listOf(getKsuDaemonPath(), "debug", "su").let { if (globalMnt) it + "-g" else it })
+        add(if (globalMnt) listOf("su", "-mm") else listOf("su"))
     }
+    for (argv in candidates) {
+        val shell = runCatching { Shell.Builder.create().build(*argv.toTypedArray()) }.getOrNull()
+            ?: continue
+        val probe = runCatching { shell.newJob().add("id -u").exec() }.getOrNull()
+        val uid = probe?.out?.firstOrNull()?.trim()
+        if (probe != null && probe.code == 0 && uid == "0") {
+            return shell
+        }
+        Log.w(TAG, "root shell candidate failed: ${argv.first()} (code=${probe?.code}, uid=$uid)")
+    }
+    Log.e(TAG, "no usable root shell; falling back to a non-root sh")
+    return runCatching { Shell.Builder.create().build("sh") }
+        .getOrElse { Shell.Builder.create().build("sh") }
 }
-
 fun execKsud(args: String, newShell: Boolean = false, globalMnt: Boolean = false): Boolean {
     return if (newShell) {
         withNewRootShell(globalMnt = globalMnt) {
