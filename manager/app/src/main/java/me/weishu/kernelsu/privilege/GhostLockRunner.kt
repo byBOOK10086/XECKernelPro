@@ -371,7 +371,20 @@ class GhostLockRunner(context: Context) {
 
     private fun runProcess(
         builder: ProcessBuilder,
-        timeoutSeconds: Long = 300,
+        /**
+         * 看门狗超时（秒）。
+         *
+         * 2026-11-11 审计 P0：原来是 **300s**，而脚本自己的预算是
+         * `execution-tuning.conf:12,17` 里的 **240s + 300s = 540s**。
+         * 也就是说看门狗**必然**在脚本自己的超时之前把进程 SIGKILL 掉：
+         *  - 脚本来不及走它的收尾流程（`ops.cpp:453-462` 的恢复动作），
+         *  - 而那一刻内核可能正停在 **SELinux permissive**（利用链的中途状态），
+         *  - 父进程被杀后这个恢复动作**不保证**再执行 → 设备留在一个比之前更危险的状态。
+         *
+         * 取值 = 脚本预算 540s + 100s 余量：让脚本先按自己的预算收尾/恢复，
+         * 看门狗只负责兜"脚本自己挂了"这一种情况。
+         */
+        timeoutSeconds: Long = 640,
         stdin: ByteArray? = null,
         frameStdin: Boolean = false,
         onProcess: ((Process) -> Unit)? = null,
