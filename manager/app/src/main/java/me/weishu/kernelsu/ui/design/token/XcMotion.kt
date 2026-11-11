@@ -17,7 +17,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
@@ -83,6 +82,17 @@ class XcMotion {
 
     /** 260ms：页面之间的进入/退出。快于 220 生硬，慢于 300 拖。 */
     val page: Int = 260
+
+    /**
+     * 90ms：页面**退场**的时长，刻意远短于 [page]。
+     *
+     * 两边同长就是交叉淡入淡出 —— 中途两屏各 50% 不透明度叠在一起，用户看到的是
+     * "上一个页面的残留"。把退场压到 1/3、并让入场**等退场结束再开始**（见
+     * [xcPageEnter] 的 delay），两段在时间轴上完全不重叠，就没有重影了。
+     *
+     * 这是 Material 的 fade-through 语义：先走完，再进来。
+     */
+    val pageExit: Int = 90
 
     /** 220ms：同页内的状态变化（徽章变色、行内容替换、数据刷新）。 */
     val state: Int = 220
@@ -245,28 +255,41 @@ fun xcDuration(millis: Int): Int = if (LocalXcReducedMotion.current) 0 else mill
 
 /** [xcDuration] 的规格版本。 */
 @Composable
-fun <T> xcSpec(millis: Int, easing: Easing = XcEasing.standard): FiniteAnimationSpec<T> =
-    tween(xcDuration(millis), easing = easing)
+fun <T> xcSpec(
+    millis: Int,
+    easing: Easing = XcEasing.standard,
+    delayMillis: Int = 0,
+): FiniteAnimationSpec<T> {
+    val duration = xcDuration(millis)
+    // 减少动态效果时连延迟一起归零：否则"先等 90ms 再瞬间到达"会变成一次无意义的空等。
+    return tween(duration, delayMillis = if (duration == 0) 0 else delayMillis, easing = easing)
+}
 
 /**
- * 页面进入：淡入 + 自下而上 8dp。
+ * 页面进入：**等退场跑完**（[XcMotion.pageExit]）再淡入 + 自下而上 8dp。
  *
- * 位移方向只有一种（从下往上），量小到读不出"滑动"，只留下"内容落位"的观感。
+ * 关键是那个 delay：它把"旧页退"和"新页进"排成前后两段，而不是同时进行。
+ * 同时进行就是交叉淡入淡出，中途两屏各半透明地叠着 —— 那正是"上一个页面残留"
+ * 的来源。位移方向只有一种（从下往上），量小到读不出"滑动"，只留下落位感。
  */
 @Composable
 fun xcPageEnter(): EnterTransition {
     val shift = with(LocalDensity.current) { XcMotionDefault.pageShiftDp.dp.roundToPx() }
-    val fade = xcSpec<Float>(XcMotionDefault.page, XcEasing.decelerate)
+    val enterMillis = (XcMotionDefault.page - XcMotionDefault.pageExit).coerceAtLeast(1)
+    val fade = xcSpec<Float>(enterMillis, XcEasing.decelerate, delayMillis = XcMotionDefault.pageExit)
     // slideInVertically 的 spec 泛型是 IntOffset，不是 Float —— 两者不能共用一个 spec。
-    val slide = xcSpec<IntOffset>(XcMotionDefault.page, XcEasing.decelerate)
+    val slide = xcSpec<IntOffset>(enterMillis, XcEasing.decelerate, delayMillis = XcMotionDefault.pageExit)
     return fadeIn(fade) + slideInVertically(slide) { shift }
 }
 
-/** 页面退出：淡出 + 朝上离开。与 [xcPageEnter] 严格对称，来回切不会"跳一下"。 */
+/**
+ * 页面退出：只做一次快速淡出，**不带走位**。
+ *
+ * 退场位移是上一版"残留感"的帮凶：旧页一边淡出一边往上飘，会让人以为它还在。
+ * 现在它只是让开 —— 90ms 内消失，把整个舞台交给紧接着的入场。
+ */
 @Composable
 fun xcPageExit(): ExitTransition {
-    val shift = with(LocalDensity.current) { (XcMotionDefault.pageShiftDp / 2).dp.roundToPx() }
-    val fade = xcSpec<Float>(XcMotionDefault.page, XcEasing.accelerate)
-    val slide = xcSpec<IntOffset>(XcMotionDefault.page, XcEasing.accelerate)
-    return fadeOut(fade) + slideOutVertically(slide) { -shift }
+    val spec = xcSpec<Float>(XcMotionDefault.pageExit, XcEasing.accelerate)
+    return fadeOut(spec)
 }
