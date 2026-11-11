@@ -774,10 +774,21 @@ fn stop_previous_run() {
         if u32::try_from(pid).ok() == Some(me) {
             continue;
         }
-        let Some(cmdline) = fs::read_to_string(format!("/proc/{pid}/cmdline")).ok() else {
-            continue;
-        };
-        if ENGINE_MARKERS.iter().any(|marker| cmdline.contains(marker)) {
+        // Two signals, because the engine has two shapes:
+        //
+        //  * stage scripts / shells / native supervisors keep their argv, so a
+        //    marker match on cmdline is enough;
+        //  * the Java daemon is started with `--nice-name=TEESimulator` and the
+        //    runtime overwrites its cmdline with just the process name, so
+        //    cmdline never contains a path marker. Its comm is the only stable
+        //    handle left. Without this check a second `start` leaves the old
+        //    daemon alive and the two fight over the keystore2 injection surface
+        //    - which is exactly the "two TEESimulator pids" a device shows.
+        let cmdline = fs::read_to_string(format!("/proc/{pid}/cmdline")).unwrap_or_default();
+        let comm = fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default();
+        if ENGINE_MARKERS.iter().any(|marker| cmdline.contains(marker))
+            || comm.trim() == "TEESimulator"
+        {
             targets.push(pid);
         }
     }
