@@ -118,10 +118,22 @@ fn is_app_installed(pkg: &str) -> bool {
 }
 
 fn detect_boot_manager() -> &'static str {
+    // 这个函数原来只查 TA 自己的标记目录：内置安装把树物化到
+    // /data/adb/ksu/builtin/TA_enhanced，永远不会创建
+    // /data/adb/modules/.TA_enhanced，于是**恒报 "MagicMount"**——
+    // 在根本没装 Magisk 的机器上凭空指认一个不存在的 boot 管理器。
+    //
+    // 现在按真实痕迹判定；认不出来就明说，不猜。
     if Path::new("/data/adb/modules/.TA_enhanced").is_dir() {
         "OverlayFS"
-    } else {
+    } else if Path::new("/data/adb/magisk.db").exists()
+        || Path::new("/data/adb/magisk").is_dir()
+    {
         "MagicMount"
+    } else if Path::new("/data/adb/xudc").exists() || Path::new("/data/adb/ksud").exists() {
+        "KernelSU"
+    } else {
+        "Unknown"
     }
 }
 
