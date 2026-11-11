@@ -171,26 +171,21 @@ fun TeePanelSection(modifier: Modifier = Modifier) {
 
     Column(modifier = modifier) {
         // ---------------------------------------------------------------- 标题
+        // 2026-11-11：**本面板不再自绘页面大标题**。
+        //
+        // 它是「工具箱」里的一个子页，宿主已经画了 26sp 的「工具箱」页标题；
+        // 这里再画一遍 26sp「密钥库体检」+ 12sp「工具箱 · TEE 证明链」，三者
+        // 会落在同一块顶部区域叠成一团（真机截图可见「密钥库体检」被「工具箱」压住）。
+        //
+        // 页标题归宿主，面板只提供内容与身份线：保留一条 12sp 的弱化面包屑，
+        // 但要排在标题行之后 —— 所以这里把它挪进下面第一个分组的顶部留白处。
+        // 页标题归宿主。这里只留右上角的「重新检测」，右对齐独占一行，
+        // 不再和宿主的 26sp 标题抢同一条基线。
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp),
+            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "密钥库体检",
-                    color = Xc.colors.text,
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.6).sp,
-                )
-                Text(
-                    "工具箱 · TEE 证明链",
-                    color = Xc.colors.textMuted,
-                    fontSize = 12.sp,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
             Box(
                 modifier = Modifier
                     .size(34.dp)
