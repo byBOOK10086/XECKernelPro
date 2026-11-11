@@ -43,13 +43,24 @@ class HomeViewModel(
     private val settingsRepo: SettingsRepository = SettingsRepositoryImpl()
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(buildState())
+    // 2026-11-11 审计 P0：这里原来是 `MutableStateFlow(buildState())` —— 构造器跑在
+    // **主线程**（HomeScreen.kt:40 用 viewModel() 创建），而 buildState() 里有 3 条
+    // root shell `fastCmd` + `getSELinuxStatusRaw()`（每次都 new 一条 `sh`）+ 设备名解析。
+    // 冷启动就等于在主线程上等 2 次进程创建和最多 5 次 root shell 往返。
+    //
+    // 现在首帧只做**纯内存**的部分（deep = false：不碰任何 shell），真正的探测交给
+    // init 里的 refresh()，那条路本来就在 Dispatchers.IO 上。
+    // 首帧会显示「正在获取 Root」而不是「获取 Root 失败」，这正是 rootProbeSettled
+    // 那道闸门存在的意义（见 HomeUiState.kt:56 的注释）。
+    private val _uiState = MutableStateFlow(buildState(deep = false))
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     /** 当前在跑的那一轮刷新；用于重入合并（见 [refresh]）。 */
     private var refreshJob: Job? = null
 
     init {
+        // 首帧只是"占位"，真正的状态靠这一轮拿到（在 IO 线程上）。
+        viewModelScope.launch { refresh() }
         // 开机早期被拉起时首帧算出的是"没有 root"。KsuCli 的后台补探晚一点拿到 root
         // 之后必须让首页重算一次，否则界面会一直停在无 root —— 用户看到的"重启后
         // root 掉了"有一半是这种界面滞留，而不是 root 真的丢。
@@ -86,7 +97,15 @@ class HomeViewModel(
             } else {
                 null
             }
-            _uiState.update { baseState.copy(magiskVersion = magiskVersion) }
+            _uiState.update {
+                // 审计 P2：baseState 是新建的 HomeUiState，isRefreshing 默认 false；
+                // 整体覆盖会把这一轮刚置上的 true 打回 false（转圈提前收起、
+                // 刷新按钮提前可点）。把当前值带过去。
+                baseState.copy(
+                    magiskVersion = magiskVersion,
+                    isRefreshing = it.isRefreshing,
+                )
+            }
             // 始终拉取一次版本信息，用于首页展示累计下载量；更新提示仍由 checkUpdateEnabled 控制
             val latestVersionInfo = withContext(Dispatchers.IO) { checkNewVersion() }
             _uiState.update { it.copy(latestVersionInfo = latestVersionInfo) }
@@ -139,23 +158,29 @@ class HomeViewModel(
         }
     }
 
-    private fun buildState(): HomeUiState {
+    /**
+     * 算一份完整状态。
+     *
+     * @param deep false = **只做纯内存计算**，一次 shell 都不起（首帧用）；
+     *             true  = 完整探测（root 壳、SELinux、SUSFS、TEE），只能在 IO 线程调用。
+     */
+    private fun buildState(deep: Boolean = true): HomeUiState {
         val kernelVersion = getKernelVersion()
         val isManager = Natives.isManager
         val ksuVersion = if (isManager) Natives.version else null
         val kernelUAPIVersion = if (isManager) Natives.kernelUAPIVersion else null
         val managerUAPIVersion = Natives.managerUAPIVersion
         val lkmMode = ksuVersion?.let { if (kernelVersion.isGKI()) Natives.isLkmMode else null }
-        val isRootAvailable = rootAvailable()
+        val isRootAvailable = deep && rootAvailable()
         // 守护组件只对 root 可见（/data/adb 目录权限），app 进程直接 stat 永远是
         // false，必须走 root shell；未激活时跳过探测避免无谓的 shell 调用。
-        val isDaemonPresent = isRootAvailable && runCatching {
+        val isDaemonPresent = deep && isRootAvailable && runCatching {
             val shell = getRootShell()
             ShellUtils.fastCmd(shell, "test -e /data/adb/xudc && echo -n ok").trim() == "ok"
         }.getOrDefault(false)
         // SUSFS 状态探测：susfs 的 reboot 向量只在 root 进程内有效，走守护 CLI。
         // "unsupport" = 内核没打 SUSFS 补丁；null = 探测不了（无 root / shell 失败）→ UI 隐藏该行。
-        val susfsVersion: String? = if (isRootAvailable) runCatching {
+        val susfsVersion: String? = if (deep && isRootAvailable) runCatching {
             val shell = getRootShell()
             ShellUtils.fastCmd(shell, "${getKsuDaemonPath()} susfs version").trim().ifEmpty { null }
         }.getOrNull() else null
@@ -166,7 +191,7 @@ class HomeViewModel(
         // TEE 注入是"真的拦到"的唯一硬证据：keystore2 的 maps 里有引擎 .so。
         // 只看 pidof 会把"进程活着但注入失败"误判为健康；这里用一次只读 root 探测，
         // 结果同时供首页 XEC Score 使用。
-        val teeInjected: Boolean? = if (isRootAvailable) runCatching {
+        val teeInjected: Boolean? = if (deep && isRootAvailable) runCatching {
             val shell = getRootShell()
             val pid = ShellUtils.fastCmd(shell, "pidof keystore2 2>/dev/null")
                 .trim()
@@ -210,12 +235,12 @@ class HomeViewModel(
                 managerVersion = "${managerVersion.versionName} (${managerVersion.versionCode}-${managerUAPIVersion})",
                 deviceModel = resolveDeviceName(),
                 fingerprint = Build.FINGERPRINT,
-                selinuxStatus = getSELinuxStatusRaw(),
+                selinuxStatus = if (deep) getSELinuxStatusRaw() else "Unknown",
                 seccompStatus = runCatching {
                     Os.prctl(21 /* PR_GET_SECCOMP */, 0, 0, 0, 0)
                 }.getOrDefault(-1),
             ),
-            rootProbeSettled = KsuCli.probeSettled.value,
+            rootProbeSettled = deep && KsuCli.probeSettled.value,
         )
     }
 }

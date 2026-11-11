@@ -917,7 +917,13 @@ fun downloadBoot(
         }
     }
 
-    val result = Shell.getShell().newJob().add(cmd).to(stdoutCallback, stderrCallback).exec()
+    // 2026-11-11 审计 P0：这里原来是 `Shell.getShell()` —— 那是 libsu 的**默认主壳**，
+    // 而全仓没有 `Shell.setDefaultBuilder`，所以它是一条普通 `sh`（非 root）。
+    // 用非 root shell 跑 `xudc boot-patch ... --partition` 必然 EACCES，而失败点
+    // 看起来像"写分区失败"，排查时会被引到错的方向。刷写必须走 root 壳。
+    val result = withNewRootShell {
+        newJob().add(cmd).to(stdoutCallback, stderrCallback).exec()
+    }
     lkmFile?.delete()
     bootFile.delete()
     return FlashResult(result, false)
