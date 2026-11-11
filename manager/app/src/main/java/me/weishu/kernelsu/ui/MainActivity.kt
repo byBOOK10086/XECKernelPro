@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.animation.togetherWith
+import androidx.navigation3.ui.NavDisplayTransitionEffects
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.CompositionLocalProvider
@@ -386,6 +387,30 @@ open class MainActivity : ComponentActivity() {
                                         // 220–300ms + 6–10dp 的**纵向**位移。
                                         transitionSpec = { pageEnter togetherWith pageExit },
                                         popTransitionSpec = { pageEnter togetherWith pageExit },
+                                        // 2026-11-11：必须显式关掉库默认的转场特效。
+                                        //
+                                        // `NavDisplayTransitionEffects.Default` 的四个默认值
+                                        // （字节码实证，见 NavDisplayTransitionEffects 的
+                                        // 掩码构造器）是：
+                                        //   enableCornerClip = true
+                                        //   dimAmount = 0.5f   ← 一层 50% 的黑纱
+                                        //   blockInputDuringTransition = true
+                                        //   popDirectionFollowsSwipeEdge = false
+                                        // 这层黑纱的边界 = NavDisplay 的场景容器 = 页面内容区，
+                                        // 生命周期 = 转场时长。用户报的「每次切页都出现、
+                                        // 黑色区域跟随内容区、不到 1 秒自己消失」就是它。
+                                        //
+                                        // 之前库默认还是 500ms 横滑，黑纱被"内容在横向移动"
+                                        // 掩盖成景深；换成 260ms 淡入淡出之后没有任何位移线索，
+                                        // 它就显形为一块静止的黑矩形 + 旧页残影。
+                                        //
+                                        // 只关黑纱与圆角裁切，**保留** blockInputDuringTransition：
+                                        // 转场期间挡输入是正确行为，去掉会让快速连点穿透到新页面。
+                                        transitionEffects = NavDisplayTransitionEffects(
+                                            enableCornerClip = false,
+                                            dimAmount = 0f,
+                                            blockInputDuringTransition = true,
+                                        ),
                                         entryDecorators = listOf(
                                             rememberSaveableStateHolderNavEntryDecorator(),
                                             rememberViewModelStoreNavEntryDecorator()
