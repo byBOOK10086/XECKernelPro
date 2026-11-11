@@ -42,30 +42,43 @@ import top.yukonga.miuix.kmp.basic.Text
  */
 @Composable
 fun XecBootSplash(visible: Boolean) {
+    // §九「减少动态效果」：这几处循环动画必须自己判。
+    // Compose 运行时只会按系统设置缩放**有限**动画（tween/spring），
+    // 而 rememberInfiniteTransition 走 withInfiniteAnimationFrameNanos，
+    // 绕过了 durationScale —— 不判就会一直转。
+    val reduced = me.weishu.kernelsu.ui.design.token.LocalXcReducedMotion.current
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn(tween(220)),
-        exit = fadeOut(tween(320)),
+        enter = fadeIn(tween(if (reduced) 0 else 220)),
+        exit = fadeOut(tween(if (reduced) 0 else 320)),
     ) {
-        val infinite = rememberInfiniteTransition(label = "xec-boot")
-        val pulse by infinite.animateFloat(
-            initialValue = 0.92f,
-            targetValue = 1.04f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(1100, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "pulse",
-        )
-        val sweep by infinite.animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(2200, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart,
-            ),
-            label = "sweep",
-        )
+        val pulse: Float
+        val sweep: Float
+        if (reduced) {
+            // 静止在"没有在动"的那一帧：缩放 1.0、扫光停在起点。
+            pulse = 1f
+            sweep = 0f
+        } else {
+            val infinite = rememberInfiniteTransition(label = "xec-boot")
+            pulse = infinite.animateFloat(
+                initialValue = 0.92f,
+                targetValue = 1.04f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(1100, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "pulse",
+            ).value
+            sweep = infinite.animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(2200, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart,
+                ),
+                label = "sweep",
+            ).value
+        }
         val accent = Xc.colors.accent
         val water = Xc.colors.water
         Box(
