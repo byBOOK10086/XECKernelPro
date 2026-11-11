@@ -311,6 +311,22 @@ object TeeDiagnostics {
                 IllegalStateException("等了 20 秒还是拿不到 root shell：先在「授权」里给管理器 root"),
             )
         }
+
+        // 2026-11-11: isRoot only records that the shell was built with `su`; it does
+        // not prove the shell works. A dead shell still reports isRoot=true and then
+        // answers every command with empty output and exit -1, which the UI can only
+        // render as "命令没有任何输出". Probe uid first so the two failures separate.
+        val uidProbe = runCatching { shell.newJob().add("id -u").exec() }.getOrNull()
+        val shellUid = uidProbe?.out?.firstOrNull()?.trim()
+        if (shellUid != "0") {
+            return@withContext Result.failure(
+                IllegalStateException(
+                    "root shell 建起来了但不可用：id -u 返回 " + (shellUid ?: "<空>") +
+                        "，退出码 " + (uidProbe?.code ?: -1) +
+                        "。这条通道不通时，下面每条命令都会静默返回空。",
+                ),
+            )
+        }
         val steps = ArrayList<RepairStep>()
         // 先给"重启后强制自启"排队：这个开关只有**带钩子的 KMI 内核**才认，所以这里
         // 顺手探一次 /data/adb/xudc（内核侧的 daemon）到底认不认，别让用户以为
@@ -348,7 +364,7 @@ object TeeDiagnostics {
             val why = lines.filterNot { it.startsWith("__XEC_EXIT=") }
                 .takeLast(4).joinToString(" / ").ifEmpty { "命令没有任何输出" }
             return@withContext Result.failure(
-                IllegalStateException("内置引擎没起来（退出码 ${exit ?: -1}）：${why.take(300)}"),
+                IllegalStateException("内置引擎没起来（退出码 ${exit ?: -1}）：${("command: timeout 240 <xudc> builtin start | output: " + why.take(600).ifEmpty { "<empty>" })}"),
             )
         }
         val modules = value(lines, "modules")?.toIntOrNull()
