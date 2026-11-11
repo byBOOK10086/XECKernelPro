@@ -29,7 +29,6 @@ import me.weishu.kernelsu.core.tasks.ExtractImage
 import me.weishu.kernelsu.core.tasks.ProbeResult
 import me.weishu.kernelsu.core.utils.DataSourceChannel
 import me.weishu.kernelsu.ksuApp
-import me.weishu.kernelsu.mountstate.MagiskRoot
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import java.io.File
@@ -419,14 +418,6 @@ fun createRootShell(globalMnt: Boolean = false): Shell {
     // 通道：授权记在 /data/adb/magisk.db 的 policies 表里，Magisk 应用既能看到本管理器，
     // 也能随时收回它的 root；本管理器反过来也能改同一张表（超级用户页）。
     // 内核态一个字都不改：驱动在就还是先走 ksud。
-    if (isMountState) {
-        return try {
-            if (globalMnt) builder.build("su", "-mm") else builder.build("su")
-        } catch (e: Throwable) {
-            Log.w(TAG, "magisk su failed: ", e)
-            builder.build("sh")
-        }
-    }
     return try {
         if (globalMnt) {
             builder.build(getKsuDaemonPath(), "debug", "su", "-g")
@@ -562,11 +553,7 @@ fun flashModule(
         // 模块安装也必须走 Magisk 官方安装器 —— 模块的 customize.sh 用的是 Magisk 那套
         // ui_print / set_perm / replace 语义，交给内核态的 ksud 安装器会装出半成品。
         // 内核态一个字都不改：还是 ksud。
-        val cmd = if (isMountState) {
-            MagiskRoot.installModuleCommand(file.absolutePath)
-        } else {
-            "${getKsuDaemonPath()} module install ${file.absolutePath}"
-        }
+        val cmd = "${getKsuDaemonPath()} module install ${file.absolutePath}"
         val result = flashWithIO(cmd, onStdout, onStderr)
         Log.i("XECKernelPro", "install module $uri result: $result")
 
@@ -968,11 +955,6 @@ fun reboot(reason: String = "") {
         // 路线上根本不存在。不能"叫了就当成功"—— 用户勾了"用软重启代替重启"、装完模块，
         // 结果什么都没发生。挂载态直接退回**真重启**：reason 传空串，别让 init 收到
         // "soft_reboot" 这种它不认识的 reason（内核态行为一个字不改）。
-        if (isMountState) {
-            Log.w(TAG, "mount state has no KSU driver; soft reboot unavailable, rebooting")
-            rebootNow("")
-            return
-        }
         val ok = execKsud("soft-reboot", true, true)
         Log.i(TAG, "ksud soft-reboot result: $ok")
         return
@@ -1059,24 +1041,6 @@ suspend fun getAvailablePartitions(): List<String> = withContext(Dispatchers.IO)
     val cmd = "boot-info available-partitions"
     val out = shell.newJob().add("${getKsuDaemonPath()} $cmd").to(ArrayList(), null).exec().out
     out.filter { it.isNotBlank() }.map { it.trim() }
-}
-
-fun hasMagisk(): Boolean {
-    val shell = getRootShell(true)
-    // 只认 Magisk 自己的东西，不看 `which magisk`，也不看 `/data/adb/magisk` 目录
-    // 是否存在（空目录、残留目录都会误判成"装了 Magisk"，于是显示
-    // "因与 Magisk 有冲突，所有模块不可用" 并把整个模块列表藏起来 —— 自锁）。
-    // 判定与 ksud 的 has_magisk_installed() 严格一致：magisk.db，或 Magisk 自己的二进制。
-    val probe = """
-        [ -e /data/adb/magisk.db ] && exit 0
-        for b in magisk64 magisk32 magiskinit magiskboot; do
-          [ -e "/data/adb/magisk/${'$'}b" ] && exit 0
-        done
-        exit 1
-    """.trimIndent()
-    val result = shell.newJob().add(probe).exec()
-    Log.i(TAG, "has magisk: ${result.isSuccess}")
-    return result.isSuccess
 }
 
 fun isSepolicyValid(rules: String?): Boolean {
