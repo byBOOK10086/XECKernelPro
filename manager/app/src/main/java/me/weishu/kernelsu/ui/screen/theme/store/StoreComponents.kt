@@ -806,16 +806,25 @@ fun StoreSkeletonBlock(
     modifier: Modifier = Modifier,
     shape: androidx.compose.ui.graphics.Shape = Xc.shapes.md,
 ) {
-    val transition = rememberInfiniteTransition(label = "store-skeleton")
-    val shift by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1300, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "store-skeleton-shift",
-    )
+    // §九：减少动态效果时不扫光（无限动画不受系统 durationScale 管辖）。
+    // 停在 shift=0.5 —— 高光正好压在块中间，骨架仍然读得出"这里有个占位块"，
+    // 而不是变成一条死灰条或整块消失。
+    val skeletonReduced = me.weishu.kernelsu.ui.design.token.LocalXcReducedMotion.current
+    val shift: Float
+    if (skeletonReduced) {
+        shift = 0.5f
+    } else {
+        val transition = rememberInfiniteTransition(label = "store-skeleton")
+        shift = transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1300, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "store-skeleton-shift",
+        ).value
+    }
     val base = Xc.colors.surfaceMuted
     val highlight = Xc.colors.surface
     Box(
