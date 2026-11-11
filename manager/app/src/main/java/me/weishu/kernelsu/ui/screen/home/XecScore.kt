@@ -65,7 +65,7 @@ data class XecScoreResult(
 object XecScore {
 
     fun evaluate(state: HomeUiState): XecScoreResult {
-        val rootOk = state.isRootAvailable && (state.ksuVersion != null || state.isMountState)
+        val rootOk = state.isRootAvailable && state.ksuVersion != null
         val selinuxOk = state.systemInfo.selinuxStatus == "Enforcing"
         val susfsOk = state.susfsVersion != null && state.susfsVersion != "unsupport"
         val teeOk = state.teeInjected == true

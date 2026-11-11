@@ -162,7 +162,6 @@ fun XecScoreCard(
                     ScoreMetric(
                         label = "运行模式",
                         value = when {
-                            state.isMountState -> "挂载态"
                             state.lkmMode == true -> "LKM"
                             state.ksuVersion != null -> "内核态"
                             else -> "未安装"

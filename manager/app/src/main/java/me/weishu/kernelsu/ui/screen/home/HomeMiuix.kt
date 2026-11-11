@@ -356,13 +356,12 @@ private fun HomeHeader(
 @Composable
 private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
     val running = state.ksuVersion != null
-    val mount = state.isMountState
     // 审计 P1（2026-11-09）：之前只看"驱动有没有应答"，驱动在但 su 被拒时仍显示
     // ROOT READY。就绪判据改成实际的 root 可用性。
     val active = state.isRootAvailable
     // 2026-11-09 用户要求：管理器已经拿到 root、但内核模块还没装/没跑起来时，
     // 不再说"内核未运行"，而是明确告诉用户"可以直接装"，并且这块本身就是入口。
-    val canInstall = !running && !mount && state.isRootAvailable
+    val canInstall = !running && state.isRootAvailable
     // 冷启动/刚重启那段，root 探测还没落定。此时 isRootAvailable 必然 false，
     // 直接画红点会得到"内核正常运行 + ROOT 未就绪"这种自相矛盾的首帧
     // （2026-11-09 用户真机反馈）。未落定 → 灰点 + 「正在获取 Root」。
@@ -381,12 +380,10 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
     // 「已准备就绪，可以直接 / 安装」这种把最后两个字挤到下一行的断行。
     val title = when {
         running -> stringResource(R.string.home_hero_running)
-        mount -> stringResource(R.string.home_hero_mount)
         canInstall -> stringResource(R.string.home_hero_ready_title)
         else -> stringResource(R.string.home_hero_inactive)
     }
     val modeText = when {
-        mount -> stringResource(R.string.home_hero_mount_mode)
         state.lkmMode == true -> "LKM"
         running -> stringResource(R.string.home_hero_kernel_mode)
         else -> stringResource(R.string.home_not_installed)
