@@ -80,13 +80,32 @@ static int ksuctl(unsigned long op, Args &&... args) {
 static struct ksu_get_info_cmd g_version {};
 
 struct ksu_get_info_cmd get_info() {
+    // 2026-11-13 (audit F17): `version`/`uapi_version` are build constants and
+    // may be cached, but `flags` carries KSU_FLAG_IS_MANAGER, which changes at
+    // runtime when the kernel crowns the manager. Caching the whole struct
+    // froze the first answer -- a manager that started before crowning got
+    // "not manager" and kept it forever, so no later rescan could recover the
+    // identity. Refresh the flags on every query, keep only the constants.
     if (!g_version.version) {
         if (ksuctl(KSU_IOCTL_GET_INFO, &g_version) < 0) {
             ksuctl(KSU_IOCTL_GET_INFO_LEGACY, &g_version);
             g_version.uapi_version = 0;
         }
+        return g_version;
     }
-    return g_version;
+
+    struct ksu_get_info_cmd info = g_version;
+    info.flags = 0;
+    struct ksu_get_info_cmd fresh {};
+    if (ksuctl(KSU_IOCTL_GET_INFO, &fresh) == 0) {
+        info.flags = fresh.flags;
+    } else if (g_version.uapi_version == 0) {
+        // Legacy kernel: the old call has no flags either, but keep the path
+        // identical to the first query so behaviour does not depend on order.
+        ksuctl(KSU_IOCTL_GET_INFO_LEGACY, &fresh);
+        info.flags = fresh.flags;
+    }
+    return info;
 }
 
 uint32_t get_kernel_uapi_version() {
