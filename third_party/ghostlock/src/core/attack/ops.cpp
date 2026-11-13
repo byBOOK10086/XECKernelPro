@@ -416,7 +416,7 @@ namespace ghostlock::attack {
             "  KSU_ALREADY=0\n"
             "  if [ ! -x \"$KSUD\" ]; then\n"
             "    echo '[!] ksud missing; cannot late-load' >>\"$LOG\"\n"
-            "    fail_exit 1 "ksud missing; cannot late-load"\n"
+            "    fail_exit 1 \"ksud missing; cannot late-load\"\n"
             "  fi\n"
             "  echo \"[*] late-load kmi=$KMI\" >>\"$LOG\"\n"
             "  chmod 755 \"$KSUD\" 2>/dev/null\n"
@@ -456,7 +456,7 @@ namespace ghostlock::attack {
             "done\n"
             "if [ \"$KSU_READY\" -ne 1 ]; then\n"
             "  echo '[!] KernelSU module not loaded' >>\"$LOG\"\n"
-            "  fail_exit 1 "KernelSU module not loaded"\n"
+            "  fail_exit 1 \"KernelSU module not loaded\"\n"
             "fi\n"
             "echo '[+] KernelSU module loaded (log only; health checks follow)' >>\"$LOG\"\n"
             /* XEC: 2026-11-09 audit — three defects fixed here:
