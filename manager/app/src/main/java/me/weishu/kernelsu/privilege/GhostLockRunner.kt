@@ -12,7 +12,7 @@ import com.ghostlock.app.data.RunStateCodec
 import com.ghostlock.app.data.UserProfileStore
 import com.ghostlock.app.domain.model.CpuPair
 import com.topjohnwu.superuser.Shell
-import me.weishu.kernelsu.ui.util.KsuCli
+import me.weishu.kernelsu.ui.util.getRootShell
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
@@ -174,7 +174,7 @@ class GhostLockRunner(context: Context) {
             // so the subcommand never reached the binary. Submit exactly one
             // command, on a shell that was verified to be root, with the path
             // quoted so spaces cannot split it.
-            val shell = KsuCli.getRootShell()
+            val shell = getRootShell()
             if (!shell.isRoot) {
                 onLog("<-> no root shell available for late-load")
                 return@withContext RunOutcome(false, -1, "no root shell")
