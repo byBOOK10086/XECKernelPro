@@ -171,11 +171,8 @@ jobs:
     - name: Install cargo-ndk
       run: cargo install cargo-ndk --locked
 
-    # 构建时把上游最新的 keybox 打进内置 tricky_store 模块（RustEmbed 之后会把它
-    # 一起打包进 ksud）。这样"刷入模块"本身就是一次密钥刷新，中国大陆用户不需要
-    # 设备端能连上 GitHub 也能拿到可信密钥。脚本拿不到源时不失败，保留仓库里那份。
-    - name: Refresh embedded keybox
-      run: bash .github/scripts/refresh-keybox.sh
+    # keybox 的拉取与可信核验不在这里做：2026-11-13 起改由 TEE 引擎侧负责，
+    # 本仓库只保留模块自带的出厂副本。
 
     # 2026-11-09：runner 从 services.gradle.org 取 gradle-9.2.0-bin.zip 直接吃
     # HTTP 504（wrapper 里没有镜像也没有重试），build-ksud 因此在 builtin-modules

@@ -175,7 +175,7 @@ label_data_path "$COMPAT_DIR/libcertgen.so"
 #
 #  1) 实时副本缺失 -> 用模块内置副本播种。
 #  2) **上一版内置副本 -> 本版内置副本** 的自动升级。CI 每次构建都会把上游最新的
-#     keybox 打进本模块（.github/scripts/refresh-keybox.sh，在 ksud 构建前跑），
+#     keybox 打进本模块（由 CI 在构建时从上游刷新后打入），
 #     所以"刷写 / 更新模块"本身就是一次密钥刷新——这正是中国大陆用户拿不到新
 #     箱子的离线出路。
 #     判据不是时间（tmpfs 里模块文件的 mtime 就是本次开机时间，没有可比性），
@@ -291,7 +291,7 @@ log_target_coverage
 # TA_enhanced still reads this compatibility directory for its status/config UI.
 label_data_path "$DATA"
 # 注意：**这里不再播种 $DATA/keybox.xml**。
-# 这一份是 TA 侧的"兼容副本"，而 TA 的 keybox.sh 会把"兼容副本被外部改动"
+# 这一份是 TA 侧的"兼容副本"，而 TEE 引擎侧会把它当成用户意图装进实时路径。
 # （用户在 WebUI 里粘贴自定义 keybox 就走这条路径）当成用户意图，装进实时路径。
 # 如果这里在缺少兼容副本时用模块内置副本回填，就会出现这样的降级链：
 # 实时副本是比较新的拉取结果 -> 兼容副本被删/缺失 -> 这里回填旧的内置副本 ->
@@ -329,7 +329,7 @@ if [ -f "$_KB_LIVE" ]; then
     if _kb_looks_valid "$_KB_LIVE"; then
         log_line "INFO keybox: present (sha=${_kb_live:-?} age=${_kb_age}s DeviceID=$(_kb_device_id "$_KB_LIVE") bundled=${_kb_ship_sha:-?} perms=644)"
     else
-        log_line "WARN keybox: present but structurally invalid (sha=${_kb_live:-?}) — TA guardian will replace it from its mirror list"
+        log_line "WARN keybox: present but structurally invalid (sha=${_kb_live:-?}) — the engine will fetch a replacement per its own source config"
     fi
     if [ -n "$_kb_live" ] && [ "$_kb_live" = "$_kb_ship_sha" ]; then
         log_line "WARN keybox: this is the copy bundled at build time — if attestation fails right after a fresh flash, either this build predates the latest yurikey rotation or all mirrors are unreachable"
