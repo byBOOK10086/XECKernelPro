@@ -10,6 +10,9 @@
     <string name="home_unsupported">Unsupported</string>
     <string name="home_unsupported_reason">XECKernel Pro only supports GKI kernels now, but you can patch the image for GKI devices.</string>
     <string name="home_device_model">Device model</string>
+    <!-- 设备区：密钥证明链由谁接管（替代原先的 Zygisk 那一行）。引擎换名/换版本时同步这行文案。 -->
+    <string name="home_tee_engine">TEE implementation</string>
+    <string name="home_tee_engine_value">Built-in · OhMyKeymint 1.2.6</string>
     <string name="home_kernel">Kernel version</string>
     <string name="home_manager_version">Manager version</string>
     <string name="home_download_count">Downloads</string>
