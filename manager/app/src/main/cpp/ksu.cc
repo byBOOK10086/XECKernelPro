@@ -227,10 +227,18 @@ bool set_superkey_guard(bool armed) {
     return ksuctl(KSU_IOCTL_SET_FEATURE, &cmd) == 0;
 }
 
-superkey_status superkey_status_query() {
+int superkey_status_query(bool &set, bool &guard_armed) {
     struct ksu_superkey_status_cmd cmd = {};
-    ksuctl(KSU_IOCTL_SUPERKEY_STATUS, &cmd);
-    return {cmd.set != 0, cmd.guard_armed != 0};
+    int rc = ksuctl(KSU_IOCTL_SUPERKEY_STATUS, &cmd);
+    set = cmd.set != 0;
+    guard_armed = cmd.guard_armed != 0;
+    if (rc == 0) {
+        return 0;
+    }
+    // Fail closed: report the error instead of pretending nothing is set.
+    set = false;
+    guard_armed = false;
+    return rc < 0 ? -rc : rc;
 }
 
 bool set_uts_spoof(uid_t uid, bool enabled, const std::string &release, const std::string &version) {

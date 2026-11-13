@@ -50,7 +50,10 @@ struct superkey_status {
 };
 bool set_superkey(const std::string &new_key, const std::string &old_key, bool clear);
 bool superkey_auth(const std::string &key);
-superkey_status superkey_status_query();
+/* 2026-11-13 (audit F19): 0 on success, positive errno otherwise. The old
+ * shape returned a zero-initialised struct both for "no key set" and for
+ * "the ioctl failed", so the UI could not tell the two apart. */
+int superkey_status_query(bool &set, bool &guard_armed);
 bool set_superkey_guard(bool armed);
 std::vector<std::string> get_exec_policy(uid_t uid, bool &restricted);
 

@@ -79,10 +79,17 @@ Java_me_weishu_kernelsu_Natives_superkeyAuth(JNIEnv *env, jobject, jstring key) 
 extern "C"
 JNIEXPORT jbooleanArray JNICALL
 Java_me_weishu_kernelsu_Natives_superkeyStatus(JNIEnv *env, jobject) {
-    superkey_status st = superkey_status_query();
-    jbooleanArray out = env->NewBooleanArray(2);
-    jboolean vals[2] = {(jboolean)(st.set ? JNI_TRUE : JNI_FALSE), (jboolean)(st.guard_armed ? JNI_TRUE : JNI_FALSE)};
-    env->SetBooleanArrayRegion(out, 0, 2, vals);
+    bool set = false;
+    bool armed = false;
+    const int err = superkey_status_query(set, armed);
+    // [set, armed, query_ok]: a failing ioctl (EBADF / EPERM / ENOTTY) must
+    // not look like "no key set", or the UI skips authentication and only
+    // fails later on the write.
+    jbooleanArray out = env->NewBooleanArray(3);
+    jboolean vals[3] = {(jboolean)(set ? JNI_TRUE : JNI_FALSE),
+                        (jboolean)(armed ? JNI_TRUE : JNI_FALSE),
+                        (jboolean)(err == 0 ? JNI_TRUE : JNI_FALSE)};
+    env->SetBooleanArrayRegion(out, 0, 3, vals);
     return out;
 }
 

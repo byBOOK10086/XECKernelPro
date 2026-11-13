@@ -102,6 +102,10 @@ object SuperkeyStore {
     /** Natives.superkeyStatus() 返回 [已设置, 守卫已武装]；null = 内核不认识。 */
     fun kernelStatus(): KernelStatus? = runCatching {
         val st = Natives.superkeyStatus() ?: return null
+        // 2026-11-13 (audit F19): [2] is the ioctl result. EBADF/EPERM/ENOTTY
+        // used to render as "not set / not armed", which sent the user to
+        // change a password that was never the problem.
+        if (st.size >= 3 && st[2].not()) return null
         KernelStatus(st.getOrElse(0) { false }, st.getOrElse(1) { false })
     }.getOrNull()
 
