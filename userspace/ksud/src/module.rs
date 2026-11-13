@@ -741,18 +741,36 @@ pub fn handle_updated_modules() -> Result<()> {
             // (installer.sh + Rust cleanup) explicitly clears it, and carrying
             // it forward makes freshly-flashed modules appear "disabled by
             // default" — the user's #1 complaint about ZY modules.
-            let removed = if module_dir.exists() {
+            let (removed, disabled) = if module_dir.exists() {
                 let r = module_dir.join(defs::REMOVE_FILE_NAME).exists();
+                // 2026-11-13 (audit F10): also remember an explicit user disable.
+                // Only the "remove" marker used to be carried over, so
+                // install -> disable -> reboot silently re-enabled the module
+                // (preinit honours either tree, the normal stage only the live
+                // one, so the two disagreed). A fresh install has no live dir at
+                // all, so the "new modules are enabled" default is untouched.
+                let d = module_dir.join(defs::DISABLE_FILE_NAME).exists();
                 remove_dir_all(&module_dir)?;
-                r
+                (r, d)
             } else {
-                false
+                (false, false)
             };
             rename(updated_module, &module_dir)?;
             if removed {
                 let path = module_dir.join(defs::REMOVE_FILE_NAME);
                 if let Err(e) = ensure_file_exists(&path) {
                     warn!("Failed to create {}: {e}", path.display());
+                }
+            }
+            if disabled {
+                let path = module_dir.join(defs::DISABLE_FILE_NAME);
+                if let Err(e) = ensure_file_exists(&path) {
+                    warn!("Failed to keep {} disabled: {e}", path.display());
+                } else {
+                    info!(
+                        "kept user-disable for {} across the update",
+                        module_dir.display()
+                    );
                 }
             }
         }

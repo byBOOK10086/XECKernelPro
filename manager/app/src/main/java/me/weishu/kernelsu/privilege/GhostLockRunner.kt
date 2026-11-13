@@ -12,6 +12,7 @@ import com.ghostlock.app.data.RunStateCodec
 import com.ghostlock.app.data.UserProfileStore
 import com.ghostlock.app.domain.model.CpuPair
 import com.topjohnwu.superuser.Shell
+import me.weishu.kernelsu.ui.util.KsuCli
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
@@ -167,7 +168,19 @@ class GhostLockRunner(context: Context) {
             val ksud = prepareKsud(onLog)
                 ?: return@withContext RunOutcome(false, -1, "ksud payload missing")
             onLog("<b> late-load via root shell: ${ksud.absolutePath}")
-            val result = Shell.cmd(ksud.absolutePath, "late-load", "--allow-shell").exec()
+            // 2026-11-13 (audit F15): Shell.cmd(vararg) submits ONE COMMAND PER
+            // ARGUMENT, not one argv. The old call therefore ran three separate
+            // commands -- bare `ksud`, then `late-load`, then `--allow-shell` --
+            // so the subcommand never reached the binary. Submit exactly one
+            // command, on a shell that was verified to be root, with the path
+            // quoted so spaces cannot split it.
+            val shell = KsuCli.getRootShell()
+            if (!shell.isRoot) {
+                onLog("<-> no root shell available for late-load")
+                return@withContext RunOutcome(false, -1, "no root shell")
+            }
+            val quoted = "'" + ksud.absolutePath.replace("'", "'\\''") + "'"
+            val result = shell.newJob().add("$quoted late-load --allow-shell").exec()
             result.out.forEach { onLog("[ksu] $it") }
             result.err.forEach { onLog("[ksu] $it") }
             onLog("<b> late-load exit=${result.code}")

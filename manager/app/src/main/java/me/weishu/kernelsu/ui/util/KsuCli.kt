@@ -954,6 +954,13 @@ fun reboot(reason: String = "") {
         // "soft_reboot" 这种它不认识的 reason（内核态行为一个字不改）。
         val ok = execKsud("soft-reboot", true, true)
         Log.i(TAG, "ksud soft-reboot result: $ok")
+        if (ok) return
+        // 2026-11-13 (audit F14): this comment promised a fallback but the code
+        // just returned, so on a build without the driver or with a mismatched
+        // UAPI the user saw "soft reboot" and the device stayed up. Do what the
+        // comment says: fall back to a real reboot, and tell the log why.
+        Log.i(TAG, "soft-reboot unavailable, falling back to a real reboot")
+        rebootNow("")
         return
     }
     rebootNow(reason)

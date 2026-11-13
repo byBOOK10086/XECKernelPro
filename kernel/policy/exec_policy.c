@@ -223,16 +223,27 @@ int ksu_exec_policy_set(const void __user *arg)
 
     mutex_lock(&policy_lock);
     old = lookup_entry(cmd.uid);
-    if (old) {
+    if (old && entry) {
+        /*
+         * 2026-11-13 (audit F03): replace in place. De-linking first and
+         * inserting afterwards publishes a window in which the uid has no
+         * entry at all, and the lookup path interprets "no entry" as
+         * "unrestricted" -- so a concurrent su request could pass a command
+         * that is on neither the old nor the new list. hlist_replace_rcu keeps
+         * exactly one version visible at every instant.
+         */
+        hlist_replace_rcu(&old->node, &entry->node);
+        call_rcu(&old->rcu, free_entry_rcu);
+        pr_info("exec_policy: uid %u restricted to %u command(s) (replaced)\n", cmd.uid, cmd.count);
+    } else if (old) {
         hash_del_rcu(&old->node);
         call_rcu(&old->rcu, free_entry_rcu);
-    }
-
-    if (entry) {
+        pr_info("exec_policy: uid %u unrestricted\n", cmd.uid);
+    } else if (entry) {
         hash_add_rcu(policy_ht, &entry->node, cmd.uid);
         pr_info("exec_policy: uid %u restricted to %u command(s)\n", cmd.uid, cmd.count);
     } else {
-        pr_info("exec_policy: uid %u unrestricted\n", cmd.uid);
+        pr_info("exec_policy: uid %u unrestricted (no entry)\n", cmd.uid);
     }
     mutex_unlock(&policy_lock);
     return 0;
