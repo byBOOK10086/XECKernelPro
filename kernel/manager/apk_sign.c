@@ -262,15 +262,11 @@ static __always_inline bool check_v2_signature(char *path, unsigned expected_siz
         if (id == 0x7109871au) {
             v2_signing_blocks++;
             v2_signing_valid = check_block(fp, &pos, pair_end, expected_size, expected_sha256);
-        } else if (id == 0xf05368c0u /* APK Signature Scheme v3 */
-                   || id == 0x1b93ad61u /* v3.1 (key rotation) */
-                   || id == 0x6dff800du /* source stamp, v2 */) {
-            // 2026-11-13 (audit F20): a legitimate APK may carry v3/v3.1 or a
-            // source-stamp block next to v2. Rejecting every unknown block made
-            // a correctly signed manager look invalid. These blocks are skipped
-            // rather than trusted: the identity below still comes only from the
-            // single v2 block, which stays mandatory, and v3 signer rotation
-            // consistency is the platform installer's job.
+        } else if (id == 0x6dff800du /* source stamp, v2 */) {
+            // A source stamp does not select a different APK signing scheme.
+            // Do not accept v3/v3.1 here: this parser identifies the v2
+            // certificate but does not verify its signature, and Android may
+            // validate v3 without authenticating the adjacent v2 block.
         } else if (id != 0x42726577u) { // APK verity padding
             // https://cs.android.com/android/platform/superproject/+/android-latest-release:tools/apksig/src/main/java/com/android/apksig/internal/apk/ApkSigningBlockUtils.java;l=102;drc=ebe4dfd4fd6550c949a6c7c2427484bf5e96500b
 #ifdef CONFIG_KSU_DEBUG
