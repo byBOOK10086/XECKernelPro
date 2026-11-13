@@ -31,7 +31,6 @@ pub mod android {
     use std::fs::{File, OpenOptions};
     use std::io::Write;
     use std::os::fd::AsRawFd;
-    use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
     use std::process::Command;
 
@@ -341,7 +340,7 @@ pub mod android {
             .join("post_ota.sh");
         if legacy_script.exists() {
             if let Err(error) = std::fs::remove_file(&legacy_script) {
-                warn!("failed to remove legacy OTA script {legacy_script:?}: {error:#}");
+                warn!("failed to remove legacy OTA script {}: {error:#}", legacy_script.display());
             } else {
                 info!("removed legacy post_ota.sh (early mark-boot-successful)");
             }
@@ -892,8 +891,7 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
             .entry_by_name("ksu_config")
             .and_then(CpioEntry::data)
             .and_then(|v| str::from_utf8(v).ok())
-            .map(|v| v.split(' ').map(std::borrow::ToOwned::to_owned).collect())
-            .unwrap_or_default();
+            .map_or_else(Vec::new, |v| v.split(' ').map(std::borrow::ToOwned::to_owned).collect());
 
         config.validate()?;
         config.apply(&mut ksu_config);
