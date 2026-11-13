@@ -413,7 +413,22 @@ int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr, void *
     if (current_chrooted()) {
         pr_err(
             "ksu_handle_execveat_sucompat: su found but NOT allowed! Because current process is running in chrooted environment\n");
-        return -EINVAL;
+        return -EINVAL;    }
+
+    /*
+     * 2026-11-13 (audit F02): the SUSFS branch used to call
+     * escape_with_root_profile() directly, with no exec-policy check at all --
+     * so on a CONFIG_KSU_SUSFS build a restricted uid got the full root
+     * profile by running plain interactive su, while the same request was
+     * refused on the normal path. The exec-policy gate above only guards the
+     * other compilation branch, and syscall_hook_manager.c disables the
+     * duplicate exec dispatcher in SUSFS mode, so there is nothing else to
+     * catch it. Until the restricted-exec protocol lands, fail closed here:
+     * a restricted uid may not use this entry at all.
+     */
+    if (unlikely(ksu_exec_policy_is_restricted(current_uid().val))) {
+        pr_err("ksu_handle_execveat_sucompat: restricted uid denied on the SUSFS entry (exec policy is not enforced on this path)\n");
+        return -EPERM;
     }
 
     {
