@@ -188,9 +188,14 @@ fi
 for f in keymint inject; do
     if [ -e "$OMK_STATE/$f" ] || [ -L "$OMK_STATE/$f" ]; then
         backup="$OMK_STATE/$f.pre-xec"
+        # 上游 OMY 可能在我们运行期间再次写入热更新二进制（用户重装模块、手动替换）。
+        # 只保留一份备份还不够：直接报错退出会让引擎整套不启动。这里轮转备份
+        # （pre-xec -> pre-xec.old，新文件 -> pre-xec），始终保留最新一份供关闭内置
+        # 引擎时归还，也保证本次启动继续用我们锁定的载荷。
         if [ -e "$backup" ] || [ -L "$backup" ]; then
-            log_line "ERROR existing override backup at $backup; refusing to overwrite"
-            exit 1
+            rm -f "$OMK_STATE/$f.pre-xec.old"
+            mv "$backup" "$OMK_STATE/$f.pre-xec.old" || exit 1
+            log_line "INFO rotated previous override backup to $f.pre-xec.old"
         fi
         mv "$OMK_STATE/$f" "$backup" || exit 1
         log_line "INFO preserved upstream binary override at $backup"
