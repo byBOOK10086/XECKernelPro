@@ -385,10 +385,29 @@ install_module() {
   local MODDIRNAME=modules
   $BOOTMODE && MODDIRNAME=modules_update
   local MODULEROOT=$NVBASE/$MODDIRNAME
+  # 2026-11-13 (audit F11): this shell took the FIRST id= line while the Rust
+  # side (HashMap) took the LAST one, so a module.prop carrying
+  # `id=../../victim` plus `id=safe` passed validation under one name and then
+  # deleted a directory under the other. Reject duplicates and anything that is
+  # not a plain module id before MODPATH exists, and refuse to delete outside
+  # the module root even if the parsing above changes again.
+  local ID_LINES
+  ID_LINES=$(grep -cE '^[[:space:]]*id[[:space:]]*=' "$TMPDIR/module.prop" 2>/dev/null)
+  if [ "${ID_LINES:-0}" -ne 1 ]; then
+    abort "! module.prop must contain exactly one id= line (found ${ID_LINES:-0})"
+  fi
   MODID=`grep_prop id $TMPDIR/module.prop`
+  case "$MODID" in
+    ''|*/*|*..*|*[!A-Za-z0-9._-]*)
+      abort "! Invalid module id: '$MODID'" ;;
+  esac
   MODNAME=`grep_prop name $TMPDIR/module.prop`
   MODAUTH=`grep_prop author $TMPDIR/module.prop`
   MODPATH=$MODULEROOT/$MODID
+  case "$MODPATH" in
+    "$MODULEROOT"/*) ;;
+    *) abort "! Refusing to write outside $MODULEROOT" ;;
+  esac
 
   # Check managed features
   check_managed_features $TMPDIR/module.prop
