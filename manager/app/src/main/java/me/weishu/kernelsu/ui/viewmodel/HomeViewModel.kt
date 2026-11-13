@@ -185,7 +185,7 @@ class HomeViewModel(
             if (pid.isNotEmpty() && pid.all(Char::isDigit)) {
                 ShellUtils.fastCmd(
                     shell,
-                    "grep -q libTEESimulator /proc/$pid/maps 2>/dev/null && echo -n yes",
+                    "sh /data/adb/ksu/builtin/tricky_store/injection-status.sh && echo -n yes",
                 ).trim() == "yes"
             } else {
                 false

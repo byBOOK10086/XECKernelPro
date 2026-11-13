@@ -15,7 +15,7 @@
 | `third_party/susfs4ksu-lkm/` | GPL-2.0 | 目录内 `LICENSE` | 上游原样 vendor |
 | `third_party/*/external/AOSP`、`external/LSPlt` | 各自原许可证 | 目录内 `LICENSE` | 未改动 |
 | `server/`（官网生成、发布流水线、上传服务、部署脚本） | **AGPL-3.0-or-later** | [`LICENSE`](LICENSE) | 与主体同许可；凭据一律走环境变量，仓库里不落密钥 |
-| **Oh My Keymint（外部模块）** | 上游自定义许可证 | 见上游仓库 | **不 vendor、不编译、不分发**。上游使用作者自定义的 *General License Agreement v4*（qwq233）+ *Oh My Keymint License* 附加条款（命名/衍生作品限制），既不是 AGPL 也不是 OSI 认证许可，与本仓 AGPL-3.0 不兼容。本项目只在**运行时**识别/配置用户自行安装的该模块，不含其任何代码或二进制 |
+| `third_party/OhMyKeymint/` 与内置引擎独立载荷 | General License Agreement v4 + Oh My Keymint License；AOSP 部分按原许可 | 目录内 `src/LICENSE.md`、`src/LICENSE-2`、`module/LICENSE.1`、`module/LICENSE.2` | 按原许可作为独立进程和文件聚合，不改为 AGPL/GPL。保留原始载荷、全文许可、作者署名、源码与发布地址；仅按适用许可进行非商业分发。维护者报告已取得作者集成许可，记录见 `third_party/OhMyKeymint/AUTHORIZATION.md`；不暗示作者背书 |
 
 ## 为什么是 AGPL-3.0 而不是继续 GPL-3.0
 
@@ -32,4 +32,4 @@
 1. 分发任何二进制（APK / zip / 内核镜像）时，必须同时提供对应源码或书面 offer。
 2. 若你修改了 `manager/` 中源自 KernelSU 的文件，保留其 GPL-3.0 声明；你新增的文件可以按 AGPL-3.0 发布。
 3. `kernel/` 的二进制（`kernelsu.ko`、内置内核）按 GPL-2.0 分发，必须保留 `kernel/LICENSE` 与源码可得性。
-4. 不要把 Oh My Keymint 的代码或整包塞进本仓/本项目的发布物；需要用户自行从其上游 Releases 安装。
+4. Oh My Keymint 保持独立载荷和原许可证，随包携带完整许可、署名与来源；不得将它宣称为 AGPL/GPL 组件。商业用途或超出上游许可的用途须另行取得适用授权。

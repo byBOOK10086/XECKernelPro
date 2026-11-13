@@ -17,3 +17,16 @@ allow xecpro port:tcp_socket name_connect
 allow xecpro self:udp_socket { create connect read write getopt setopt }
 allow xecpro node:udp_socket node_bind
 allow xecpro port:udp_socket name_connect
+
+# Oh My Keymint (third_party/OhMyKeymint, GLA v4) — the first three rules are
+# carried over from module/sepolicy.rule of the vendored release; the rest make
+# them effective for our layout (our engine tree is adb_data_file, not
+# system_file, and the omk working dir needs directory search as well).
+allow keystore system_file unix_dgram_socket { getattr read recvfrom }
+allow system_file keystore unix_dgram_socket sendto
+allow keystore system_file file { execute getattr map read receive }
+allow keystore default_android_service service_manager find
+allow shell default_android_service service_manager find
+allow keystore adb_data_file file { execute getattr map read }
+allow keystore adb_data_file dir { search getattr open read }
+allow keystore adb_data_file sock_file { read write getattr }

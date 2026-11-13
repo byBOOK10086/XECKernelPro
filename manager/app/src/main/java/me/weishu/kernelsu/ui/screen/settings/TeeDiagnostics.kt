@@ -110,13 +110,15 @@ object TeeDiagnostics {
             append("E='';")
             ENGINE_DIRS.forEach { append(" [ -d '$it' ] && [ -z \"\$E\" ] && E='$it';") }
             append(" echo \"ENGINE_DIR=\$E\";")
-            append(" if [ -n \"\$E\" ] && [ -f \"\$E/disable\" ]; then echo 'ENGINE_DISABLED=1'; else echo 'ENGINE_DISABLED=0'; fi;")
-            append(" echo \"ENGINE_PID=\$(pidof TEESimulator 2>/dev/null | cut -d' ' -f1)\";")
+            append(" if [ -f /data/adb/ksu/.tee_engine_off ] || { [ -n \"\$E\" ] && [ -f \"\$E/disable\" ]; }; then echo 'ENGINE_DISABLED=1'; else echo 'ENGINE_DISABLED=0'; fi;")
+            append(" echo \"ENGINE_PID=\$(pidof keymint 2>/dev/null | cut -d' ' -f1)\";")
             // 2026-11-10 真机反馈："检测页 TEE 注入是绿的，但工具箱说没有引擎"。
             // 两者可以同时成立：模块目录被删/被卸后，keystore2 里旧的注入仍然残留，
             // 直到 keystore2 重启才失效。把这件事显式探出来，UI 才能说人话。
+            // 2026-11-13：引擎换成 Oh My Keymint，载荷是 inject（不再是 libTEESimulator），
+            // 按运行时引擎目录前缀判定，避免把别的库误报成"已注入"。
             append(" KPID=\$(pidof keystore2 2>/dev/null | cut -d' ' -f1);")
-            append(" if [ -n \"\$KPID\" ] && grep -q libTEESimulator /proc/\$KPID/maps 2>/dev/null; then echo 'ENGINE_INJECTED=1'; else echo 'ENGINE_INJECTED=0'; fi;")
+            append(" if sh /data/adb/ksu/builtin/tricky_store/injection-status.sh 2>/dev/null; then echo 'ENGINE_INJECTED=1'; else echo 'ENGINE_INJECTED=0'; fi;")
             append(" if [ -x '$BIN' ]; then echo 'DAEMON_BIN=1'; else echo 'DAEMON_BIN=0'; fi;")
             append(" echo \"DAEMON_PID=\$(pidof ta-enhanced 2>/dev/null | cut -d' ' -f1)\";")
             append(" if [ -f '$TS/keybox.xml' ]; then echo 'KEYBOX=1';")
@@ -143,7 +145,7 @@ object TeeDiagnostics {
             append(" grep -iE 'ERROR|WARN' '$LOG' 2>/dev/null | tail -n 4;")
         }
 
-        val result = runCatching { shell.newJob().add(script).exec() }
+        val result = runCatching { shell.newJob().add(script).to(ArrayList<String>(), ArrayList<String>()).to(ArrayList<String>(), ArrayList<String>()).exec() }
             .getOrElse {
                 return@withContext empty("执行体检脚本失败：${it.javaClass.simpleName}")
             }
@@ -238,7 +240,7 @@ object TeeDiagnostics {
 
     /** 让守护进程自己校验现场 keybox */
     private fun validateKeybox(shell: Shell, errors: MutableList<String>): KeyboxReport? {
-        val result = runCatching { shell.newJob().add("'$BIN' keybox validate 2>&1").exec() }
+        val result = runCatching { shell.newJob().add("'$BIN' keybox validate 2>&1").to(ArrayList<String>(), ArrayList<String>()).exec() }
             .getOrElse {
                 errors += "keybox validate 执行失败：${it.javaClass.simpleName}"
                 return null
@@ -316,7 +318,7 @@ object TeeDiagnostics {
         // not prove the shell works. A dead shell still reports isRoot=true and then
         // answers every command with empty output and exit -1, which the UI can only
         // render as "命令没有任何输出". Probe uid first so the two failures separate.
-        val uidProbe = runCatching { shell.newJob().add("id -u").exec() }.getOrNull()
+        val uidProbe = runCatching { shell.newJob().add("id -u").to(ArrayList<String>(), ArrayList<String>()).exec() }.getOrNull()
         val shellUid = uidProbe?.out?.firstOrNull()?.trim()
         if (shellUid != "0") {
             return@withContext Result.failure(
@@ -336,7 +338,7 @@ object TeeDiagnostics {
             shell.newJob().add(
                 "'${bundledKsud()}' builtin force-boot on >/dev/null 2>&1; " +
                     "V=\$('$kernelXudc' builtin force-boot 2>/dev/null); echo __K=\$V",
-            ).exec().out
+            ).to(ArrayList<String>(), ArrayList<String>()).to(ArrayList<String>(), ArrayList<String>()).exec().out
         }.getOrNull().orEmpty()
         val kernelState = arm.firstOrNull { it.startsWith("__K=") }?.removePrefix("__K=")?.trim()
         steps += RepairStep(
@@ -355,7 +357,7 @@ object TeeDiagnostics {
         val result = runCatching {
             shell.newJob().add(
                 "timeout 240 '${bundledKsud()}' builtin start 2>&1; echo __XEC_EXIT=\$?",
-            ).exec()
+            ).to(ArrayList<String>(), ArrayList<String>()).exec()
         }.getOrElse { return@withContext Result.failure(it) }
         val lines = result.out.map { it.trim() }.filter { it.isNotEmpty() }
         val exit = lines.lastOrNull { it.startsWith("__XEC_EXIT=") }
@@ -408,13 +410,12 @@ object TeeDiagnostics {
         while (waited < 24) {
             val probe = runCatching {
                 shell.newJob().add(
-                    "echo P=\$(pidof TEESimulator 2>/dev/null | cut -d' ' -f1); " +
+                    "echo P=\$(pidof keymint 2>/dev/null | cut -d' ' -f1); " +
                         // keystore2 重启窗口里可能有多个 pid：逐个看，别只看第一个 ——
                         // 只看第一个会把"只注入到将要退出的那个"报成成功。
-                        "I=0; for K in \$(pidof keystore2 2>/dev/null); do " +
-                        "grep -q libTEESimulator /proc/\$K/maps 2>/dev/null && I=1; done; " +
+                        "I=0; sh /data/adb/ksu/builtin/tricky_store/injection-status.sh 2>/dev/null && I=1; " +
                         "echo I=\$I",
-                ).exec().out
+                ).to(ArrayList<String>(), ArrayList<String>()).to(ArrayList<String>(), ArrayList<String>()).exec().out
             }.getOrNull().orEmpty()
             pid = probe.firstOrNull { it.startsWith("P=") }
                 ?.removePrefix("P=")?.trim()?.toIntOrNull() ?: 0
@@ -426,24 +427,23 @@ object TeeDiagnostics {
         steps += RepairStep(
             label = STEP_ENGINE,
             ok = pid > 0,
-            detail = if (pid > 0) "TEESimulator pid $pid" else "18 秒内没看到 TEESimulator 进程",
+            detail = if (pid > 0) "keymint pid $pid" else "18 秒内没看到 keymint 进程",
         )
         steps += RepairStep(
             label = "keystore2 注入",
             ok = injected,
-            detail = if (injected) "libTEESimulator 已在 keystore2 的 maps 里" else "keystore2 里还没有注入（引擎没接管）",
+            detail = if (injected) "inject 载荷已在 keystore2 的 maps 里" else "keystore2 里还没有注入（引擎没接管）",
         )
         Result.success(steps)
     }
 
     private fun value(lines: List<String>, key: String): String? =
         lines.firstOrNull { it.startsWith("$key=") }?.substringAfter('=')
-
     /** 让守护进程拉一次 keybox（它自己带镜像/校验/信任锚判定），成功后再重启引擎。 */
     suspend fun refreshKeybox(): Result<String> = withContext(Dispatchers.IO) {
         val shell = awaitRootShell()
         if (!shell.isRoot) return@withContext Result.failure(IllegalStateException("没有 root"))
-        val result = runCatching { shell.newJob().add("'$BIN' keybox fetch 2>&1").exec() }
+        val result = runCatching { shell.newJob().add("'$BIN' keybox fetch 2>&1").to(ArrayList<String>(), ArrayList<String>()).exec() }
             .getOrElse { return@withContext Result.failure(it) }
         val text = result.out.joinToString(" ").trim()
         if (result.isSuccess) {
@@ -462,7 +462,7 @@ object TeeDiagnostics {
             append("rm -rf /data/misc/keystore/* 2>/dev/null; ")
             append("echo done")
         }
-        val result = runCatching { shell.newJob().add(script).exec() }.getOrNull()
+        val result = runCatching { shell.newJob().add(script).to(ArrayList<String>(), ArrayList<String>()).to(ArrayList<String>(), ArrayList<String>()).exec() }.getOrNull()
             ?: return@withContext Result.failure(IllegalStateException("执行失败"))
         if (result.isSuccess) Result.success(Unit)
         else Result.failure(IllegalStateException(result.err.joinToString(" ").ifBlank { "清理失败" }))
@@ -489,7 +489,7 @@ object TeeDiagnostics {
             if (File(libadbroot).isFile) append(" --libadbroot '$libadbroot'")
             append(" --data-path '${info.deviceProtectedDataDir}'")
         }
-        val result = runCatching { shell.newJob().add("'${bundledKsud()}' $args 2>&1").exec() }
+        val result = runCatching { shell.newJob().add("'${bundledKsud()}' $args 2>&1").to(ArrayList<String>(), ArrayList<String>()).exec() }
             .getOrElse { return@withContext Result.failure(it) }
         val text = result.out.map { it.trim() }.filter { it.isNotEmpty() }
             .takeLast(3).joinToString(" / ")
@@ -500,7 +500,7 @@ object TeeDiagnostics {
         }
         // 回读：新守护进程必须认识 `builtin force-boot`，否则等于没换上。
         val state = runCatching {
-            shell.newJob().add("'/data/adb/xudc' builtin force-boot 2>&1").exec()
+            shell.newJob().add("'/data/adb/xudc' builtin force-boot 2>&1").to(ArrayList<String>(), ArrayList<String>()).exec()
         }.getOrNull()?.out?.map { it.trim() }?.firstOrNull { it == "on" || it == "off" }
         if (state == null) {
             Result.success("已替换；新守护进程还没答上开关状态，重启后再看一次")
@@ -558,7 +558,7 @@ object TeeDiagnostics {
         // `builtin start` 自己等了 15 秒；这里再兜一轮，别把"还在起"报成"没起"。
         repeat(20) {
             val alive = runCatching {
-                shell.newJob().add("pidof TEESimulator 2>/dev/null").exec()
+                shell.newJob().add("pidof keymint 2>/dev/null").to(ArrayList<String>(), ArrayList<String>()).exec()
                     .out.firstOrNull()?.trim()?.toIntOrNull() ?: 0
             }.getOrDefault(0)
             if (alive > 0) return@withContext Result.success(true)
@@ -580,7 +580,7 @@ object TeeDiagnostics {
         } else {
             "mkdir -p '$SEC'; : > '$SEC/remote_priority_off'; echo done"
         }
-        val result = runCatching { shell.newJob().add(cmd).exec() }.getOrNull()
+        val result = runCatching { shell.newJob().add(cmd).to(ArrayList<String>(), ArrayList<String>()).exec() }.getOrNull()
             ?: return@withContext Result.failure(IllegalStateException("执行失败"))
         if (result.isSuccess) Result.success(Unit)
         else Result.failure(IllegalStateException(result.err.joinToString(" ").ifBlank { "写入开关失败" }))
@@ -594,7 +594,7 @@ object TeeDiagnostics {
             "T='$TS/target.txt'; mkdir -p '$TS'; touch \"\$T\"; " +
                 "if ! grep -qxF 'wu.keyChain.test' \"\$T\"; then echo 'wu.keyChain.test' >> \"\$T\"; fi; " +
                 "chmod 644 \"\$T\" 2>/dev/null; echo done"
-        val result = runCatching { shell.newJob().add(script).exec() }.getOrNull()
+        val result = runCatching { shell.newJob().add(script).to(ArrayList<String>(), ArrayList<String>()).to(ArrayList<String>(), ArrayList<String>()).exec() }.getOrNull()
             ?: return@withContext Result.failure(IllegalStateException("执行失败"))
         if (result.isSuccess) Result.success(Unit)
         else Result.failure(IllegalStateException(result.err.joinToString(" ").ifBlank { "写入 target.txt 失败" }))

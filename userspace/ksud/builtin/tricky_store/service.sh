@@ -1,34 +1,24 @@
 #!/system/bin/sh
-# 修改版（GPL-3.0 §5(a)）：本文件由 XECKernel Pro 修改，非上游原样；改动清单与日期见
-# 同目录 NOTICE.md「本地修改」。上游：Enginex0/TEESimulator-RS（GPL-3.0）。
-# Built-in TEESimulator-RS engine init.
+# 修改版（GPL-3.0 §5(a)）：本文件由 XECKernel Pro 重写，改动清单与日期见同目录
+# NOTICE.md「本地修改」。运行期引擎为 Oh My Keymint 1.2.6-9069c6c
+# （third_party/OhMyKeymint/UPSTREAM.md，GLA v4，非 GPL）。
 #
-# The bundled classes.dex is kept byte-for-byte compatible with the upstream
-# engine. Its native cert generator path is satisfied through a compatibility
-# directory because rewriting DEX string_ids without rebuilding the DEX is not
-# safe. The engine itself runs from /data/adb/tricky_store.
+# 本模块是引擎“载体”：模块身份、生命周期、keybox 真源、作用域（target.txt）与
+# 管理器状态都归我们；软件 KeyMint 本体与 keystore2 注入载荷是 OMY 的二进制，
+# 由它自己的 daemon / daemon-injector 看护脚本拉起。
+#
+# 与旧版（TEESimulator）最大的三点不同：
+#   1) 没有 supervisor / classes.dex：引擎是原生二进制，进程名 keymint；
+#   2) keybox 与作用域必须落到 /data/misc/keystore/omk（属主 1017），不是引擎目录；
+#   3) 注入器会按需 kill 并重启 keystore2，所以“重启引擎”不能顺带重启别的服务。
 MODPATH=${0%/*}
 RUNTIME=/data/adb/tricky_store
+ENGINE="$RUNTIME/engine"
 COMPAT_DIR=/data/adb/ksu/builtin/tricky_store
 LOG_FILE="$RUNTIME/.engine.log"
-
-# 2026-11-08：归一化模块自述。
-# 原因：module.prop 里直接写着 `name=TEESimulator-RS` + 上游 updateJson，检测器
-# （春秋 v4.6.2 等）能按名字直接命中给"找到了 TEESimulator"。构建产物里已经改成
-# 中性名，但**存量设备**的这份 module.prop 是当初开机时从 ksud 内嵌副本落下来的，
-# 光改构建只影响重新刷 boot 的设备。所以在每次开机时兜一次，让老设备也立刻生效。
-# 只在文件里确实还带旧名时才写，避免每次开机都动文件（不制造无意义的 mtime 变化）。
-_normalize_module_prop() {
-    local mp="$RUNTIME/module.prop"
-    [ -f "$mp" ] || return 0
-    grep -q 'TEESimulator' "$mp" 2>/dev/null || return 0
-    sed -i 's/^name=.*/name=系统密钥组件/' "$mp" 2>/dev/null
-    sed -i '/^updateJson=/d' "$mp" 2>/dev/null
-    sed -i '/^description=/d' "$mp" 2>/dev/null
-    printf 'description=为受支持的设备提供密钥证明链的本机组件\n' >> "$mp" 2>/dev/null
-    log_line "INFO module.prop normalized (name no longer references the upstream engine)"
-}
-_normalize_module_prop
+OMK=/data/misc/keystore/omk
+OMK_STATE=/data/adb/omk
+ENGINE_ID=omk-1.2.6-9069c6c
 
 log_line() {
     printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$LOG_FILE" 2>/dev/null
@@ -64,8 +54,18 @@ label_data_path() {
     if command -v busybox >/dev/null 2>&1 && busybox chcon --reference=/data/adb "$path" 2>/dev/null; then
         return 0
     fi
-    log_line "WARN failed to inherit SELinux label for $path"
     return 0
+}
+
+# 模块自述归一化：老设备上 /data/adb/tricky_store/module.prop 可能还是把上游引擎名
+# 写进 name 的旧副本，检测器能按名字直接命中。只在确实带旧名时改写。
+_normalize_module_prop() {
+    local mp="$RUNTIME/module.prop"
+    [ -f "$mp" ] || return 0
+    grep -qE 'TEESimulator|Oh My Keymint' "$mp" 2>/dev/null || return 0
+    sed -i 's/^name=.*/name=系统密钥组件/' "$mp" 2>/dev/null
+    sed -i '/^updateJson=/d' "$mp" 2>/dev/null
+    log_line "INFO module.prop normalized (no upstream engine name in the UI)"
 }
 
 # 2026-11-05 本地修改：内置引擎现在自己就装在 /data/adb/ksu/builtin/tricky_store，
@@ -80,21 +80,32 @@ BUILTIN_DIR=/data/adb/ksu/builtin/tricky_store
 # 那版"谁看见谁都退"的互让——真机上内置树和模块版互相 stand down，结果 keystore2
 # 谁都没接管，bootloader 一直显示未锁定。
 #
-# 两条硬规则：
-#   1. 内置那份（SELF_DIR == $BUILTIN_DIR）**永远不让位**；
-#   2. 模块那份（装进 /data/adb/modules/<id> 的副本）见到内置树就退，绝不抢同一个
-#      keystore2。
+# 2026-11-13：引擎换成 Oh My Keymint 后，用户仍可能另装上游 `oh_my_keymint` 模块；
+# 两套注入会同时抢 keystore2，所以内置树对**真正的上游引擎模块**让位，但对自己那份
+# `/data/adb/modules/tricky_store` 副本仍然不让（那条是 11-11 裁定要压制的对象）。
+active_module_dir() {
+    local dir="$1"
+    [ "$dir" = "$SELF_DIR" ] && return 1
+    [ -f "$dir/module.prop" ] || return 1
+    [ -f "$dir/disable" ] && return 1
+    [ -f "$dir/remove" ] && return 1
+    return 0
+}
+
 external_engine_active() {
     local dir
-    [ "$SELF_DIR" = "$BUILTIN_DIR" ] && return 1
+    if [ "$SELF_DIR" = "$BUILTIN_DIR" ]; then
+        for dir in /data/adb/modules/oh_my_keymint /data/adb/modules/ohmykeymint; do
+            active_module_dir "$dir" && return 0
+        done
+        return 1
+    fi
     [ -f "$BUILTIN_DIR/module.prop" ] && return 0
     for dir in /data/adb/modules/tricky_store \
-               /data/adb/modules/.tricky_store; do
-        [ "$dir" = "$SELF_DIR" ] && continue
-        [ -f "$dir/module.prop" ] || continue
-        [ -f "$dir/disable" ] && continue
-        [ -f "$dir/remove" ] && continue
-        return 0
+               /data/adb/modules/.tricky_store \
+               /data/adb/modules/oh_my_keymint \
+               /data/adb/modules/ohmykeymint; do
+        active_module_dir "$dir" && return 0
     done
     return 1
 }
@@ -103,96 +114,92 @@ mkdir -p "$RUNTIME" || exit 1
 chmod 755 "$RUNTIME" 2>/dev/null
 touch "$LOG_FILE" 2>/dev/null || exit 1
 label_data_path "$RUNTIME"
+_normalize_module_prop
 
-# Any active external module owns the same injection surface. Do not start a
-# second engine or overwrite its files.
 if external_engine_active; then
-    log_line "INFO TEERS stand down: the built-in engine owns the keystore2 injection surface (self=$SELF_DIR)"
+    log_line "INFO builtin engine stand down: external engine module is present"
     exit 0
 fi
 
+# ---------------------------------------------------------------------------
+# 引擎落盘（整目录原子替换）
+# ---------------------------------------------------------------------------
+# 引擎文件 10MB（keymint 7.75MB + inject 2.34MB），逐文件 stage 会留下半套状态；
+# 这里先铺到 .engine.<pid>.tmp，再整目录换。版本戳最后写，中断即下次重试。
 VER=$(sed -n 's/^versionCode=//p' "$MODPATH/module.prop" 2>/dev/null)
 [ -n "$VER" ] || VER=0
 CUR=$(cat "$RUNTIME/.engine_version" 2>/dev/null)
-# versionCode 由人手维护，引擎重建而它没变时运行时会一直留着旧的 classes.dex
-# （真机上就是 2395448 vs 2396480，新引擎从没部署过）。再比一次内容大小，
-# 任何一侧变化都重新 stage。
-# 逐字节比，不比长度：同长度的重建（改一行逻辑、换一个常量）以前会被判成
-# "没变"而永不部署。cmp 不可用时退回比长度，行为不比现在更差。
-same_content=1
-for _f in daemon inject supervisor classes.dex libTEESimulator.so libcertgen.so; do
-    [ -f "$RUNTIME/$_f" ] || { same_content=0; break; }
+need_stage=0
+[ "$CUR" = "$VER $ENGINE_ID" ] || need_stage=1
+for f in daemon daemon-injector libs/arm64-v8a/keymint libs/arm64-v8a/inject LICENSE.1 LICENSE.2 AOSP.Apache-license-2.0.txt README.md; do
+    [ -f "$ENGINE/$f" ] || { need_stage=1; break; }
     if command -v cmp >/dev/null 2>&1; then
-        cmp -s "$MODPATH/$_f" "$RUNTIME/$_f" || { same_content=0; break; }
+        cmp -s "$MODPATH/engine/$f" "$ENGINE/$f" || { need_stage=1; break; }
     else
-        [ "$(wc -c < "$MODPATH/$_f")" = "$(wc -c < "$RUNTIME/$_f")" ] || { same_content=0; break; }
+        [ "$(wc -c < "$MODPATH/engine/$f")" = "$(wc -c < "$ENGINE/$f")" ] || { need_stage=1; break; }
     fi
 done
-if [ "$same_content" != 1 ]; then
-    log_line "INFO engine files differ from the bundled tree, restaging"
-    rm -f "$RUNTIME/.engine_version"
-    CUR=""
-fi
-if [ "$same_content" != 1 ] || [ "$VER" != "$CUR" ] || [ ! -f "$RUNTIME/daemon" ] || \
-   [ ! -f "$RUNTIME/classes.dex" ] || [ ! -x "$RUNTIME/inject" ]; then
+
+if [ "$need_stage" = 1 ]; then
+    log_line "INFO engine: staging $ENGINE_ID (versionCode=$VER)"
     STAGE_DIR="$RUNTIME/.engine.$$.tmp"
     rm -rf "$STAGE_DIR"
-    mkdir -p "$STAGE_DIR" || exit 1
-    stage_file "$MODPATH/daemon" "$STAGE_DIR/daemon" 755 || { rm -rf "$STAGE_DIR"; exit 1; }
-    stage_file "$MODPATH/inject" "$STAGE_DIR/inject" 755 || { rm -rf "$STAGE_DIR"; exit 1; }
-    stage_file "$MODPATH/supervisor" "$STAGE_DIR/supervisor" 755 || { rm -rf "$STAGE_DIR"; exit 1; }
-    stage_file "$MODPATH/classes.dex" "$STAGE_DIR/classes.dex" 644 || { rm -rf "$STAGE_DIR"; exit 1; }
-    stage_file "$MODPATH/libTEESimulator.so" "$STAGE_DIR/libTEESimulator.so" 644 || { rm -rf "$STAGE_DIR"; exit 1; }
-    stage_file "$MODPATH/libcertgen.so" "$STAGE_DIR/libcertgen.so" 644 || { rm -rf "$STAGE_DIR"; exit 1; }
-    stage_file "$MODPATH/module.prop" "$STAGE_DIR/module.prop" 644 || { rm -rf "$STAGE_DIR"; exit 1; }
-
-    # Replace each asset atomically. The version marker is written last, so a
-    # partial update is retried on the next boot instead of being accepted.
-    for f in daemon inject supervisor classes.dex libTEESimulator.so libcertgen.so module.prop; do
-        mv -f "$STAGE_DIR/$f" "$RUNTIME/$f" || {
-            log_line "ERROR failed to commit staged engine asset: $f"
-            rm -rf "$STAGE_DIR"
-            exit 1
+    mkdir -p "$STAGE_DIR/libs/arm64-v8a" || exit 1
+    for f in daemon daemon-injector; do
+        stage_file "$MODPATH/engine/$f" "$STAGE_DIR/$f" 755 || { rm -rf "$STAGE_DIR"; exit 1; }
+    done
+    for f in keymint inject; do
+        stage_file "$MODPATH/engine/libs/arm64-v8a/$f" "$STAGE_DIR/libs/arm64-v8a/$f" 755 || {
+            rm -rf "$STAGE_DIR"; exit 1
         }
     done
-    printf '%s\n' "$VER" > "$STAGE_DIR/.engine_version" || {
-        rm -rf "$STAGE_DIR"
-        exit 1
-    }
-    mv -f "$STAGE_DIR/.engine_version" "$RUNTIME/.engine_version" || {
-        rm -rf "$STAGE_DIR"
-        exit 1
-    }
-    rm -rf "$STAGE_DIR"
+    for f in LICENSE.1 LICENSE.2 AOSP.Apache-license-2.0.txt README.md; do
+        stage_file "$MODPATH/engine/$f" "$STAGE_DIR/$f" 644 || { rm -rf "$STAGE_DIR"; exit 1; }
+    done
+    rm -rf "$ENGINE"
+    mv -f "$STAGE_DIR" "$ENGINE" || { rm -rf "$STAGE_DIR"; exit 1; }
+    printf '%s\n' "$VER $ENGINE_ID" > "$RUNTIME/.engine_version.probe" 2>/dev/null
+    mv -f "$RUNTIME/.engine_version.probe" "$RUNTIME/.engine_version" 2>/dev/null
+    label_data_path "$ENGINE"
+    label_data_path "$ENGINE/libs/arm64-v8a/keymint"
+    label_data_path "$ENGINE/libs/arm64-v8a/inject"
     sync
 fi
 
-# The bundled DEX still names this absolute upstream path. This directory has
-# no module.prop, so it is not enumerated as an installed module.
+# Compatibility directory：TA_enhanced 的旧脚本仍会找 /data/adb/ksu/builtin/tricky_store。
 mkdir -p "$COMPAT_DIR" || exit 1
-printf 'xecpro compatibility directory\n' > "$COMPAT_DIR/.xecpro_compat" || exit 1
+printf 'xecpro compatibility directory\n' > "$COMPAT_DIR/.xecpro_compat" 2>/dev/null
 chmod 600 "$COMPAT_DIR/.xecpro_compat" 2>/dev/null
-stage_file "$RUNTIME/libcertgen.so" "$COMPAT_DIR/libcertgen.so" 644 || exit 1
 label_data_path "$COMPAT_DIR"
-label_data_path "$COMPAT_DIR/libcertgen.so"
 
 # ---------------------------------------------------------------------------
-# keybox 播种 / 自愈升级
+# omk 工作目录（post-fs-data 已建；这里兜底，属主错就纠正）
 # ---------------------------------------------------------------------------
-# 三件事，全部离线完成（不依赖设备能不能连上 GitHub）：
-#
-#  1) 实时副本缺失 -> 用模块内置副本播种。
-#  2) **上一版内置副本 -> 本版内置副本** 的自动升级。CI 每次构建都会把上游最新的
-#     keybox 打进本模块（.github/scripts/refresh-keybox.sh，在 ksud 构建前跑），
-#     所以"刷写 / 更新模块"本身就是一次密钥刷新——这正是中国大陆用户拿不到新
-#     箱子的离线出路。
-#     判据不是时间（tmpfs 里模块文件的 mtime 就是本次开机时间，没有可比性），
-#     而是"实时副本的 sha == 上一次记录的内置副本 sha"：这恰好说明实时副本只是
-#     上一版的内置副本，此时换成这一版的；如果实时副本既不是本版也不是上一版
-#     内置副本，说明它是**拉取来的**，那就保留（拉取来的通常比构建时打进来的新，
-#     而且反过来覆盖就是"出厂副本倒灌"那种故障）。
-#  3) 结构核验 + 权限 644 + 取证。DeviceID 里带着 yurikey 代次（如 "Yurikey58"），
-#     日志里看到代次就能判断这份箱子有多旧。
+mkdir -p "$OMK/logs" "$OMK_STATE" 2>/dev/null
+chmod 0770 "$OMK" "$OMK/logs" 2>/dev/null
+_omk_uid=$(stat -c %u "$OMK" 2>/dev/null)
+if [ "$_omk_uid" != "1017" ]; then
+    chown 1017:1017 "$OMK" "$OMK/logs" 2>/dev/null || \
+        log_line "WARN omk: chown 1017 failed (owner=$_omk_uid); engine may not read keybox"
+fi
+
+# Upstream wrappers prefer these global override files. Preserve them before
+# selecting our pinned payload; never silently execute a stale external build.
+for f in keymint inject; do
+    if [ -e "$OMK_STATE/$f" ] || [ -L "$OMK_STATE/$f" ]; then
+        backup="$OMK_STATE/$f.pre-xec"
+        if [ -e "$backup" ] || [ -L "$backup" ]; then
+            log_line "ERROR existing override backup at $backup; refusing to overwrite"
+            exit 1
+        fi
+        mv "$OMK_STATE/$f" "$backup" || exit 1
+        log_line "INFO preserved upstream binary override at $backup"
+    fi
+done
+
+# ---------------------------------------------------------------------------
+# keybox：真源 $RUNTIME/keybox.xml，镜像到 omk（OMY 读的那份）
+# ---------------------------------------------------------------------------
 _kb_sha() {
     if command -v sha256sum >/dev/null 2>&1; then
         sha256sum "$1" 2>/dev/null | cut -c1-16
@@ -217,62 +224,70 @@ _kb_looks_valid() {
 _KB_LIVE="$RUNTIME/keybox.xml"
 _KB_SHIPPED="$MODPATH/keybox.xml"
 _KB_STAMP="$RUNTIME/.keybox_shipped"
-_kb_live_sha=$(_kb_sha "$_KB_LIVE")
-_kb_ship_sha=$(_kb_sha "$_KB_SHIPPED")
-_kb_prev_ship=$(cat "$_KB_STAMP" 2>/dev/null)
+_KB_OMK="$OMK/keybox.xml"
 
 if [ ! -f "$_KB_LIVE" ]; then
     if stage_file "$_KB_SHIPPED" "$_KB_LIVE" 644; then
         log_line "INFO keybox: seeded from bundled copy (DeviceID=$(_kb_device_id "$_KB_LIVE") sha=$(_kb_sha "$_KB_LIVE"))"
-        _kb_live_sha=$(_kb_sha "$_KB_LIVE")
     else
         log_line "ERROR keybox: failed to seed from bundled copy"
     fi
-elif [ -n "$_kb_ship_sha" ] && [ "$_kb_live_sha" = "$_kb_prev_ship" ] && [ "$_kb_live_sha" != "$_kb_ship_sha" ]; then
+fi
+_kb_ship_sha=$(_kb_sha "$_KB_SHIPPED")
+_kb_prev_ship=$(cat "$_KB_STAMP" 2>/dev/null)
+_kb_live_sha=$(_kb_sha "$_KB_LIVE")
+# 上一版内置副本 -> 本版内置副本的自动升级（与旧逻辑一致：只升级“出厂副本”，
+# 用户或引擎自己拉来的新箱子不动）。
+if [ -n "$_kb_ship_sha" ] && [ "$_kb_live_sha" = "$_kb_prev_ship" ] && [ "$_kb_live_sha" != "$_kb_ship_sha" ]; then
     if stage_file "$_KB_SHIPPED" "$_KB_LIVE" 644; then
-        log_line "INFO keybox: upgraded to this build's bundled copy (sha $_kb_live_sha -> $(_kb_sha "$_KB_LIVE") DeviceID=$(_kb_device_id "$_KB_LIVE"))"
+        log_line "INFO keybox: upgraded to this build's bundled copy (sha $_kb_live_sha -> $(_kb_sha "$_KB_LIVE"))"
         _kb_live_sha=$(_kb_sha "$_KB_LIVE")
     else
         log_line "ERROR keybox: upgrade to bundled copy failed"
     fi
-elif [ -n "$_kb_live_sha" ] && [ "$_kb_live_sha" != "$_kb_ship_sha" ] && [ "$_kb_live_sha" != "$_kb_prev_ship" ]; then
-    log_line "INFO keybox: keeping fetched copy (DeviceID=$(_kb_device_id "$_KB_LIVE") sha=$_kb_live_sha); not overwritten by bundled copy sha=$_kb_ship_sha"
 fi
-
 if [ -n "$_kb_ship_sha" ]; then
     printf '%s\n' "$_kb_ship_sha" > "$_KB_STAMP" 2>/dev/null
 fi
+chmod 644 "$_KB_LIVE" 2>/dev/null
+
+# 镜像到 omk：OMY 在 keystore2 进程里以 uid=keystore 读它，所以 1017:1017 0600。
+# 原子写（tmp + mv）：OMY 的 ConfigObserver 认 MOVED_TO / CLOSE_WRITE。
+mirror_keybox() {
+    local tmp="$OMK/.keybox.xml.tmp.$$" live="$RUNTIME/keybox.xml"
+    [ -f "$live" ] || return 0
+    if [ -f "$_KB_OMK" ] && cmp -s "$live" "$_KB_OMK" 2>/dev/null && \
+       [ "$(stat -c %u "$_KB_OMK" 2>/dev/null)" = "1017" ] && \
+       [ "$(stat -c %a "$_KB_OMK" 2>/dev/null)" = "600" ]; then
+        return 0
+    fi
+    cp -f "$live" "$tmp" 2>/dev/null || return 1
+    chown 1017:1017 "$tmp" 2>/dev/null
+    chmod 0600 "$tmp" 2>/dev/null
+    mv -f "$tmp" "$_KB_OMK" 2>/dev/null || { rm -f "$tmp"; return 1; }
+    log_line "INFO keybox: mirrored to $OMK (DeviceID=$(_kb_device_id "$_KB_OMK") sha=$(_kb_sha "$_KB_OMK"))"
+    return 0
+}
+mirror_keybox
 
 if [ -f "$_KB_LIVE" ] && ! _kb_looks_valid "$_KB_LIVE"; then
-    log_line "WARN keybox: live copy failed structural check (sha=$(_kb_sha "$_KB_LIVE")) — engine will fall back to software-level certs until TA fetches a fresh one"
+    log_line "WARN keybox: live copy failed structural check (sha=$(_kb_sha "$_KB_LIVE")) — engine will report an expired/unknown root until a fresh keybox lands"
 fi
 
 # ---------------------------------------------------------------------------
-# target.txt 覆盖合并 + 配置与"管理器副本"对账
+# 作用域：target.txt（我们） -> injector.toml 的 scoop（OMY）
 # ---------------------------------------------------------------------------
-# 详见同目录 target.baseline.txt 顶部：引擎的白名单是**穷举**的，不在
-# /data/adb/tricky_store/target.txt 里的 UID 会被完全跳过、原样拿到真实 TEE 证明，
-# 而管理器 / WebUI 写的却是另一个路径（$DATA）。两边从未对账，于是"刷了新版本、
-# 验机工具依旧报未知认证根证书 / 无效的信任根状态"。
-#
-# 这里做四件事：缺失才播种（保留用户既有列表）→ 把 baseline 缺失项只增不删地追加
-# → $DATA（用户意图）与 $RUNTIME（引擎实际读取）双向对账 → 权限与覆盖取证。
 DATA=/data/adb/.xudc_secure
 mkdir -p "$DATA" 2>/dev/null
 chmod 755 "$DATA" 2>/dev/null
 
-# 白名单合并 / 双向对账 / 覆盖取证都在 engineconf.sh 里（纯函数，可离线单测）。
 . "$MODPATH/engineconf.sh"
 
-# Seed configuration only when absent; user edits survive reboot and updates.
 if [ ! -f "$RUNTIME/target.txt" ]; then
     stage_file "$MODPATH/target.txt" "$RUNTIME/target.txt" 644 || exit 1
 fi
 if [ ! -f "$RUNTIME/security_patch.txt" ]; then
     printf 'system=prop\n' > "$RUNTIME/security_patch.txt" || exit 1
-fi
-if [ ! -f "$RUNTIME/hbk" ]; then
-    dd if=/dev/random of="$RUNTIME/hbk" bs=32 count=1 2>/dev/null || exit 1
 fi
 if [ ! -f "$DATA/target.txt" ]; then
     stage_file "$MODPATH/target.txt" "$DATA/target.txt" 644 || exit 1
@@ -283,138 +298,133 @@ fi
 
 merge_baseline "$RUNTIME/target.txt" "$MODPATH/target.baseline.txt"
 merge_baseline "$DATA/target.txt" "$MODPATH/target.baseline.txt"
-
-# 验机工具路由（春秋/鸭子/keyattestation 等）：只在 keybox 能自证时把它们列进注入
-# 名单，且必须带 `!`（强制 GENERATE）；判定逻辑与理由见 engineconf.sh 的
-# `apply_detector_routing`。健康度不满足时让它们走真实 TEE——宁可显示"已解锁"，
-# 也不递一张过期/厂商根的证书当证据。
 apply_detector_routing
-
 sync_conf target.txt
 sync_conf security_patch.txt
-chmod 644 "$RUNTIME/keybox.xml" "$RUNTIME/target.txt" "$RUNTIME/security_patch.txt" "$RUNTIME/hbk" 2>/dev/null
+chmod 644 "$RUNTIME/target.txt" "$RUNTIME/security_patch.txt" 2>/dev/null
 chmod 644 "$DATA/target.txt" "$DATA/security_patch.txt" 2>/dev/null
 log_target_coverage
+sync_scoop
 
-# TA_enhanced still reads this compatibility directory for its status/config UI.
 label_data_path "$DATA"
-# 注意：**这里不再播种 $DATA/keybox.xml**。
-# 这一份是 TA 侧的"兼容副本"，而 TA 的 keybox.sh 会把"兼容副本被外部改动"
-# （用户在 WebUI 里粘贴自定义 keybox 就走这条路径）当成用户意图，装进实时路径。
-# 如果这里在缺少兼容副本时用模块内置副本回填，就会出现这样的降级链：
-# 实时副本是比较新的拉取结果 -> 兼容副本被删/缺失 -> 这里回填旧的内置副本 ->
-# TA 判定"用户改过" -> 把旧箱子装回实时路径。宁可不回填：TA 的守护会在 15s 内
-# 把实时副本镜像过来，WebUI 的显示与自定义写入都不受影响。
-if [ ! -f "$DATA/hbk" ]; then
-    dd if=/dev/random of="$DATA/hbk" bs=32 count=1 2>/dev/null || exit 1
-fi
-chmod 644 "$DATA/hbk" 2>/dev/null
 
-# 引擎启动前的密钥取证（用上面已定义好的 _kb_sha / _kb_device_id / _kb_looks_valid）。
-#
-# 这一段存在的理由：一旦实时 keybox 缺失/结构损坏/被写坏，从引擎启动到下一个
-# 可用箱子之间，证明请求只能用软件级证书链——检测方看到的就是"bootloader 未锁 /
-# 密钥没传过来"。把"当前用的是哪一份、什么权限、结构对不对、第几代"在引擎启动
-# 那一刻写进 .engine.log，事后排查不用再猜。
-#
-# 权限一并钉住：vendor 每次成功写入都会把实时 keybox 落成 0600 root
-# （keybox/mod.rs::install_data 的 set_permissions(0o600)），而**读**它的
-# KeyBoxManager 跑在 keystore2 进程里（uid=keystore），0600 打不开。
-# TA 侧的常驻守护每 1s 会改回 644，这里管的是引擎启动这一瞬间的那一份。
-if [ -f "$_KB_LIVE" ]; then
-    _kb_now=$(date +%s 2>/dev/null)
-    _kb_mtime=$(stat -c %Y "$_KB_LIVE" 2>/dev/null || echo "$_kb_now")
-    _kb_age=$(( _kb_now - _kb_mtime ))
-    _kb_mode=$(stat -c %a "$_KB_LIVE" 2>/dev/null)
-    if [ "$_kb_mode" != "644" ]; then
-        if chmod 644 "$_KB_LIVE" 2>/dev/null; then
-            log_line "INFO keybox: perms $_kb_mode -> 644 before engine start (reader runs as uid=keystore)"
-        else
-            log_line "WARN keybox: chmod 644 failed (mode=$_kb_mode); engine may not be able to read it"
+# ---------------------------------------------------------------------------
+# 启动两个守护进程（OMY 自己的看护脚本，内部会自动重启子进程）
+# ---------------------------------------------------------------------------
+# 幂等启动：管理器/TA 都可能再跑一次 service.sh，重复拉起会得到两份看护循环，
+# 每份都在自己的循环里重启 keymint，最后 keystore2 被反复注入。
+_daemon_alive() {
+    local pidfile="$1" marker="$2" pid
+    pid=$(cat "$pidfile" 2>/dev/null)
+    [ -n "$pid" ] || return 1
+    kill -0 "$pid" 2>/dev/null || return 1
+    tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -qF "$marker" || return 1
+    return 0
+}
+
+_start_engine() {
+    local which="$1"
+    if [ "$which" = "injector" ]; then
+        if _daemon_alive "$OMK_STATE/injector-daemon.pid" "/engine/daemon-injector "; then
+            log_line "INFO engine: injector daemon already running, not starting a second one"
+            return 0
         fi
-    fi
-    _kb_live=$(_kb_sha "$_KB_LIVE")
-    if _kb_looks_valid "$_KB_LIVE"; then
-        log_line "INFO keybox: present (sha=${_kb_live:-?} age=${_kb_age}s DeviceID=$(_kb_device_id "$_KB_LIVE") bundled=${_kb_ship_sha:-?} perms=644)"
+        cd "$ENGINE" || return 1
+        sh "$ENGINE/daemon-injector" >> "$LOG_FILE" 2>&1 &
+        printf '%s\n' "$!" > "$OMK_STATE/injector-daemon.pid" 2>/dev/null
     else
-        log_line "WARN keybox: present but structurally invalid (sha=${_kb_live:-?}) — TA guardian will replace it from its mirror list"
+        if _daemon_alive "$OMK_STATE/keymint-daemon.pid" "/engine/daemon "; then
+            log_line "INFO engine: keymint daemon already running, not starting a second one"
+            return 0
+        fi
+        cd "$ENGINE" || return 1
+        sh "$ENGINE/daemon" >> "$LOG_FILE" 2>&1 &
+        printf '%s\n' "$!" > "$OMK_STATE/keymint-daemon.pid" 2>/dev/null
     fi
-    if [ -n "$_kb_live" ] && [ "$_kb_live" = "$_kb_ship_sha" ]; then
-        log_line "WARN keybox: this is the copy bundled at build time — if attestation fails right after a fresh flash, either this build predates the latest yurikey rotation or all mirrors are unreachable"
-    fi
-else
-    log_line "WARN keybox: absent at engine start — attestation will fall back to software-level certs until TA fetches one"
-fi
+    return 0
+}
 
-cd "$RUNTIME" || exit 1
-./supervisor ./daemon "$RUNTIME" >> "$LOG_FILE" 2>&1 &
-log_line "INFO TEESimulator supervisor launched (pid=$!)"
+_engine_pid() {
+    pidof keymint 2>/dev/null | awk '{print $1}'
+}
 
-# 引擎状态取证：启动成功与否必须**回读**，不能靠"启动命令没报错"。
-#
-# 之前的写法是无条件写一行 "supervisor started"，于是引擎注入失败、进程五连败退出
-# 时日志里同样写着"已启动"，排查时等于没有信息。这里延迟一段时间后回读三件事：
-#   1) 进程是否真的活着；
-#   2) 引擎自己的 logcat（keybox 是否解析成功、注入是否成功）；
-#   3) 白名单覆盖数（不在列表里的包根本不会被拦截）。
+_keystore_pid() {
+    pidof keystore2 2>/dev/null | awk '{print $1}'
+}
+
+# 注入是否生效：keystore2 的 maps 里有没有我们的 inject 载荷。
+_engine_injected() {
+    sh "$MODPATH/injection-status.sh"
+}
+
+_start_engine keymint
+_start_engine injector
+log_line "INFO engine $ENGINE_ID launched (keymint pid=$(_engine_pid), injector armed)"
+
 capture_engine_state() {
-    local pid dump
-    pid=$(pidof TEESimulator 2>/dev/null)
+    local pid injected logtail
+    pid=$(_engine_pid)
     if [ -n "$pid" ]; then
-        log_line "INFO engine: TEESimulator alive (pid=$pid)"
+        log_line "INFO engine: keymint alive (pid=$pid)"
     else
-        log_line "WARN engine: TEESimulator NOT running — keystore is not intercepted, attestation stays the real TEE one (untrusted key + unlocked bootloader)"
+        log_line "WARN engine: keymint NOT running — keystore2 is not intercepted, attestation stays the real TEE one"
     fi
-    dump=$(/system/bin/logcat -d -s TEESimulator:* 2>/dev/null \
-        | grep -E "Finished parsing|Key store file not found|Fatal error parsing|Injection process failed|Interceptors initialized|Backdoor not found|Successfully rebuilt|Served RootOfTrust|Failed to patch|No keybox found|Rewrote the software-enforced" \
-        | tail -n 8)
-    if [ -n "$dump" ]; then
-        printf 'INFO engine logcat:\n%s\n' "$dump" >> "$LOG_FILE" 2>/dev/null
+    if _engine_injected; then
+        log_line "INFO engine: keystore2 injected (pid=$(_keystore_pid))"
     else
-        log_line "WARN engine: no TEESimulator logcat lines yet — engine has not handled an attestation request (or never started)"
+        log_line "WARN engine: keystore2 NOT injected yet — injector may still be waiting for keystore2"
+    fi
+    logtail=$(tail -n 6 "$OMK/logs/keymint.log" 2>/dev/null)
+    [ -z "$logtail" ] && logtail=$(tail -n 6 "$OMK/logs/injector.log" 2>/dev/null)
+    if [ -n "$logtail" ]; then
+        printf 'INFO engine omk log:\n%s\n' "$logtail" >> "$LOG_FILE" 2>/dev/null
     fi
     log_target_coverage
 }
 
 ( sleep 45; capture_engine_state ) >/dev/null 2>&1 &
 
-# 引擎看护：45s 那次回读只回答"开机时起没起来"。注入链一旦在运行期断掉（进程被杀、
-# 崩溃、被别的模块顶掉），keystore 就重新变回"没被接管"，检测方又拿到真实 TEE 证明；
-# 而本机原厂证书链的根是 Google 的，于是表现成**"密钥没问题、引导加载程序却是解锁的"**
-# ——最容易被误判成"keybox 好了但锁态没伪装"，实际上整条引擎都不在了，且没有任何界面提示。
-# 这里每 5 分钟确认一次，必要时重启 supervisor，连续失败则退避到每小时一次，
-# 全程写进 .engine.log（管理器的 TEE 卡片读的就是这份日志）。
+# 看护：keymint 或 injector 的看护进程都没了才重拉；子进程崩了由 OMY 自己循环重启。
 engine_watchdog() {
-    local _pid _now _attempts=0 _last_try=0
+    local _pid _attempts=0 _now _last_try=0
     while :; do
         sleep 300
-        _pid=$(pidof TEESimulator 2>/dev/null)
-        if [ -n "$_pid" ]; then
+        _pid=$(_engine_pid)
+        if [ -n "$_pid" ] && _engine_injected; then
             _attempts=0
             continue
         fi
         _now=$(date +%s 2>/dev/null || echo 0)
-        # 连续 3 次重启失败后：一小时才再试一次，避免刷爆日志。
         if [ "$_attempts" -ge 3 ] && [ "$_last_try" != "0" ] && \
            [ $(( _now - _last_try )) -lt 3600 ]; then
             continue
         fi
         _attempts=$((_attempts + 1))
         _last_try=$_now
-        log_line "ERROR engine: TEESimulator 未运行 —— keystore 未被接管，检测方会看到真实 TEE 证明（密钥可信但引导加载程序解锁）；第 $_attempts 次尝试重启 supervisor"
+        log_line "ERROR engine: keymint=$(_engine_pid) injected=$(_engine_injected && echo yes || echo no) — restarting engine (attempt $_attempts)"
         log_target_coverage
-        ( cd "$RUNTIME" && ./supervisor ./daemon "$RUNTIME" >> "$LOG_FILE" 2>&1 & )
+        _start_engine keymint
+        _start_engine injector
         sleep 30
-        if [ -n "$(pidof TEESimulator 2>/dev/null)" ]; then
-            log_line "INFO engine: supervisor 重启成功，引擎已恢复接管"
-            _attempts=0
+        if [ -n "$(_engine_pid)" ]; then
+            log_line "INFO engine: restarted (pid=$(_engine_pid))"
         else
-            log_line "ERROR engine: 重启后仍未看到 TEESimulator 进程（注入失败）"
+            log_line "ERROR engine: restart failed, keymint still not running"
         fi
     done
 }
 ( sleep 90; engine_watchdog ) >/dev/null 2>&1 &
 
-# WebUI / 管理器改 target.txt 或 security_patch.txt 后不必重启：每 15s 对账一次，
-# 有差异时用 tmp + mv 写入，引擎的 ConfigObserver 收到 MOVED_TO 会自动重载。
-( _n=0; while :; do sleep 15; sync_conf target.txt; sync_conf security_patch.txt; _n=$((_n + 1)); [ $((_n % 20)) -eq 0 ] && apply_detector_routing; done ) >/dev/null 2>&1 &
+# 15s 对账：target/security_patch 双向同步 + scoop 重算 + keybox 镜像。
+# scoop 变化由 OMY 的 watcher 热加载，不需要重启 keymint。
+( _n=0; while :; do
+    sleep 15
+    sync_conf target.txt
+    sync_conf security_patch.txt
+    sync_scoop
+    mirror_keybox
+    _n=$((_n + 1))
+    [ $((_n % 20)) -eq 0 ] && apply_detector_routing
+  done ) >/dev/null 2>&1 &
+
+exit 0

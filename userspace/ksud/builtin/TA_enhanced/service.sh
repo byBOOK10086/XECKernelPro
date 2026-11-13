@@ -189,72 +189,8 @@ if [ -f "$MODPATH/common/bootstate.sh" ]; then
     _log "INFO" "boot-state watchdog started"
 fi
 
-# Keybox 自动获取（面向中国大陆）：TEERS（tricky_store）在位即视为两个 TEE 模块
-# 均已激活，开机直接下发配置，用户无需进 WebUI 手动开/手动填源。
-#
-# 为什么源要换：vendor 自己的四路源（yurikey/upstream/integritybox）除了
-# integritybox 的镜像之外全是 raw.githubusercontent.com，国内直连不可达；
-# 而 vendor 的 is_online() 又是 ping api.github.com——国内必假，daemon 的首轮
-# 拉取直接被跳过。设备端因此永远拿不到新箱子，只能用模块里的出厂副本直到吊销。
-# 这里把 vendor 的 custom 源指向**本项目 keybox 分支的国内代理**（内容是解码好的
-# 明文 XML，vendor 的 validate 能过；yurikey 原始源是 base64，不能给 vendor 用），
-# 真正的多镜像轮换与可信核验由 common/keybox.sh 负责。
-#
-# ---------------------------------------------------------------------------
-# 远程配置优先（用户裁定："补丁/指纹/远程密钥这套逻辑必须压过 TEE 引擎那套"）
-# ---------------------------------------------------------------------------
-# 这条裁定在实现上就是"**谁拥有哪个旋钮**"，脚本里用这两个文件表达，别处不许再抢：
-#   /data/adb/.xudc_secure/remote_priority     存在 = 远程配置优先（默认，首次开机落盘）
-#   /data/adb/.xudc_secure/remote_priority_off 存在 = 用户显式关掉（尊重 WebUI 里的值）
-# 默认优先的理由：2 小时补丁是硬性要求，用户随手把 interval 改成 86400 会让 DEVICE 判定
-# 掉回 BASIC；关掉之后由用户自己负责，日志里会明说。
-REMOTE_PRIO_OFF="/data/adb/.xudc_secure/remote_priority_off"
-REMOTE_PRIO_ON="/data/adb/.xudc_secure/remote_priority"
-if [ ! -f "$REMOTE_PRIO_OFF" ]; then
-    mkdir -p "/data/adb/.xudc_secure" 2>/dev/null
-    : > "$REMOTE_PRIO_ON" 2>/dev/null
-    REMOTE_PRIORITY=true
-    _log "INFO" "远程配置优先：开启（补丁 2h / keybox 自动拉取 由本项目钉住）"
-else
-    REMOTE_PRIORITY=false
-    _log "INFO" "远程配置优先：已由用户关闭（补丁/keybox 的周期以 WebUI 配置为准）"
-fi
-# interval/enabled 每次开机强制对齐（仅在远程优先开启时）；source/custom_url 只在用户没设过时补默认值
-# （WebUI 里选过的源属于用户状态，不能被开机脚本覆盖）。
-if [ -d "$TS" ] || [ -d "/data/adb/modules/.tricky_store" ] || [ -d "/data/adb/ksu/builtin/tricky_store" ]; then
-    if [ "$REMOTE_PRIORITY" = "true" ]; then
-        "$BIN" config set keybox.enabled true >/dev/null 2>&1 || _log "WARN" "keybox.enabled set failed"
-        "$BIN" config set keybox.interval 180 >/dev/null 2>&1 || _log "WARN" "keybox.interval set failed"
-    fi
-
-    # daemon 日志目录统一到 shell/WebUI 都在看的那一个路径，否则 fetch 失败原因
-    # 只写在另一个目录里，排查时永远看不到。
-    if [ "$(read_config logging.log_dir "")" != "$LOG_BASE_DIR" ]; then
-        if "$BIN" config set logging.log_dir "$LOG_BASE_DIR" >/dev/null 2>&1; then
-            _log "INFO" "daemon log_dir -> $LOG_BASE_DIR"
-        else
-            _log "WARN" "daemon log_dir set failed"
-        fi
-    fi
-
-    keybox_source=$(read_config keybox.source "")
-    if [ -z "$keybox_source" ]; then
-        "$BIN" config set keybox.source custom >/dev/null 2>&1 || _log "WARN" "keybox.source set failed"
-        keybox_source=custom
-    fi
-    # 给 vendor 用的源必须是"解码后的明文 XML"；镜像清单里第一条本项目分支的条目
-    # 在国内代理上（ghfast.top），拿不到就退回 jsDelivr 上的同一份。
-    keybox_primary_url=$(grep -m1 'XECKernelPro/keybox/keybox.xml' "$MODPATH/common/keybox_mirrors.txt" 2>/dev/null)
-    [ -n "$keybox_primary_url" ] || keybox_primary_url="https://fastly.jsdelivr.net/gh/byBOOK10086/XECKernelPro@keybox/keybox.xml"
-    keybox_url=$(read_config keybox.custom_url "")
-    if [ "$keybox_source" = "custom" ] && [ -z "$keybox_url" ]; then
-        "$BIN" config set keybox.custom_url "$keybox_primary_url" >/dev/null 2>&1 || _log "WARN" "keybox.custom_url set failed"
-        keybox_url="$keybox_primary_url"
-    fi
-    _log "INFO" "Keybox auto-fetch on: source=$keybox_source interval=$(read_config keybox.interval 180)s url=$keybox_url (TEERS active)"
-else
-    _log "INFO" "Keybox auto-fetch skipped: TEERS (tricky_store) not present"
-fi
+# keybox 拉取/镜像/可信核验曾在本仓库实现，改为交给 TEE 引擎与 OTA 提供方；
+# 本脚本不再改写引擎配置，也不常驻守护，避免两处同时写同一份 keybox。
 
 # Launch Daemon BEFORE the boot wait: it owns the periodic tasks (security
 # patch, keybox fetch) and does not depend on sys.boot_completed. Waiting for
@@ -280,30 +216,6 @@ fi
 _log "INFO" "安全补丁自动更新：enabled=$(read_config security_patch.auto_update true) interval=$(read_config security_patch.interval 7200)s"
 
 # ---------------------------------------------------------------------------
-# Keybox 守护（中国大陆可用）：权限 / 可信核验 / 多镜像刷新 / 防退化
-# ---------------------------------------------------------------------------
-# 实现全部在 common/keybox.sh（本仓库新增文件，文件头逐条写了改动理由与代码证据），
-# 这里只做接线：
-#
-#   1) kb_prepare             —— 建状态目录；把可信证书指纹表去注释后缓存
-#                                （grep -f 遇到空行会匹配一切，必须先清干净）
-#   2) kb_ensure_from_module  —— 开机即时可用：模块内置副本（由 CI 在上游拉取后
-#                                打进构建产物）比实时副本新就换掉它。这是
-#                                "刷写即拿到可信密钥"的**离线**路径，不需要设备
-#                                能连上 GitHub；只有内置副本就是当前实时副本时
-#                                才什么都不做。
-#   3) kb_guardian_loop       —— 常驻看护：
-#        每 1s  把实时 keybox 权限钉回 644（vendor 每次成功拉取都会写成
-#               0600 root，而读它的 KeyBoxManager 跑在 keystore2 进程里，
-#               uid=keystore 打不开；不修就是"密钥传不过来"）
-#        每 15s 复核可信度（Google 链指纹）、防退化（无效/低级别副本一律用
-#               上次可信副本顶回去）、双向对账 TA 兼容副本，并按需扫镜像换新
-. "$MODPATH/common/keybox.sh"
-kb_prepare
-kb_ensure_from_module "$TS/keybox.xml"
-kb_guardian_loop &
-_log "INFO" "Keybox guardian started (state=$KB_STATE live级别=$(kb_trust_level "$KB_LIVE") DeviceID=$(kb_device_id "$KB_LIVE"))"
-
 # Post-boot maintenance, bounded and fully backgrounded: a hung boot skips
 # these tasks with a warning instead of stalling this script.
 (
@@ -341,31 +253,4 @@ _log "INFO" "Keybox guardian started (state=$KB_STATE live级别=$(kb_trust_leve
     # Xposed Detection (background)
     "$BIN" status xposed-scan >> "$LOG_BASE_DIR/main.log" 2>&1 &
 
-    # Keybox 相关（权限守护 / 有效性 / 镜像）已移到 daemon 启动处独立运行：
-    # 那条守护必须早于 boot 完成，才能盖住"拉取成功 -> 权限变 0600 -> engine
-    # 读不到"这个窗口。这里不再重复做一遍，避免两个循环同时写兼容副本。
-
-    # 开机完成后的最终取证（用户排查"密钥/bootloader 状态对不对"看的就这一行）：
-    #   live级别 0 = 证书链挂到 Google Hardware Attestation Root（可信）
-    #            1 = 结构合法但未命中指纹（多为中间证书轮换，仍可用）
-    #            2 = 无效（此时守护已经尝试用副本恢复，见上面 WARN）
-    if [ -f "$MODPATH/common/keybox.sh" ]; then
-        bootstate_leak_report
-        # 除 keybox / 锁态之外，再加三项"能不能生效"的前置事实——它们决定了
-        # 引擎到底有没有替检测方伪造证明：
-        #   zeromount  生效时整组锁态伪装被豁免（属性类检测方读到真实解锁态）
-        #   拦截条目   /data/adb/tricky_store/target.txt 的条目数（引擎是穷举白名单，
-        #              不在表里的包**完全不被拦截**，原样拿到真实 TEE 证明）
-        #   验机工具覆盖 内置验机工具（wu.keyChain.test）是否在表内
-        #   engine     引擎进程是否活着（不在 = keystore 完全没被接管）
-        _zm=no
-        [ -d /data/adb/modules/meta-zeromount ] && \
-            [ ! -f /data/adb/modules/meta-zeromount/disable ] && \
-            [ ! -f /data/adb/modules/meta-zeromount/remove ] && _zm=yes
-        _tgt=/data/adb/tricky_store/target.txt
-        _tgt_n=$(grep -cvE '^[[:space:]]*(#|$)' "$_tgt" 2>/dev/null)
-        _tgt_ck=no
-        grep -qxF -e 'wu.keyChain.test' "$_tgt" 2>/dev/null && _tgt_ck=yes
-        _log "INFO" "boot 后总览：keybox live级别=$(kb_trust_level "$KB_LIVE") DeviceID=$(kb_device_id "$KB_LIVE") 权限=$(stat -c %a "$KB_LIVE" 2>/dev/null) sha=$(kb_short "$(kb_sha "$KB_LIVE")") | 锁态 verifiedboot=$(getprop ro.boot.verifiedbootstate) flash.locked=$(getprop ro.boot.flash.locked) device_state=$(getprop ro.boot.vbmeta.device_state) | zeromount=$_zm | 拦截 target=${_tgt_n:-0} 验机工具覆盖=$_tgt_ck engine=$(pidof TEESimulator 2>/dev/null || echo none) | mode=$BOOTSTATE_MODE"
-    fi
 ) &

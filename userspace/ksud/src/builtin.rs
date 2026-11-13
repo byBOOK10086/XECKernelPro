@@ -199,7 +199,7 @@ pub struct StartReport {
     pub install: InstallReport,
     /// Scripts launched, in the order they were launched.
     pub scripts: Vec<ScriptRun>,
-    /// `TEESimulator` pid after the bounded wait; 0 when it never showed up.
+    /// Engine pid after the bounded wait; 0 when it never showed up.
     pub engine_pid: i32,
     /// Whether keystore2's maps already contain the injected library.
     pub injected: bool,
@@ -222,6 +222,20 @@ const SCRIPT_BUDGET: Duration = Duration::from_secs(45);
 // keybox、起 certgen，冷启动慢于 15s 是常态 —— 于是状态被误报成"没跑"。
 // 看门狗应当是"真死了"才报，不是"刚启动"。
 const ENGINE_WAIT: Duration = Duration::from_secs(30);
+
+/// Process name of the software KeyMint daemon we ship.
+///
+/// The engine is Oh My Keymint (see `third_party/OhMyKeymint/UPSTREAM.md`): the
+/// payload is a native `keymint` child started by its own `daemon` wrapper, so
+/// the comm is a stable, source-verified string rather than a Java main class.
+const ENGINE_COMM: &str = "keymint";
+
+/// Substring that proves the injector payload is mapped into keystore2.
+///
+/// The injector maps the payload from our runtime tree; matching the tree prefix
+/// (instead of a file name any app could use) keeps the probe from reporting
+/// "injected" for some unrelated mapping.
+const INJECTION_MARKER: &str = "/data/adb/tricky_store/engine/";
 
 /// How long a previously running engine gets to disappear.
 const STOP_BUDGET: Duration = Duration::from_secs(8);
@@ -265,6 +279,21 @@ fn install_builtin_modules_impl(forced: bool) -> Result<InstallReport> {
     if modules.is_empty() {
         info!("no built-in modules bundled");
         return Ok(InstallReport::default());
+    }
+
+    // Retire installer-owned module-era copies even when the master switch is off.
+    // Preserve their configuration before removing them from Android's module scan.
+    for id in ["tricky_store", ".tricky_store", "TA_enhanced"] {
+        let legacy = Path::new(defs::MODULE_DIR).join(id);
+        if legacy.join(STAMP_FILE_NAME).is_file() || is_own_engine_copy(&legacy) {
+            preserve_legacy_config(id, &legacy)?;
+            fs::create_dir_all(EXTERNAL_BACKUP_DIR)?;
+            let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+            fs::rename(
+                &legacy,
+                Path::new(EXTERNAL_BACKUP_DIR).join(format!("{id}-{stamp}")),
+            )?;
+        }
     }
 
     // 产品策略：内置引擎优先。开机路径也要先把外部引擎压下去，否则它会跟内置树
@@ -331,6 +360,23 @@ fn group_builtin_assets() -> Result<BTreeMap<String, Vec<BuiltinFile>>> {
     Ok(modules)
 }
 
+fn preserve_legacy_config(module_id: &str, legacy: &Path) -> Result<()> {
+    if module_id != "tricky_store" && module_id != ".tricky_store" {
+        return Ok(());
+    }
+    let runtime = Path::new("/data/adb/tricky_store");
+    fs::create_dir_all(runtime)?;
+    for name in ["keybox.xml", "target.txt", "security_patch.txt"] {
+        let source = legacy.join(name);
+        let target = runtime.join(name);
+        if source.is_file() && !target.exists() {
+            fs::copy(&source, &target)
+                .with_context(|| format!("preserve legacy configuration {}", source.display()))?;
+        }
+    }
+    Ok(())
+}
+
 /// Install one embedded module tree into `/data/adb/ksu/builtin/<id>/`.
 ///
 /// Returns whether the tree was (re)written. A stamp alone is not enough to skip
@@ -346,6 +392,7 @@ fn install_module(module_id: &str, files: &[BuiltinFile]) -> Result<bool> {
     // and deleting it here would throw away their own target.txt/keybox edits.
     let legacy = Path::new(defs::MODULE_DIR).join(module_id);
     if legacy.join(STAMP_FILE_NAME).is_file() {
+        preserve_legacy_config(module_id, &legacy)?;
         match fs::remove_dir_all(&legacy) {
             Ok(()) => info!("removed the module-era copy at {}", legacy.display()),
             Err(error) => warn!("failed to remove {}: {error}", legacy.display()),
@@ -539,6 +586,10 @@ pub fn start_tee_engine(wait_for_engine: bool) -> Result<StartReport> {
 
     let mut scripts = Vec::new();
     for (module, stage) in [
+        // tricky_store 的 post-fs-data 必须在它的 service 之前：/data/misc/keystore/omk
+        // 的属主与 keybox 播种要在 keystore2 起来之前就绪，而 service 里的两个守护进程
+        // 也读同一份目录。
+        ("tricky_store", "post-fs-data"),
         // 顺序与开机**故意不同**：TA 的 post-fs-data/service 都要读
         // /data/adb/tricky_store（keybox 兼容副本、target.txt），而那个目录要等
         // tricky_store 的 service.sh 才建出来；新设备上按开机顺序跑会白跑一轮。
@@ -569,14 +620,11 @@ pub fn start_tee_engine(wait_for_engine: bool) -> Result<StartReport> {
 
     let (engine_pid, injected) = if wait_for_engine {
         (
-            wait_for_comm("TEESimulator", ENGINE_WAIT).unwrap_or(0),
+            wait_for_comm(ENGINE_COMM, ENGINE_WAIT).unwrap_or(0),
             wait_for_injection(ENGINE_WAIT),
         )
     } else {
-        (
-            pid_by_comm("TEESimulator").unwrap_or(0),
-            injection_present(),
-        )
+        (pid_by_comm(ENGINE_COMM).unwrap_or(0), injection_present())
     };
 
     Ok(StartReport {
@@ -693,6 +741,10 @@ pub fn yield_external_engines() -> Vec<String> {
             continue;
         }
         if is_own_engine_copy(&dir) {
+            if let Err(error) = preserve_legacy_config(id, &dir) {
+                warn!("cannot preserve {}: {error:#}", dir.display());
+                continue;
+            }
             let stamp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_or(0, |elapsed| elapsed.as_secs());
@@ -737,6 +789,16 @@ pub fn yield_external_engines() -> Vec<String> {
 
 /// 用户关掉内置引擎时调用：把被我们压住的第三方模块原样放回。
 pub fn release_external_engines() {
+    for name in ["keymint", "inject"] {
+        let live = Path::new("/data/adb/omk").join(name);
+        let backup = Path::new("/data/adb/omk").join(format!("{name}.pre-xec"));
+        if backup.exists()
+            && !live.exists()
+            && let Err(error) = fs::rename(&backup, &live)
+        {
+            warn!("cannot restore OMY override {}: {error:#}", live.display());
+        }
+    }
     for id in EXTERNAL_ENGINE_DIRS {
         let dir = Path::new(defs::MODULE_DIR).join(id);
         let marker = dir.join(SUPPRESSED_MARKER);
@@ -790,8 +852,13 @@ fn stop_previous_run() {
         //    - which is exactly the "two TEESimulator pids" a device shows.
         let cmdline = fs::read_to_string(format!("/proc/{pid}/cmdline")).unwrap_or_default();
         let comm = fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default();
-        if ENGINE_MARKERS.iter().any(|marker| cmdline.contains(marker))
-            || comm.trim() == "TEESimulator"
+        let exe = fs::read_link(format!("/proc/{pid}/exe")).unwrap_or_default();
+        let cwd = fs::read_link(format!("/proc/{pid}/cwd")).unwrap_or_default();
+        if ENGINE_MARKERS.iter().any(|marker| {
+            cmdline.contains(marker)
+                || exe.to_string_lossy().starts_with(marker)
+                || cwd.to_string_lossy().starts_with(marker)
+        }) || comm.trim() == "TEESimulator"
         {
             targets.push(pid);
         }
@@ -883,9 +950,18 @@ fn wait_for_comm(name: &str, budget: Duration) -> Option<i32> {
 /// briefly, and an engine that only injected into the first would be reported as
 /// healthy while the surviving instance still serves the real TEE.
 fn injection_present() -> bool {
+    let payload = fs::read_to_string("/data/adb/omk/injector.payload").unwrap_or_default();
     pids_by_comm("keystore2").into_iter().any(|pid| {
-        fs::read_to_string(format!("/proc/{pid}/maps"))
-            .is_ok_and(|maps| maps.contains("libTEESimulator"))
+        fs::read_to_string(format!("/proc/{pid}/maps")).is_ok_and(|maps| {
+            maps.contains(INJECTION_MARKER)
+                || payload.lines().any(|line| {
+                    let mut fields = line.split_whitespace();
+                    fields.next().and_then(|value| value.parse::<i32>().ok()) == Some(pid)
+                        && fields
+                            .next()
+                            .is_some_and(|identity| maps.contains(identity))
+                })
+        })
     })
 }
 

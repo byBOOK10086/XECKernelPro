@@ -58,7 +58,6 @@ import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.design.panel.Xc8Chevron
 import me.weishu.kernelsu.ui.design.panel.Xc8Panel
 import me.weishu.kernelsu.ui.screen.settings.PifSection
-import me.weishu.kernelsu.ui.screen.settings.TeePanelSection
 import me.weishu.kernelsu.ui.design.panel.Xc8Row
 import me.weishu.kernelsu.ui.design.panel.Xc8SectionLabel
 import me.weishu.kernelsu.ui.design.panel.Xc8Switch
@@ -232,13 +231,11 @@ fun ToolsScreen() {
                         )
                     }
 
-                    // 密钥库 / 指纹自检（从设置页搬来）：这两块是"出问题时自己排查"的
-                    // 工具，不是日常设置项，所以归到工具箱。
+                    // 指纹这块是"出问题时自己排查"的工具，不是日常设置项，所以归到工具箱。
                     Xc8SectionLabel(
-                        text = "密钥库与指纹（自检）",
+                        text = "指纹（自检）",
                         modifier = Modifier.padding(top = 22.dp),
                     )
-                    TeePanelSection()
                     PifSection(modifier = Modifier.padding(top = 12.dp))
                 }
             }

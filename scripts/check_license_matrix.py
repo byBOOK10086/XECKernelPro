@@ -11,7 +11,7 @@ GPL-2.0，`third_party/*` 各自原样。改错任何一处都会让二次分发
   3. kernel/LICENSE 必须是 GPL-2.0 正文；
   4. LICENSE-MATRIX.md 存在，且同时提到 AGPL-3.0 / GPL-2.0 / LICENSE-GPL-3.0；
   5. README.md 与 README_ZH.md 必须链接矩阵文件、且不再宣称主体是 GPL-3.0；
-  6. 仓库里不得混进 Oh My Keymint（上游自定义许可，只能按外部模块运行时集成）。
+  6. Oh My Keymint 仅允许位于声明的独立组件目录，并保留许可、来源与授权记录。
 
 失败即返回 1；本脚本由 `.github/workflows/build-xecpro.yml` 的 guards job 调用。
 """
@@ -78,15 +78,28 @@ def main() -> int:
             if stale in text:
                 errors.append(f'{rel}: still advertises the old licence badge {stale!r}')
 
-    # 6 不得 vendor Oh My Keymint（自定义许可，与本仓 AGPL 不兼容）。
+    # 6 OMY is a separately licensed aggregate, never relicensed as AGPL/GPL.
+    omy = root / 'third_party/OhMyKeymint'
+    for rel in ('src/LICENSE.md', 'src/LICENSE-2', 'module/LICENSE.1',
+                'module/LICENSE.2', 'module/AOSP.Apache-license-2.0.txt',
+                'UPSTREAM.md', 'AUTHORIZATION.md'):
+        if not (omy / rel).is_file():
+            errors.append(f'third_party/OhMyKeymint/{rel}: missing')
+    for source, payload in (('src/LICENSE.md', 'module/LICENSE.1'),
+                            ('src/LICENSE-2', 'module/LICENSE.2')):
+        if (omy / source).is_file() and (omy / payload).is_file():
+            if (omy / source).read_bytes() != (omy / payload).read_bytes():
+                errors.append(f'OhMyKeymint: {payload} differs from {source}')
+    if matrix.is_file() and 'AUTHORIZATION.md' not in read(root, 'LICENSE-MATRIX.md'):
+        errors.append('LICENSE-MATRIX.md: missing OMY authorization reference')
     for path in root.rglob('*'):
         if not path.is_file():
             continue
-        parts = [p.lower() for p in path.parts]
-        if '.git' in parts:
+        parts = [p.lower() for p in path.relative_to(root).parts]
+        if '.git' in parts or path.is_relative_to(omy):
             continue
-        if any(token in p for p in parts[len(root.parts):] for token in FORBIDDEN_NAMES):
-            errors.append(f'{path.relative_to(root)}: Oh My Keymint must not be vendored')
+        if any(token in p for p in parts for token in FORBIDDEN_NAMES):
+            errors.append(f'{path.relative_to(root)}: unexpected OMY component location')
 
     if errors:
         print('FAIL: licence matrix is inconsistent:', file=sys.stderr)

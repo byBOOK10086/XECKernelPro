@@ -45,6 +45,19 @@
 > 若上游对某一部分的许可证与本文件描述不一致，**以上游仓库同名 LICENSE 文件为准**；
 > 发现不一致请提 issue，我们会按其真实条款修正署名与许可证划分。
 
+## Oh My Keymint independent aggregate
+
+The OMY integration carries the unmodified Oh My Keymint 1.2.6-9069c6c
+ARM64 executables as separate files/processes. Author: James Clef (qwq233).
+Source: https://github.com/qwq233/OhMyKeymint . Source snapshot, release
+coordinates, checksums, GLA v4, naming license and AOSP notices are retained
+under `third_party/OhMyKeymint/`. These files are not relicensed under AGPL/GPL.
+Maintainer-reported author permission is recorded in that directory's
+`AUTHORIZATION.md`; this does not claim author endorsement or commercial rights.
+For this integration the `tricky_store` carrier uses OMY rather than the
+TEESimulator-RS runtime described in the historical entries below. TA_enhanced
+remains separately licensed under its original terms.
+
 ## 基础项目
 
 - **KernelSU** — https://github.com/tiann/KernelSU （作者 weishu / tiann 及社区贡献者）
