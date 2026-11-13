@@ -353,6 +353,19 @@ namespace ghostlock::attack {
             "  exit 1\n"
             "}\n"
             "trap 'rm -f \"$POLICY\"; dump_debug' EXIT\n"
+            /* XEC: 2026-11-13 (audit F16) -- every failure exit must restore
+             * enforcing. The two early `exit 1` paths (missing ksud, module not
+             * loaded) skipped the restore below and left the device permissive
+             * with only a log line. */
+            "fail_exit() {\n"
+            "  RC=$1; shift\n"
+            "  echo \"[!] $*\" >>\"$LOG\"\n"
+            "  if [ \"$ENFORCE_WAS\" = \"1\" ]; then\n"
+            "    echo 1 > /sys/fs/selinux/enforce 2>/dev/null\n"
+            "    echo \"[*] enforcing restore (failure path) rc=$? now=$(cat /sys/fs/selinux/enforce 2>/dev/null)\" >>\"$LOG\"\n"
+            "  fi\n"
+            "  exit \"$RC\"\n"
+            "}\n"
             "prepare_policy() {\n"
             "  cat /sys/fs/selinux/policy >\"$POLICY\" || return 1\n"
             "  HEADER=$(od -An -tx1 -N24 \"$POLICY\" | tr -d ' \\n')\n"
@@ -403,7 +416,7 @@ namespace ghostlock::attack {
             "  KSU_ALREADY=0\n"
             "  if [ ! -x \"$KSUD\" ]; then\n"
             "    echo '[!] ksud missing; cannot late-load' >>\"$LOG\"\n"
-            "    exit 1\n"
+            "    fail_exit 1 "ksud missing; cannot late-load"\n"
             "  fi\n"
             "  echo \"[*] late-load kmi=$KMI\" >>\"$LOG\"\n"
             "  chmod 755 \"$KSUD\" 2>/dev/null\n"
@@ -443,7 +456,7 @@ namespace ghostlock::attack {
             "done\n"
             "if [ \"$KSU_READY\" -ne 1 ]; then\n"
             "  echo '[!] KernelSU module not loaded' >>\"$LOG\"\n"
-            "  exit 1\n"
+            "  fail_exit 1 "KernelSU module not loaded"\n"
             "fi\n"
             "echo '[+] KernelSU module loaded (log only; health checks follow)' >>\"$LOG\"\n"
             /* XEC: 2026-11-09 audit — three defects fixed here:
