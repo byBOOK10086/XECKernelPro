@@ -233,7 +233,10 @@ fn load_susfs_lkm(kmi: &str) {
     // expose_proc=1 才会建 /proc/susfs_* 控制节点，ksud 靠这些节点下发规则。
     // avc_su_ctx 必须是我们自己的域：默认值是别的变体，填错会让 avc 伪造
     // 直接 -EOPNOTSUPP（它要用 security_secctx_to_secid 解析这个串）。
-    let params = ["expose_proc=1".to_string(), "avc_su_ctx=u:r:xecpro:s0".to_string()];
+    let params = [
+        "expose_proc=1".to_string(),
+        "avc_su_ctx=u:r:xecpro:s0".to_string(),
+    ];
 
     // 主路径：落盘后走 ksud 自己的 insmod —— 它会用 KSU_IOCTL_LOOKUP_SYMBOLS
     // （或 /proc/kallsyms 兜底）解析这个模块的未定义符号。susfs 引用了大量非导出

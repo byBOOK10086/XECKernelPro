@@ -54,7 +54,10 @@ pub mod android {
                 return trimmed.to_string();
             }
         }
-        rustix::system::uname().release().to_string_lossy().into_owned()
+        rustix::system::uname()
+            .release()
+            .to_string_lossy()
+            .into_owned()
     }
 
     pub fn get_kernel_version() -> Result<(i32, i32, i32)> {
@@ -340,7 +343,10 @@ pub mod android {
             .join("post_ota.sh");
         if legacy_script.exists() {
             if let Err(error) = std::fs::remove_file(&legacy_script) {
-                warn!("failed to remove legacy OTA script {}: {error:#}", legacy_script.display());
+                warn!(
+                    "failed to remove legacy OTA script {}: {error:#}",
+                    legacy_script.display()
+                );
             } else {
                 info!("removed legacy post_ota.sh (early mark-boot-successful)");
             }
@@ -891,7 +897,9 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
             .entry_by_name("ksu_config")
             .and_then(CpioEntry::data)
             .and_then(|v| str::from_utf8(v).ok())
-            .map_or_else(Vec::new, |v| v.split(' ').map(std::borrow::ToOwned::to_owned).collect());
+            .map_or_else(Vec::new, |v| {
+                v.split(' ').map(std::borrow::ToOwned::to_owned).collect()
+            });
 
         config.validate()?;
         config.apply(&mut ksu_config);
