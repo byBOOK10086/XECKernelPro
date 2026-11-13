@@ -13,6 +13,42 @@
 #include "ksu.h"
 #include "logging.h"
 
+// Copy a jstring into a fixed-size UAPI field, refusing instead of truncating.
+//
+// `GetStringLength` counts UTF-16 units while `GetStringUTFChars` hands out
+// modified UTF-8; one UTF-16 unit can expand to three bytes, so a length check
+// on the java string proves nothing about the byte count that `strcpy` will
+// write. Every security-relevant field here (package key, root template,
+// SELinux domain) is a fixed char array in the UAPI struct, so the check has to
+// happen after the conversion and before the copy. Failing the whole write is
+// deliberate: silently shortening a domain or template would change the
+// security configuration the user asked for.
+static bool copy_jstring_bounded(JNIEnv *env, jstring src, char *dst, size_t dst_size) {
+    if (dst_size == 0) {
+        return false;
+    }
+    dst[0] = '\0';
+    if (src == nullptr) {
+        return true;  // absent optional field: leave it empty
+    }
+    const char *chars = env->GetStringUTFChars(src, nullptr);
+    if (chars == nullptr) {
+        return false;
+    }
+    const size_t len = strlen(chars);
+    const bool fits = len < dst_size;  // reserve the terminating NUL
+    if (fits) {
+        memcpy(dst, chars, len + 1);
+    }
+    env->ReleaseStringUTFChars(src, chars);
+    return fits;
+}
+
+template <size_t N>
+static bool copy_jstring_bounded(JNIEnv *env, jstring src, char (&dst)[N]) {
+    return copy_jstring_bounded(env, src, dst, N);
+}
+
 extern "C"
 JNIEXPORT jboolean JNICALL
 Java_me_weishu_kernelsu_Natives_setSuperkeyGuard(JNIEnv *env, jobject, jboolean armed) {
@@ -249,14 +285,15 @@ Java_me_weishu_kernelsu_Natives_getAppProfile(JNIEnv *env, jobject, jstring pkg,
     }
 
     p_key_t key = {};
-    auto cpkg = env->GetStringUTFChars(pkg, nullptr);
-    strcpy(key, cpkg);
-    env->ReleaseStringUTFChars(pkg, cpkg);
+    if (!copy_jstring_bounded(env, pkg, key)) {
+        return nullptr;
+    }
 
     app_profile profile = {};
     profile.version = KSU_APP_PROFILE_VER;
 
-    strcpy(profile.key, key);
+    static_assert(sizeof(profile.key) <= sizeof(key), "package key buffer mismatch");
+    memcpy(profile.key, key, sizeof(profile.key));
     profile.curr_uid = uid;
 
     bool useDefaultProfile = get_app_profile(&profile) != 0;
@@ -370,10 +407,10 @@ Java_me_weishu_kernelsu_Natives_setAppProfile(JNIEnv *env, jobject clazz, jobjec
         return false;
     }
 
-    auto cpkg = env->GetStringUTFChars((jstring) key, nullptr);
     p_key_t p_key = {};
-    strcpy(p_key, cpkg);
-    env->ReleaseStringUTFChars((jstring) key, cpkg);
+    if (!copy_jstring_bounded(env, (jstring) key, p_key)) {
+        return false;
+    }
 
     auto currentUid = env->GetIntField(profile, currentUidField);
 
@@ -388,7 +425,8 @@ Java_me_weishu_kernelsu_Natives_setAppProfile(JNIEnv *env, jobject clazz, jobjec
     app_profile p = {};
     p.version = KSU_APP_PROFILE_VER;
 
-    strcpy(p.key, p_key);
+    static_assert(sizeof(p.key) <= sizeof(p_key), "package key buffer mismatch");
+    memcpy(p.key, p_key, sizeof(p.key));
     p.allow_su = allowSu;
     p.curr_uid = currentUid;
 
@@ -396,9 +434,10 @@ Java_me_weishu_kernelsu_Natives_setAppProfile(JNIEnv *env, jobject clazz, jobjec
         p.rp_config.use_default = env->GetBooleanField(profile, rootUseDefaultField);
         auto templateName = env->GetObjectField(profile, rootTemplateField);
         if (templateName) {
-            auto ctemplateName = env->GetStringUTFChars((jstring) templateName, nullptr);
-            strcpy(p.rp_config.template_name, ctemplateName);
-            env->ReleaseStringUTFChars((jstring) templateName, ctemplateName);
+            if (!copy_jstring_bounded(env, (jstring) templateName, p.rp_config.template_name)) {
+                LOGD("root template name too long for the UAPI field");
+                return false;
+            }
         }
 
         p.rp_config.profile.uid = uid;
@@ -414,9 +453,10 @@ Java_me_weishu_kernelsu_Natives_setAppProfile(JNIEnv *env, jobject clazz, jobjec
 
         p.rp_config.profile.capabilities.effective = capListToBits(env, capabilities);
 
-        auto cdomain = env->GetStringUTFChars((jstring) domain, nullptr);
-        strcpy(p.rp_config.profile.selinux_domain, cdomain);
-        env->ReleaseStringUTFChars((jstring) domain, cdomain);
+        if (!copy_jstring_bounded(env, (jstring) domain, p.rp_config.profile.selinux_domain)) {
+            LOGD("selinux domain too long for the UAPI field");
+            return false;
+        }
 
         p.rp_config.profile.namespaces = env->GetIntField(profile, namespacesField);
 

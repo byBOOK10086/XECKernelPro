@@ -297,37 +297,55 @@ pub mod android {
     pub(super) fn post_ota() -> Result<()> {
         use crate::assets::BOOTCTL_PATH;
         use crate::defs::ADB_DIR;
+        use log::{info, warn};
         let status = Command::new(BOOTCTL_PATH).arg("hal-info").status()?;
         if !status.success() {
             return Ok(());
         }
 
-        let current_slot = Command::new(BOOTCTL_PATH)
+        // 2026-11-13 (audit F06): `.arg(format!(...))` produced ONE argv entry
+        // ("set-active-boot-slot 1") because Command never splits strings, while
+        // bootctl expects two. The exit status was ignored as well, so a failed
+        // slot switch still reported a successful install.
+        let output = Command::new(BOOTCTL_PATH)
             .arg("get-current-slot")
-            .output()?
-            .stdout;
-        let current_slot = String::from_utf8(current_slot)?;
-        let current_slot = current_slot.trim();
-        let target_slot = i32::from(current_slot == "0");
+            .output()
+            .context("spawn bootctl get-current-slot")?;
+        if !output.status.success() {
+            bail!("bootctl get-current-slot exited with {}", output.status);
+        }
+        let current_slot = String::from_utf8(output.stdout)?;
+        let target_slot = match current_slot.trim() {
+            "0" => 1,
+            "1" => 0,
+            other => bail!("unexpected current boot slot: {other:?}"),
+        };
 
-        Command::new(BOOTCTL_PATH)
-            .arg(format!("set-active-boot-slot {target_slot}"))
-            .status()?;
+        let status = Command::new(BOOTCTL_PATH)
+            .arg("set-active-boot-slot")
+            .arg(target_slot.to_string())
+            .status()
+            .context("spawn bootctl set-active-boot-slot")?;
+        if !status.success() {
+            bail!("bootctl set-active-boot-slot {target_slot} exited with {status}");
+        }
 
-        let post_fs_data = Path::new(ADB_DIR).join("post-fs-data.d");
-        utils::ensure_dir_exists(&post_fs_data)?;
-        let post_ota_sh = post_fs_data.join("post_ota.sh");
-
-        let sh_content = format!(
-            r"
-{BOOTCTL_PATH} mark-boot-successful
-rm -f {BOOTCTL_PATH}
-rm -f /data/adb/post-fs-data.d/post_ota.sh
-"
-        );
-
-        std::fs::write(&post_ota_sh, sh_content)?;
-        std::fs::set_permissions(post_ota_sh, std::fs::Permissions::from_mode(0o755))?;
+        // 2026-11-13 (audit F07): the legacy script marked the boot successful
+        // from post-fs-data, before any health check, which cancels the
+        // bootloader's own retry/fallback before the framework proved healthy.
+        // The transaction flow (boot_txn.rs) owns that marker now, after
+        // boot_completed and the zygote check. Delete anything a previous
+        // version dropped, so an upgrade cannot keep the early marker.
+        let legacy_script = Path::new(ADB_DIR)
+            .join("post-fs-data.d")
+            .join("post_ota.sh");
+        if legacy_script.exists() {
+            if let Err(error) = std::fs::remove_file(&legacy_script) {
+                warn!("failed to remove legacy OTA script {legacy_script:?}: {error:#}");
+            } else {
+                info!("removed legacy post_ota.sh (early mark-boot-successful)");
+            }
+        }
 
         Ok(())
     }

@@ -5,6 +5,7 @@
 #include <linux/kernel.h>
 #include <linux/limits.h>
 #include <linux/slab.h>
+#include <linux/sizes.h>
 #include <linux/version.h>
 #ifdef CONFIG_KSU_DEBUG
 #include <linux/moduleparam.h>
@@ -115,23 +116,33 @@ static bool check_block(struct file *fp, loff_t *pos, loff_t block_end, unsigned
     if (certificate_size > INT_MAX || certificate_size > (u64)(certificates_end - *pos))
         return false;
 
-#define CERT_MAX_LENGTH 1024
     if (certificate_size != expected_size)
         return false;
 
-    if (certificate_size > CERT_MAX_LENGTH) {
-        pr_info("cert length overlimit\n");
+    // The certificate size is data from the APK, so it must not size a stack
+    // buffer. The old shape had a fixed 1024-byte array plus an explicit cap;
+    // a signer whose DER certificate is longer than that (1343-byte release
+    // certificates exist) was rejected even when the digest matched, which
+    // looks exactly like "the manager is not crowned". Allocate the exact size
+    // instead and keep only a sanity bound.
+    if (!certificate_size || certificate_size > SZ_16K) {
+        pr_info("cert length out of range: %u\n", certificate_size);
         return false;
     }
 
-    char cert[CERT_MAX_LENGTH];
-    if (!read_exact(fp, cert, certificate_size, pos, certificates_end))
+    char *cert = kmalloc(certificate_size, GFP_KERNEL);
+    if (!cert)
         return false;
+
+    bool digest_matches = false;
+
+    if (!read_exact(fp, cert, certificate_size, pos, certificates_end))
+        goto out;
 
     unsigned char digest[SHA256_DIGEST_SIZE];
     if (ksu_sha256(cert, certificate_size, digest)) {
         pr_info("sha256 error\n");
-        return false;
+        goto out;
     }
 
     char hash_str[SHA256_DIGEST_SIZE * 2 + 1];
@@ -139,7 +150,11 @@ static bool check_block(struct file *fp, loff_t *pos, loff_t block_end, unsigned
 
     bin2hex(hash_str, digest, SHA256_DIGEST_SIZE);
     pr_info("sha256: %s, expected: %s\n", hash_str, expected_sha256);
-    return strcmp(expected_sha256, hash_str) == 0;
+    digest_matches = strcmp(expected_sha256, hash_str) == 0;
+
+out:
+    kfree(cert);
+    return digest_matches;
 }
 
 static __always_inline bool check_v2_signature(char *path, unsigned expected_size, const char *expected_sha256)
@@ -247,6 +262,15 @@ static __always_inline bool check_v2_signature(char *path, unsigned expected_siz
         if (id == 0x7109871au) {
             v2_signing_blocks++;
             v2_signing_valid = check_block(fp, &pos, pair_end, expected_size, expected_sha256);
+        } else if (id == 0xf05368c0u /* APK Signature Scheme v3 */
+                   || id == 0x1b93ad61u /* v3.1 (key rotation) */
+                   || id == 0x6dff800du /* source stamp, v2 */) {
+            // 2026-11-13 (audit F20): a legitimate APK may carry v3/v3.1 or a
+            // source-stamp block next to v2. Rejecting every unknown block made
+            // a correctly signed manager look invalid. These blocks are skipped
+            // rather than trusted: the identity below still comes only from the
+            // single v2 block, which stays mandatory, and v3 signer rotation
+            // consistency is the platform installer's job.
         } else if (id != 0x42726577u) { // APK verity padding
             // https://cs.android.com/android/platform/superproject/+/android-latest-release:tools/apksig/src/main/java/com/android/apksig/internal/apk/ApkSigningBlockUtils.java;l=102;drc=ebe4dfd4fd6550c949a6c7c2427484bf5e96500b
 #ifdef CONFIG_KSU_DEBUG

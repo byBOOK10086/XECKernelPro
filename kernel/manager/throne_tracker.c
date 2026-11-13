@@ -126,7 +126,11 @@ static FILLDIR_RETURN_TYPE my_actor(struct dir_context *ctx, const char *name, i
     if (d_type == DT_REG && namelen == 8 && !memcmp(name, "base.apk", 8)) {
         if (maybe_manager_apk_dir(my_ctx->parent_dir)) {
             snprintf(candidate_path, DATA_PATH_LEN, "%s/%.*s", my_ctx->parent_dir, namelen, name);
-            strcpy(cached_manager_apk_path, candidate_path);
+            // 2026-11-13 (audit F18): do NOT publish the path here. This runs
+            // while scanning, i.e. before the signature check; caching it meant
+            // a single failed first read (or a wrong-identity APK) was remembered
+            // and every later rescan skipped re-verification because the path
+            // still existed. The path is cached only after verification passes.
         }
         // As soon as we met the base.apk, we can stop
         return FILLDIR_ACTOR_STOP;
@@ -200,9 +204,15 @@ static void search_manager(const char *path, int depth, struct list_head *uid_da
             pr_info("Found manager base.apk at path: %s, is_manager: %d\n", candidate_path, is_manager);
 
             // Only crown if signature verification pass
-            if (unlikely(!is_manager))
+            if (unlikely(!is_manager)) {
+                // A failed verification must not leave a positive cache behind,
+                // otherwise the next rescan short-circuits on "path unchanged"
+                // and never retries the check.
+                cached_manager_apk_path[0] = 0;
                 goto skip_iterate;
+            }
 
+            strscpy(cached_manager_apk_path, candidate_path, DATA_PATH_LEN);
             crown_manager(candidate_path, uid_data);
 
         skip_iterate:

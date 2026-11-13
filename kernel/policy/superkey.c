@@ -109,6 +109,12 @@ int ksu_superkey_clear(const void __user *arg)
     superkey_present = false;
     memset(superkey_hash, 0, sizeof(superkey_hash));
     mutex_unlock(&superkey_lock);
+    // 2026-11-13 (audit F12): clearing the key has to release the guard in the
+    // same transition. The dispatch path checks the raw guard flag, while the
+    // status struct reports `set && armed`; leaving the flag set made the
+    // manager show "not set / not armed" (so it skipped authentication) while
+    // the kernel still rejected every sensitive write with EACCES.
+    ksu_superkey_set_guard(false);
     pr_info("superkey: cleared\n");
     return 0;
 }

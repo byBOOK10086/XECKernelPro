@@ -903,6 +903,13 @@ static int list_try_umount(void __user *arg)
     if (!cmd.arg || output_size == 0)
         return -EINVAL;
 
+    // 2026-11-13 (audit F13): buf_size is the caller's capacity, not a hint.
+    // The estimate below used to overwrite output_size and the result was
+    // copied out regardless, so a caller that passed a 1-byte buffer got the
+    // two header lines (35 bytes) written past the end of it. Keep the caller
+    // value aside and refuse the copy when it cannot hold the result.
+    size_t caller_capacity = output_size;
+
     // Count mounts first to estimate size needed
     down_read(&mount_list_lock);
     list_for_each_entry (entry, &mount_list, list) {
@@ -953,7 +960,10 @@ static int list_try_umount(void __user *arg)
     up_read(&mount_list_lock);
 
     if (ret == 0) {
-        if (copy_to_user((void __user *)cmd.arg, output_buf, offset))
+        if (offset > caller_capacity) {
+            pr_warn("list_try_umount: caller buffer %zu < %zu bytes needed\n", caller_capacity, offset);
+            ret = -ENOSPC;
+        } else if (copy_to_user((void __user *)cmd.arg, output_buf, offset))
             ret = -EFAULT;
     }
 
