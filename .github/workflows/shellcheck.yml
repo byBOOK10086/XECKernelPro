@@ -44,5 +44,6 @@ jobs:
             .github/scripts
             userspace/ksud/src
             userspace/ksud/builtin/TA_enhanced
+            third_party/OhMyKeymint
             third_party/TEESimulator-RS
             third_party/tricky-addon-enhanced

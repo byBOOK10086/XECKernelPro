@@ -103,12 +103,14 @@ object TeeDiagnostics {
             ENGINE_DIRS.forEach { append(" [ -d '$it' ] && [ -z \"\$E\" ] && E='$it';") }
             append(" echo \"ENGINE_DIR=\$E\";")
             append(" if [ -n \"\$E\" ] && [ -f \"\$E/disable\" ]; then echo 'ENGINE_DISABLED=1'; else echo 'ENGINE_DISABLED=0'; fi;")
-            append(" echo \"ENGINE_PID=\$(pidof TEESimulator 2>/dev/null | cut -d' ' -f1)\";")
+            append(" echo \"ENGINE_PID=\$(pidof keymint 2>/dev/null | cut -d' ' -f1)\";")
             // 2026-11-10 真机反馈："检测页 TEE 注入是绿的，但工具箱说没有引擎"。
             // 两者可以同时成立：模块目录被删/被卸后，keystore2 里旧的注入仍然残留，
             // 直到 keystore2 重启才失效。把这件事显式探出来，UI 才能说人话。
+            // 2026-11-13：引擎换成 Oh My Keymint，载荷是 inject（不再是 libTEESimulator），
+            // 按运行时引擎目录前缀判定，避免把别的库误报成"已注入"。
             append(" KPID=\$(pidof keystore2 2>/dev/null | cut -d' ' -f1);")
-            append(" if [ -n \"\$KPID\" ] && grep -q libTEESimulator /proc/\$KPID/maps 2>/dev/null; then echo 'ENGINE_INJECTED=1'; else echo 'ENGINE_INJECTED=0'; fi;")
+            append(" if [ -n \"\$KPID\" ] && grep -q '/tricky_store/engine/' /proc/\$KPID/maps 2>/dev/null; then echo 'ENGINE_INJECTED=1'; else echo 'ENGINE_INJECTED=0'; fi;")
             append(" if [ -x '$BIN' ]; then echo 'DAEMON_BIN=1'; else echo 'DAEMON_BIN=0'; fi;")
             append(" echo \"DAEMON_PID=\$(pidof ta-enhanced 2>/dev/null | cut -d' ' -f1)\";")
             append(" if [ -f '$TS/keybox.xml' ]; then echo 'KEYBOX=1';")
@@ -371,11 +373,11 @@ object TeeDiagnostics {
         while (waited < 24) {
             val probe = runCatching {
                 shell.newJob().add(
-                    "echo P=\$(pidof TEESimulator 2>/dev/null | cut -d' ' -f1); " +
+                    "echo P=\$(pidof keymint 2>/dev/null | cut -d' ' -f1); " +
                         // keystore2 重启窗口里可能有多个 pid：逐个看，别只看第一个 ——
                         // 只看第一个会把"只注入到将要退出的那个"报成成功。
                         "I=0; for K in \$(pidof keystore2 2>/dev/null); do " +
-                        "grep -q libTEESimulator /proc/\$K/maps 2>/dev/null && I=1; done; " +
+                        "grep -q '/tricky_store/engine/' /proc/\$K/maps 2>/dev/null && I=1; done; " +
                         "echo I=\$I",
                 ).exec().out
             }.getOrNull().orEmpty()
@@ -389,12 +391,12 @@ object TeeDiagnostics {
         steps += RepairStep(
             label = STEP_ENGINE,
             ok = pid > 0,
-            detail = if (pid > 0) "TEESimulator pid $pid" else "18 秒内没看到 TEESimulator 进程",
+            detail = if (pid > 0) "keymint pid $pid" else "18 秒内没看到 keymint 进程",
         )
         steps += RepairStep(
             label = "keystore2 注入",
             ok = injected,
-            detail = if (injected) "libTEESimulator 已在 keystore2 的 maps 里" else "keystore2 里还没有注入（引擎没接管）",
+            detail = if (injected) "inject 载荷已在 keystore2 的 maps 里" else "keystore2 里还没有注入（引擎没接管）",
         )
         Result.success(steps)
     }
@@ -411,20 +413,25 @@ object TeeDiagnostics {
         return withContext(Dispatchers.IO) {
             val shell = awaitRootShell()
             if (!shell.isRoot) return@withContext Result.failure(IllegalStateException("没有 root"))
-            val script = "killall TEESimulator 2>/dev/null; sleep 1; sh '$dir/service.sh' >/dev/null 2>&1 &"
+            // 引擎有两个看护循环（keymint / injector），只 killall keymint 的话
+            // 看护会在 2 秒内把它重新拉起来，等于没重启。先收看护、再重新跑 service.sh。
+            val script = "killall keymint 2>/dev/null; " +
+                "for f in /data/adb/omk/keymint-daemon.pid /data/adb/omk/injector-daemon.pid; do " +
+                "[ -f \"\$f\" ] && kill \$(cat \"\$f\") 2>/dev/null; rm -f \"\$f\"; done; " +
+                "sleep 1; sh '$dir/service.sh' >/dev/null 2>&1 &"
             runCatching { shell.newJob().add(script).exec() }.getOrNull()
                 ?: return@withContext Result.failure(IllegalStateException("执行失败"))
             // 等进程真的起来（最多 12 秒），别让 UI 报"已重启"但其实没起。
             repeat(24) {
                 val pid = runCatching {
-                    shell.newJob().add("pidof TEESimulator 2>/dev/null").exec()
+                    shell.newJob().add("pidof keymint 2>/dev/null").exec()
                         .out.firstOrNull()?.trim()?.toIntOrNull()
                 }.getOrNull() ?: 0
                 if (pid > 0) return@withContext Result.success(true)
                 Thread.sleep(500)
             }
             // 命令发出去了但进程没出现：这是失败，不是"成功"。
-            Result.failure(IllegalStateException("重启命令发出去了，但 12 秒内没看到 TEESimulator"))
+            Result.failure(IllegalStateException("重启命令发出去了，但 12 秒内没看到 keymint"))
         }
     }
 

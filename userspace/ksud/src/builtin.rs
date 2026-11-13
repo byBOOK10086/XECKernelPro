@@ -197,7 +197,7 @@ pub struct StartReport {
     pub install: InstallReport,
     /// Scripts launched, in the order they were launched.
     pub scripts: Vec<ScriptRun>,
-    /// `TEESimulator` pid after the bounded wait; 0 when it never showed up.
+    /// Engine pid after the bounded wait; 0 when it never showed up.
     pub engine_pid: i32,
     /// Whether keystore2's maps already contain the injected library.
     pub injected: bool,
@@ -211,6 +211,20 @@ const SCRIPT_BUDGET: Duration = Duration::from_secs(45);
 
 /// How long [`start_tee_engine`] waits for the engine process / injection.
 const ENGINE_WAIT: Duration = Duration::from_secs(15);
+
+/// Process name of the software KeyMint daemon we ship.
+///
+/// The engine is Oh My Keymint (see `third_party/OhMyKeymint/UPSTREAM.md`): the
+/// payload is a native `keymint` child started by its own `daemon` wrapper, so
+/// the comm is a stable, source-verified string rather than a Java main class.
+const ENGINE_COMM: &str = "keymint";
+
+/// Substring that proves the injector payload is mapped into keystore2.
+///
+/// The injector maps the payload from our runtime tree; matching the tree prefix
+/// (instead of a file name any app could use) keeps the probe from reporting
+/// "injected" for some unrelated mapping.
+const INJECTION_MARKER: &str = "/data/adb/tricky_store/engine/";
 
 /// How long a previously running engine gets to disappear.
 const STOP_BUDGET: Duration = Duration::from_secs(8);
@@ -508,6 +522,10 @@ pub fn start_tee_engine(wait_for_engine: bool) -> Result<StartReport> {
 
     let mut scripts = Vec::new();
     for (module, stage) in [
+        // tricky_store 的 post-fs-data 必须在它的 service 之前：/data/misc/keystore/omk
+        // 的属主与 keybox 播种要在 keystore2 起来之前就绪，而 service 里的两个守护进程
+        // 也读同一份目录。
+        ("tricky_store", "post-fs-data"),
         // 顺序与开机**故意不同**：TA 的 post-fs-data/service 都要读
         // /data/adb/tricky_store（keybox 兼容副本、target.txt），而那个目录要等
         // tricky_store 的 service.sh 才建出来；新设备上按开机顺序跑会白跑一轮。
@@ -538,11 +556,11 @@ pub fn start_tee_engine(wait_for_engine: bool) -> Result<StartReport> {
 
     let (engine_pid, injected) = if wait_for_engine {
         (
-            wait_for_comm("TEESimulator", ENGINE_WAIT).unwrap_or(0),
+            wait_for_comm(ENGINE_COMM, ENGINE_WAIT).unwrap_or(0),
             wait_for_injection(ENGINE_WAIT),
         )
     } else {
-        (pid_by_comm("TEESimulator").unwrap_or(0), injection_present())
+        (pid_by_comm(ENGINE_COMM).unwrap_or(0), injection_present())
     };
 
     Ok(StartReport {
@@ -747,7 +765,7 @@ fn wait_for_comm(name: &str, budget: Duration) -> Option<i32> {
 fn injection_present() -> bool {
     pids_by_comm("keystore2").into_iter().any(|pid| {
         fs::read_to_string(format!("/proc/{pid}/maps"))
-            .is_ok_and(|maps| maps.contains("libTEESimulator"))
+            .is_ok_and(|maps| maps.contains(INJECTION_MARKER))
     })
 }
 

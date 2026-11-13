@@ -24,8 +24,10 @@ data class HomeUiState(
     val susfsVersion: String?,
     val susfsVariant: String?,
     /**
-     * Whether libTEESimulator is actually mapped into keystore2. `null` means
-     * the probe did not run/was inconclusive; it is not counted as healthy.
+     * Whether the engine payload is actually mapped into keystore2 (2026-11-13:
+     * the engine is Oh My Keymint, so the probe looks for the runtime tree
+     * prefix instead of the old libTEESimulator name). `null` means the probe
+     * did not run/was inconclusive; it is not counted as healthy.
      */
     val teeInjected: Boolean? = null,
     val checkUpdateEnabled: Boolean,

@@ -174,7 +174,7 @@ class HomeViewModel(
             if (pid.isNotEmpty() && pid.all(Char::isDigit)) {
                 ShellUtils.fastCmd(
                     shell,
-                    "grep -q libTEESimulator /proc/$pid/maps 2>/dev/null && echo -n yes",
+                    "grep -q '/tricky_store/engine/' /proc/$pid/maps 2>/dev/null && echo -n yes",
                 ).trim() == "yes"
             } else {
                 false

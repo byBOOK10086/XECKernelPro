@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build the GPL-3.0 built-in modules from the vendored sources under
-# third_party/ and drop the artifacts into userspace/ksud/builtin/.
+# Build the built-in modules from the vendored sources under third_party/ and
+# drop the artifacts into userspace/ksud/builtin/.
 #
 # Must run BEFORE the ksud `cargo build`: RustEmbed packs whatever is inside
 # userspace/ksud/builtin/ at compile time, so this script is what turns the
@@ -8,19 +8,20 @@
 # intentionally carries no prebuilt GPL binaries; if this step fails, the
 # guards below abort the build instead of shipping an incomplete engine.
 #
+# The TEE engine itself is Oh My Keymint (third_party/OhMyKeymint, GLA v4, not
+# GPL): its binaries are vendored as-is and copied verbatim, with the license
+# files travelling next to them as GLA 4.1/4.4 requires. We do not rebuild it —
+# see third_party/OhMyKeymint/UPSTREAM.md for the upgrade procedure.
+#
 # Prerequisites (provided by the calling workflow):
 #   - rustup with stable + cargo on PATH
 #   - ANDROID_NDK_HOME pointing at an NDK (r29 works for the Rust crates)
-#   - ANDROID_HOME with platforms;android-36, build-tools;36.0.0,
-#     ndk;27.3.13750724, cmake;3.22.1 (TEESimulator-RS Gradle pins NDK 27.3)
-#   - JDK 21 as JAVA_HOME (TEESimulator-RS targets JVM 21)
-#   - cargo-ndk on PATH (TEESimulator-RS Gradle task buildRustCertgen)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 BUILTIN="$ROOT/userspace/ksud/builtin"
-TS_SRC="$ROOT/third_party/TEESimulator-RS"
 TA_SRC="$ROOT/third_party/tricky-addon-enhanced"
+OMK_MOD="$ROOT/third_party/OhMyKeymint/module"
 
 TARGET="aarch64-linux-android"
 ABI="arm64-v8a"
@@ -82,53 +83,52 @@ build_ta_enhanced() {
 }
 
 # ---------------------------------------------------------------------------
-# 2) tricky_store: TEESimulator-RS engine via its own Gradle zipRelease
+# 2) tricky_store: Oh My Keymint engine, copied verbatim
 # ---------------------------------------------------------------------------
+# 上游 zip 里每个载荷都配了 `<file>.sha256`（只有哈希、没有文件名），逐字节核验
+# 之后再拷，防止仓库里那份被改过或解压坏掉。
+verify_omk_payload() {
+    local f expected actual
+    for f in daemon daemon-injector "libs/$ABI/keymint" "libs/$ABI/inject"; do
+        [ -f "$OMK_MOD/$f" ] || { echo "OhMyKeymint payload missing: $OMK_MOD/$f" >&2; exit 1; }
+        [ -f "$OMK_MOD/$f.sha256" ] || { echo "OhMyKeymint checksum missing: $OMK_MOD/$f.sha256" >&2; exit 1; }
+        expected="$(tr -d ' \r\n' < "$OMK_MOD/$f.sha256")"
+        actual="$(sha256sum "$OMK_MOD/$f" | cut -d' ' -f1)"
+        [ "$actual" = "$expected" ] || {
+            echo "OhMyKeymint payload checksum mismatch: $f" >&2
+            echo "  expected $expected" >&2
+            echo "  actual   $actual" >&2
+            exit 1
+        }
+        echo "    verified $f"
+    done
+}
+
 build_tricky_store() {
-    log "Building TEESimulator-RS engine (Gradle zipRelease)"
-    command -v cargo-ndk >/dev/null || {
-        echo "cargo-ndk not found (the Gradle buildRustCertgen task needs it)" >&2
-        exit 1
-    }
-    rustup target add "$TARGET"
-    cd "$TS_SRC"
-    # 2026-11-09：runner 从 services.gradle.org 取 gradle-9.2.0-bin.zip 直接拿到
-    # HTTP 504，整个 build-ksud 红掉。workflow 里新增的一步会先把同一个发行包从
-    # 我们自己的镜像取下来（sha256 校验后解压），再用 XEC_GRADLE_BIN 指过来；
-    # 那一步没拿到时退回 wrapper 原路径，本地开发行为一点没变。
-    local gradle_cmd="./gradlew"
-    if [ -n "${XEC_GRADLE_BIN:-}" ] && [ -x "${XEC_GRADLE_BIN}" ]; then
-        gradle_cmd="${XEC_GRADLE_BIN}"
-        log "Using pre-fetched Gradle: ${gradle_cmd}"
-    fi
-    "$gradle_cmd" zipRelease --no-daemon -q
+    log "Staging Oh My Keymint engine (verbatim)"
+    [ -d "$OMK_MOD" ] || { echo "OhMyKeymint module tree missing at $OMK_MOD" >&2; exit 1; }
+    verify_omk_payload
 
-    local zip stage
-    zip="$(ls -t out/TEESimulator-RS-*-Release.zip 2>/dev/null | head -1 || true)"
-    [ -n "$zip" ] || { echo "no TEESimulator-RS release zip in out/" >&2; exit 1; }
-    stage="$(mktemp -d)"
-    unzip -q "$zip" -d "$stage"
-
-    local libdir="$stage/lib/$ABI"
-    install -m 644 "$stage/classes.dex" "$BUILTIN/tricky_store/classes.dex"
-    install -m 644 "$libdir/libTEESimulator.so" "$BUILTIN/tricky_store/libTEESimulator.so"
-    install -m 644 "$libdir/libcertgen.so" "$BUILTIN/tricky_store/libcertgen.so"
-    # Magisk/KSU module convention ships executables as lib*.so under lib/<abi>;
-    # our builtin layout uses the bare names the staging scripts expect.
-    install -m 755 "$libdir/libinject.so" "$BUILTIN/tricky_store/inject"
-    install -m 755 "$libdir/libsupervisor.so" "$BUILTIN/tricky_store/supervisor"
-    rm -rf "$stage"
+    local dst="$BUILTIN/tricky_store/engine" f
+    rm -rf "$dst"
+    mkdir -p "$dst/libs/$ABI"
+    install -m 755 "$OMK_MOD/daemon" "$dst/daemon"
+    install -m 755 "$OMK_MOD/daemon-injector" "$dst/daemon-injector"
+    install -m 755 "$OMK_MOD/libs/$ABI/keymint" "$dst/libs/$ABI/keymint"
+    install -m 755 "$OMK_MOD/libs/$ABI/inject" "$dst/libs/$ABI/inject"
+    # GLA §4.1/§4.4: the agreement, the author attribution and the release URL
+    # must travel with every distributed copy of the work.
+    for f in LICENSE.1 LICENSE.2 AOSP.Apache-license-2.0.txt README.md; do
+        install -m 644 "$OMK_MOD/$f" "$dst/$f"
+    done
 }
 
 build_ta_enhanced
 build_tricky_store
 
 log "Built-in module artifacts:"
-ls -l "$BUILTIN/tricky_store/classes.dex" \
-      "$BUILTIN/tricky_store/libTEESimulator.so" \
-      "$BUILTIN/tricky_store/libcertgen.so" \
-      "$BUILTIN/tricky_store/inject" \
-      "$BUILTIN/tricky_store/supervisor" \
+ls -l "$BUILTIN/tricky_store/engine/libs/$ABI/keymint" \
+      "$BUILTIN/tricky_store/engine/libs/$ABI/inject" \
       "$BUILTIN/TA_enhanced/bin/$ABI/ta-enhanced" \
       "$BUILTIN/TA_enhanced/bin/$ABI/resetprop-rs"
 echo "OK"
