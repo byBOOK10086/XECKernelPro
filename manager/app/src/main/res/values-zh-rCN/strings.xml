@@ -10,6 +10,8 @@
     <string name="home_unsupported">不支持</string>
     <string name="home_unsupported_reason">XECKernel Pro 现在只支持 GKI 内核，但是你可以为 GKI 设备补丁镜像</string>
     <string name="home_device_model">设备型号</string>
+    <string name="home_tee_engine">TEE 实现</string>
+    <string name="home_tee_engine_value">内置 · TEESimulator</string>
     <string name="home_kernel">内核版本</string>
     <string name="home_manager_version">管理器版本</string>
     <string name="home_download_count">下载量</string>

@@ -1,5 +1,6 @@
 package me.weishu.kernelsu.ui.screen.home
 
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.LinearEasing
@@ -10,6 +11,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +27,7 @@ import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
@@ -61,17 +64,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -102,6 +112,9 @@ import me.weishu.kernelsu.ui.design.token.XcEasing
 import me.weishu.kernelsu.ui.design.token.XcMotionDefault
 import me.weishu.kernelsu.ui.design.token.rememberReducedMotion
 import me.weishu.kernelsu.ui.util.getSuperuserCount
+import me.weishu.kernelsu.ui.util.WallpaperStore
+import me.weishu.kernelsu.ui.viewmodel.MainActivityUiState
+import me.weishu.kernelsu.ui.viewmodel.MainActivityViewModel
 import me.weishu.kernelsu.ui.viewmodel.ModuleViewModel
 import me.weishu.kernelsu.ui.util.module.LatestVersionInfo
 import top.yukonga.miuix.kmp.basic.Icon
@@ -115,8 +128,9 @@ import top.yukonga.miuix.kmp.basic.Text
  * 版式来自设计稿：**一句话结论 + 三格数据 + 设备表**。
  *
  * 与上一版（MIUI 8 六张面板）的区别：
- *  - 首屏不再让"模式卡"独占整块；状态收成一行大字（[HomeHero]），一屏读得出"能不能用"；
- *  - 三格数据（内核 / 管理器 / 超级用户）是上下两条发丝线夹出来的，不是三张卡；
+ *  - 首屏不再让"模式卡"独占整块；状态、窗口与三格合成一张卡（[HomeHeroCard]），
+ *    层级由"面 + 窗口"承担，一屏读得出"能不能用"；
+ *  - 三格数据（内核 / 管理器 / 超级用户）不再自己收边，作为合并卡的下半段；
  *  - 设备信息变成"标签 + 右值"的表，刷新入口就挂在这一节的标题行上；
  *  - 更新卡从告警条变成一张实心卡：左边版本与体积、右边一个强调色药丸。
  *
@@ -232,15 +246,15 @@ fun HomePagerMiuix(
                         WarningCard(stringResource(id = R.string.home_daemon_missing), block = warningBlock)
                     }
 
-                    HomeHero(state = state, onInstall = actions.onInstallClick)
-
-                    HomeStats(
+                    HomeHeroCard(
+                        state = state,
                         inputs = HomeStatInputs(
                             state = state,
                             rootGrantCount = rootGrantCount,
                             moduleTotal = moduleTotal,
                             moduleEnabled = moduleEnabled,
                         ),
+                        onInstall = actions.onInstallClick,
                         onEdit = { showStatEditor = true },
                     )
 
@@ -352,9 +366,23 @@ private fun HomeHeader(
     }
 }
 
-/** 首屏结论：一个状态点 + 一行 34sp 的大字 + 一行说明，底下一条发丝线。 */
+/**
+ * 首屏结论 + 三格数据合成的一张卡（2026-11-14 用户定稿）。
+ *
+ * 三段：状态行 / 窗口 / 三格矩阵。窗口显示**用户自定义背景**（与整页壁纸同一张，
+ * 但只按「背景模糊」的 12% 糊一层，所以在卡里还能看出细节），没选自定义图时回落到
+ * 纯色档或内置底色。
+ *
+ * 合并的理由：原先状态与三格是两条独立排版带，中间夹着 6dp + 17dp 空白，读起来是
+ * "两个东西"；合成一张面之后首屏只有一个重心，层级由面和窗口承担，不再靠字号膨胀。
+ */
 @Composable
-private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
+private fun HomeHeroCard(
+    state: HomeUiState,
+    inputs: HomeStatInputs,
+    onInstall: () -> Unit,
+    onEdit: () -> Unit,
+) {
     val running = state.ksuVersion != null
     // 审计 P1（2026-11-09）：之前只看"驱动有没有应答"，驱动在但 su 被拒时仍显示
     // ROOT READY。就绪判据改成实际的 root 可用性。
@@ -362,9 +390,7 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
     // 2026-11-09 用户要求：管理器已经拿到 root、但内核模块还没装/没跑起来时，
     // 不再说"内核未运行"，而是明确告诉用户"可以直接装"，并且这块本身就是入口。
     val canInstall = !running && state.isRootAvailable
-    // 冷启动/刚重启那段，root 探测还没落定。此时 isRootAvailable 必然 false，
-    // 直接画红点会得到"内核正常运行 + ROOT 未就绪"这种自相矛盾的首帧
-    // （2026-11-09 用户真机反馈）。未落定 → 灰点 + 「正在获取 Root」。
+    // 冷启动/刚重启那段，root 探测还没落定：灰点 + 「正在获取 Root」，不画红点。
     val probing = !state.rootProbeSettled
     val statusLabel = when {
         active -> R.string.home_hero_ready
@@ -376,8 +402,6 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
         probing -> Xc.colors.textMuted
         else -> Xc.colors.danger
     }
-    // 2026-11-11 用户要求：主/副标题拆成两层，主标题只放短句，杜绝
-    // 「已准备就绪，可以直接 / 安装」这种把最后两个字挤到下一行的断行。
     val title = when {
         running -> stringResource(R.string.home_hero_running)
         canInstall -> stringResource(R.string.home_hero_ready_title)
@@ -391,21 +415,35 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
     // 文案统一走 HomeStatItem.kt 里的 selinuxLabel()：设备表 / 安全面板 / 数据面板
     // 三处曾经各抄一份 when，删一处就会漏一处。
     val selinuxText = selinuxLabel(state.systemInfo.selinuxStatus)
-    // 副标题：可安装这一档换成一句完整的话；其它档沿用「模式 · SELinux」。
     val subtitle = when {
         canInstall -> stringResource(R.string.home_hero_ready_subtitle)
         else -> "$modeText · SELinux $selinuxText"
     }
 
-    Column(modifier = Modifier.padding(top = 10.dp)) {
-        // 呼吸点：设计要求「ROOT 就绪指示点加入非常轻微的呼吸效果，周期 2.5–3.5s，
-        // 只改变指示点的透明度，不要整块闪烁」。所以动画只作用在这颗 7dp 的圆上。
-        //
-        // 三个闸门缺一不可：
-        //  * 只有 [active]（root 真的可用）才呼吸 —— 灰点/红点不该有"活着"的暗示；
-        //  * 系统要求减少动态效果时直接静止；
-        //  * 无限动画**不受** Compose 运行时的 durationScale 管辖（它走
-        //    withInfiniteAnimationFrameNanos），必须自己判 [reduced]。
+    val dark = Xc.colors.isDark
+    val appUi by viewModel<MainActivityViewModel>().uiState.collectAsStateWithLifecycle()
+    val windowBitmap = rememberHeroWindowBitmap(appUi)
+    val windowSolid = WallpaperStore.solidArgb(if (dark) appUi.wallpaperDark else appUi.wallpaperLight)
+    // 卡片里的窗口比整页壁纸清晰：壁纸层按 wallpaperBlur 全糊，窗口只跟 12% ——
+    // 这样"同一张图、两个模糊档"才成立，窗口不至于和背景糊成一片。
+    val windowBlur = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        (appUi.wallpaperBlur / 100f * 12f).dp
+    } else {
+        0.dp
+    }
+
+    val shape = RoundedCornerShape(20.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp)
+            .clip(shape)
+            .background(Xc.surface)
+            .border(1.dp, Xc.colors.glassRim, shape)
+            .padding(start = 18.dp, end = 18.dp, top = 13.dp, bottom = 14.dp),
+    ) {
+        // 呼吸点：只有 root 真的可用才呼吸；减少动态效果时静止。无限动画不受
+        // durationScale 管辖，所以必须自己判 reduced。
         val reduced = rememberReducedMotion()
         val dotAlpha = if (active && !reduced) {
             val breath = rememberInfiniteTransition(label = "heroBreath")
@@ -438,68 +476,128 @@ private fun HomeHero(state: HomeUiState, onInstall: () -> Unit) {
                 color = Xc.colors.textMuted,
             )
         }
-        Row(
-            // 2026-11-09 用户定案：安装入口不做在设置里 —— 首页这块「内核未运行 /
-            // 已准备就绪 / 内核正常运行」本身就是入口，点它直接进刷入页。
-            modifier = Modifier
-                .padding(top = 13.dp)
-                .clickable(onClick = onInstall),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = title,
-                style = Xc.typography.display,
-                color = Xc.colors.text,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            // 2026-11-09 用户要求：和 KernelSU 首页同款的"已运行"对勾。
-            // 只在**内核真的在跑**时出现 —— 只是拿到 root 但没装内核时不画，那会变假绿。
-            if (running) {
-                Spacer(Modifier.width(10.dp))
-                Icon(
-                    imageVector = Icons.Rounded.CheckCircle,
-                    contentDescription = null,
-                    tint = Xc.colors.success,
-                    modifier = Modifier.size(26.dp),
-                )
-            }
-            // 整行已经可点，这里只留一个"进去"的暗示，不再放强调色按钮抢主视觉。
-            Spacer(Modifier.width(8.dp))
-            Icon(
-                imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = null,
-                tint = Xc.colors.textMuted,
-                modifier = Modifier.size(22.dp),
-            )
-        }
-        Text(
-            text = subtitle,
-            // 第三轮：14 → 13。设计要求把「辅助说明」钉在 12–13sp，上一版的 14 是
-            // 唯一一个落在令牌表外的值（全 manager 只剩这一处，其余 14 都在
-            // FileManager / 终端这类不归排版体系管的界面上）。
-            fontSize = 13.sp,
-            lineHeight = 20.sp,
-            color = Xc.colors.textMuted,
-            modifier = Modifier.padding(top = 9.dp),
-        )
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(8.dp))
+        // 窗口：用户自定义背景。整块可点 = 进刷入页（沿用 2026-11-09 的定案）。
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(1.dp)
-                .background(Xc.colors.glassRim),
-        )
+                .height(132.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .clickable(onClick = onInstall),
+        ) {
+            when {
+                windowBitmap != null -> Image(
+                    bitmap = windowBitmap,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .blur(windowBlur),
+                    contentScale = ContentScale.Crop,
+                )
+
+                windowSolid != null -> Box(Modifier.fillMaxSize().background(Color(windowSolid)))
+
+                // 没有自定义图：用主题里的浅绿/浅灰做一层柔和底，窗口不至于塌成白块。
+                else -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Xc.colors.accentSoft, Xc.colors.surfaceMuted),
+                            ),
+                        ),
+                )
+            }
+            // 标题区 scrim：压住底部 58%，保证 34sp 白字在任意壁纸上都过对比度。
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0.42f to Color.Transparent,
+                            1f to Color.Black.copy(alpha = 0.55f),
+                        ),
+                    ),
+            )
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(14.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = title,
+                        style = Xc.typography.display,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    // 2026-11-09：和 KernelSU 同款的"已运行"对勾，只在内核真的在跑时出现。
+                    if (running) {
+                        Spacer(Modifier.width(10.dp))
+                        Icon(
+                            imageVector = Icons.Rounded.CheckCircle,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.92f),
+                            modifier = Modifier.size(26.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Rounded.ChevronRight,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.75f),
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                Text(
+                    text = subtitle,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    color = Color.White.copy(alpha = 0.88f),
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        HomeStats(inputs = inputs, onEdit = onEdit)
     }
 }
 
+/** 窗口里的背景：解码用户选的那张壁纸；没有自定义图时返回 null（调用方回落）。 */
+@Composable
+private fun rememberHeroWindowBitmap(ui: MainActivityUiState): ImageBitmap? {
+    val context = LocalContext.current
+    val dark = Xc.colors.isDark
+    val name = if (dark) ui.wallpaperDark else ui.wallpaperLight
+    // API 31 以下没有 RenderEffect：用更小的解码尺寸当"廉价模糊"，否则窗口会是一张
+    // 全分辨率照片，和整页糊掉的壁纸完全对不上。
+    val canBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val edge = if (canBlur) 1024 else 256
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, name, edge) {
+        value = if (name.isEmpty() || WallpaperStore.isSolid(name)) {
+            null
+        } else {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    WallpaperStore.decode(WallpaperStore.fileOf(context, name), edge)?.asImageBitmap()
+                }.getOrNull()
+            }
+        }
+    }
+    return bitmap
+}
+
 /**
- * 三格数据面板（第三轮：可自定义）。
+ * 三格数据（第三轮：可自定义；2026-11-14 起嵌进 [HomeHeroCard] 的下半段）。
  *
- * 结构上仍是「上下两条发丝线夹出的三格」——设计要求明确保留三列布局、不要给每格
- * 单独加卡片。变的是**每格里放什么**：读 [HomeStatStore]，用户可以自选 8 项里的 3 项。
+ * 三列等宽、格间一条竖线，不再自己画上下两条发丝线 —— 上下边界由外层卡片承担，
+ * 否则合并后会出现"卡里还有两条线"的重复收边。
  *
- * 编辑入口只有**长按整块面板**一处：设计要求「不要让正常浏览首页时出现过多编辑按钮」，
+ * 编辑入口只有**长按矩阵段**一处：设计要求「不要让正常浏览首页时出现过多编辑按钮」，
  * 所以这里不画图标、不画「编辑」字样。长按给了震动反馈，否则手势没有任何回执。
+ * 长按只挂在矩阵段、不挂整张卡：上半窗口是"点一下进刷入页"，跨整卡会和点击抢手势。
  */
 @Composable
 private fun HomeStats(inputs: HomeStatInputs, onEdit: () -> Unit) {
@@ -512,7 +610,6 @@ private fun HomeStats(inputs: HomeStatInputs, onEdit: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 17.dp)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onLongPress = {
@@ -534,12 +631,6 @@ private fun HomeStats(inputs: HomeStatInputs, onEdit: () -> Unit) {
             StatCell(item = item, inputs = inputs, modifier = Modifier.weight(1f))
         }
     }
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(line),
-    )
 }
 
 /**
@@ -629,6 +720,13 @@ private fun DeviceSection(state: HomeUiState, onRefresh: () -> Unit) {
                     if (state.kernelVersion.major >= 0) state.kernelVersion.toString() else "—",
                 )
             },
+        )
+        // 2026-11-14 用户要求：设备区把「Zygisk 实现」换成「TEE 实现」。
+        // 这一行说的是密钥证明链由谁接管，不是第三方 Zygisk 的运行状态。
+        Xc8Row(
+            title = stringResource(R.string.home_tee_engine),
+            leading = Icons.Rounded.Security,
+            trailing = { Xc8Value(stringResource(R.string.home_tee_engine_value)) },
         )
         Xc8Row(
             title = stringResource(R.string.home_device_model),
