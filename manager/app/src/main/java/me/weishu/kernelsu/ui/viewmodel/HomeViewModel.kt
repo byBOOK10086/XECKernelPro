@@ -154,6 +154,27 @@ class HomeViewModel(
         val kernelVersion = getKernelVersion()
         val isManager = Natives.isManager
         val ksuVersion = if (isManager) Natives.version else null
+        // 内核里有 KernelSU、但这个包不是它认的管理器（刷了上游内核/上游 LKM 就是这种形态）。
+        // 这时 ksuVersion 恒为 null，但 root 走 allowlist 是能用的；不区分就会把
+        // "root 明明可用"显示成"内核未运行"。只在 deep 探测且本包不是管理器时问一句内核模块，
+        // 且任何失败都按"没有外部内核"处理，绝不因此影响首屏。
+        val externalKernelSu = if (deep && !isManager) {
+            val hasRoot = runCatching { rootAvailable() }.getOrDefault(false)
+            if (!hasRoot) {
+                false
+            } else {
+                runCatching {
+                    val shell = getRootShell()
+                    ShellUtils.fastCmd(
+                        shell,
+                        "test -d /sys/module/kernelsu || grep -qw kernelsu /proc/kallsyms; " +
+                            "[ $? -eq 0 ] && echo -n yes",
+                    ).trim() == "yes"
+                }.getOrDefault(false)
+            }
+        } else {
+            false
+        }
         val kernelUAPIVersion = if (isManager) Natives.kernelUAPIVersion else null
         val managerUAPIVersion = Natives.managerUAPIVersion
         val lkmMode = ksuVersion?.let { if (kernelVersion.isGKI()) Natives.isLkmMode else null }
@@ -199,6 +220,7 @@ class HomeViewModel(
             lkmMode = lkmMode,
             isLkmBundled = lkmMode == true && Natives.isLkmBundled,
             isManager = isManager,
+            externalKernelSu = externalKernelSu,
             isManagerPrBuild = BuildConfig.IS_PR_BUILD,
             isKernelPrBuild = Natives.isPrBuild,
             requiresNewKernel = isManager && Natives.managerUAPIVersion > Natives.kernelUAPIVersion,

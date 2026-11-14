@@ -2,6 +2,9 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <string name="home">主页</string>
     <string name="home_not_installed">未安装</string>
+    <string name="home_hero_external_status">ROOT 已就绪 · 外部内核</string>
+    <string name="home_hero_external_title">内核运行中 · 外部 KernelSU</string>
+    <string name="home_hero_external_subtitle">这台机器的内核跑的是外部 KernelSU，没有把本管理器认成它的管理器。Root 可以用，但 SUSFS、TEE 这类内核级功能需要换成我们自己的内核。</string>
     <string name="home_click_to_install">点击安装</string>
     <string name="home_working">正在运行</string>
     <string name="home_working_version">版本：%s</string>

@@ -386,7 +386,10 @@ private fun HomeHeroCard(
     onInstall: () -> Unit,
     onEdit: () -> Unit,
 ) {
-    val running = state.ksuVersion != null
+    val external = state.externalKernelSu
+    // 外部内核（上游 KernelSU）里内核确实在跑，只是本包不是它认的管理器：
+    // 这时 root 可用、内核在跑，不能把状态说成"未运行"。
+    val running = state.ksuVersion != null || external
     // 审计 P1（2026-11-09）：之前只看"驱动有没有应答"，驱动在但 su 被拒时仍显示
     // ROOT READY。就绪判据改成实际的 root 可用性。
     val active = state.isRootAvailable
@@ -396,21 +399,25 @@ private fun HomeHeroCard(
     // 冷启动/刚重启那段，root 探测还没落定：灰点 + 「正在获取 Root」，不画红点。
     val probing = !state.rootProbeSettled
     val statusLabel = when {
+        external -> R.string.home_hero_external_status
         active -> R.string.home_hero_ready
         probing -> R.string.home_hero_probing
         else -> R.string.home_hero_idle
     }
     val statusColor = when {
+        external -> Xc.colors.success
         active -> Xc.colors.success
         probing -> Xc.colors.textMuted
         else -> Xc.colors.danger
     }
     val title = when {
+        external -> stringResource(R.string.home_hero_external_title)
         running -> stringResource(R.string.home_hero_running)
         canInstall -> stringResource(R.string.home_hero_ready_title)
         else -> stringResource(R.string.home_hero_inactive)
     }
     val modeText = when {
+        external -> "KernelSU"
         state.lkmMode == true -> "LKM"
         running -> stringResource(R.string.home_hero_kernel_mode)
         else -> stringResource(R.string.home_not_installed)
@@ -419,6 +426,7 @@ private fun HomeHeroCard(
     // 三处曾经各抄一份 when，删一处就会漏一处。
     val selinuxText = selinuxLabel(state.systemInfo.selinuxStatus)
     val subtitle = when {
+        external -> stringResource(R.string.home_hero_external_subtitle)
         canInstall -> stringResource(R.string.home_hero_ready_subtitle)
         else -> "$modeText · SELinux $selinuxText"
     }

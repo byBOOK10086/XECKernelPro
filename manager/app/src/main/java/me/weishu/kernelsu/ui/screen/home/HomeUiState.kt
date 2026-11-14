@@ -13,6 +13,12 @@ data class HomeUiState(
     val lkmMode: Boolean?,
     val isLkmBundled: Boolean,
     val isManager: Boolean,
+    /**
+     * 内核里确实跑着 KernelSU，但认的管理器不是这个包（典型：刷的是上游 KernelSU 的内核或
+     * 它的 LKM）。此时 root 能用（走 allowlist 授权），supercall 与驱动 fd 却一律拿不到，
+     * 只看 `ksuVersion == null` 会把"root 明明能用"误报成"内核未运行"。
+     */
+    val externalKernelSu: Boolean = false,
     val isManagerPrBuild: Boolean,
     val isKernelPrBuild: Boolean,
     val requiresNewKernel: Boolean,

@@ -2,6 +2,9 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <string name="home">Home</string>
     <string name="home_not_installed">Not installed</string>
+    <string name="home_hero_external_status">ROOT READY · EXTERNAL KERNEL</string>
+    <string name="home_hero_external_title">Kernel running · external KernelSU</string>
+    <string name="home_hero_external_subtitle">This kernel runs someone else\'s KernelSU build, so it does not treat this app as its manager. Root works, but kernel-level features such as SUSFS and TEE need our own kernel.</string>
     <string name="home_click_to_install">Tap to install</string>
     <string name="home_working">Working</string>
     <string name="home_working_version">Version: %s</string>
