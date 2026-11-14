@@ -18,6 +18,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -79,7 +80,9 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.Dp
@@ -433,135 +436,137 @@ private fun HomeHeroCard(
     }
 
     val shape = RoundedCornerShape(20.dp)
-    Column(
+    // 背景铺满整张卡（用户自定义背景 + 背景模糊），内容直接压在上面。
+    // 2026-11-14 用户反馈：原来窗口缩在卡内，看着比下面的面板窄；改成整卡铺底后
+    // "上面的"这一块与面板同宽，层级也更明确。
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 10.dp)
             .clip(shape)
             .background(Xc.surface)
-            .border(1.dp, Xc.colors.glassRim, shape)
-            .padding(start = 18.dp, end = 18.dp, top = 13.dp, bottom = 14.dp),
+            .border(1.dp, Xc.colors.glassRim, shape),
     ) {
-        // 呼吸点：只有 root 真的可用才呼吸；减少动态效果时静止。无限动画不受
-        // durationScale 管辖，所以必须自己判 reduced。
-        val reduced = rememberReducedMotion()
-        val dotAlpha = if (active && !reduced) {
-            val breath = rememberInfiniteTransition(label = "heroBreath")
-            breath.animateFloat(
-                initialValue = 1f,
-                targetValue = 0.42f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(XcMotionDefault.breath / 2, easing = XcEasing.standard),
-                    repeatMode = RepeatMode.Reverse,
-                ),
-                label = "heroDotAlpha",
-            ).value
-        } else {
-            1f
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
+        when {
+            windowBitmap != null -> Image(
+                bitmap = windowBitmap,
+                contentDescription = null,
                 modifier = Modifier
-                    .size(7.dp)
-                    .alpha(dotAlpha)
-                    .clip(CircleShape)
-                    .background(statusColor),
+                    .matchParentSize()
+                    .blur(windowBlur),
+                contentScale = ContentScale.Crop,
             )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = stringResource(statusLabel),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 1.sp,
-                color = Xc.colors.textMuted,
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        // 窗口：用户自定义背景。整块可点 = 进刷入页（沿用 2026-11-09 的定案）。
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(132.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .clickable(onClick = onInstall),
-        ) {
-            when {
-                windowBitmap != null -> Image(
-                    bitmap = windowBitmap,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .blur(windowBlur),
-                    contentScale = ContentScale.Crop,
-                )
 
-                windowSolid != null -> Box(Modifier.fillMaxSize().background(Color(windowSolid)))
+            windowSolid != null -> Box(Modifier.matchParentSize().background(Color(windowSolid)))
 
-                // 没有自定义图：用主题里的浅绿/浅灰做一层柔和底，窗口不至于塌成白块。
-                else -> Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Xc.colors.accentSoft, Xc.colors.surfaceMuted),
-                            ),
-                        ),
-                )
-            }
-            // 标题区 scrim：压住底部 58%，保证 34sp 白字在任意壁纸上都过对比度。
-            Box(
+            // 没有自定义图：主题浅绿 → 浅灰的柔和底，不至于塌成一块白板。
+            else -> Box(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .matchParentSize()
                     .background(
                         Brush.verticalGradient(
-                            0.42f to Color.Transparent,
-                            1f to Color.Black.copy(alpha = 0.55f),
+                            listOf(Xc.colors.accentSoft, Xc.colors.surfaceMuted),
                         ),
                     ),
             )
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(14.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = title,
-                        style = Xc.typography.display,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    // 2026-11-09：和 KernelSU 同款的"已运行"对勾，只在内核真的在跑时出现。
-                    if (running) {
-                        Spacer(Modifier.width(10.dp))
-                        Icon(
-                            imageVector = Icons.Rounded.CheckCircle,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.92f),
-                            modifier = Modifier.size(26.dp),
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Icon(
-                        imageVector = Icons.Rounded.ChevronRight,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.75f),
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
+        }
+        // 竖向压暗：顶部只压一点、底部压重，保证白字与三格数字都过对比度。
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.12f),
+                        0.45f to Color.Black.copy(alpha = 0.34f),
+                        1f to Color.Black.copy(alpha = 0.52f),
+                    ),
+                ),
+        )
+        Column(
+            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 14.dp),
+        ) {
+            // 呼吸点：只有 root 真的可用才呼吸；减少动态效果时静止。无限动画不受
+            // durationScale 管辖，所以必须自己判 reduced。
+            val reduced = rememberReducedMotion()
+            val dotAlpha = if (active && !reduced) {
+                val breath = rememberInfiniteTransition(label = "heroBreath")
+                breath.animateFloat(
+                    initialValue = 1f,
+                    targetValue = 0.42f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(XcMotionDefault.breath / 2, easing = XcEasing.standard),
+                        repeatMode = RepeatMode.Reverse,
+                    ),
+                    label = "heroDotAlpha",
+                ).value
+            } else {
+                1f
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .alpha(dotAlpha)
+                        .clip(CircleShape)
+                        .background(statusColor),
+                )
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    text = subtitle,
+                    text = stringResource(statusLabel),
                     fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                    color = Color.White.copy(alpha = 0.88f),
-                    modifier = Modifier.padding(top = 4.dp),
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp,
+                    color = Color.White.copy(alpha = 0.82f),
                 )
             }
+            Spacer(Modifier.height(10.dp))
+            // 标题行：整行可点 = 进刷入页（沿用 2026-11-09 的定案）。
+            Row(
+                modifier = Modifier.clickable(onClick = onInstall),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = title,
+                    style = Xc.typography.display,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                // 2026-11-09：和 KernelSU 同款的"已运行"对勾，只在内核真的在跑时出现。
+                if (running) {
+                    Spacer(Modifier.width(10.dp))
+                    Icon(
+                        imageVector = Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.92f),
+                        modifier = Modifier.size(26.dp),
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.Rounded.ChevronRight,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.75f),
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Text(
+                text = subtitle,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = Color.White.copy(alpha = 0.82f),
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Spacer(Modifier.height(14.dp))
+            HomeStats(
+                inputs = inputs,
+                onEdit = onEdit,
+                valueColor = Color.White,
+                labelColor = Color.White.copy(alpha = 0.72f),
+                dividerColor = Color.White.copy(alpha = 0.22f),
+            )
         }
-        Spacer(Modifier.height(14.dp))
-        HomeStats(inputs = inputs, onEdit = onEdit)
     }
 }
 
@@ -600,8 +605,14 @@ private fun rememberHeroWindowBitmap(ui: MainActivityUiState): ImageBitmap? {
  * 长按只挂在矩阵段、不挂整张卡：上半窗口是"点一下进刷入页"，跨整卡会和点击抢手势。
  */
 @Composable
-private fun HomeStats(inputs: HomeStatInputs, onEdit: () -> Unit) {
-    val line = Xc.colors.glassRim
+private fun HomeStats(
+    inputs: HomeStatInputs,
+    onEdit: () -> Unit,
+    valueColor: Color = Xc.colors.text,
+    labelColor: Color = Xc.colors.textMuted,
+    dividerColor: Color = Xc.colors.glassRim,
+) {
+    val line = dividerColor
     val slots by HomeStatStore.slots.collectAsState()
     val haptic = LocalHapticFeedback.current
     // 长按是唯一的编辑入口，所以必须同时挂一条无障碍动作：读屏用户看不到"长按"
@@ -628,7 +639,13 @@ private fun HomeStats(inputs: HomeStatInputs, onEdit: () -> Unit) {
     ) {
         slots.forEachIndexed { index, item ->
             if (index > 0) StatDivider(line)
-            StatCell(item = item, inputs = inputs, modifier = Modifier.weight(1f))
+            StatCell(
+                item = item,
+                inputs = inputs,
+                modifier = Modifier.weight(1f),
+                valueColor = valueColor,
+                labelColor = labelColor,
+            )
         }
     }
 }
@@ -643,21 +660,42 @@ private fun HomeStats(inputs: HomeStatInputs, onEdit: () -> Unit) {
  * 三格必然被截断。所以按 [HomeStatValue.numeric] 分两档，这本身也是一种截断策略。
  */
 @Composable
-private fun StatCell(item: HomeStatItem, inputs: HomeStatInputs, modifier: Modifier = Modifier) {
+private fun StatCell(
+    item: HomeStatItem,
+    inputs: HomeStatInputs,
+    modifier: Modifier = Modifier,
+    valueColor: Color = Xc.colors.text,
+    labelColor: Color = Xc.colors.textMuted,
+) {
     val value = item.value(inputs)
     val label = stringResource(item.label)
+    // 24sp 是设计值，但三格等宽后内核版本（6.12.23）在 360dp 屏上会溢出；
+    // 这里按实测宽度逐级收缩，保证「完整显示」优先于「统一字号」。
+    val measurer = rememberTextMeasurer()
     Column(modifier = modifier.padding(start = 2.dp)) {
-        Box(
+        BoxWithConstraints(
             modifier = Modifier.height(30.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
+            val available = constraints.maxWidth
             Crossfade(targetState = value, animationSpec = tween(200), label = "statCellValue") { shown ->
+                val weight = if (shown.numeric) FontWeight.SemiBold else FontWeight.Medium
+                var size = if (shown.numeric) 24f else 15f
+                while (size > 13f) {
+                    val width = measurer.measure(
+                        text = shown.text,
+                        style = TextStyle(fontSize = size.sp, fontWeight = weight),
+                        maxLines = 1,
+                    ).size.width
+                    if (width <= available) break
+                    size -= 1f
+                }
                 Text(
                     text = shown.text,
-                    fontSize = if (shown.numeric) 24.sp else 15.sp,
-                    lineHeight = if (shown.numeric) 30.sp else 22.sp,
-                    fontWeight = if (shown.numeric) FontWeight.SemiBold else FontWeight.Medium,
-                    color = Xc.colors.text,
+                    fontSize = size.sp,
+                    lineHeight = (size + 6f).sp,
+                    fontWeight = weight,
+                    color = valueColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -667,7 +705,7 @@ private fun StatCell(item: HomeStatItem, inputs: HomeStatInputs, modifier: Modif
         Text(
             text = label,
             fontSize = 13.sp,
-            color = Xc.colors.textMuted,
+            color = labelColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -678,7 +716,7 @@ private fun StatCell(item: HomeStatItem, inputs: HomeStatInputs, modifier: Modif
 private fun StatDivider(line: Color) {
     Box(
         modifier = Modifier
-            .padding(horizontal = 14.dp)
+            .padding(horizontal = 10.dp)
             .width(1.dp)
             .height(32.dp)
             .background(line),
