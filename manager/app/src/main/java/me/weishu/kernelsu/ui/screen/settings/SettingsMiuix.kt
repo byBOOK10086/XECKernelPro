@@ -201,10 +201,23 @@ fun SettingPagerMiuix(
                             onClick = actions.onOpenThemes,
                             trailing = { Xc8Chevron() },
                         )
-                        // 2026-11-09（扁平方案 A）：壁纸层已经被整页实色底盖住，
-                        // 这个入口点进去"选了也看不见"，是明确的假可用。先整行移除，
-                        // 等主题商店的"调色板/字体"档落地后再决定要不要以新形态回来。
-                        // （代码与资源保留，`Route.Wallpaper` 仍可达用于调试。）
+                        // 2026-11-14：整页壁纸已按槽位恢复自定义底图（MainActivity 绘制），
+                        // 2026-11-09 移除它的理由（"进去也看不见"）不再成立，入口一并恢复。
+                        // 摘要直接说清哪一档已经是自定义图，免得进去才发现选错了档。
+                        val wallpaperSummary = when {
+                            uiState.wallpaperLight.isNotEmpty() && uiState.wallpaperDark.isNotEmpty() ->
+                                R.string.wallpaper_summary_both
+                            uiState.wallpaperLight.isNotEmpty() -> R.string.wallpaper_summary_light
+                            uiState.wallpaperDark.isNotEmpty() -> R.string.wallpaper_summary_dark
+                            else -> R.string.wallpaper_summary_builtin
+                        }
+                        Xc8Row(
+                            title = stringResource(id = R.string.settings_wallpaper),
+                            subtitle = stringResource(wallpaperSummary),
+                            leading = Icons.Rounded.Wallpaper,
+                            onClick = actions.onOpenWallpaper,
+                            trailing = { Xc8Chevron() },
+                        )
                     }
 
                     Xc8Panel(modifier = Modifier.padding(top = 12.dp)) {
