@@ -17,7 +17,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.dropUnlessResumed
+import me.weishu.kernelsu.ui.util.KsuCli
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -84,7 +86,11 @@ fun InstallScreen() {
     }
     // root 与 GKI 用 null 表示「尚未探测完成」：探测期间这几项按可用渲染，
     // 结果回来后再决定是否降级成「可见但不可用」，避免首帧闪一下灰态。
-    val rootAvailable by produceState<Boolean?>(initialValue = null) {
+    // Re-probe when the background shell acquisition changes state. A first
+    // non-root fallback must not leave direct installation disabled forever.
+    val rootReady by KsuCli.rootReady.collectAsStateWithLifecycle()
+    val rootProbeSettled by KsuCli.probeSettled.collectAsStateWithLifecycle()
+    val rootAvailable by produceState<Boolean?>(initialValue = null, rootReady, rootProbeSettled) {
         value = withContext(Dispatchers.IO) { rootAvailable() }
     }
     val isAbDevice by produceState(initialValue = false) {
