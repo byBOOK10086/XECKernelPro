@@ -10,12 +10,15 @@ import com.materialkolor.dynamiccolor.ColorSpec
 import com.topjohnwu.superuser.ShellUtils
 import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.ksuApp
-import com.xecpro.kernel.XecBootReceiver
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.ui.screen.modulerepo.RepoSort
 import me.weishu.kernelsu.ui.theme.ColorMode
 import me.weishu.kernelsu.ui.util.execKsud
 import me.weishu.kernelsu.ui.util.getFeaturePersistValue
 import me.weishu.kernelsu.ui.util.getFeatureStatus
+import me.weishu.kernelsu.ui.util.getKsuDaemonPath
+import me.weishu.kernelsu.ui.util.getRootShell
 import java.security.SecureRandom
 
 private const val SETTINGS_PREFS = "settings"
@@ -220,6 +223,25 @@ class SettingsRepositoryImpl : SettingsRepository {
     override fun isSelinuxHideEnabled(): Boolean = Natives.isSelinuxHideEnabled()
 
     override fun setSelinuxHideEnabled(enabled: Boolean): Int = Natives.setSelinuxHideEnabled(enabled)
+
+    override suspend fun getSusfsEnabled(): Boolean? = withContext(Dispatchers.IO) {
+        val result = runCatching {
+            getRootShell().newJob()
+                .add("${getKsuDaemonPath()} susfs config get susfs_enabled")
+                .to(ArrayList<String>(), null)
+                .exec()
+        }.getOrNull() ?: return@withContext null
+        if (!result.isSuccess) return@withContext null
+        when (result.out.joinToString(" ").trim()) {
+            "false" -> false
+            "true", "" -> true
+            else -> null
+        }
+    }
+
+    override fun setSusfsEnabled(enabled: Boolean): Boolean =
+        execKsud("susfs config set susfs_enabled ${if (enabled) "true" else "false"}", true)
+
 
     override suspend fun getSulogStatus(): String = getFeatureStatus("sulog")
 

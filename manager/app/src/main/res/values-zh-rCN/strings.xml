@@ -374,6 +374,10 @@ XEC 项目组
     <string name="settings_tee_engine">内置 TEE/TS 引擎</string>
     <string name="settings_tee_engine_summary">在 keystore2 里模拟密钥证明链。关掉只取消这层模拟——root、模块、隐藏全部照常；关掉后会立即重启，下一轮开机不再注入。</string>
     <string name="settings_tee_engine_failed">内置 TEE/TS 引擎开关修改失败</string>
+    <string name="settings_susfs">内置 SUSFS</string>
+    <string name="settings_susfs_summary">控制内置 SUSFS 规则和随包模块加载。修改后立即重启；关闭后不再下发内置规则。不会移除编入内核的 SUSFS 代码，也不控制第三方模块。</string>
+    <string name="settings_reboot_failed">设置已保存，但自动重启失败，请手动重启设备使其生效。</string>
+    <string name="settings_susfs_failed">SUSFS 设置修改失败，未请求重启</string>
     <string name="settings_selinux_hide">隐藏 SELinux 修改</string>
     <string name="settings_selinux_hide_summary">阻止应用检测 SELinux 修改</string>
     <string name="settings_selinux_hide_reboot_required">重启生效</string>

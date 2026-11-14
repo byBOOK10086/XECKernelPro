@@ -246,7 +246,7 @@ apply_detector_routing() {
         # 先用同一份正则把检测工具的三种写法（裸名=AUTO / `!` / `?`）全部剥掉：
         # 旧版 baseline 用的是裸名，AUTO 在 TEE 可用时等于 PATCH——检测工具拿到的是
         # 厂商根签的真实链，界面照样报"未知认证根证书"。剥完再按需重加，逻辑幂等。
-        grep -v -E "^(${_re})([!?])?$" "$_tgt" > "$_tmp" 2>/dev/null
+        grep -v -E "^[[:space:]]*(${_re})([!?])?[[:space:]]*$" "$_tgt" > "$_tmp" 2>/dev/null
         _rc=$?
         if [ "$_rc" -gt 1 ]; then
             rm -f "$_tmp"

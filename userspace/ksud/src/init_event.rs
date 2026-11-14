@@ -94,13 +94,6 @@ pub fn on_post_fs_data() -> Result<()> {
     // Runs before the module set is enumerated / the preinit rc is refreshed.
     crate::module::clear_zygisk_failure_markers();
 
-    // SUSFS baseline (kernel-support probe; no-op on kernels without SUSFS).
-    // 内核态专有：挂载态没有 KSU 内核侧可探，跳过。
-    #[cfg(target_arch = "aarch64")]
-    if !mount_state {
-        crate::susfs::provision_baseline();
-    }
-
     if let Err(e) = handle_updated_modules() {
         warn!("handle updated modules failed: {e}");
     }
@@ -128,6 +121,9 @@ pub fn on_post_fs_data() -> Result<()> {
     // 已经装过就跳过；装不上只记日志，绝不影响 root。
     if !mount_state {
         crate::late_load::load_susfs_lkm_for_current_kmi();
+        // Provision only after the optional provider has been loaded.
+        #[cfg(target_arch = "aarch64")]
+        crate::susfs::provision_baseline();
     }
 
     // Refresh /metadata/watchdog/ksu/{modules.rc,preinit/} so the next boot's kernel hook sees the

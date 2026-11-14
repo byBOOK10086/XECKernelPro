@@ -501,6 +501,16 @@ fn write_atomic(dest: &Path, contents: &[u8], mode: u32) -> Result<()> {
 /// `wait_for_engine` 只影响最后的回读：管理器要立刻告诉用户结果，所以等；
 /// 开机钩子不在乎这一两秒，先返回，引擎自己会起来。
 pub fn start_tee_engine(wait_for_engine: bool) -> Result<StartReport> {
+    fs::create_dir_all(defs::WORKING_DIR)?;
+    let start_lock = File::options()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(Path::new(defs::WORKING_DIR).join(".tee_start.lock"))?;
+    start_lock
+        .try_lock()
+        .context("Another engine repair is running")?;
     ensure!(
         tee_engine_enabled(),
         "内置 TEE/TS 引擎总开关是关的：先执行 `xudc builtin tee on`，再修复"
@@ -883,10 +893,12 @@ fn wait_for_comm(name: &str, budget: Duration) -> Option<i32> {
 /// briefly, and an engine that only injected into the first would be reported as
 /// healthy while the surviving instance still serves the real TEE.
 fn injection_present() -> bool {
-    pids_by_comm("keystore2").into_iter().any(|pid| {
-        fs::read_to_string(format!("/proc/{pid}/maps"))
-            .is_ok_and(|maps| maps.contains("libTEESimulator"))
-    })
+    let keystore_pids = pids_by_comm("keystore2");
+    !keystore_pids.is_empty()
+        && keystore_pids.into_iter().all(|pid| {
+            fs::read_to_string(format!("/proc/{pid}/maps"))
+                .is_ok_and(|maps| maps.contains("libTEESimulator"))
+        })
 }
 
 fn wait_for_injection(budget: Duration) -> bool {
@@ -917,7 +929,17 @@ pub fn exec_stage_script(stage: &str, wait: crate::module::ScriptWait) -> Result
         .filter(|entry| entry.path().is_dir())
         .map(|entry| entry.path())
         .collect();
-    ids.sort();
+    // The two attestation trees have a strict service dependency: tricky_store
+    // seeds the runtime keybox/target configuration and starts TEESimulator;
+    // TA_enhanced consumes those files and starts its maintenance daemon. A
+    // plain lexical sort runs `TA_enhanced` first, creating a boot race where
+    // the daemon starts against missing state and the engine never takes over.
+    // Keep the dependency explicit while leaving unrelated built-ins stable.
+    ids.sort_by_key(|dir| match dir.file_name().and_then(|name| name.to_str()) {
+        Some("tricky_store") => (0u8, dir.clone()),
+        Some("TA_enhanced") => (1u8, dir.clone()),
+        _ => (2u8, dir.clone()),
+    });
 
     for dir in ids {
         // 开关关掉后树应该已经被删了；这里再挡一层，防"删失败但仍然去跑"。
@@ -934,7 +956,16 @@ pub fn exec_stage_script(stage: &str, wait: crate::module::ScriptWait) -> Result
             continue;
         }
         info!("built-in stage script: {}", script.display());
-        if let Err(error) = crate::module::exec_script(&script, wait) {
+        // service normally uses NoWait. Wait for the engine's foreground setup
+        // before spawning TA, otherwise sorting only orders fork(), not setup.
+        let script_wait = if stage == "service"
+            && dir.file_name().and_then(|name| name.to_str()) == Some("tricky_store")
+        {
+            crate::module::ScriptWait::Until(Instant::now() + SCRIPT_BUDGET)
+        } else {
+            wait
+        };
+        if let Err(error) = crate::module::exec_script(&script, script_wait) {
             warn!(
                 "built-in {stage} script failed ({}): {error:#}",
                 script.display()

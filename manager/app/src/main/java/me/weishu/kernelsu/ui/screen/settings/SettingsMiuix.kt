@@ -360,6 +360,23 @@ fun SettingPagerMiuix(
                                     )
                                 },
                             )
+                            val susfsAvailable = uiState.isSusfsEnabled != null
+                            Xc8Row(
+                                title = stringResource(id = R.string.settings_susfs),
+                                subtitle = stringResource(id = R.string.settings_susfs_summary),
+                                leading = Icons.Rounded.AdminPanelSettings,
+                                enabled = susfsAvailable,
+                                onClick = if (susfsAvailable) {
+                                    { actions.onSetSusfsEnabled(uiState.isSusfsEnabled != true) }
+                                } else null,
+                                trailing = {
+                                    Xc8Switch(
+                                        checked = uiState.isSusfsEnabled == true,
+                                        onCheckedChange = actions.onSetSusfsEnabled,
+                                        enabled = susfsAvailable,
+                                    )
+                                },
+                            )
                             // 内置 TEE/TS 引擎总开关。只关伪造的证明链，不动 root：
                             // 引擎是纯用户态注入，LKM、su、模块、隐藏全部照常。
                             Xc8Row(

@@ -7,7 +7,7 @@
 use anyhow::{Context, Result, bail};
 use const_format::concatcp;
 use std::collections::HashMap;
-use std::fs::OpenOptions;
+use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
@@ -22,6 +22,10 @@ const SUSFS_CONFIG_FILE: &str = concatcp!(crate::defs::WORKING_DIR, "susfs_confi
 pub const KEY_UNAME_VALUE: &str = "uname_value";
 pub const KEY_BUILD_TIME_VALUE: &str = "build_time_value";
 pub const KEY_AUTO_START_ENABLED: &str = "auto_start_enabled";
+/// Global runtime gate for the built-in SUSFS baseline and bundled SUSFS LKM.
+/// This is deliberately separate from `auto_start_enabled`, which controls the
+/// generated userspace module and has different lifecycle semantics.
+pub const KEY_SUSFS_ENABLED: &str = "susfs_enabled";
 pub const KEY_SUS_PATHS: &str = "sus_paths";
 pub const KEY_SUS_LOOP_PATHS: &str = "sus_loop_paths";
 pub const KEY_SUS_MAPS: &str = "sus_maps";
@@ -151,16 +155,18 @@ pub fn save_config(config: &HashMap<String, String>) -> Result<()> {
         std::fs::create_dir_all(parent).context("Failed to create config dir")?;
     }
 
+    let parent = path.parent().context("Config path has no parent")?;
     let data = write_binary(config);
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(path)
-        .context("Failed to open config file for writing")?;
-    file.write_all(&data)
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)
+        .context("Failed to create temporary config file")?;
+    temporary
+        .write_all(&data)
         .context("Failed to write config file")?;
-    file.sync_all()?;
+    temporary.as_file().sync_all()?;
+    temporary
+        .persist(path)
+        .context("Failed to replace config file")?;
+    File::open(parent)?.sync_all()?;
     Ok(())
 }
 
@@ -172,8 +178,11 @@ pub fn get(key: &str) -> Result<String> {
 
 /// Set a single config value.
 pub fn set(key: &str, value: &str) -> Result<()> {
-    if key == KEY_AUTO_START_ENABLED && value != "true" && value != "false" {
-        bail!("{KEY_AUTO_START_ENABLED} must be true or false");
+    if (key == KEY_AUTO_START_ENABLED || key == KEY_SUSFS_ENABLED)
+        && value != "true"
+        && value != "false"
+    {
+        bail!("{key} must be true or false");
     }
     let mut config = load_config()?;
     config.insert(key.to_string(), value.to_string());
@@ -201,6 +210,7 @@ pub fn reset_to_defaults() -> Result<()> {
         DEFAULT_BUILD_TIME.to_string(),
     );
     config.insert(KEY_AUTO_START_ENABLED.to_string(), "false".to_string());
+    config.insert(KEY_SUSFS_ENABLED.to_string(), "true".to_string());
     config.insert(KEY_SUS_PATHS.to_string(), String::new());
     config.insert(KEY_SUS_LOOP_PATHS.to_string(), String::new());
     config.insert(KEY_SUS_MAPS.to_string(), String::new());

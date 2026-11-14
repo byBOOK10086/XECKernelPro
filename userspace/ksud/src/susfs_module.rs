@@ -269,6 +269,7 @@ fn generate_service_script(
     let mut s = String::new();
 
     s.push_str("#!/system/bin/sh\n");
+    s.push_str("[ \"$(/data/adb/ksud susfs config get susfs_enabled)\" = false ] && exit 0\n");
     s.push_str("# SuSFS Service Script\n");
     s.push_str("# 在系统服务启动后执行\n\n");
     s.push_str(&log_setup("susfs_service.log"));
@@ -415,6 +416,7 @@ fn generate_post_fs_data_script(
     let mut s = String::new();
 
     s.push_str("#!/system/bin/sh\n");
+    s.push_str("[ \"$(/data/adb/ksud susfs config get susfs_enabled)\" = false ] && exit 0\n");
     s.push_str("# SuSFS Post-FS-Data Script\n");
     s.push_str("# 在文件系统挂载后但在系统完全启动前执行\n\n");
     s.push_str(&log_setup("susfs_post_fs_data.log"));
@@ -477,6 +479,7 @@ fn generate_post_fs_data_script(
 fn generate_post_mount_script() -> String {
     let mut s = String::new();
     s.push_str("#!/system/bin/sh\n");
+    s.push_str("[ \"$(/data/adb/ksud susfs config get susfs_enabled)\" = false ] && exit 0\n");
     s.push_str("# SuSFS Post-Mount Script\n");
     s.push_str("# 在所有分区挂载完成后执行\n\n");
     s.push_str(&log_setup("susfs_post_mount.log"));
@@ -505,6 +508,7 @@ fn generate_boot_completed_script(
     let mut s = String::new();
 
     s.push_str("#!/system/bin/sh\n");
+    s.push_str("[ \"$(/data/adb/ksud susfs config get susfs_enabled)\" = false ] && exit 0\n");
     s.push_str("# SuSFS Boot-Completed Script\n");
     s.push_str("# 在系统完全启动后执行\n\n");
     s.push_str(&log_setup("susfs_boot_completed.log"));
@@ -606,7 +610,7 @@ pub fn install_module() -> anyhow::Result<()> {
 pub fn sync_module_from_config() -> anyhow::Result<()> {
     use crate::susfs_config::load_module_config;
     let config = load_module_config()?;
-    if config.auto_start_enabled {
+    if config.auto_start_enabled && crate::susfs::is_enabled() {
         install_module_with_config(&config)
     } else if is_module_installed() {
         remove_module()
@@ -617,6 +621,11 @@ pub fn sync_module_from_config() -> anyhow::Result<()> {
 
 fn install_module_with_config(config: &ModuleConfig) -> anyhow::Result<()> {
     use std::process::Command;
+
+    anyhow::ensure!(
+        crate::susfs::is_enabled(),
+        "SUSFS is disabled by user setting"
+    );
 
     let module_path = MODULE_PATH;
 

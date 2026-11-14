@@ -1423,13 +1423,27 @@ pub fn run() -> Result<()> {
             }
             Susfs::Config { command } => {
                 use crate::{susfs_config, susfs_module};
+                std::fs::create_dir_all(defs::WORKING_DIR)?;
+                let config_lock = std::fs::File::options()
+                    .create(true)
+                    .truncate(false)
+                    .read(true)
+                    .write(true)
+                    .open(std::path::Path::new(defs::WORKING_DIR).join(".susfs_config.lock"))?;
+                config_lock.lock()?;
                 match command {
                     SusfsConfigCmd::Get { key } => {
                         println!("{}", susfs_config::get(&key)?);
                     }
                     SusfsConfigCmd::Set { key, value } => {
+                        let previous = susfs_config::load_config()?;
                         susfs_config::set(&key, &value)?;
-                        susfs_module::sync_module_from_config()?;
+                        if let Err(error) = susfs_module::sync_module_from_config() {
+                            susfs_config::save_config(&previous).context(
+                                "Failed to roll back SUSFS config after module sync failure",
+                            )?;
+                            return Err(error);
+                        }
                         println!("ok");
                     }
                     SusfsConfigCmd::Remove { key } => {

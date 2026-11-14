@@ -389,6 +389,10 @@ XEC Project Team
     <string name="settings_tee_engine">Built-in TEE/TS engine</string>
     <string name="settings_tee_engine_summary">Emulates the key attestation chain in keystore2. Turning it off only drops the emulation - root, modules and hiding keep working. The device reboots immediately and the engine is not injected on the next boot.</string>
     <string name="settings_tee_engine_failed">Could not change the built-in TEE/TS engine switch</string>
+    <string name="settings_susfs">Built-in SUSFS</string>
+    <string name="settings_susfs_summary">Controls built-in SUSFS rules and bundled module loading. Changes immediately reboot the device. This does not remove SUSFS code compiled into the kernel or control third-party modules.</string>
+    <string name="settings_reboot_failed">Setting saved, but automatic reboot failed. Restart the device to apply it.</string>
+    <string name="settings_susfs_failed">Could not change the SUSFS setting; no reboot was requested</string>
     <string name="menu_sort">Sort</string>
     <string name="sort_by_name">Application name</string>
     <string name="sort_by_package_name">Package name</string>

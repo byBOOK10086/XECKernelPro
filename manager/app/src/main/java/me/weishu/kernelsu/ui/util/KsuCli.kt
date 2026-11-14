@@ -1156,6 +1156,6 @@ fun applyTeeEngineSwitch(enabled: Boolean): Boolean = runCatching {
 }.getOrDefault(false)
 
 /** 开关只在开机路径上读，改完必须重启才生效。 */
-fun rebootDevice() {
-    runCatching { getRootShell().newJob().add("reboot").exec() }
-}
+fun rebootDevice(): Boolean = runCatching {
+    getRootShell().newJob().add("reboot").exec().isSuccess
+}.getOrDefault(false)

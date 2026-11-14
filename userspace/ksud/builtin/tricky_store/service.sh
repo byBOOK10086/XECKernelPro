@@ -34,6 +34,20 @@ log_line() {
     printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$LOG_FILE" 2>/dev/null
 }
 
+# Kernel locks are released automatically when a worker exits or is stopped.
+worker_lock() {
+    exec 8>"$RUNTIME/.worker-$1.lock" || return 1
+    if command -v flock >/dev/null 2>&1; then
+        flock -n 8
+    else
+        local bb
+        for bb in /data/adb/ksu/bin/busybox /data/adb/xecpro/bin/busybox /data/adb/magisk/busybox; do
+            [ -x "$bb" ] && { "$bb" flock -n 8; return $?; }
+        done
+        return 1
+    fi
+}
+
 stage_file() {
     local source="$1" target="$2" mode="$3" tmp="${target}.tmp.$$"
     local parent="${target%/*}"
@@ -347,8 +361,9 @@ else
 fi
 
 cd "$RUNTIME" || exit 1
-./supervisor ./daemon "$RUNTIME" >> "$LOG_FILE" 2>&1 &
-log_line "INFO TEESimulator supervisor launched (pid=$!)"
+( worker_lock supervisor || exit 0; ./supervisor ./daemon "$RUNTIME" 8>&-; : ) >> "$LOG_FILE" 2>&1 &
+SUPERVISOR_PID=$!
+log_line "INFO TEESimulator supervisor launched (pid=$SUPERVISOR_PID)"
 
 # 引擎状态取证：启动成功与否必须**回读**，不能靠"启动命令没报错"。
 #
@@ -357,11 +372,22 @@ log_line "INFO TEESimulator supervisor launched (pid=$!)"
 #   1) 进程是否真的活着；
 #   2) 引擎自己的 logcat（keybox 是否解析成功、注入是否成功）；
 #   3) 白名单覆盖数（不在列表里的包根本不会被拦截）。
+keystore_injected() {
+    local k seen=0
+    for k in $(pidof keystore2 2>/dev/null); do
+        seen=1
+        grep -q libTEESimulator "/proc/$k/maps" 2>/dev/null || return 1
+    done
+    [ "$seen" = 1 ]
+}
+
 capture_engine_state() {
     local pid dump
     pid=$(pidof TEESimulator 2>/dev/null)
-    if [ -n "$pid" ]; then
-        log_line "INFO engine: TEESimulator alive (pid=$pid)"
+    if [ -n "$pid" ] && keystore_injected; then
+        log_line "INFO engine: TEESimulator alive and injected into keystore2 (pid=$pid)"
+    elif [ -n "$pid" ]; then
+        log_line "WARN engine: TEESimulator alive but keystore2 is not injected — attestation stays the real TEE one"
     else
         log_line "WARN engine: TEESimulator NOT running — keystore is not intercepted, attestation stays the real TEE one (untrusted key + unlocked bootloader)"
     fi
@@ -376,7 +402,7 @@ capture_engine_state() {
     log_target_coverage
 }
 
-( sleep 45; capture_engine_state ) >/dev/null 2>&1 &
+( worker_lock capture || exit 0; sleep 45; capture_engine_state ) >/dev/null 2>&1 &
 
 # 引擎看护：45s 那次回读只回答"开机时起没起来"。注入链一旦在运行期断掉（进程被杀、
 # 崩溃、被别的模块顶掉），keystore 就重新变回"没被接管"，检测方又拿到真实 TEE 证明；
@@ -389,7 +415,7 @@ engine_watchdog() {
     while :; do
         sleep 300
         _pid=$(pidof TEESimulator 2>/dev/null)
-        if [ -n "$_pid" ]; then
+        if [ -n "$_pid" ] && keystore_injected; then
             _attempts=0
             continue
         fi
@@ -401,11 +427,23 @@ engine_watchdog() {
         fi
         _attempts=$((_attempts + 1))
         _last_try=$_now
-        log_line "ERROR engine: TEESimulator 未运行 —— keystore 未被接管，检测方会看到真实 TEE 证明（密钥可信但引导加载程序解锁）；第 $_attempts 次尝试重启 supervisor"
+        log_line "ERROR engine: health check failed (pid=${_pid:-none}, injection missing); recovery attempt $_attempts"
         log_target_coverage
-        ( cd "$RUNTIME" && ./supervisor ./daemon "$RUNTIME" >> "$LOG_FILE" 2>&1 & )
+        if [ -n "$_pid" ]; then
+            # Do not stack another supervisor over a live daemon. Only restart
+            # the daemon owned by this runtime; its existing supervisor reaps
+            # and replaces it.
+            for _engine_pid in $_pid; do
+                if [ "$(readlink "/proc/$_engine_pid/cwd" 2>/dev/null)" = "$RUNTIME" ]; then
+                    kill -TERM "$_engine_pid" 2>/dev/null
+                fi
+            done
+        elif ! kill -0 "$SUPERVISOR_PID" 2>/dev/null; then
+            ( worker_lock supervisor || exit 0; ./supervisor ./daemon "$RUNTIME" 8>&-; : ) >> "$LOG_FILE" 2>&1 &
+            SUPERVISOR_PID=$!
+        fi
         sleep 30
-        if [ -n "$(pidof TEESimulator 2>/dev/null)" ]; then
+        if [ -n "$(pidof TEESimulator 2>/dev/null)" ] && keystore_injected; then
             log_line "INFO engine: supervisor 重启成功，引擎已恢复接管"
             _attempts=0
         else
@@ -413,8 +451,8 @@ engine_watchdog() {
         fi
     done
 }
-( sleep 90; engine_watchdog ) >/dev/null 2>&1 &
+( worker_lock watchdog || exit 0; sleep 90; engine_watchdog ) >/dev/null 2>&1 &
 
 # WebUI / 管理器改 target.txt 或 security_patch.txt 后不必重启：每 15s 对账一次，
 # 有差异时用 tmp + mv 写入，引擎的 ConfigObserver 收到 MOVED_TO 会自动重载。
-( _n=0; while :; do sleep 15; sync_conf target.txt; sync_conf security_patch.txt; _n=$((_n + 1)); [ $((_n % 20)) -eq 0 ] && apply_detector_routing; done ) >/dev/null 2>&1 &
+( worker_lock sync || exit 0; _n=0; while :; do sleep 15; sync_conf target.txt; sync_conf security_patch.txt; _n=$((_n + 1)); [ $((_n % 20)) -eq 0 ] && apply_detector_routing; done ) >/dev/null 2>&1 &

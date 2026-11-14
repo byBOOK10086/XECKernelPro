@@ -60,7 +60,10 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
     // 会让整段静默消失。这里自己探一次 root，探不到就禁用并说明原因。
     var rootGranted by remember { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(Unit) {
-        rootGranted = runCatching { awaitRootShell(timeoutMs = 4_000L).isRoot }.getOrDefault(false)
+        while (rootGranted != true) {
+            rootGranted = runCatching { awaitRootShell(timeoutMs = 4_000L).isRoot }.getOrDefault(false)
+            if (rootGranted != true) kotlinx.coroutines.delay(5_000L)
+        }
     }
     val rootReady = rootGranted != false
 
@@ -74,8 +77,9 @@ fun ModuleBackupSection(modifier: Modifier = Modifier) {
      * 早版本是散在各处的 `busy = true … busy = false`，中间任何异常都会让整页永远转圈。
      */
     fun launchBusy(action: suspend () -> Unit) {
+        if (busy) return
+        busy = true
         scope.launch {
-            busy = true
             try {
                 action()
             } catch (e: CancellationException) {

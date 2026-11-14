@@ -88,6 +88,7 @@ class SettingsViewModel(
             val useSoftReboot = repo.useSoftReboot
             val isLateLoadMode = Natives.isLateLoadMode
             // 走 root shell 查询，必须切到 IO；默认开着，查不到也不改变现状。
+            val isSusfsEnabled = withContext(Dispatchers.IO) { repo.getSusfsEnabled() }
             val isTeeEngineEnabled = withContext(Dispatchers.IO) { teeEngineEnabled() }
 
             _uiState.update {
@@ -125,6 +126,7 @@ class SettingsViewModel(
                     isLkmMode = isLkmMode,
                     autoJailbreak = autoJailbreak,
                     useSoftReboot = useSoftReboot,
+                    isSusfsEnabled = isSusfsEnabled,
                     isLateLoadMode = isLateLoadMode,
                     isTeeEngineEnabled = isTeeEngineEnabled,
                 )
@@ -365,7 +367,36 @@ class SettingsViewModel(
                 return@launch
             }
             _uiState.update { it.copy(isTeeEngineEnabled = enabled) }
-            rebootDevice()
+            if (!rebootDevice()) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(ksuApp, R.string.settings_reboot_failed, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private var changingSusfs = false
+
+    fun setSusfsEnabled(enabled: Boolean) {
+        if (changingSusfs || _uiState.value.isSusfsEnabled == null || !ensureSuperkey()) return
+        changingSusfs = true
+        viewModelScope.launch {
+            try {
+                val success = withContext(Dispatchers.IO) {
+                    runCatching { repo.setSusfsEnabled(enabled) }.getOrDefault(false)
+                }
+                if (!success) {
+                    Toast.makeText(ksuApp, R.string.settings_susfs_failed, Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                _uiState.update { it.copy(isSusfsEnabled = enabled) }
+                val rebooted = withContext(Dispatchers.IO) { rebootDevice() }
+                if (!rebooted) {
+                    Toast.makeText(ksuApp, R.string.settings_reboot_failed, Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                changingSusfs = false
+            }
         }
     }
 

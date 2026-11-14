@@ -216,6 +216,11 @@ pub fn load_susfs_lkm_for_current_kmi() {
 ///
 /// 任何失败都只记日志：SUSFS 是增强能力，装不上不能影响 root 通道。
 fn load_susfs_lkm(kmi: &str) {
+    #[cfg(target_arch = "aarch64")]
+    if !crate::susfs::is_enabled() {
+        info!("SUSFS: disabled by user setting, skip bundled LKM");
+        return;
+    }
     // 已经有人装过（内置内核，或这一轮已经加载）就不要叠第二份。
     if std::path::Path::new("/proc/susfs_path").exists() {
         info!("SUSFS already present, skip loading the bundled module");

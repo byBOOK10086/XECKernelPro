@@ -42,7 +42,7 @@ internal object TarScan {
     )
 
     /** 读条目表 */
-    fun readEntries(file: File): List<Entry>? {
+    fun readEntries(file: File, allowModuleLinks: Boolean = false): List<Entry>? {
         if (!file.isFile || file.length() < 512) return null
         val out = ArrayList<Entry>()
         var pendingName: String? = null
@@ -123,17 +123,22 @@ internal object TarScan {
                         if (previousType != null && previousType != type) return null
                         seen[name] = type
                         if (type == '2') {
-                            if (!isSafeLink(name, link)) return null
-                            // 新链接不能是已有条目的祖先（解包顺序不同结果不同，直接拒）。
+                            if (size != 0L || previousType != null || !name.contains('/') || name.substringAfter('/') == "module.prop") return null
+                            val externalLink = allowModuleLinks && link.startsWith('/') &&
+                                link.length <= MAX_NAME && link.none { it < ' ' || it == '\u007f' || it == '\\' || it == '\uFFFD' }
+                            if (!externalLink && !isSafeLink(name, link)) return null
+                            // Links may be leaves only: no subsequent or preceding
+                            // archive member can traverse one during extraction.
                             if (seen.keys.any { it.length > name.length && it.startsWith("$name/") }) {
                                 return null
                             }
-                            // 链接目标本身也不能穿过另一个软链接。
-                            val resolved = resolveLink(name, link) ?: return null
-                            var cut = resolved.indexOf('/')
-                            while (cut > 0) {
-                                if (resolved.substring(0, cut) in symlinks) return null
-                                cut = resolved.indexOf('/', cut + 1)
+                            if (!externalLink) {
+                                val resolved = resolveLink(name, link) ?: return null
+                                var cut = resolved.indexOf('/')
+                                while (cut > 0) {
+                                    if (resolved.substring(0, cut) in symlinks) return null
+                                    cut = resolved.indexOf('/', cut + 1)
+                                }
                             }
                             symlinks += name
                         } else if (link.isNotEmpty()) {
@@ -142,12 +147,78 @@ internal object TarScan {
                         out += Entry(name, type, link)
                     }
 
-                    // 硬链接（目标是任意路径）、设备节点、FIFO、sparse 等：一律不收。
+                    '1' -> {
+                        if (!allowModuleLinks || size != 0L) return null
+                        val name = normalize(pendingName ?: (ustarName(header) ?: return null)) ?: return null
+                        val target = normalize(pendingLink ?: linkNameOf(header)) ?: return null
+                        pendingName = null
+                        pendingLink = null
+                        if (name.isEmpty() || target.isEmpty() || name in seen) return null
+                        if (name.substringBefore('/') != target.substringBefore('/')) return null
+                        if (seen[target] !in listOf('0', '\u0000', '7')) return null
+                        if (seen.keys.any { it.startsWith("$name/") }) return null
+                        if (symlinks.any { name.startsWith("$it/") || target.startsWith("$it/") }) return null
+                        seen[name] = '1'
+                        out += Entry(name, '1', target)
+                    }
+                    // Device nodes, FIFO and sparse entries remain unsupported.
                     else -> return null
                 }
             }
         }
+        // Validate against the complete link set, including forward references.
+        for (entry in out.filter { it.type == '2' && !it.linkName.startsWith('/') }) {
+            val parts = entry.name.substringBeforeLast('/', "").split('/').filter { it.isNotEmpty() }.toMutableList()
+            for (part in entry.linkName.split('/')) {
+                when (part) {
+                    "", "." -> Unit
+                    ".." -> if (parts.isEmpty()) return null else parts.removeAt(parts.lastIndex)
+                    else -> parts += part
+                }
+                if (parts.joinToString("/") in symlinks) return null
+            }
+            val resolved = resolveLink(entry.name, entry.linkName) ?: return null
+            if (symlinks.any { resolved == it || resolved.startsWith("$it/") }) return null
+        }
         return out
+    }
+
+    /** Remove all link headers before extraction; recreate validated leaves afterwards. */
+    fun copyWithoutLinks(source: File, destination: File) {
+        DataInputStream(BufferedInputStream(source.inputStream())).use { input ->
+            destination.outputStream().buffered().use { output ->
+                val header = ByteArray(512)
+                val metadata = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(8192)
+                while (true) {
+                    check(readFully(input, header)) { "Truncated tar" }
+                    if (isZeroBlock(header)) {
+                        output.write(ByteArray(1024))
+                        break
+                    }
+                    val size = checkNotNull(fieldOctal(header, 124, 12))
+                    val type = header[156].toInt().toChar()
+                    val meta = type in listOf('L', 'K', 'x')
+                    val link = type == '1' || type == '2'
+                    if (meta) {
+                        check(metadata.size() + size + 512 <= MAX_META * 4L)
+                        metadata.write(header)
+                    } else if (!link) {
+                        metadata.writeTo(output)
+                        output.write(header)
+                    }
+                    var remaining = paddedSize(size)
+                    while (remaining > 0) {
+                        val count = input.read(buffer, 0, minOf(remaining, buffer.size.toLong()).toInt())
+                        check(count > 0) { "Truncated tar payload" }
+                        if (meta) metadata.write(buffer, 0, count)
+                        else if (!link) output.write(buffer, 0, count)
+                        remaining -= count
+                    }
+                    if (!meta) metadata.reset()
+                }
+            }
+        }
     }
 
     /** 把软链接目标按词法解析成归档内的相对路径（` */

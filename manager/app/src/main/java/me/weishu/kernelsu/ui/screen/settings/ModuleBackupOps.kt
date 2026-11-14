@@ -48,7 +48,8 @@ object ModuleBackupOps {
 
     private fun stamp(): String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
 
-    private fun exec(shell: Shell, cmd: String): Shell.Result = shell.newJob().add(cmd).exec()
+    private fun exec(shell: Shell, cmd: String): Shell.Result =
+        shell.newJob().add(cmd).to(ArrayList<String>(), ArrayList<String>()).exec()
 
     /** 把 root shell 的报错原样带出来（截断），不要只留一句"失败"。 */
     private fun detail(result: Shell.Result, what: String): String {
@@ -98,6 +99,17 @@ object ModuleBackupOps {
         return minOf(MAX_ARCHIVE_BYTES, maxOf(half, 1L * 1024 * 1024))
     }
 
+    /**
+     * Create the archive from the app process. A root shell can usually write an
+     * existing app_data_file inode, but SELinux may deny it from creating a new
+     * file in the app's private cache directory. Tar must therefore only open
+     * this pre-created file with O_TRUNC.
+     */
+    private fun prepareArchive(file: File): Boolean = runCatching {
+        file.parentFile?.mkdirs()
+        file.createNewFile()
+    }.getOrDefault(false)
+
     private suspend fun streamToUri(context: Context, file: File, uri: Uri): Boolean =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -139,6 +151,9 @@ object ModuleBackupOps {
             // 临时归档必须在**任何**退出路径上清掉（包括 TarScan 抛 IOException、
             // streamToUri 之前被取消），所以从创建那一刻就进 try/finally。
             val out = File(context.cacheDir, "modules_${stamp()}_${System.nanoTime() % 100000}.tar")
+            if (!prepareArchive(out)) {
+                return@withContext Result.failure(Refused("应用临时目录不可写，无法创建归档"))
+            }
             try {
                 val packed = exec(shell, "$tar -cf '${out.absolutePath}' -C '$MODULES_DIR' .")
                 if (!packed.isSuccess || !out.isFile || out.length() == 0L) {
@@ -146,7 +161,7 @@ object ModuleBackupOps {
                 }
                 ensureActive()
                 // 以归档本身为准：能解析出模块 id 才算备份成功，"ls | wc -l" 不再参与判断。
-                val entries = TarScan.readEntries(out)
+                val entries = TarScan.readEntries(out, allowModuleLinks = true)
                     ?: return@withContext Result.failure(
                         Refused("打出来的 tar 我们自己读不了（tar 实现不兼容），已放弃这次备份"),
                     )
@@ -178,6 +193,9 @@ object ModuleBackupOps {
                 return@withContext Result.failure(Refused("$KSU_DIR/$ALLOWLIST 不存在：这台机器还没有任何授权记录"))
             }
             val out = File(context.cacheDir, "allowlist_${stamp()}_${System.nanoTime() % 100000}.tar")
+            if (!prepareArchive(out)) {
+                return@withContext Result.failure(Refused("应用临时目录不可写，无法创建归档"))
+            }
             try {
                 val packed = exec(shell, "$tar -cf '${out.absolutePath}' -C '$KSU_DIR' '$ALLOWLIST'")
                 if (!packed.isSuccess || !out.isFile || out.length() == 0L) {
@@ -209,11 +227,10 @@ object ModuleBackupOps {
                 return@withContext Result.failure(Refused("读取你选的文件失败（可能不是本地文件，或已被移动）"))
             }
             try {
-                val entries = TarScan.readEntries(staged)
+                val entries = TarScan.readEntries(staged, allowModuleLinks = true)
                     ?: return@withContext Result.failure(
                         Refused(
-                            "这不是有效的 tar，或里面有越界条目（绝对路径 / ../ / 硬链接 / " +
-                                "设备节点 / 逃出根目录的软链接），已拒绝导入",
+                            "无效或不安全的模块 tar（路径越界、链接被用作目录、非法硬链接或设备节点）",
                         ),
                     )
                 val ids = TarScan.moduleIds(entries)
@@ -244,12 +261,28 @@ object ModuleBackupOps {
                 }
                 val installed = ArrayList<String>()
                 val skipped = ArrayList<RestoreResult.Skipped>()
+                val linkFree = File(context.cacheDir, "restore_plain_${System.nanoTime()}.tar")
                 try {
-                    val unpack = exec(shell, "$tar -xf '${staged.absolutePath}' -C '$stageDir'")
+                    TarScan.copyWithoutLinks(staged, linkFree)
+                    val unpack = exec(shell, "$tar -xf '${linkFree.absolutePath}' -C '$stageDir'")
                     if (!unpack.isSuccess) {
                         return@withContext Result.failure(Refused(detail(unpack, "解包失败")))
                     }
                     ensureActive()
+                    fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
+                    // No links exist while tar extracts. Hardlinks reference only
+                    // validated regular files; symlinks are created last as leaves.
+                    for (entry in entries.filter { it.type == '1' } + entries.filter { it.type == '2' }) {
+                        ensureActive()
+                        val destination = "$stageDir/${entry.name}"
+                        val parent = destination.substringBeforeLast('/')
+                        val target = if (entry.type == '1') "$stageDir/${entry.linkName}" else entry.linkName
+                        val flag = if (entry.type == '2') "-s " else ""
+                        val linked = exec(shell, "mkdir -p ${quote(parent)} && ln $flag-- ${quote(target)} ${quote(destination)}")
+                        if (!linked.isSuccess) {
+                            return@withContext Result.failure(Refused(detail(linked, "重建模块链接失败")))
+                        }
+                    }
                     for (id in ids) {
                         ensureActive()
                         // id 已经过 TarScan.MODULE_ID 白名单（只含 [A-Za-z0-9._-] 且字母开头），
@@ -259,7 +292,7 @@ object ModuleBackupOps {
                             continue
                         }
                         // 真解出来了才搬：否则 modules_update 里会出现一个 ksud 认不出的垃圾目录。
-                        val hasProp = exec(shell, "test -d '$stageDir/$id' && test -f '$stageDir/$id/module.prop'")
+                        val hasProp = exec(shell, "test -d '$stageDir/$id' && test ! -L '$stageDir/$id' && test -f '$stageDir/$id/module.prop' && test ! -L '$stageDir/$id/module.prop'")
                         if (!hasProp.isSuccess) {
                             skipped += RestoreResult.Skipped(id, "解包里没有这个目录或没有 module.prop")
                             continue
@@ -294,6 +327,7 @@ object ModuleBackupOps {
                         }
                     }
                 } finally {
+                    linkFree.delete()
                     exec(shell, "rm -rf '$stageDir'")
                 }
                 if (installed.isEmpty()) {
