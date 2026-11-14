@@ -24,6 +24,20 @@ log_line() {
     printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$LOG_FILE" 2>/dev/null
 }
 
+# Kernel locks are released automatically when a worker exits or is stopped.
+worker_lock() {
+    exec 8>"$RUNTIME/.worker-$1.lock" || return 1
+    if command -v flock >/dev/null 2>&1; then
+        flock -n 8
+    else
+        local bb
+        for bb in /data/adb/ksu/bin/busybox /data/adb/xecpro/bin/busybox /data/adb/magisk/busybox; do
+            [ -x "$bb" ] && { "$bb" flock -n 8; return $?; }
+        done
+        return 1
+    fi
+}
+
 stage_file() {
     local source="$1" target="$2" mode="$3" tmp="${target}.tmp.$$"
     local parent="${target%/*}"
@@ -321,33 +335,35 @@ label_data_path "$DATA"
 _daemon_alive() {
     local pidfile="$1" marker="$2" pid
     pid=$(cat "$pidfile" 2>/dev/null)
-    [ -n "$pid" ] || return 1
+    case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$pid" -gt 1 ] || return 1
     kill -0 "$pid" 2>/dev/null || return 1
-    tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -qF "$marker" || return 1
+    tr '\0' '\n' < "/proc/$pid/cmdline" 2>/dev/null | grep -qxF "$marker" || return 1
     return 0
 }
 
-_start_engine() {
+_start_engine() (
     local which="$1"
+    worker_lock "start-$which" || return 0
     if [ "$which" = "injector" ]; then
-        if _daemon_alive "$OMK_STATE/injector-daemon.pid" "/engine/daemon-injector "; then
+        if _daemon_alive "$OMK_STATE/injector-daemon.pid" "$ENGINE/daemon-injector"; then
             log_line "INFO engine: injector daemon already running, not starting a second one"
             return 0
         fi
         cd "$ENGINE" || return 1
-        sh "$ENGINE/daemon-injector" >> "$LOG_FILE" 2>&1 &
+        sh "$ENGINE/daemon-injector" >> "$LOG_FILE" 2>&1 8>&- &
         printf '%s\n' "$!" > "$OMK_STATE/injector-daemon.pid" 2>/dev/null
     else
-        if _daemon_alive "$OMK_STATE/keymint-daemon.pid" "/engine/daemon "; then
+        if _daemon_alive "$OMK_STATE/keymint-daemon.pid" "$ENGINE/daemon"; then
             log_line "INFO engine: keymint daemon already running, not starting a second one"
             return 0
         fi
         cd "$ENGINE" || return 1
-        sh "$ENGINE/daemon" >> "$LOG_FILE" 2>&1 &
+        sh "$ENGINE/daemon" >> "$LOG_FILE" 2>&1 8>&- &
         printf '%s\n' "$!" > "$OMK_STATE/keymint-daemon.pid" 2>/dev/null
     fi
     return 0
-}
+)
 
 _engine_pid() {
     pidof keymint 2>/dev/null | awk '{print $1}'
@@ -387,7 +403,7 @@ capture_engine_state() {
     log_target_coverage
 }
 
-( sleep 45; capture_engine_state ) >/dev/null 2>&1 &
+( worker_lock capture || exit 0; sleep 45; capture_engine_state ) >/dev/null 2>&1 &
 
 # 看护：keymint 或 injector 的看护进程都没了才重拉；子进程崩了由 OMY 自己循环重启。
 engine_watchdog() {
@@ -408,21 +424,27 @@ engine_watchdog() {
         _last_try=$_now
         log_line "ERROR engine: keymint=$(_engine_pid) injected=$(_engine_injected && echo yes || echo no) — restarting engine (attempt $_attempts)"
         log_target_coverage
+        # Existing wrappers can be alive while their child or injection is stale.
+        # Use the upstream per-daemon requests; merely calling _start_engine
+        # returns early for those wrappers and performs no recovery.
+        : > "$OMK_STATE/restart.keymint"
+        : > "$OMK_STATE/restart.injector"
         _start_engine keymint
         _start_engine injector
         sleep 30
-        if [ -n "$(_engine_pid)" ]; then
-            log_line "INFO engine: restarted (pid=$(_engine_pid))"
+        if [ -n "$(_engine_pid)" ] && _engine_injected; then
+            log_line "INFO engine: restarted and injected (pid=$(_engine_pid))"
+            _attempts=0
         else
-            log_line "ERROR engine: restart failed, keymint still not running"
+            log_line "ERROR engine: recovery incomplete (keymint or injection missing)"
         fi
     done
 }
-( sleep 90; engine_watchdog ) >/dev/null 2>&1 &
+( worker_lock watchdog || exit 0; sleep 90; engine_watchdog ) >/dev/null 2>&1 &
 
 # 15s 对账：target/security_patch 双向同步 + scoop 重算 + keybox 镜像。
 # scoop 变化由 OMY 的 watcher 热加载，不需要重启 keymint。
-( _n=0; while :; do
+( worker_lock sync || exit 0; _n=0; while :; do
     sleep 15
     sync_conf target.txt
     sync_conf security_patch.txt

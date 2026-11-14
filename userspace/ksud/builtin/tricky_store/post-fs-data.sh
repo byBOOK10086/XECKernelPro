@@ -45,10 +45,19 @@ if ! chown 1017:1017 "$OMK" "$OMK/logs" 2>/dev/null; then
     log_line "WARN post-fs-data: chown 1017:1017 on $OMK failed (engine may not read its config)"
 fi
 
-# 2) 状态目录：清掉上一次运行残留的 pidfile 与重启标记。
+# 2) Preserve live wrapper identities across Android stop/start. On a cold
+# boot /proc no longer contains the recorded owner, so only stale pidfiles go.
 mkdir -p "$OMK_STATE" 2>/dev/null
-rm -f "$OMK_STATE/keymint-daemon.pid" "$OMK_STATE/injector-daemon.pid" 2>/dev/null
-rm -f "$OMK_STATE/restart.keymint" "$OMK_STATE/restart.injector" "$OMK_STATE/restart.all" 2>/dev/null
+for wrapper in keymint-daemon injector-daemon; do
+    pid=$(cat "$OMK_STATE/$wrapper.pid" 2>/dev/null)
+    case "$pid" in ''|*[!0-9]*) pid= ;; esac
+    expected="$RUNTIME/engine/daemon"
+    [ "$wrapper" = injector-daemon ] && expected="$RUNTIME/engine/daemon-injector"
+    if [ -z "$pid" ] || [ "$pid" -le 1 ] || ! kill -0 "$pid" 2>/dev/null || \
+       ! tr '\0' '\n' < "/proc/$pid/cmdline" 2>/dev/null | grep -qxF "$expected"; then
+        rm -f "$OMK_STATE/$wrapper.pid" 2>/dev/null
+    fi
+done
 
 # 3) keybox 播种：只补缺失，不覆盖用户/引擎自己拉来的副本。
 #    实时真源是 $RUNTIME/keybox.xml（管理器、TA 自检都读它），这里只是把它镜像给 OMY。

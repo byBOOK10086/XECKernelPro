@@ -548,6 +548,16 @@ fn write_atomic(dest: &Path, contents: &[u8], mode: u32) -> Result<()> {
 /// `wait_for_engine` 只影响最后的回读：管理器要立刻告诉用户结果，所以等；
 /// 开机钩子不在乎这一两秒，先返回，引擎自己会起来。
 pub fn start_tee_engine(wait_for_engine: bool) -> Result<StartReport> {
+    fs::create_dir_all(defs::WORKING_DIR)?;
+    let start_lock = File::options()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(Path::new(defs::WORKING_DIR).join(".tee_start.lock"))?;
+    start_lock
+        .try_lock()
+        .context("Another engine repair is running")?;
     ensure!(
         tee_engine_enabled(),
         "内置 TEE/TS 引擎总开关是关的：先执行 `xudc builtin tee on`，再修复"
@@ -577,6 +587,12 @@ pub fn start_tee_engine(wait_for_engine: bool) -> Result<StartReport> {
     // （5 分钟看护 / 15 秒对账 / TA 的 keybox 守护），只杀 supervisor 的话它们会在
     // 下一次修复后继续跑，几轮下来就是多份看护一起重拉 supervisor。
     stop_previous_run();
+
+    // A userspace restart does not unload keystore2's old injected mapping.
+    // Ask the upstream injector wrapper to refresh it when the new wrapper
+    // starts, instead of accepting the old payload as a repaired engine.
+    fs::create_dir_all("/data/adb/omk")?;
+    fs::write("/data/adb/omk/restart.injector", b"1\n")?;
 
     // 尽力而为：内核不是本项目时这条一定失败，但引擎本身不依赖它
     // （KernelSU 域的 su 是 permissive + allow-all，注入走的是 ptrace 而不是这些规则）。
@@ -951,18 +967,20 @@ fn wait_for_comm(name: &str, budget: Duration) -> Option<i32> {
 /// healthy while the surviving instance still serves the real TEE.
 fn injection_present() -> bool {
     let payload = fs::read_to_string("/data/adb/omk/injector.payload").unwrap_or_default();
-    pids_by_comm("keystore2").into_iter().any(|pid| {
-        fs::read_to_string(format!("/proc/{pid}/maps")).is_ok_and(|maps| {
-            maps.contains(INJECTION_MARKER)
-                || payload.lines().any(|line| {
-                    let mut fields = line.split_whitespace();
-                    fields.next().and_then(|value| value.parse::<i32>().ok()) == Some(pid)
-                        && fields
-                            .next()
-                            .is_some_and(|identity| maps.contains(identity))
-                })
+    let keystore_pids = pids_by_comm("keystore2");
+    !keystore_pids.is_empty()
+        && keystore_pids.into_iter().all(|pid| {
+            fs::read_to_string(format!("/proc/{pid}/maps")).is_ok_and(|maps| {
+                maps.contains(INJECTION_MARKER)
+                    || payload.lines().any(|line| {
+                        let mut fields = line.split_whitespace();
+                        fields.next().and_then(|value| value.parse::<i32>().ok()) == Some(pid)
+                            && fields
+                                .next()
+                                .is_some_and(|identity| maps.contains(identity))
+                    })
+            })
         })
-    })
 }
 
 fn wait_for_injection(budget: Duration) -> bool {
@@ -993,7 +1011,11 @@ pub fn exec_stage_script(stage: &str, wait: crate::module::ScriptWait) -> Result
         .filter(|entry| entry.path().is_dir())
         .map(|entry| entry.path())
         .collect();
-    ids.sort();
+    ids.sort_by_key(|dir| match dir.file_name().and_then(|name| name.to_str()) {
+        Some("tricky_store") => (0u8, dir.clone()),
+        Some("TA_enhanced") => (1u8, dir.clone()),
+        _ => (2u8, dir.clone()),
+    });
 
     for dir in ids {
         // 开关关掉后树应该已经被删了；这里再挡一层，防"删失败但仍然去跑"。
@@ -1010,7 +1032,14 @@ pub fn exec_stage_script(stage: &str, wait: crate::module::ScriptWait) -> Result
             continue;
         }
         info!("built-in stage script: {}", script.display());
-        if let Err(error) = crate::module::exec_script(&script, wait) {
+        let script_wait = if stage == "service"
+            && dir.file_name().and_then(|name| name.to_str()) == Some("tricky_store")
+        {
+            crate::module::ScriptWait::Until(Instant::now() + SCRIPT_BUDGET)
+        } else {
+            wait
+        };
+        if let Err(error) = crate::module::exec_script(&script, script_wait) {
             warn!(
                 "built-in {stage} script failed ({}): {error:#}",
                 script.display()
