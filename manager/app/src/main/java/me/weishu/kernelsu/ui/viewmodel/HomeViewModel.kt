@@ -156,8 +156,9 @@ class HomeViewModel(
         val ksuVersion = if (isManager) Natives.version else null
         // 内核里有 KernelSU、但这个包不是它认的管理器（刷了上游内核/上游 LKM 就是这种形态）。
         // 这时 ksuVersion 恒为 null，但 root 走 allowlist 是能用的；不区分就会把
-        // "root 明明可用"显示成"内核未运行"。只在 deep 探测且本包不是管理器时问一句内核模块，
-        // 且任何失败都按"没有外部内核"处理，绝不因此影响首屏。
+        // "root 明明可用"显示成"内核未运行"。只在 deep 探测且本包不是管理器时问一句：
+        //  · 内置形态没有 /sys/module/kernelsu，所以还要看上游的 /data/adb/ksud 或 /data/adb/ksu；
+        //  · Magisk 设备同样"有 root 但没管理器身份"，必须排除，否则会被误标成外部 KernelSU。
         val externalKernelSu = if (deep && !isManager) {
             val hasRoot = runCatching { rootAvailable() }.getOrDefault(false)
             if (!hasRoot) {
@@ -167,8 +168,11 @@ class HomeViewModel(
                     val shell = getRootShell()
                     ShellUtils.fastCmd(
                         shell,
-                        "test -d /sys/module/kernelsu || grep -qw kernelsu /proc/kallsyms; " +
-                            "[ $? -eq 0 ] && echo -n yes",
+                        "if command -v magisk >/dev/null 2>&1 || [ -d /data/adb/magisk ]; then " +
+                            "echo -n no; " +
+                            "elif [ -d /sys/module/kernelsu ] || [ -e /data/adb/ksud ] || " +
+                            "[ -e /data/adb/ksu/bin/ksud ] || [ -e /data/adb/ksu/ksud ]; then " +
+                            "echo -n yes; else echo -n no; fi",
                     ).trim() == "yes"
                 }.getOrDefault(false)
             }
