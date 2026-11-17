@@ -202,7 +202,7 @@ jobs:
           } >> gradle.properties
 
       - name: Setup Java
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
@@ -330,7 +330,7 @@ jobs:
       - name: Restore payload cache
         # 载荷字节固定（每个都带 sha256 校验），命中就跳过 KPatch(≈5min) 与
         # Magisk(≈3min) 的下载 —— 2026-11-09 实测这两步占了 build-manager 一半时间。
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .cache/payload
           key: xec-payloads-kpatch-0.13.5-2-magisk-30.7-v1
