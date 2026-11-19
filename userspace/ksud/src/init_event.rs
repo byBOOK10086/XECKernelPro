@@ -103,6 +103,15 @@ pub fn on_post_fs_data() -> Result<()> {
         warn!("handle updated modules failed: {e}");
     }
 
+    #[cfg(kmi_module_bundle)]
+    if !mount_state
+        && ksucalls::is_lkm()
+        && !ksucalls::is_late_load()
+        && let Err(e) = crate::kmi_modules::prepare_first_boot()
+    {
+        warn!("KMI bundle preparation deferred: {e:#}");
+    }
+
     if let Err(e) = prune_modules() {
         warn!("prune modules failed: {e}");
     }
@@ -387,7 +396,7 @@ fn run_boot_completed(commit_boot_txn: bool) {
     // 脚本必须照跑（模块靠它收尾）。
     let mount_state = utils::is_mount_state();
     #[cfg(kmi_module_bundle)]
-    let mut provision_kmi_modules = false;
+    let mut install_kmi_manager = false;
     if !mount_state {
         if commit_boot_txn {
             // 拆成"先取结果、再判 Err"两步：写成 `if commit_boot_txn { if let Err(..) }`
@@ -396,7 +405,7 @@ fn run_boot_completed(commit_boot_txn: bool) {
             let committed = crate::boot_txn::commit_boot_success();
             #[cfg(kmi_module_bundle)]
             {
-                provision_kmi_modules = committed.is_ok();
+                install_kmi_manager = committed.is_ok();
             }
             if let Err(e) = committed {
                 // Keep the failed transaction armed for rollback, but still
@@ -426,7 +435,7 @@ fn run_boot_completed(commit_boot_txn: bool) {
     run_stage("boot-completed", ScriptWait::NoWait);
 
     #[cfg(kmi_module_bundle)]
-    if provision_kmi_modules && ksucalls::is_lkm() && !ksucalls::is_late_load() {
+    if install_kmi_manager && ksucalls::is_lkm() && !ksucalls::is_late_load() {
         crate::kmi_modules::on_boot_completed();
     }
 }

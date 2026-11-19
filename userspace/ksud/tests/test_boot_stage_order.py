@@ -60,17 +60,28 @@ class BootStageOrderTests(unittest.TestCase):
     def test_updated_modules_are_ready_before_scripts_and_mount(self):
         ordered = (
             "handle_updated_modules()",
+            "crate::kmi_modules::prepare_first_boot()",
             "prune_modules()",
             "crate::module::regenerate_preinit()",
             "crate::module::load_sepolicy_rule()",
             'metamodule::exec_stage_script("post-fs-data", wait)',
             'crate::module::exec_stage_script("post-fs-data", wait)',
             "crate::module::load_system_prop()",
-            "metamodule::exec_mount_script(module_dir)",
+            "mount_modules(module_dir)",
             'run_stage("post-mount", wait)',
         )
         positions = [self.position(statement) for statement in ordered]
         self.assertEqual(positions, sorted(positions))
+
+    def test_offline_manager_install_requires_a_completed_boot(self):
+        source = SOURCE.read_text(encoding="utf-8")
+        boot_completed = source.split("fn run_boot_completed(", 1)[1]
+        manager = "crate::kmi_modules::on_boot_completed()"
+        self.assertNotIn(manager, self.boot)
+        self.assertLess(
+            boot_completed.index("crate::boot_txn::commit_boot_success()"),
+            boot_completed.index(manager),
+        )
 
 
 if __name__ == "__main__":

@@ -1072,7 +1072,7 @@ fn clear_zygisk_markers_in(dir: &Path) {
     }
 }
 
-fn install_module_to_system(zip: &str, bundled_id: Option<&str>) -> Result<String> {
+fn install_module_to_system(zip: &str) -> Result<String> {
     ensure_boot_completed()?;
 
     // print banner
@@ -1114,10 +1114,6 @@ fn install_module_to_system(zip: &str, bundled_id: Option<&str>) -> Result<Strin
         bail!("module id not found in module.prop!");
     };
     let module_id = module_id.trim();
-    if let Some(expected) = bundled_id {
-        ensure!(module_id == expected, "unexpected bundled module ID");
-    }
-
     // Validate module_id format
     validate_module_id(module_id)
         .with_context(|| format!("Invalid module ID in module.prop: '{module_id}'"))?;
@@ -1192,15 +1188,6 @@ fn install_module_to_system(zip: &str, bundled_id: Option<&str>) -> Result<Strin
     let _install_lock = lock_install_mutations()?;
     recover_install_guards()?;
     let live_dir = Path::new(MODULE_DIR).join(module_id);
-    if bundled_id.is_some() {
-        for dir in [&updated_dir, &live_dir] {
-            match std::fs::symlink_metadata(dir) {
-                Ok(_) => return Ok(module_id.to_owned()),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error.into()),
-            }
-        }
-    }
     let mut install_guard = InstallGuard::begin(module_id, updated_dir.clone(), live_dir)?;
     // Prepare target directory
     println!("- Installing to {}", updated_dir.display());
@@ -1284,11 +1271,10 @@ fn install_module_to_system(zip: &str, bundled_id: Option<&str>) -> Result<Strin
     Ok(module_id.to_owned())
 }
 
-fn install_module_and_regenerate(zip: &str, bundled_id: Option<&str>) -> Result<()> {
+pub fn install_module(zip: &str) -> Result<()> {
     ksucalls::ensure_uapi_version_matched()?;
 
-    let module_id =
-        install_module_to_system(zip, bundled_id).inspect_err(|e| println!("- Error: {e}"))?;
+    let module_id = install_module_to_system(zip).inspect_err(|e| println!("- Error: {e}"))?;
     if let Err(e) = regenerate_preinit() {
         warn!("regenerate preinit failed: {e:#}");
     }
@@ -1298,15 +1284,6 @@ fn install_module_and_regenerate(zip: &str, bundled_id: Option<&str>) -> Result<
         println!("! preinit will not take effect: {state} {message}");
     }
     Ok(())
-}
-
-pub fn install_module(zip: &str) -> Result<()> {
-    install_module_and_regenerate(zip, None)
-}
-
-#[cfg(kmi_module_bundle)]
-pub fn install_bundled_module(zip: &str, expected_id: &str) -> Result<()> {
-    install_module_and_regenerate(zip, Some(expected_id))
 }
 
 pub fn undo_uninstall_module(id: &str) -> Result<()> {

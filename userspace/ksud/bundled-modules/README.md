@@ -3,9 +3,10 @@
 The Android xudc build can embed two independent upstream module release ZIPs.
 Run `python3 .github/scripts/stage-kmi-modules.py` at the repository root to
 populate this directory before compiling xudc. The device does not fetch
-anything: it stages ReZygisk and then HMA-OSS via the regular module installer
-after a successful normal LKM boot on Android 10 or newer. A subsequent
-reboot activates the staged modules. Existing installs are preserved, and
+anything. On Android 10 or newer, a normal LKM boot prepares ReZygisk and
+HMA-OSS before the module policies and boot scripts run. After Android
+finishes booting, PackageManager installs the bundled HMA-OSS manager for
+user 0 if it isn't already installed. Existing installs are preserved, and
 removing a provisioned module does not cause it to be reinstalled on boot.
 Only the XECKernel userspace carries these payloads; a standalone kernel or
 `kernelsu.ko` does not.
