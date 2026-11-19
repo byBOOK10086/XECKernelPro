@@ -91,6 +91,9 @@ jobs:
       - name: UAPI mirrors identical
         run: python3 scripts/check_uapi_mirror.py
 
+      - name: Kernel conversion and communication regressions
+        run: python3 scripts/test_kernel_regressions.py --sanitize
+
       # 包名是被"烘进产物"的身份，不是注释：ksud 的 KSU_PACKAGE_NAME 决定它在设备上
       # 认哪个包是管理器。这条链曾经整条写着上游的 me.weishu.kernelsu —— 构建 18/18
       # 全绿、设备上 su_daemon 的 is_manager_uid() 却永远返回 false（挂载态首授权

@@ -159,6 +159,15 @@ int ksu_supercall_reboot_handler(void __user **arg)
 #else
 static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
 {
+#ifndef CONFIG_KSU_OPEN_LEGACY_ABI
+    /* Reject untrusted callers before inspecting protocol-specific arguments.
+     * Otherwise matching magic alone adds a permission lookup to their syscall.
+     * The original reboot syscall still supplies the result in either case.
+     */
+    if (!ksu_is_trusted_abi_client())
+        return 0;
+#endif
+
     struct pt_regs *real_regs = PT_REAL_REGS(regs);
     int magic1 = (int)PT_REGS_SYSCALL_PARM1(real_regs);
     int magic2 = (int)PT_REGS_PARM2(real_regs);
@@ -166,16 +175,6 @@ static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
     if (magic1 == KSU_INSTALL_MAGIC1 && magic2 == KSU_INSTALL_MAGIC2) {
         struct ksu_install_fd_tw *tw;
 
-#ifndef CONFIG_KSU_OPEN_LEGACY_ABI
-        /*
-         * Do not hand a driver descriptor to an unprivileged process: with it
-         * the caller can probe the supercall ioctls, which both proves the
-         * root implementation and hands out privileged commands.
-         */
-        if (!ksu_is_trusted_abi_client()) {
-            return 0;
-        }
-#endif
         unsigned long arg4 = (unsigned long)PT_REGS_SYSCALL_PARM4(real_regs);
 
         tw = kzalloc(sizeof(*tw), GFP_ATOMIC);

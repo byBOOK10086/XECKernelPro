@@ -9,6 +9,7 @@
 #include <linux/task_work.h>
 #include <linux/version.h>
 #include <linux/jiffies.h>
+#include <linux/spinlock.h>
 #include "klog.h" // IWYU pragma: keep
 #include "manager/manager_identity.h"
 #include "manager/manager_observer.h"
@@ -71,22 +72,32 @@ static void ksu_defer_track_throne(void)
  *
  * 这里补第三道：管理器每次取 GET_INFO 都会走到这里（GET_INFO 是 always_allow，
  * 所以身份坏掉时管理器自己仍然读得到），只有身份无效时才真的排一次重扫。
- * 身份正常时第一个分支就返回，零开销；坏掉时一秒内自愈。
+ * 身份正常时不扫描。task_work 在系统调用返回前执行，因此恢复扫描会增加该次调用的耗时。
  *
- * 节流用 jiffies 而不是加锁：最坏情况只是两个 CPU 各排一次扫描，而重复扫描
- * 本身是幂等的（track_throne 自己会判 need_rescan），不值得为它引入锁。
- * 重试间隔按次数退避（5s 起、320s 封顶），恢复后计数清零。
+ * 用短临界区串行更新退避状态，避免并发 GET_INFO 各自排一次扫描。
+ * 重试间隔按次数退避（5s 起、320s 封顶），恢复后计数清零；不是在调用中 sleep。
  */
 void ksu_maybe_rescan_manager(void)
 {
+    static DEFINE_SPINLOCK(rescan_lock);
     static unsigned long last_rescan;
     static unsigned int misses;
+    static bool rescan_started;
     unsigned long now = jiffies;
     unsigned long wait;
+    unsigned long flags;
+    unsigned int attempt;
 
+    /* Avoid a lock in the normal GET_INFO path after recovery has settled. */
+    if (likely(ksu_is_manager_appid_valid()) && !READ_ONCE(rescan_started))
+        return;
+
+    spin_lock_irqsave(&rescan_lock, flags);
     if (likely(ksu_is_manager_appid_valid())) {
         misses = 0;
         last_rescan = 0;
+        WRITE_ONCE(rescan_started, false);
+        spin_unlock_irqrestore(&rescan_lock, flags);
         return;
     }
 
@@ -96,13 +107,18 @@ void ksu_maybe_rescan_manager(void)
      * 不会让任何一个刷 ioctl 的应用把 /data/app 扫描变成 12 次/分钟的常驻负载。
      */
     wait = msecs_to_jiffies(5000u << (misses < 6 ? misses : 6));
-    if (last_rescan && time_before(now, last_rescan + wait))
+    if (rescan_started && time_before(now, last_rescan + wait)) {
+        spin_unlock_irqrestore(&rescan_lock, flags);
         return;
+    }
+    WRITE_ONCE(rescan_started, true);
     last_rescan = now;
     if (misses < 8)
         misses++;
+    attempt = misses;
+    spin_unlock_irqrestore(&rescan_lock, flags);
 
-    pr_info("manager identity invalid on get_info, rescan scheduled (%u)\n", misses);
+    pr_info("manager identity invalid on get_info, rescan scheduled (%u)\n", attempt);
     ksu_defer_track_throne();
 }
 

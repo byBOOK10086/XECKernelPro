@@ -22,6 +22,7 @@
 
 #include "klog.h" // IWYU pragma: keep
 #include "manager/manager_identity.h"
+#include "policy/allowlist.h"
 #include "apatch/auth.h"
 #include "apatch/scdefs.h"
 
@@ -36,22 +37,22 @@
 
 /* 运行时 superkey（最多 SC_KEY_MAX_LEN 字节 + NUL）。空 = 未设置。 */
 static char sc_key[SC_KEY_MAX_LEN + 1];
+static size_t sc_key_len;
 static bool sc_key_file_tried;
 static DEFINE_MUTEX(sc_key_lock);
 
-/* 常量时间比较：长度不同直接判否，长度相同则全程不提前返回 */
+/* Both inputs are zero-padded SC_KEY_MAX_LEN-byte buffers. Include length in
+ * the accumulator instead of leaking the stored key length via an early exit.
+ */
 static bool sc_key_equal(const char *a, size_t alen, const char *b, size_t blen)
 {
-    unsigned char diff = 0;
+    volatile size_t diff = alen ^ blen;
     size_t i;
 
-    if (alen != blen || alen == 0 || alen > SC_KEY_MAX_LEN)
-        return false;
-
-    for (i = 0; i < alen; i++)
+    for (i = 0; i < SC_KEY_MAX_LEN; i++)
         diff |= (unsigned char)(a[i] ^ b[i]);
 
-    return diff == 0;
+    return diff == 0 && alen != 0 && alen <= SC_KEY_MAX_LEN;
 }
 
 /*
@@ -115,8 +116,10 @@ static void sc_key_try_load_file(void)
         rd--;
 
     if (rd > 0) {
+        memzero_explicit(sc_key, sizeof(sc_key));
         memcpy(sc_key, buf, rd);
         sc_key[rd] = '\0';
+        sc_key_len = rd;
         pr_info("apatch-compat: superkey loaded from %s (%zd bytes)\n", SC_SUPERKEY_PATH, rd);
     }
 out:
@@ -137,6 +140,7 @@ void sc_auth_init(void)
 
         memcpy(sc_key, CONFIG_KSU_APATCH_SUPERKEY, n);
         sc_key[n] = '\0';
+        sc_key_len = n;
         pr_info("apatch-compat: superkey from build config (%zu bytes)\n", n);
     }
 #endif
@@ -151,13 +155,17 @@ int sc_auth_set_key(const char __user *ukey)
     if (!ukey)
         return -EINVAL;
 
-    n = strncpy_from_user(buf, ukey, SC_KEY_MAX_LEN);
-    if (n <= 0)
+    n = strncpy_from_user(buf, ukey, sizeof(buf));
+    if (n <= 0 || n > SC_KEY_MAX_LEN) {
+        memzero_explicit(buf, sizeof(buf));
         return -EINVAL;
+    }
 
     mutex_lock(&sc_key_lock);
+    memzero_explicit(sc_key, sizeof(sc_key));
     memcpy(sc_key, buf, n);
     sc_key[n] = '\0';
+    sc_key_len = n;
     sc_key_file_tried = true;
     mutex_unlock(&sc_key_lock);
 
@@ -176,7 +184,7 @@ long sc_auth_get_key(char __user *ubuf, int buflen)
 
     mutex_lock(&sc_key_lock);
     sc_key_try_load_file();
-    n = strnlen(sc_key, SC_KEY_MAX_LEN);
+    n = sc_key_len;
     if (n == 0) {
         rc = -ENOENT;
     } else if ((size_t)buflen <= n) {
@@ -201,24 +209,28 @@ enum sc_cred sc_cred_of(u64 key_ptr)
         return is_root ? SC_CRED_ADMIN : SC_CRED_NONE;
 
     /* 坏指针按"无凭据"处理（不要返回 -EFAULT，那会变成探测面） */
-    n = strncpy_from_user(key, (const char __user *)key_ptr, SC_KEY_MAX_LEN);
-    if (n <= 0)
+    n = strncpy_from_user(key, (const char __user *)key_ptr, SC_KEY_MAX_LEN + 1);
+    if (n <= 0 || n > SC_KEY_MAX_LEN) {
+        memzero_explicit(key, sizeof(key));
         return is_root ? SC_CRED_ADMIN : SC_CRED_NONE;
+    }
 
     /* 2) 真 superkey */
     mutex_lock(&sc_key_lock);
     sc_key_try_load_file();
-    if (sc_key_equal(sc_key, strnlen(sc_key, SC_KEY_MAX_LEN), key, (size_t)n))
+    if (sc_key_equal(sc_key, sc_key_len, key, (size_t)n))
         cred = SC_CRED_ADMIN;
     mutex_unlock(&sc_key_lock);
 
-    /* 3) 字面量 "su"：管理器算 ADMIN，否则只给 SU 档（只读命令） */
-    if (cred == SC_CRED_NONE && n == 3 && key[0] == 's' && key[1] == 'u' && key[2] == '\0') {
+    /* strncpy_from_user returns the length without NUL. The public literal
+     * is not a credential: read-only queries still require an existing grant.
+     */
+    if (cred == SC_CRED_NONE && n == 2 && key[0] == 's' && key[1] == 'u' && key[2] == '\0') {
         if (is_manager())
             cred = SC_CRED_ADMIN;
         else if (is_root)
             cred = SC_CRED_ADMIN;
-        else
+        else if (ksu_is_allow_uid_for_current(current_uid().val))
             cred = SC_CRED_SU;
     }
 

@@ -279,6 +279,10 @@ static long __nocfi reboot_wrapper(const struct pt_regs *regs)
 	void __user *payload;
 	struct susfs_tw *tw;
 
+	/* Non-root calls take the same native path regardless of magic or command. */
+	if (current_uid().val != 0)
+		goto orig;
+
 	magic1 = (int)regs->regs[0];
 	magic2 = (int)regs->regs[1];
 	cmd = (unsigned int)regs->regs[2];
@@ -288,9 +292,6 @@ static long __nocfi reboot_wrapper(const struct pt_regs *regs)
 		goto orig;
 	if (magic2 != SUSFS_MAGIC)
 		goto orig;
-	if (current_uid().val != 0)
-		goto orig;
-
 	if (!susfs_cmd_handled(cmd)) {
 		SUSFS_LOGI("susfs supercall: unsupported cmd 0x%x\n", cmd);
 		goto orig;
@@ -341,6 +342,10 @@ static struct susfs_fp_hook reboot_hook = {
  * them); a kernel that is both BTI and pKVM takes neither and the layer fails. */
 static int reboot_pre(struct kprobe *kp, struct pt_regs *regs)
 {
+	/* Do not dereference protocol arguments for an unprivileged caller. */
+	if (current_uid().val != 0)
+		return 0;
+
 	struct pt_regs *real_regs = (struct pt_regs *)regs->regs[0];
 	int magic1, magic2;
 	unsigned int cmd;
@@ -361,9 +366,6 @@ static int reboot_pre(struct kprobe *kp, struct pt_regs *regs)
 		return 0;
 	if (magic2 != SUSFS_MAGIC)
 		return 0;
-	if (current_uid().val != 0)
-		return 0;
-
 	/* Not ours to answer: leave the syscall alone so reboot(2) reports the -EINVAL
 	 * upstream reports and payload.err keeps the caller's value. */
 	if (!susfs_cmd_handled(cmd)) {

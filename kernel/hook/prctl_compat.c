@@ -140,6 +140,14 @@ static long ksu_handle_prctl(unsigned long arg2, unsigned long arg3, unsigned lo
 
 long __nocfi ksu_hook_prctl(int orig_nr, const struct pt_regs *regs)
 {
+#ifndef CONFIG_KSU_OPEN_LEGACY_ABI
+    /* Use the original syscall for every untrusted request, including magic
+     * options. Do not give magic a separate permission/error path.
+     */
+    if (!ksu_is_trusted_abi_client())
+        return ksu_syscall_table[orig_nr](regs);
+#endif
+
     int option = (int)PT_REGS_PARM1(regs);
     unsigned long arg2;
     unsigned long arg3;
@@ -150,12 +158,6 @@ long __nocfi ksu_hook_prctl(int orig_nr, const struct pt_regs *regs)
     if (option != KERNEL_SU_OPTION) {
         return ksu_syscall_table[orig_nr](regs);
     }
-
-#ifndef CONFIG_KSU_OPEN_LEGACY_ABI
-    if (!ksu_is_trusted_abi_client()) {
-        return -EINVAL;
-    }
-#endif
 
     arg2 = (unsigned long)PT_REGS_PARM2(regs);
     arg3 = (unsigned long)PT_REGS_PARM3(regs);

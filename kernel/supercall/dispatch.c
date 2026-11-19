@@ -583,6 +583,12 @@ static int do_manage_mark(void __user *arg)
 // 两类 magic 在同一个入口合并，是 susfs4ksu 的标准结构。
 int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg)
 {
+#ifndef CONFIG_KSU_OPEN_LEGACY_ABI
+    /* Keep the source-hook route aligned with the LKM permission-first gate. */
+    if (!ksu_is_trusted_abi_client())
+        return -EINVAL;
+#endif
+
     if (magic1 != KSU_INSTALL_MAGIC1) {
         return -EINVAL;
     }
@@ -657,12 +663,6 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user 
     }
 
     if (magic2 == KSU_INSTALL_MAGIC2) {
-#ifndef CONFIG_KSU_OPEN_LEGACY_ABI
-        /* Same gate as the kprobe route in supercall.c. */
-        if (!ksu_is_trusted_abi_client()) {
-            return -EINVAL;
-        }
-#endif
         return ksu_supercall_reboot_handler(arg);
     }
 
