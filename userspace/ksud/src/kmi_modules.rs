@@ -110,15 +110,14 @@ fn status_hook(module: &Path, source: &str, stage: &str) -> Result<()> {
 // package manager or running a recovery installer during post-fs-data.
 fn prepare_rezygisk(dir: &Path, arches: &[(bool, &str, &str)]) -> Result<()> {
     let mut zip = ZipArchive::new(Cursor::new(REZYGISK_ZIP))?;
-    for file in [
-        "module.prop",
-        "post-fs-data.sh",
-        "service.sh",
-        "uninstall.sh",
-        "sepolicy.rule",
-        "rezygisk.sh",
+    for (file, mode) in [
+        ("module.prop", 0o644),
+        ("post-fs-data.sh", 0o755),
+        ("service.sh", 0o755),
+        ("uninstall.sh", 0o755),
+        ("sepolicy.rule", 0o644),
+        ("rezygisk.sh", 0o755),
     ] {
-        let mode = if file.ends_with(".sh") { 0o755 } else { 0o644 };
         extract(&mut zip, file, &dir.join(file), mode)?;
     }
     crate::sepolicy::check_rule(

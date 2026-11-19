@@ -243,7 +243,7 @@ vendored 源码树（`third_party/`）始终**零修改**：上述修复全部�
 
 ## KMI 用户态附带模块
 
-- **ReZygisk v1.0.0**（The PerformanC Organization）和 **HMA-OSS oss-175**
+- **ReZygisk v1.0.0**（The PerformanC Organization）和 **HMA-OSS oss-177**
   （frknkrc44）以独立模块 ZIP 原样随 KMI 用户态分发。上游版本、对应源码、
   许可证原文和署名见 [APK 内的第三方声明](manager/app/src/main/assets/kmi-modules/NOTICE.md)。
 

@@ -8,6 +8,9 @@
 
 ## vendored 范围
 
+2026-11-20 构建兼容修正：`rust/src/platform/signal.rs` 的信号处理器地址先转换为
+`*const ()` 再转换为 `usize`，消除新版 Rust 的 `function_casts_as_integer` 警告；信号处理行为不变。
+
 只取守护进程构建所需的源码子集（模块脚本与 WebUI 资产以
 `userspace/ksud/builtin/TA_enhanced/` 内的原样快照为准）：
 
