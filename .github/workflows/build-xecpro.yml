@@ -9,6 +9,8 @@ name: Build XECKernelPro
 # SIGN_KEY_PASS），密钥内容与原仓库内 xecpro-key.jks 完全相同，签名结果不变。
 
 on:
+  push:
+    branches: [codex/test-31445]
   workflow_dispatch:
     inputs:
       publish:
@@ -55,6 +57,7 @@ permissions:
   contents: read
 
 env:
+  FULL_PAYLOADS: ${{ inputs.publish || inputs.full_build || github.ref == 'refs/heads/codex/test-31445' }}
   SIGN_KEY_ALIAS: xecpro-key
   BRAND_PACKAGE: com.xecpro.kernel
   BRAND_NAME: "XECKernel Ultra"
@@ -404,7 +407,7 @@ jobs:
 
       - name: Fetch Magisk payload (<5.10 mount-state route)
         # Full test builds use the same payload and verification as releases.
-        if: ${{ inputs.publish || inputs.full_build }}
+        if: env.FULL_PAYLOADS == 'true'
         # 硬上限：Magisk APK 约 9MB，任一正常源几分钟内都该完成。2026-11-09 这步
         # 卡了 46 分钟零输出（--max-time 600 × --retry 5 = 最长一小时），把整个
         # build-manager 拖死。现在每个 URL 只试一次、单 URL 最多 240s，
@@ -680,7 +683,7 @@ jobs:
         run: python3 .github/scripts/stage-kmi-modules.py --abi arm64-v8a --verify-apk dist/*.apk
 
       - name: Verify Magisk payload survived repack + sign
-        if: ${{ inputs.publish || inputs.full_build }}
+        if: env.FULL_PAYLOADS == 'true'
         # repack 与签名是另一个 job：下载、解包那一步校验过了，打包/重签这一环再掉载荷
         # （AGP 的资源过滤、repack_apk.py 的条目遍历、--strip …）就没人拦得住，而管理器会
         # 把整条 Magisk 路线静默灰掉。这里直接拆开**签发出去的**那个 APK 逐条对齐 sha256。
@@ -752,7 +755,7 @@ jobs:
     # 各被塞进第二个 APK（重跑产物与首发**不是逐字节一致**），用户会看到同一版本
     # 两个不同的安装包。守卫存在的前提是它能挡住下游，不能只是报红。
     needs: [guards, repack, build-ksud, build-ksuinit, build-manager]
-    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.publish)
+    if: github.ref != 'refs/heads/codex/test-31445' && (github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.publish))
     runs-on: ubuntu-latest
     permissions:
       contents: write
