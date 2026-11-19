@@ -247,7 +247,8 @@ XEC Project Team
     <string name="grant_root_failed">Failed to grant Root!</string>
     <string name="home_daemon_missing">Daemon missing (/data/adb/xudc): built-in modules will not work. Reinstall the full package and reboot</string>
     <string name="home_susfs_status">SUSFS</string>
-    <string name="home_susfs_unsupported">Not enabled (kernel lacks SUSFS patches)</string>
+    <string name="home_susfs_unsupported">SUSFS did not respond</string>
+    <string name="home_susfs_not_detected">Not detected</string>
     <string name="home_pr_build_warning">This is a PR debug build. Do NOT use it in production!</string>
     <string name="home_pr_kernel_warning">The kernel was built with PR signature support. This is not a production kernel!</string>
     <string name="action">Action</string>
@@ -512,8 +513,8 @@ See the log below for details.</string>
          certificate — while the chain still verifies, so "bootloader locked" and
          "unknown root certificate" show up together. -->
     <!-- Privilege (GhostLock elevate) console -->
-    <string name="privilege_title">Elevate</string>
-    <string name="privilege_entry_subtitle">GhostLock one-tap elevate, with a manual path for unmatched devices</string>
+    <string name="privilege_title">Jailbreak (temporary root)</string>
+    <string name="privilege_entry_subtitle">Get root on supported kernels without flashing boot. Temporary root ends after a reboot.</string>
     <string name="privilege_update_title">Privilege update</string>
     <string name="privilege_device">Device</string>
     <string name="privilege_model">Model</string>
@@ -526,7 +527,7 @@ See the log below for details.</string>
     <string name="privilege_root_missing_note">No root detected: the GhostLock exploit will be used.</string>
     <string name="privilege_risk_warning">This drives a local kernel exploit (CVE-2026-43499) to load the KernelSU module without flashing boot. A failed attempt can crash or reboot the device; close your work and use it at your own risk. SELinux is temporarily relaxed during the run and restored right after.</string>
     <string name="privilege_cpu_pair">CPU pair</string>
-    <string name="privilege_run">Elevate now</string>
+    <string name="privilege_run">Start jailbreak</string>
     <string name="privilege_run_update">Start update</string>
     <string name="privilege_running">Running…</string>
     <string name="privilege_success">Success! The manager will restart automatically.</string>
@@ -536,7 +537,7 @@ See the log below for details.</string>
     <string name="privilege_manual_title">Manual setup</string>
     <string name="privilege_manual_step1">Check your exact kernel version (shown above, same as uname -r).</string>
     <string name="privilege_manual_step2">Grab the kernel profile zip from GhostLock releases and find the .conf whose file name matches your kernel exactly.</string>
-    <string name="privilege_manual_step3">Import that .conf below, then tap Elevate again.</string>
+    <string name="privilege_manual_step3">Import that .conf below, then tap Start jailbreak again.</string>
     <string name="privilege_import_profile">Import profile (.conf)</string>
     <string name="privilege_imported">%1$d profile(s) imported</string>
     <string name="privilege_delete">Delete</string>

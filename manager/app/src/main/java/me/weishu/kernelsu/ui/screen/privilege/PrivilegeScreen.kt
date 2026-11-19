@@ -63,7 +63,10 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.dropUnlessResumed
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.R
 import com.topjohnwu.superuser.Shell
 import me.weishu.kernelsu.mountstate.AutoPermanent
@@ -78,6 +81,7 @@ import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.util.BlurredBar
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
 import me.weishu.kernelsu.ui.util.rootAvailable
+import me.weishu.kernelsu.ui.util.KsuCli
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -129,10 +133,13 @@ fun PrivilegeScreen(updateMode: Boolean = false) {
         value = BootlockStatus.detect()
     }
 
-    val snapshot by produceState<GhostLockRunner.Snapshot?>(initialValue = null) {
+    val snapshot by produceState<GhostLockRunner.Snapshot?>(initialValue = null, key1 = importToken) {
         value = runner.snapshot()
     }
-    val hasRoot by produceState<Boolean?>(initialValue = null) { value = rootAvailable() }
+    val rootReady by KsuCli.rootReady.collectAsStateWithLifecycle()
+    val probeSettled by KsuCli.probeSettled.collectAsStateWithLifecycle()
+    val hasRoot: Boolean? = if (probeSettled) rootReady else null
+    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { rootAvailable() } }
 
     fun log(line: String) {
         logLines.add(line)
@@ -140,11 +147,11 @@ fun PrivilegeScreen(updateMode: Boolean = false) {
     }
 
     val onRun: () -> Unit = {
-        if (phase != GhostLockRunner.Phase.RUNNING) {
+        if (phase != GhostLockRunner.Phase.RUNNING && !permanentRunning && hasRoot != null) {
             phase = GhostLockRunner.Phase.RUNNING
             failReason = null
             scope.launch {
-                val outcome = if (updateMode && hasRoot == true) {
+                val outcome = if (withContext(Dispatchers.IO) { rootAvailable() }) {
                     runner.runUpdateViaRoot(::log)
                 } else {
                     runner.run(::log)
@@ -213,7 +220,7 @@ fun PrivilegeScreen(updateMode: Boolean = false) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                DeviceCard(snapshot = snapshot, updateMode = updateMode, hasRoot = hasRoot)
+                DeviceCard(snapshot = snapshot, hasRoot = hasRoot)
             }
             item {
                 BootloaderCard(state = bootlock)
@@ -235,8 +242,9 @@ fun PrivilegeScreen(updateMode: Boolean = false) {
             }
             item {
                 RunCard(
-                    updateMode = updateMode,
-                    supported = snapshot?.supported == true,
+                    updateMode = updateMode || hasRoot == true,
+                    supported = hasRoot == true || snapshot?.supported == true,
+                    ready = hasRoot != null && !permanentRunning,
                     phase = phase,
                     failReason = failReason,
                     onRun = onRun,
@@ -246,7 +254,7 @@ fun PrivilegeScreen(updateMode: Boolean = false) {
                 PermanentCard(
                     hasRoot = hasRoot,
                     bootlock = bootlock,
-                    running = permanentRunning,
+                    running = permanentRunning || phase == GhostLockRunner.Phase.RUNNING,
                     outcome = permanentOutcome,
                     onRun = {
                         if (!permanentRunning) {
@@ -338,7 +346,6 @@ fun PrivilegeScreen(updateMode: Boolean = false) {
 @Composable
 private fun DeviceCard(
     snapshot: GhostLockRunner.Snapshot?,
-    updateMode: Boolean,
     hasRoot: Boolean?,
 ) {
     val supported = snapshot?.supported == true
@@ -369,23 +376,21 @@ private fun DeviceCard(
             InfoRow(stringResource(R.string.privilege_model), snapshot?.deviceName ?: "…")
             InfoRow(stringResource(R.string.privilege_kernel), snapshot?.kernelRelease ?: "…")
             InfoRow(stringResource(R.string.privilege_soc), snapshot?.socName ?: "…")
-            if (updateMode) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(
-                        if (hasRoot == true) {
-                            R.string.privilege_root_shortcut
-                        } else if (hasRoot == false) {
-                            R.string.privilege_root_missing_note
-                        } else {
-                            R.string.privilege_probing_root
-                        }
-                    ),
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                    color = colorScheme.onSurfaceVariantSummary,
-                )
-            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(
+                    if (hasRoot == true) {
+                        R.string.privilege_root_shortcut
+                    } else if (hasRoot == false) {
+                        R.string.privilege_root_missing_note
+                    } else {
+                        R.string.privilege_probing_root
+                    }
+                ),
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
         }
     }
 }
@@ -482,6 +487,7 @@ private fun CpuPairCard(
 private fun RunCard(
     updateMode: Boolean,
     supported: Boolean,
+    ready: Boolean,
     phase: GhostLockRunner.Phase,
     failReason: String?,
     onRun: () -> Unit,
@@ -515,7 +521,7 @@ private fun RunCard(
                     updateMode -> stringResource(R.string.privilege_run_update)
                     else -> stringResource(R.string.privilege_run)
                 },
-                enabled = !running,
+                enabled = !running && ready,
                 colors = ButtonDefaults.textButtonColorsPrimary(),
                 onClick = onRun,
             )

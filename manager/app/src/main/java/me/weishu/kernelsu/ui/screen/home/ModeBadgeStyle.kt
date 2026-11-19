@@ -84,6 +84,8 @@ object ModeBadgeStyleStore {
             bgUri = p.getString("bg", null)?.takeIf { it.isNotBlank() },
             fontPath = p.getString("font", null)?.takeIf { it.isNotBlank() },
             textColor = if (p.contains("textColor")) p.getInt("textColor", 0) else null,
+            dim = p.getFloat("dim", 0.30f),
+            blur = p.getFloat("blur", 0f),
         ).normalized()
     }
 
@@ -94,6 +96,8 @@ object ModeBadgeStyleStore {
             .putString("suffix", v.suffix)
             .putString("bg", v.bgUri)
             .putString("font", v.fontPath)
+            .putFloat("dim", v.dim)
+            .putFloat("blur", v.blur)
             .apply {
                 if (v.textColor == null) remove("textColor") else putInt("textColor", v.textColor)
             }

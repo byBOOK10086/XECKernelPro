@@ -208,7 +208,7 @@ class HomeViewModel(
             ShellUtils.fastCmd(shell, "test -e /data/adb/xudc && echo -n ok").trim() == "ok"
         }.getOrDefault(false)
         // SUSFS 状态探测：susfs 的 reboot 向量只在 root 进程内有效，走守护 CLI。
-        // "unsupport" = 内核没打 SUSFS 补丁；null = 探测不了（无 root / shell 失败）→ UI 隐藏该行。
+        // "unsupport" = 内核未响应；null = 探测命令没有结果。
         val susfsVersion: String? = if (deep && isRootAvailable) runCatching {
             val shell = getRootShell()
             ShellUtils.fastCmd(shell, "${getKsuDaemonPath()} susfs version").trim().ifEmpty { null }

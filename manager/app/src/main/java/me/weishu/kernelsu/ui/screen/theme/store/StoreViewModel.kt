@@ -25,7 +25,6 @@ import me.weishu.kernelsu.data.theme.StoreSort
 import me.weishu.kernelsu.data.theme.StoreTheme
 import me.weishu.kernelsu.data.theme.ThemeApplier
 import me.weishu.kernelsu.data.theme.ThemeRepository
-import me.weishu.kernelsu.data.theme.ThemeResolver
 import me.weishu.kernelsu.data.theme.ThemeStoreSettings
 import me.weishu.kernelsu.data.theme.withInstalled
 import me.weishu.kernelsu.ksuApp
@@ -312,11 +311,10 @@ class StoreViewModel : ViewModel() {
     }
 
     fun applyTheme(themeId: String) {
-        if (themeId.isEmpty()) return
+        if (themeId.isEmpty() || _state.value.busy) return
         _state.update { it.copy(busy = true) }
         viewModelScope.launch {
             val result = ThemeApplier.apply(context, themeId)
-            ThemeResolver.invalidate()
             val active = withContext(Dispatchers.IO) {
                 runCatching { ThemeRepository.activeId(context) }.getOrNull()
             }

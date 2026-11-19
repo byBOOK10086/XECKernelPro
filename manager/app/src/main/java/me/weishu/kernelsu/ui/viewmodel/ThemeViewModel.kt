@@ -14,7 +14,6 @@ import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.data.theme.ThemeApplier
 import me.weishu.kernelsu.data.theme.ThemeCodec
 import me.weishu.kernelsu.data.theme.ThemeRepository
-import me.weishu.kernelsu.data.theme.ThemeResolver
 import me.weishu.kernelsu.ksuApp
 import me.weishu.kernelsu.ui.design.token.XcBlocks
 import me.weishu.kernelsu.ui.screen.theme.ThemeEditorState
@@ -82,10 +81,10 @@ class ThemeViewModel : ViewModel() {
     fun selectTab(tab: Int) = _ui.update { it.copy(tab = tab.coerceIn(0, 2)) }
 
     fun apply(id: String, onDone: (Boolean, String?) -> Unit = { _, _ -> }) {
+        if (_ui.value.busy) return
         _ui.update { it.copy(busy = true) }
         viewModelScope.launch {
             val result = ThemeApplier.apply(context, id)
-            ThemeResolver.invalidate()
             _ui.update { state ->
                 state.copy(
                     busy = false,
@@ -101,10 +100,10 @@ class ThemeViewModel : ViewModel() {
     }
 
     fun restoreDefault(onDone: (Boolean) -> Unit = {}) {
+        if (_ui.value.busy) return
         _ui.update { it.copy(busy = true) }
         viewModelScope.launch {
             val result = ThemeApplier.restoreDefault(context)
-            ThemeResolver.invalidate()
             _ui.update { it.copy(busy = false, activeId = ThemeRepository.activeId(context)) }
             onDone(result.isSuccess)
         }
@@ -113,7 +112,6 @@ class ThemeViewModel : ViewModel() {
     fun delete(id: String) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { ThemeRepository.remove(context, id) }
-            ThemeResolver.invalidate()
             refreshLocal()
         }
     }
@@ -449,7 +447,6 @@ class ThemeViewModel : ViewModel() {
                     ThemeRepository.find(context, finalSpec.id)?.spec ?: finalSpec
                 }
             }
-            ThemeResolver.invalidate()
             refreshLocal()
             // 保存成功后把"草稿里的临时改动"清掉（界面依据它画"已选/已清"的标记）；
             // 失败就留着，用户不用重新选一遍图。

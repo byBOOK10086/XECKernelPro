@@ -541,6 +541,13 @@ fun SettingPagerMiuix(
                     }
 
                     Xc8Panel(modifier = Modifier.padding(vertical = 12.dp)) {
+                        Xc8Row(
+                            title = stringResource(R.string.privilege_title),
+                            subtitle = stringResource(R.string.privilege_entry_subtitle),
+                            leading = Icons.Rounded.FlashOn,
+                            onClick = actions.onOpenJailbreak,
+                            trailing = { Xc8Chevron() },
+                        )
                         // 工具箱：终端 / 安全锁（超级密钥）/ 隐身入口 收进一个菜单（低频工具不再占设置一整屏）。
                         Xc8Row(
                             title = stringResource(id = R.string.tools_title),

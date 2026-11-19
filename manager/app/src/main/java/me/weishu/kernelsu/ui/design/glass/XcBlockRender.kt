@@ -1,9 +1,12 @@
 package me.weishu.kernelsu.ui.design.glass
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.coroutines.Dispatchers
@@ -35,15 +38,22 @@ private const val XC_BLOCK_MAX_EDGE = 512
  * 主线程读到的是"当时这一刻已经解好的那些"。
  *
  * 失效只有一条路：[clearXcBlockImages]，由 `ThemeResolver.invalidate()` 调用 —— 换主题、
- * 保存主题、删除主题都会走到那里，所以不存在"换了主题还画着旧图"。键就是**文件路径**：
+ * 保存主题、删除主题都会走到那里。缓存以文件路径为键：
  * 路径本身带着主题 id（`filesDir/themes/<id>/block-….jpg`），重装同一 id 会整目录替换、
- * 路径不变但内容变了 —— 那种情况正是靠 [clearXcBlockImages] 兜住的，不是靠键。
+ * 路径不变但内容变了时，代数变化会让仍在屏幕上的区块重新解码。
  */
 internal val XcBlockImageCache = mutableStateMapOf<String, ImageBitmap>()
+private val imageCacheLock = Any()
+private var imageGeneration by mutableIntStateOf(0)
 
 /** 清空解码缓存（主题变了必须清，见上）。 */
 fun clearXcBlockImages() {
-    XcBlockImageCache.clear()
+    synchronized(imageCacheLock) {
+        Snapshot.withMutableSnapshot {
+            imageGeneration++
+            XcBlockImageCache.clear()
+        }
+    }
 }
 
 /**
@@ -58,7 +68,7 @@ fun clearXcBlockImages() {
  *  * 解码走 [WallpaperStore.decode] —— 这是本仓库里既有的"文件 -> Bitmap -> asImageBitmap"
  *    链路（主题预览缩略图、壁纸缩略图都是它），不引第三方图片库。
  *
- * 生产者只钉 [ThemeResolver] 给的那条路径与主题 id：颜色 / 透明度 / 明暗档都是纯数据，
+ * 生产者跟随 [ThemeResolver] 给的路径与缓存代数：颜色 / 透明度都是纯数据，
  * 改了直接重算就行，把整条背景当 key 会让"拖一下透明度"顺手丢掉已经解好的位图。
  */
 @Composable
@@ -68,28 +78,22 @@ fun rememberXcBlock(id: String, isDark: Boolean = isInDarkTheme()): XcBlockBackg
     val visible = block != null && block.visibleIn(isDark)
     // 这一档不画它的区块根本没有"图要解"这回事（key = null 就是"不用解"）。
     val key = if (!visible || path == null) null else path
-    val ready by produceState<Boolean>(
-        // 颜色和透明/黑纱都是纯数据：没图可解时这里一开始就算"准备好了"，
-        // 少跑一次多余的组合（真正的取舍在下面那个 `path == null`）。
-        initialValue = key == null,
-        key,
-    ) {
-        if (key == null) return@produceState
-        if (XcBlockImageCache.containsKey(key)) {
-            value = true
-            return@produceState
-        }
+    val generation = imageGeneration
+    LaunchedEffect(key, generation) {
+        if (key == null || XcBlockImageCache.containsKey(key)) return@LaunchedEffect
         val decoded = withContext(Dispatchers.IO) {
             val file = File(path.orEmpty())
             if (file.isFile) WallpaperStore.decode(file, XC_BLOCK_MAX_EDGE)?.asImageBitmap() else null
         }
         if (decoded != null) {
-            // 先落表（下次重组直接命中），再落 value（叫醒这一次）。
-            XcBlockImageCache[key] = decoded
-            value = true
+            synchronized(imageCacheLock) {
+                // A decode started before invalidation must not refill the new cache.
+                if (generation == imageGeneration) XcBlockImageCache[key] = decoded
+            }
         }
     }
-    // `visible` 不参与生产者的键：明暗档换了不用重跑，图已经在缓存里，切回去立刻就能画。
-    if (!visible || path == null || !ready) return null
+    // 纯色区块不需要位图；切回可见档时优先复用当前代数的缓存。
+    if (!visible) return null
+    if (path != null && !XcBlockImageCache.containsKey(path)) return null
     return block
 }

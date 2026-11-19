@@ -1049,9 +1049,19 @@ private fun SecurityPanel(state: HomeUiState) {
     // 三处曾经各抄一份 when，删一处就会漏一处。
     val selinuxText = selinuxLabel(state.systemInfo.selinuxStatus)
     val seccompText = seccompLabel(state.systemInfo.seccompStatus)
-    // SUSFS 行：null = 探测不到（无 root / shell 失败）→ 整行隐藏；
-    // "unsupport" = 内核没打 SUSFS 补丁，明确告知用户而不是静默。
     val susfsVersion = state.susfsVersion
+    val susfsEnabled = susfsVersion != null && susfsVersion != "unsupport"
+    val susfsText = when {
+        susfsVersion == null -> ""
+        !susfsEnabled -> stringResource(R.string.home_susfs_unsupported)
+        state.susfsVariant != null -> "$susfsVersion · ${state.susfsVariant}"
+        else -> susfsVersion
+    }
+    val susfsStatus = when {
+        susfsVersion == null -> stringResource(R.string.home_susfs_not_detected)
+        susfsEnabled -> stringResource(R.string.home8_tag_on)
+        else -> stringResource(R.string.home8_tag_off)
+    }
     Xc8Panel {
         Xc8Row(
             title = stringResource(R.string.home_selinux_status),
@@ -1069,29 +1079,17 @@ private fun SecurityPanel(state: HomeUiState) {
                 )
             },
         )
-        if (susfsVersion != null) {
-            val susfsSupported = susfsVersion != "unsupport"
-            val susfsText = when {
-                !susfsSupported -> stringResource(R.string.home_susfs_unsupported)
-                state.susfsVariant != null -> "$susfsVersion · ${state.susfsVariant}"
-                else -> susfsVersion
-            }
-            Xc8Row(
-                title = stringResource(R.string.home_susfs_status),
-                subtitle = susfsText,
-                leading = Icons.Rounded.Extension,
-                trailing = {
-                    Xc8Tag(
-                        text = if (susfsSupported) {
-                            stringResource(R.string.home8_tag_on)
-                        } else {
-                            stringResource(R.string.home8_tag_off)
-                        },
-                        tone = if (susfsSupported) Xc8Tone.Success else Xc8Tone.Neutral,
-                    )
-                },
-            )
-        }
+        Xc8Row(
+            title = stringResource(R.string.home_susfs_status),
+            subtitle = susfsText,
+            leading = Icons.Rounded.Extension,
+            trailing = {
+                Xc8Tag(
+                    text = susfsStatus,
+                    tone = if (susfsEnabled) Xc8Tone.Success else Xc8Tone.Neutral,
+                )
+            },
+        )
         Xc8Row(
             title = stringResource(R.string.home_seccomp_status),
             leading = Icons.Rounded.FilterList,

@@ -105,13 +105,15 @@ object ThemeResolver {
      * SharedPreferences 监听回调（任何外观设置一改就会走一遍），主题文件虽然只有几 KB，
      * 但那是**主线程上的磁盘 IO**，不该在滑一下开关时发生。
      */
+    @Synchronized
     fun active(context: Context): XcThemeData? {
         val id = ThemeRepository.activeId(context) ?: run {
             cachedId = null
             cached = null
             return null
         }
-        if (id == cachedId) return cached
+        val revision = ThemeRepository.revision(context)
+        if (id == cachedId && revision == cachedRevision) return cached
         val entry = ThemeRepository.find(context, id) ?: run {
             cachedId = null
             cached = null
@@ -119,17 +121,20 @@ object ThemeResolver {
         }
         val resolved = runCatching { resolve(entry.spec, entry.dir) }.getOrNull()
         cachedId = id
+        cachedRevision = revision
         cached = resolved
         return resolved
     }
 
     @Volatile
     private var cachedId: String? = null
+    private var cachedRevision: Long = -1
 
     @Volatile
     private var cached: XcThemeData? = null
 
     /** 主题内容变了（编辑保存/重新安装）时清缓存，下一次读取重新解析。 */
+    @Synchronized
     fun invalidate() {
         cachedId = null
         cached = null

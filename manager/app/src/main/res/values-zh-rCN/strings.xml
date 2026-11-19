@@ -237,7 +237,8 @@ XEC 项目组
     <string name="grant_root_failed">获取 Root 失败！</string>
     <string name="home_daemon_missing">守护组件缺失（/data/adb/xudc）：内置模块不会生效，请重新安装完整包并重启</string>
     <string name="home_susfs_status">SUSFS</string>
-    <string name="home_susfs_unsupported">未启用（内核未打 SUSFS 补丁）</string>
+    <string name="home_susfs_unsupported">内核未响应 SUSFS 检测</string>
+    <string name="home_susfs_not_detected">未检测到</string>
     <string name="home_pr_build_warning">当前为 PR 调试构建，请勿在生产环境中使用！</string>
     <string name="home_pr_kernel_warning">当前内核包含 PR 签名支持，这不是一个生产内核！</string>
     <string name="action">执行</string>
@@ -515,8 +516,8 @@ XEC 项目组
          的公钥与硬编码的 Google/AOSP/Knox 根公钥比对，对不上就报"未知根证书"——
          而链照样签得出来，于是界面会同时出现"已锁定 + 未知根证书"。 -->
     <!-- 提权（GhostLock）控制台 -->
-    <string name="privilege_title">提权</string>
-    <string name="privilege_entry_subtitle">GhostLock 一键提权，识别不了的机型给手动操作空间</string>
+    <string name="privilege_title">越狱（临时 Root）</string>
+    <string name="privilege_entry_subtitle">支持的内核可免刷 boot 获取 Root，临时权限在重启后失效</string>
     <string name="privilege_update_title">提权更新</string>
     <string name="privilege_device">设备信息</string>
     <string name="privilege_model">机型</string>
@@ -529,7 +530,7 @@ XEC 项目组
     <string name="privilege_root_missing_note">未检测到 root：将使用 GhostLock 漏洞提权。</string>
     <string name="privilege_risk_warning">这里驱动一个本地内核漏洞（CVE-2026-43499），在不刷写 boot 的情况下载入 KernelSU 内核模块。失败的尝试可能导致设备崩溃或重启；请先保存手头的工作，风险自担。运行期间 SELinux 会短暂放宽，结束后立即恢复。</string>
     <string name="privilege_cpu_pair">CPU 对</string>
-    <string name="privilege_run">一键提权</string>
+    <string name="privilege_run">开始越狱</string>
     <string name="privilege_run_update">开始更新</string>
     <string name="privilege_running">正在运行…</string>
     <string name="privilege_success">提权成功！管理器将自动重启。</string>
@@ -539,7 +540,7 @@ XEC 项目组
     <string name="privilege_manual_title">手动操作</string>
     <string name="privilege_manual_step1">确认你的内核版本（上方设备信息里有，等同 uname -r）。</string>
     <string name="privilege_manual_step2">到 GhostLock 的 Releases 下载内核 profile 压缩包，找到文件名与你内核完全一致的 .conf。</string>
-    <string name="privilege_manual_step3">在下方导入该 .conf，然后重新点「一键提权」。</string>
+    <string name="privilege_manual_step3">在下方导入该 .conf，然后重新点「开始越狱」。</string>
     <string name="privilege_import_profile">导入 profile (.conf)</string>
     <string name="privilege_imported">已导入 %1$d 个 profile</string>
     <string name="privilege_delete">删除</string>

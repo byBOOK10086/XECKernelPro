@@ -3,14 +3,15 @@ package me.weishu.kernelsu.data.theme
 import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import me.weishu.kernelsu.data.repository.SettingsRepository
-import me.weishu.kernelsu.data.repository.SettingsRepositoryImpl
 import me.weishu.kernelsu.ui.screen.home.ModeBadgeStyle
 import me.weishu.kernelsu.ui.screen.home.ModeBadgeStyleStore
 import me.weishu.kernelsu.ui.util.WallpaperStore
 import org.json.JSONObject
 import java.io.File
+import java.util.UUID
 
 /**
  * 应用 / 恢复主题。
@@ -35,54 +36,76 @@ object ThemeApplier {
     private const val KEY_PREV_MODE_BADGE = "theme_prev_mode_badge"
     private const val KEY_PREV_MODE_BADGE_SAVED = "theme_prev_mode_badge_saved"
 
-    private fun slotFor(themeId: String, light: Boolean): String =
-        "theme-$themeId-${if (light) WallpaperStore.LIGHT else WallpaperStore.DARK}"
-
     suspend fun apply(
         context: Context,
         id: String,
-        settings: SettingsRepository = SettingsRepositoryImpl(),
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            val entry = ThemeRepository.find(context, id)
-                ?: throw ThemeCodec.InvalidTheme("主题 $id 不在本地")
-            // 只在"当前没有主题"时记一次用户背景，避免主题 A → 主题 B 时把 A 的背景当成用户的。
-            if (ThemeRepository.activeId(context) == null) {
-                ThemeRepository.rememberUserWallpaper(context, settings.wallpaperLight, settings.wallpaperDark)
+        themeResult {
+            ThemeRepository.mutationMutex.withLock {
+                val entry = ThemeRepository.find(context, id)
+                    ?: throw ThemeCodec.InvalidTheme("主题 $id 不在本地")
+                applyLocked(context, entry)
             }
-            ThemeRepository.backgroundDark(context, id)?.let { file ->
-                settings.wallpaperDark = WallpaperStore.importFile(context, file, slotFor(id, light = false))
-            }
-            ThemeRepository.backgroundLight(context, id)?.let { file ->
-                settings.wallpaperLight = WallpaperStore.importFile(context, file, slotFor(id, light = true))
-            }
-            // 换主题 = 先回收上一套的模式牌影响（回到用户自己的样式），再铺新的。
-            // 新主题不带模式牌时，这一步就是全部——上一套的牌不会残留。
-            revertAppliedModeBadge(context)
-            entry.spec.modeBadge?.let { applyModeBadge(context, entry, it) }
-            ThemeRepository.setActiveId(context, id)
         }
     }
 
-    suspend fun restoreDefault(
-        context: Context,
-        settings: SettingsRepository = SettingsRepositoryImpl(),
-    ): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            val previous = ThemeRepository.activeId(context)
-            ThemeRepository.setActiveId(context, null)
-            val remembered = ThemeRepository.takeUserWallpaper(context)
-            if (remembered != null) {
-                settings.wallpaperLight = remembered.first.orEmpty()
-                settings.wallpaperDark = remembered.second.orEmpty()
+    /** Caller holds the repository mutex. Decode every asset before changing any setting. */
+    internal suspend fun applyLocked(context: Context, entry: ThemeRepository.Entry) {
+        val old = currentWallpapers(context)
+        val baseline = ThemeRepository.rememberedUserWallpaper(context)
+            ?: if (ThemeRepository.activeId(context) == null) old else ("" to "")
+        val staged = mutableListOf<String>()
+        // Reapplying an id must not prune files still used by the current theme.
+        val slot = "theme-${entry.spec.id}-${UUID.randomUUID()}"
+        var published = false
+        try {
+            suspend fun prepare(name: String?, light: Boolean): String? = name?.let {
+                WallpaperStore.importFile(context, File(entry.dir, it),
+                    "$slot-${if (light) WallpaperStore.LIGHT else WallpaperStore.DARK}")
+                    .also(staged::add)
             }
-            restoreDefaultBadgeRevert(context)
-            // 只清掉上一套主题铺出去的那两张（文件名前缀唯一），用户自己的背景不动。
-            if (previous != null) {
-                WallpaperStore.discardSlot(context, slotFor(previous, light = true))
-                WallpaperStore.discardSlot(context, slotFor(previous, light = false))
-            }
+            val light = prepare(entry.spec.backgroundLight, true) ?: baseline.first
+            val dark = prepare(entry.spec.backgroundDark, false) ?: baseline.second
+            revertAppliedModeBadge(context)
+            entry.spec.modeBadge?.let { applyModeBadge(context, entry, it) }
+            ThemeRepository.publishSelection(context, entry.spec.id, light to dark, baseline)
+            published = true
+            discardRetired(context, old, setOf(light, dark, baseline.first, baseline.second))
+        } finally {
+            if (!published) staged.forEach { WallpaperStore.discard(context, it) }
         }
+    }
+
+    suspend fun restoreDefault(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
+        themeResult { ThemeRepository.mutationMutex.withLock { restoreDefaultLocked(context) } }
+    }
+
+    internal fun restoreDefaultLocked(context: Context) {
+        val old = currentWallpapers(context)
+        val baseline = ThemeRepository.rememberedUserWallpaper(context)
+            ?: if (ThemeRepository.activeId(context) == null) old else ("" to "")
+        revertAppliedModeBadge(context)
+        ThemeRepository.publishSelection(context, null, baseline, null)
+        discardRetired(context, old, setOf(baseline.first, baseline.second))
+    }
+
+    private fun currentWallpapers(context: Context): Pair<String, String> {
+        val prefs = context.getSharedPreferences(ThemeRepository.PREFS, Context.MODE_PRIVATE)
+        return prefs.getString("wallpaper_light", "").orEmpty() to
+            prefs.getString("wallpaper_dark", "").orEmpty()
+    }
+
+    private fun discardRetired(context: Context, old: Pair<String, String>, keep: Set<String>) {
+        listOf(old.first, old.second).filter { it.startsWith("theme-") && it !in keep }
+            .forEach { runCatching { WallpaperStore.discard(context, it) } }
+    }
+
+    private suspend fun <T> themeResult(block: suspend () -> T): Result<T> = try {
+        Result.success(block())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
     // ---- 模式牌元素（schema 2） ------------------------------------------------
@@ -104,8 +127,6 @@ object ThemeApplier {
             .apply()
         ModeBadgeStyleStore.save(context, saved ?: ModeBadgeStyle())
     }
-
-    private fun restoreDefaultBadgeRevert(context: Context) = revertAppliedModeBadge(context)
 
     private fun applyModeBadge(
         context: Context,
@@ -144,6 +165,8 @@ object ThemeApplier {
     private fun modeBadgeToJson(style: ModeBadgeStyle): String = JSONObject().apply {
         put("prefix", style.prefix)
         put("suffix", style.suffix)
+        put("dim", style.dim)
+        put("blur", style.blur)
         style.bgUri?.let { put("bgUri", it) }
         style.fontPath?.let { put("fontPath", it) }
         style.textColor?.let { put("textColor", it) }
@@ -157,6 +180,8 @@ object ThemeApplier {
             bgUri = o.optString("bgUri", "").takeIf { it.isNotEmpty() },
             fontPath = o.optString("fontPath", "").takeIf { it.isNotEmpty() },
             textColor = if (o.has("textColor")) o.getInt("textColor") else null,
+            dim = o.optDouble("dim", 0.30).toFloat(),
+            blur = o.optDouble("blur", 0.0).toFloat(),
         )
     }.getOrNull()
 }

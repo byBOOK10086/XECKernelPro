@@ -83,6 +83,7 @@ class MainActivityViewModel(
             "wallpaper_blur",
             // 主题：应用/换掉/恢复默认都要立刻整树刷新。
             ThemeRepository.KEY_ACTIVE,
+            ThemeRepository.KEY_REVISION,
         )
     }
 }

@@ -86,6 +86,7 @@ data class SettingsScreenActions(
     val onOpenProfileTemplate: () -> Unit,
     val onOpenRemoteAssistant: () -> Unit,
     val onOpenTools: () -> Unit,
+    val onOpenJailbreak: () -> Unit,
     val onOpenHmaOss: () -> Unit,
     /** 打开 SUSFS 管理页。 */
     val onOpenSusfs: () -> Unit,

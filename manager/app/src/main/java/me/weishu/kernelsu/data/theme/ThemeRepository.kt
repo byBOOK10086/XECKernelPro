@@ -2,6 +2,10 @@ package me.weishu.kernelsu.data.theme
 
 import android.content.Context
 import androidx.core.content.edit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.data.theme.ThemeCodec.Spec
 import java.io.File
 
@@ -29,6 +33,8 @@ object ThemeRepository {
 
     const val PREFS = "settings"
     const val KEY_ACTIVE = "theme_id"
+    const val KEY_REVISION = "theme_revision"
+    internal val mutationMutex = Mutex()
     const val KEY_PREV_WALLPAPER_LIGHT = "theme_prev_wallpaper_light"
     const val KEY_PREV_WALLPAPER_DARK = "theme_prev_wallpaper_dark"
     const val KEY_PREV_WALLPAPER_SAVED = "theme_prev_wallpaper_saved"
@@ -51,9 +57,32 @@ object ThemeRepository {
     fun activeId(context: Context): String? =
         prefs(context).getString(KEY_ACTIVE, "")?.takeIf { it.isNotEmpty() }
 
-    fun setActiveId(context: Context, id: String?) {
-        prefs(context).edit { putString(KEY_ACTIVE, id.orEmpty()) }
+    internal fun publishSelection(
+        context: Context,
+        id: String?,
+        wallpapers: Pair<String, String>,
+        baseline: Pair<String, String>?,
+    ) {
+        val p = prefs(context)
+        ThemeResolver.invalidate()
+        // One preference transaction: every observer reads a complete selection.
+        p.edit {
+            putString("wallpaper_light", wallpapers.first)
+            putString("wallpaper_dark", wallpapers.second)
+            putString(KEY_ACTIVE, id.orEmpty())
+            putLong(KEY_REVISION, p.getLong(KEY_REVISION, 0) + 1)
+            putBoolean(KEY_PREV_WALLPAPER_SAVED, baseline != null)
+            if (baseline != null) {
+                putString(KEY_PREV_WALLPAPER_LIGHT, baseline.first)
+                putString(KEY_PREV_WALLPAPER_DARK, baseline.second)
+            } else {
+                remove(KEY_PREV_WALLPAPER_LIGHT)
+                remove(KEY_PREV_WALLPAPER_DARK)
+            }
+        }
     }
+
+    fun revision(context: Context): Long = prefs(context).getLong(KEY_REVISION, 0)
 
     /** 扫描本地主题（跳过坏包：一个坏目录不该让整个列表打不开）。 */
     fun list(context: Context): List<Entry> {
@@ -84,20 +113,23 @@ object ThemeRepository {
     }
 
     /** 把一个 `.xectheme` 装进本地仓库；返回落地后的条目。 */
-    fun install(context: Context, bytes: ByteArray, origin: Origin): Entry {
+    suspend fun install(context: Context, bytes: ByteArray, origin: Origin): Entry {
         val pkg = ThemeCodec.read(bytes)
         return install(context, pkg.spec, pkg.assets, origin)
     }
 
-    fun install(
+    suspend fun install(
         context: Context,
         spec: Spec,
         assets: ThemeCodec.Assets = ThemeCodec.Assets(),
         origin: Origin = Origin.LOCAL,
-    ): Entry {
+    ): Entry = withContext(Dispatchers.IO) { mutationMutex.withLock {
         val dir = themeDir(context, spec.id)
         // 先写临时目录再整体替换：中途失败不会留下半个主题（旧的那份还在）。
         val staging = File(themesDir(context), ".staging-${spec.id}")
+        val backup = File(themesDir(context), ".backup-${spec.id}-${java.util.UUID.randomUUID()}")
+        var replaced = false
+        var savedOld = false
         staging.deleteRecursively()
         if (!staging.mkdirs()) throw ThemeCodec.InvalidTheme("无法创建 ${staging.absolutePath}")
         try {
@@ -116,7 +148,10 @@ object ThemeRepository {
                 }
             }
             writeAsset(staging, "preview.jpg", assets.preview())
+            val badgeImage = writeAsset(staging, "mode-badge-image", assets.byName(spec.modeBadge?.image))
+            val badgeFont = writeAsset(staging, "mode-badge-font", assets.byName(spec.modeBadge?.font))
             val normalized = spec.copy(
+                modeBadge = spec.modeBadge?.copy(image = badgeImage, font = badgeFont),
                 backgroundDark = darkName ?: spec.backgroundDark?.takeIf { assets.byName(it) != null },
                 backgroundLight = lightName ?: spec.backgroundLight?.takeIf { assets.byName(it) != null },
                 // 三种情况：这次带了图（派生名）/这次没带但包里找得到（保留声明名）/
@@ -135,18 +170,26 @@ object ThemeRepository {
                 Origin.IMPORTED -> File(staging, ".imported").writeText("1")
                 Origin.LOCAL -> Unit
             }
-            if (dir.exists() && !dir.deleteRecursively()) {
+            if (dir.exists() && !dir.renameTo(backup)) {
                 throw ThemeCodec.InvalidTheme("无法替换已存在的主题目录 ${dir.absolutePath}")
             }
+            savedOld = backup.exists()
             if (!staging.renameTo(dir)) {
-                staging.copyRecursively(dir, overwrite = true)
-                staging.deleteRecursively()
+                throw ThemeCodec.InvalidTheme("无法安装主题 ${spec.id}")
             }
+            replaced = true
+            val entry = load(dir)
+            if (activeId(context) == spec.id) ThemeApplier.applyLocked(context, entry)
+            backup.deleteRecursively()
+            entry
+        } catch (e: Throwable) {
+            if (replaced) dir.deleteRecursively()
+            if (savedOld) check(backup.renameTo(dir)) { "无法恢复主题 ${spec.id}，备份保留在 $backup" }
+            throw e
         } finally {
             if (staging.exists()) staging.deleteRecursively()
         }
-        return load(dir)
-    }
+    } }
 
     private fun writeAsset(dir: File, name: String, data: ByteArray?): String? {
         if (data == null || data.isEmpty()) return null
@@ -155,20 +198,17 @@ object ThemeRepository {
         return name
     }
 
-    fun remove(context: Context, id: String): Boolean {
+    suspend fun remove(context: Context, id: String): Boolean = withContext(Dispatchers.IO) { mutationMutex.withLock {
         val wasActive = activeId(context) == id
         if (wasActive) {
-            // 卸载正在生效的主题 = 先回收它铺出去的一切影响（模式牌），再清 activeId。
-            // 不做这步，模式牌会指向一个即将被删的目录，前后缀还会残留在主页上。
-            ThemeApplier.revertAppliedModeBadge(context)
-            setActiveId(context, null)
+            ThemeApplier.restoreDefaultLocked(context)
         }
         val dir = themeDir(context, id)
-        if (!dir.exists()) return false
+        if (!dir.exists()) return@withLock false
         // 只删自己的目录，绝不碰 WallpaperStore（用户可能把主题背景设成了当前壁纸 —— 那一份
         // 已经在 wallpapers/ 里复制过，删主题不该顺手把壁纸删掉）。
-        return dir.deleteRecursively()
-    }
+        dir.deleteRecursively()
+    } }
 
     /** 导出成 `.xectheme`（含背景图、区块图、模式牌资产与预览图）。 */
     fun export(context: Context, id: String): ByteArray {
@@ -208,28 +248,12 @@ object ThemeRepository {
 
     // ------------------------------------------------------------ 背景图接力
 
-    /** 应用主题前记住用户自己的背景，供「恢复默认」还原。 */
-    fun rememberUserWallpaper(context: Context, light: String?, dark: String?) {
-        val p = prefs(context)
-        if (p.getBoolean(KEY_PREV_WALLPAPER_SAVED, false)) return
-        p.edit {
-            putString(KEY_PREV_WALLPAPER_LIGHT, light.orEmpty())
-            putString(KEY_PREV_WALLPAPER_DARK, dark.orEmpty())
-            putBoolean(KEY_PREV_WALLPAPER_SAVED, true)
-        }
-    }
-
-    /** 取出（并消费）之前记住的用户背景。 */
-    fun takeUserWallpaper(context: Context): Pair<String?, String?>? {
+    /** Switching themes reads the original wallpaper without consuming it. */
+    fun rememberedUserWallpaper(context: Context): Pair<String, String>? {
         val p = prefs(context)
         if (!p.getBoolean(KEY_PREV_WALLPAPER_SAVED, false)) return null
-        val light = p.getString(KEY_PREV_WALLPAPER_LIGHT, "").orEmpty().takeIf { it.isNotEmpty() }
-        val dark = p.getString(KEY_PREV_WALLPAPER_DARK, "").orEmpty().takeIf { it.isNotEmpty() }
-        p.edit {
-            remove(KEY_PREV_WALLPAPER_LIGHT)
-            remove(KEY_PREV_WALLPAPER_DARK)
-            putBoolean(KEY_PREV_WALLPAPER_SAVED, false)
-        }
+        val light = p.getString(KEY_PREV_WALLPAPER_LIGHT, "").orEmpty()
+        val dark = p.getString(KEY_PREV_WALLPAPER_DARK, "").orEmpty()
         return light to dark
     }
 }
