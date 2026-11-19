@@ -1,0 +1,48 @@
+name: Upload the verified 31445 release APK
+
+on:
+  push:
+    branches: [codex/ship-31445]
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: XECkernelPro-manager
+          run-id: 44481083985
+          github-token: ${{ github.token }}
+          path: verified
+      - name: Verify and upload the signed build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          apk='XECKernel_Ultra_v31443-a31667e1-6-gc707974_31445-release.apk'
+          sha='9bbfe67d7645966db5734bc914666485fcb9707c15b29efe8399d1b00eba0201'
+          tag='v31445-c7079745'
+          rev='c7079745948948e740cc42f07f97ad418b4073e9'
+          release='451054151'
+          printf '%s  %s\n' "$sha" "verified/$apk" | sha256sum --check
+          gh api "repos/$GH_REPO/releases/$release" |
+            jq -e --arg tag "$tag" --arg rev "$rev" '.draft and .tag_name == $tag and .target_commitish == $rev' >/dev/null
+          endpoint="repos/$GH_REPO/releases/$release/assets"
+          assets=$(gh api "$endpoint")
+          if jq -e --arg n "$apk" --arg sha "sha256:$sha" 'any(.[]; .name == $n and .state == "uploaded" and .digest == $sha)' <<< "$assets" >/dev/null; then
+            exit 0
+          fi
+          starter=$(jq -r --arg n "$apk" '.[] | select(.name == $n and .state == "starter") | .id' <<< "$assets")
+          if [ -n "$starter" ]; then
+            gh api -X DELETE "repos/$GH_REPO/releases/assets/$starter"
+          fi
+          gh release upload "$tag" "verified/$apk"
+          gh api "$endpoint" |
+            jq -e --arg n "$apk" --arg sha "sha256:$sha" 'any(.[]; .name == $n and .state == "uploaded" and .size == 24229012 and .digest == $sha)' >/dev/null
