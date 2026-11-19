@@ -92,6 +92,31 @@ fn parse_timeout(s: &str) -> Result<Duration> {
     Ok(Duration::try_from_secs_f64(timeout)?)
 }
 
+/// 写 stdout 的**非 panic** 版本。
+///
+/// `println!` 在管道被提前关闭时会 panic（"failed printing to stdout: Broken pipe"）：
+/// 典型场景是 `resetprop <name> | head -1`、或调用方读完一行就退出/关管道。release
+/// 构建里 panic 直接 abort，会留下 tombstone，父进程拿到 SIGABRT 而不是普通退出码。
+/// bugreport 2026-11-19 06:53 的 `/data/adb/ksu/bin/resetprop ro.bootimage.build.description`
+/// 崩溃（Abort message: failed printing to stderr: Broken pipe）就是这条路径 —— 属性
+/// 不存在时走 `eprintln!` 报错，stderr 也已被关闭，于是 panic 再次落到 stderr 上 abort。
+///
+/// 这里统一改成 `write!` 并忽略写失败：读属性这种命令的输出没人消费时，正确行为是
+/// 安静地退出，而不是把进程 abort 掉。
+fn write_stdout_line(text: &str) {
+    use std::io::Write;
+    let stdout = std::io::stdout();
+    let mut lock = stdout.lock();
+    let _ = writeln!(lock, "{text}");
+}
+
+fn write_stderr_line(text: &str) {
+    use std::io::Write;
+    let stderr = std::io::stderr();
+    let mut lock = stderr.lock();
+    let _ = writeln!(lock, "{text}");
+}
+
 impl Args {
     fn name(&self) -> Option<&String> {
         self.arguments.first()
@@ -109,7 +134,7 @@ pub fn resetprop_main(args: &[String]) -> ! {
         } else {
             1
         };
-        eprintln!("resetprop: {err:#}");
+        write_stderr_line(&format!("resetprop: {err:#}"));
         std::process::exit(code);
     }
     std::process::exit(0);
@@ -181,7 +206,7 @@ fn run_from_args(args: &[String]) -> Result<()> {
             .load_props(reader.lines())
             .context("Failed to load properties from file")?
         {
-            eprintln!("resetprop: warning: rebuild is needed!");
+            write_stderr_line("resetprop: warning: rebuild is needed!");
         }
         return Ok(());
     }
@@ -207,7 +232,7 @@ fn run_from_args(args: &[String]) -> Result<()> {
             };
             rp.rebuild(&ctx)?;
         } else if !rp.rebuild_all(cli.force)? {
-            eprintln!("Something wrong happened, see log for detail.");
+            write_stderr_line("Something wrong happened, see log for detail.");
             std::process::exit(1);
         }
         return Ok(());
@@ -223,13 +248,13 @@ fn run_from_args(args: &[String]) -> Result<()> {
                 .set(name, value)
                 .with_context(|| format!("Failed to set {name}"))?
             {
-                eprintln!("resetprop: warning: rebuild is needed!");
+                write_stderr_line("resetprop: warning: rebuild is needed!");
             }
         }
 
         // resetprop name (get)
         (Some(name), None) => match rp.get(name) {
-            Some(val) => println!("{val}"),
+            Some(val) => write_stdout_line(&val),
             None => bail!("{name} not found"),
         },
 
@@ -237,7 +262,7 @@ fn run_from_args(args: &[String]) -> Result<()> {
         (None, None) => {
             let props = rp.list_all().context("Failed to list properties")?;
             for (name, value) in &props {
-                println!("[{name}]: [{value}]");
+                write_stdout_line(&format!("[{name}]: [{value}]"));
             }
         }
 

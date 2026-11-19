@@ -31,9 +31,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -47,6 +49,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.AppIconImage
@@ -109,6 +114,19 @@ fun AppProfileScreenMiuix(
     val backdrop = rememberBlurBackdrop(enableBlur)
     val blurActive = backdrop != null
     val barColor = if (blurActive) Color.Transparent else colorScheme.surface.copy(alpha = 1f)
+    // 模板清单要跑一次 root shell（`xudc profile list-templates`）。以前它在
+    // AppProfileInner 的 composition 里用 `remember { listAppProfileTemplates() }`
+    // 同步执行：只要 root shell 还在建/正忙（例如刚启动时 su 授权探测），主线程就会
+    // 阻塞在 ShellImpl.execTask 的 await 上，5 秒没响应就是一次 ANR
+    // （bugreport 2026-11-19 06:53 的 data_app_anr 就是这个栈）。
+    // 改成屏幕级一次异步加载：composition 只读缓存，加载失败/未完成按空表处理，
+    // UI 里已有 `templates.isNotEmpty()` 守卫。
+    var templates by remember { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        templates = withContext(Dispatchers.IO) {
+            runCatching { listAppProfileTemplates() }.getOrDefault(emptyList())
+        }
+    }
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
@@ -159,6 +177,7 @@ fun AppProfileScreenMiuix(
                         appVersionName = if (state.isUidGroup) "" else (state.appGroup.primary.packageInfo.versionName ?: ""),
                         appVersionCode = if (state.isUidGroup) 0L else state.appGroup.primary.packageInfo.longVersionCode,
                         profile = state.profile,
+                        templates = templates,
                         isUidGroup = state.isUidGroup,
                         isSpecialApp = state.appGroup.primary.special,
                         affectedApps = state.appGroup.apps,
@@ -196,6 +215,8 @@ private fun AppProfileInner(
     appVersionName: String,
     appVersionCode: Long,
     profile: Natives.Profile,
+    // 由 AppProfileScreenMiuix 异步加载后传入：composition 里绝不能直接跑 root shell。
+    templates: List<String> = emptyList(),
     isUidGroup: Boolean = false,
     isSpecialApp: Boolean = false,
     affectedApps: List<SuperUserViewModel.AppInfo> = emptyList(),
@@ -213,7 +234,8 @@ private fun AppProfileInner(
     val isRootGranted = !isSpecialApp && profile.allowSu
     val userId = appUid / 100000
     val appId = appUid % 100000
-    val templates = remember { listAppProfileTemplates() }
+    // 模板切换里的 setSepolicy 也要跑 root shell：绑定一个 composition 作用域，在 IO 上执行。
+    val scope = rememberCoroutineScope()
 
     Column(
         modifier = modifier
@@ -395,28 +417,47 @@ private fun AppProfileInner(
                         if (templates.isNotEmpty()) {
                             val selected = profile.rootTemplate ?: templates[0]
                             val info = me.weishu.kernelsu.ui.viewmodel.getTemplateInfoById(selected)
-                            if (info != null && setSepolicy(selected, info.rules.joinToString("\n"))) {
-                                onProfileChange(
-                                    profile.copy(
-                                        rootUseDefault = false,
-                                        rootTemplate = selected,
-                                        uid = info.uid,
-                                        gid = info.gid,
-                                        groups = info.groups,
-                                        capabilities = info.capabilities,
-                                        context = info.context,
-                                        namespace = info.namespace,
-                                    )
-                                )
-                            } else if (profile.rootTemplate != selected || profile.rootUseDefault) {
-                                onProfileChange(
-                                    profile.copy(
-                                        rootUseDefault = false,
-                                        rootTemplate = selected
-                                    )
-                                )
-                            }
                             rootMode = Mode.Template
+                            val fallback = {
+                                if (profile.rootTemplate != selected || profile.rootUseDefault) {
+                                    onProfileChange(
+                                        profile.copy(
+                                            rootUseDefault = false,
+                                            rootTemplate = selected
+                                        )
+                                    )
+                                }
+                            }
+                            if (info != null) {
+                                // setSepolicy 要跑 root shell；这里在点击回调里，属于主线程。
+                                // 同步等 shell 会和 composition 那次一样把主线程卡住（ANR），
+                                // 所以放到 IO 上执行，结果回主线程再更新 profile。
+                                scope.launch {
+                                    val ok = withContext(Dispatchers.IO) {
+                                        runCatching {
+                                            setSepolicy(selected, info.rules.joinToString("\n"))
+                                        }.getOrDefault(false)
+                                    }
+                                    if (ok) {
+                                        onProfileChange(
+                                            profile.copy(
+                                                rootUseDefault = false,
+                                                rootTemplate = selected,
+                                                uid = info.uid,
+                                                gid = info.gid,
+                                                groups = info.groups,
+                                                capabilities = info.capabilities,
+                                                context = info.context,
+                                                namespace = info.namespace,
+                                            )
+                                        )
+                                    } else {
+                                        fallback()
+                                    }
+                                }
+                            } else {
+                                fallback()
+                            }
                         }
                     }
                 }
