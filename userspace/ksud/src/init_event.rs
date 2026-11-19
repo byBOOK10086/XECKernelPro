@@ -204,6 +204,11 @@ pub fn on_post_fs_data() -> Result<()> {
 
     std::env::set_current_dir("/").with_context(|| "failed to chdir to /")?;
 
+    #[cfg(kmi_module_bundle)]
+    if !mount_state && ksucalls::is_lkm() && !ksucalls::is_late_load() {
+        crate::kmi_modules::mark_boot_ready();
+    }
+
     Ok(())
 }
 

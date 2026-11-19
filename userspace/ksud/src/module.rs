@@ -937,7 +937,7 @@ fn recover_install_guards_inner() -> Result<()> {
     Ok(())
 }
 const STARTUP_BLOCK: &str = "/data/adb/ksu/.module-startup-block";
-fn boot_id() -> Result<String> {
+pub fn boot_id() -> Result<String> {
     let id = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")?;
     ensure!(!id.trim().is_empty(), "empty boot id");
     Ok(id.trim().to_owned())

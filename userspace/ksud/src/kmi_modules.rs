@@ -10,6 +10,7 @@ const REZYGISK: &str = "rezygisk";
 const HMA: &str = "hma_oss_zygisk";
 const REZYGISK_ZIP: &[u8] = include_bytes!("../bundled-modules/rezygisk.zip");
 const HMA_ZIP: &[u8] = include_bytes!("../bundled-modules/hma_oss_zygisk.zip");
+const BOOT_READY: &str = "/data/adb/ksu/kmi-modules/.boot-ready";
 const KNOWN_OTHER_LOADERS: &[&str] = &[
     "zygisksu",
     "zygisknext",
@@ -120,8 +121,32 @@ fn provision() -> Result<()> {
     stage_once(&dir, HMA, HMA_ZIP).context("stage bundled HMA-OSS")
 }
 
+/// A rollback can clear the transaction and still reach boot-completed.
+/// Require the normal post-fs-data path to have reached its end on this boot.
+pub fn mark_boot_ready() {
+    let mark = || -> Result<()> {
+        let dir = Path::new(defs::WORKING_DIR).join("kmi-modules");
+        if !missing(&dir.join(REZYGISK))? && !missing(&dir.join(HMA))? {
+            return Ok(());
+        }
+        fs::create_dir_all(&dir)?;
+        fs::write(BOOT_READY, module::boot_id()?)?;
+        Ok(())
+    };
+    if let Err(error) = mark() {
+        warn!("KMI bundle: could not record boot readiness: {error:#}");
+    }
+}
+
 pub fn on_boot_completed() {
     if utils::is_safe_mode() || utils::has_magisk_installed() || module::module_startup_blocked() {
+        return;
+    }
+    if fs::read_to_string(BOOT_READY)
+        .ok()
+        .zip(module::boot_id().ok())
+        .is_none_or(|(ready, boot_id)| ready != boot_id)
+    {
         return;
     }
     if let Err(error) = provision() {
