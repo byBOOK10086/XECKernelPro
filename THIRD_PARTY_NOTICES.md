@@ -222,12 +222,14 @@ vendored 源码树（`third_party/`）始终**零修改**：上述修复全部�
 ## susfs4ksu-lkm（vendored，`third_party/susfs4ksu-lkm/`，GPL-2.0）
 
 - 上游：https://github.com/inforcqb/susfs4ksu-for-lkm ，收录 commit
-  `269766c8fcd52bb41c1f3b11841a93fc52ba68b7`（2026-11-07），GPL-2.0（见该目录 `LICENSE`）。
+  `8619b6ee0d0629836e9c6ce668e8a785dfd53517`（`v2.3.0-r18.9-1`），GPL-2.0（见该目录 `LICENSE`）。
 - 用途：SUSFS 的**可加载模块**版本，CI 编译成 `susfs_guard_lkm-<KMI>.ko` 随 `xudc`
   一起发布，late-load 时在 `kernelsu.ko` 之后加载 —— 这样 LKM 形态的设备也能用上 SUSFS。
 - 它自己声明的上游：susfs4ksu（功能与 hook 点）+ **SukiSU-Ultra**（`patch_memory` /
   `lsm_hook` / `symbol_resolver`），一并致谢。
-- 保持上游原样、未做本地修改；我们的接线全在 `userspace/ksud/src/late_load.rs` 与
+- 包含该版本携带的 **KallRecon** 符号解析器（`kernel/kallrecon/`，GPL-2.0，附带许可证正文）。
+  来源：https://github.com/inforcqb/susfs4ksu-for-lkm/tree/v2.3.0-r18.9-1/kernel/kallrecon 。
+- 本地保留 supercall 的 UID 前置鉴权；加载接线在 `userspace/ksud/src/late_load.rs` 与
   workflow 里，细节见 `third_party/susfs4ksu-lkm/UPSTREAM.md`。
 
 ## 环境检测审计引用（Adversarial detection audit）

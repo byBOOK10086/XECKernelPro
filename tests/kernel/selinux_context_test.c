@@ -16,10 +16,13 @@ typedef uint32_t u32;
 typedef int gfp_t;
 #define KSU_SUSFS_LINKAGE static
 #define SECSID_NULL 0
+#define GFP_KERNEL 0
+#define READ_ONCE(x) (x)
+#define WRITE_ONCE(x, v) ((x) = (v))
 struct user_datum { u32 value; };
 struct role_datum { u32 value; };
 struct type_datum { u32 value; bool attribute; };
-struct symtab { const char *name; void *datum; };
+struct symtab { const char *name; void *datum; u32 nprim; };
 struct policydb {
     struct symtab p_users, p_roles, p_types;
     struct user_datum user;
@@ -34,9 +37,12 @@ struct sidtab {
     u32 last_type;
     struct selinux_policy *replacement;
 };
-struct selinux_policy { struct policydb policydb; struct sidtab *sidtab; };
+struct selinux_policy { struct policydb policydb; struct sidtab *sidtab; u32 latest_granting; };
 static struct { struct selinux_policy *policy; } selinux_state;
 static int contexts, buffers, rcu_depth;
+static const struct policydb *ksu_original_types_policy;
+static u32 ksu_original_types_limit, ksu_original_types_generation;
+static struct selinux_policy *backup_sepolicy;
 
 static void *symtab_search(struct symtab *table, const char *name)
 {
@@ -104,10 +110,11 @@ static void init_policy(struct selinux_policy *policy, struct sidtab *table, u32
     db->user.value = offset + 1;
     db->role.value = offset + 2;
     db->type.value = offset + 3;
-    db->p_users = (struct symtab){"user", &db->user};
-    db->p_roles = (struct symtab){"role", &db->role};
-    db->p_types = (struct symtab){"type", &db->type};
+    db->p_users = (struct symtab){"user", &db->user, offset + 1};
+    db->p_roles = (struct symtab){"role", &db->role, offset + 2};
+    db->p_types = (struct symtab){"type", &db->type, offset + 3};
     policy->sidtab = table;
+    policy->latest_granting = 1;
 }
 static void reset(void)
 {
@@ -116,6 +123,9 @@ static void reset(void)
     init_policy(&live, &live_sids, 100);
     init_policy(&reloaded, &reloaded_sids, 200);
     selinux_state.policy = &live;
+    backup_sepolicy = &backup;
+    ksu_original_types_policy = NULL;
+    ksu_original_types_limit = ksu_original_types_generation = 0;
 }
 static void convert(const char *input, int expected, int expected_live, u32 expected_sid, u32 expected_live_sid)
 {
@@ -178,6 +188,41 @@ int main(void)
     convert("not-a-context", -EINVAL, -EINVAL, 0, 0);
     reset();
     convert("user:role:type:bad", -EINVAL, -EINVAL, 0, 0);
-    puts("10 SELinux conversion scenarios passed");
+    /* The fast path is only valid for a marked copy with the same symbol IDs. */
+    reset();
+    init_policy(&live, &live_sids, 0);
+    assert(ksu_set_original_types(&live.policydb, &backup.policydb, 1));
+    u32 sid = 999;
+    assert(security_context_to_sid_live(input, strlen(input), &sid) == 0);
+    assert(sid == 30 && backup_sids.calls == 1 && live_sids.calls == 1);
+    assert(contexts == 0 && buffers == 0 && rcu_depth == 0);
+    assert(security_context_to_sid_live("user:role:hidden:s0:c0", 22, &sid) == -EINVAL);
+    assert(ksu_type_is_original(&live.policydb, 1, 3) == 1);
+    live.policydb.p_types.nprim = 4;
+    assert(ksu_type_is_original(&live.policydb, 1, 4) == 0);
+    assert(ksu_type_is_original(&live.policydb, 2, 3) == -1);
+    live.latest_granting = 2;
+    assert(security_context_to_sid_live(input, strlen(input), &sid) == -EAGAIN);
+    assert(contexts == 0 && buffers == 0 && rcu_depth == 0);
+
+    reset();
+    init_policy(&live, &live_sids, 0);
+    init_policy(&reloaded, &reloaded_sids, 0);
+    assert(ksu_set_original_types(&live.policydb, &backup.policydb, 1));
+    assert(ksu_advance_original_types(&reloaded.policydb, &live.policydb, 1, 2));
+    reloaded.latest_granting = 2;
+    selinux_state.policy = &reloaded;
+    assert(security_context_to_sid_live(input, strlen(input), &sid) == 0);
+    assert(!ksu_advance_original_types(&live.policydb, &reloaded.policydb, 1, 3));
+    assert(ksu_type_is_original(&reloaded.policydb, 2, 3) == -1);
+
+    reset();
+    init_policy(&live, &live_sids, 0);
+    assert(ksu_set_original_types(&live.policydb, &backup.policydb, 1));
+    live_sids.error_once = -ESTALE;
+    assert(security_context_to_sid_live(input, strlen(input), &sid) == 0);
+    assert(backup_sids.calls == 2 && live_sids.calls == 2);
+    assert(contexts == 0 && buffers == 0 && rcu_depth == 0);
+    puts("SELinux dual/single parse, metadata generations and reload scenarios passed");
     return 0;
 }

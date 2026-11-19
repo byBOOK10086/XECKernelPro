@@ -12,6 +12,7 @@ data class FlashUiState(
     /** 刷写被"已存在待确认的引导事务"挡住时提示用户清除。 */
     val showStuckBootTxn: Boolean = false,
     @param:StringRes val rebootLabelRes: Int,
+    val actionInProgress: Boolean = false,
 )
 
 @Immutable
@@ -19,6 +20,7 @@ data class FlashScreenActions(
     val onBack: () -> Unit,
     val onSaveLog: () -> Unit,
     val onReboot: () -> Unit,
+    val onClose: () -> Unit = {},
     val onConfirmJailbreakWarning: () -> Unit,
     val onDismissJailbreakWarning: () -> Unit,
     /** 清除卡住的引导事务（唯一的 ksd 侧逃生门）。 */

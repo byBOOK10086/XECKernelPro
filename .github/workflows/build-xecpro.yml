@@ -507,7 +507,7 @@ jobs:
 
       - name: Build branded manager
         run: |
-          ./gradlew clean assembleRelease \
+          ./gradlew clean :app:testDebugUnitTest assembleRelease \
             -PKSU_PACKAGE_NAME=${{ env.BRAND_PACKAGE }} \
             -PKSU_NAME="${{ env.BRAND_NAME }}"
 

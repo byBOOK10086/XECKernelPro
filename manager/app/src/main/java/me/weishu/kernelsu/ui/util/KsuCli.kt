@@ -740,6 +740,10 @@ fun flashAnyKernel(
 fun runModuleAction(
     moduleId: String, onStdout: (String) -> Unit, onStderr: (String) -> Unit
 ): Boolean {
+    if (!Regex("^[a-zA-Z][a-zA-Z0-9._-]+$").matches(moduleId)) {
+        Log.e(TAG, "runModuleAction: rejecting invalid module id: $moduleId")
+        return false
+    }
     val stdoutCallback: CallbackList<String?> = object : CallbackList<String?>() {
         override fun onAddElement(s: String?) {
             onStdout(s ?: "")

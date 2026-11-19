@@ -41,8 +41,13 @@ def function(path: str, name: str) -> str:
 
 CASES = {
     "selinux_context": [
+        ("kernel/selinux/sepolicy.c", "ksu_set_original_types"),
+        ("kernel/selinux/sepolicy.c", "ksu_advance_original_types"),
+        ("kernel/selinux/sepolicy.c", "ksu_type_is_original"),
         ("kernel/feature/selinux_hide.c", "string_to_context_struct"),
         ("kernel/feature/selinux_hide.c", "security_context_to_sid_with_policy"),
+        ("kernel/feature/selinux_hide.c", "backup_string_to_context_struct"),
+        ("kernel/feature/selinux_hide.c", "security_context_to_sid_live"),
     ],
     "legacy_supercalls": [
         ("kernel/supercall/supercall.c", "reboot_handler_pre"),

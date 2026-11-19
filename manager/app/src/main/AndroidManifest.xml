@@ -51,9 +51,10 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
 
-                <data
-                    android:mimeType="application/zip"
-                    android:scheme="content" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="application/x-zip" />
             </intent-filter>
             <!-- ksu:// 深链 filter 已摘除（2026-10-26）：春秋检测按 manifest 里的 root 管理器
                  指纹（root_manager_intents）扫描 ksux 系 scheme；深链解析有独立 token 门禁，

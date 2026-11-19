@@ -14,7 +14,7 @@ Only the XECKernel userspace carries these payloads; a standalone kernel or
 | Module | Release | Corresponding source |
 | --- | --- | --- |
 | ReZygisk | [v1.0.0](https://github.com/PerformanC/ReZygisk/releases/tag/v1.0.0) | [333d423cde1a959958d9fce380bd017cf6c1cf64](https://github.com/PerformanC/ReZygisk/tree/333d423cde1a959958d9fce380bd017cf6c1cf64), including the submodules pinned by that tree |
-| HMA-OSS | [oss-175](https://github.com/frknkrc44/HMA-OSS/releases/tag/oss-175) | [fe7a36799f040a79c666fb05b8479e69854656df](https://github.com/frknkrc44/HMA-OSS/tree/fe7a36799f040a79c666fb05b8479e69854656df), including the submodules pinned by that tree |
+| HMA-OSS | [oss-177](https://github.com/frknkrc44/HMA-OSS/releases/tag/oss-177) | [0f4618be83c034c3a4935f4c33825c948ce171b3](https://github.com/frknkrc44/HMA-OSS/tree/0f4618be83c034c3a4935f4c33825c948ce171b3), including the submodules pinned by that tree |
 
 The archives are byte-for-byte upstream releases. The manager APK carries
 the [upstream notices and license texts](../../../manager/app/src/main/assets/kmi-modules/NOTICE.md).

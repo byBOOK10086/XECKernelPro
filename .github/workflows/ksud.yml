@@ -265,6 +265,17 @@ jobs:
       if: inputs.pack_lkm && (inputs.target == 'aarch64-linux-android' || inputs.target == 'x86_64-linux-android')
       run: python3 .github/scripts/stage-kmi-modules.py
 
+    - name: Check Android Rust changes
+      if: inputs.target == 'aarch64-linux-android'
+      env:
+        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+      run: |
+        source .github/scripts/setup-rust-build.sh aarch64-linux-android 26
+        cargo ndk -t arm64-v8a check -p xudc
+        cargo ndk -t arm64-v8a clippy -p xudc -- -D warnings
+        cargo fmt -p xudc
+        git diff --exit-code -- userspace/ksud/src userspace/ksud/build.rs
+
     - name: Build ksud
       env:
         ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}

@@ -9,9 +9,9 @@ retain copyright, and the upstream license terms apply.
   The tagged README declares AGPL-3.0 and links to a root LICENSE containing
   GPLv3. The root license is reproduced in `ReZygisk-LICENSE.txt`; the module
   ZIP carries the upstream AGPL-3.0 text for its WebUI in `webroot/LICENSE`.
-- **HMA-OSS oss-175**, Zygisk variant, by frknkrc44 and contributors.
-  [Release](https://github.com/frknkrc44/HMA-OSS/releases/tag/oss-175) |
-  [Corresponding source and build scripts](https://github.com/frknkrc44/HMA-OSS/tree/fe7a36799f040a79c666fb05b8479e69854656df).
+- **HMA-OSS oss-177**, Zygisk variant, by frknkrc44 and contributors.
+  [Release](https://github.com/frknkrc44/HMA-OSS/releases/tag/oss-177) |
+  [Corresponding source and build scripts](https://github.com/frknkrc44/HMA-OSS/tree/0f4618be83c034c3a4935f4c33825c948ce171b3).
   The tagged AGPL-3.0 license is reproduced in `HMA-OSS-AGPL-3.0.txt`.
 
 The source links point to the exact upstream revisions, including any submodule

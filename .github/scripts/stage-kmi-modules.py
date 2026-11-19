@@ -22,9 +22,9 @@ PAYLOADS = (
     ),
     (
         "hma_oss_zygisk",
-        "frknkrc44/HMA-OSS/releases/download/oss-175/HMA-OSS-ZYGISK-oss-175-release.zip",
-        2582384,
-        "772517a459915de1b0c68e23dfb2aeb259c33c02e2fe057875b24aa31ebf66da",
+        "frknkrc44/HMA-OSS/releases/download/oss-177/HMA-OSS-ZYGISK-oss-177-release.zip",
+        2597526,
+        "fad6d3224398f09ad2fbbd52ee5328b9b38fc6ad65d751cb6a8e8acfec1fd770",
         ("customize.sh", "manager.apk", "customize.d/22-check-zygisk.sh"),
     ),
 )

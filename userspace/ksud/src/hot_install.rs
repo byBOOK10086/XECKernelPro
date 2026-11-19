@@ -87,7 +87,7 @@ fn stash(live_dir: &Path, module_id: &str) -> Result<PathBuf> {
     ensure_dir_exists(defs::HOT_INSTALL_TRASH_DIR)?;
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or_else(|_| 0, |d| d.as_nanos());
+        .map_or(0, |d| d.as_nanos());
     let target = Path::new(defs::HOT_INSTALL_TRASH_DIR).join(format!("{module_id}.{nanos}"));
     // Never delete the live dir here: on failure the regular update path still needs it
     rename(live_dir, &target).with_context(|| format!("Failed to move {}", live_dir.display()))?;

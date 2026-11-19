@@ -8,7 +8,9 @@ SUSFS 只存在于自编译的 GKI 内置内核（见 `kernel/Kconfig` 的说明
 ## 来源
 
 - 仓库：<https://github.com/inforcqb/susfs4ksu-for-lkm>
-- 收录 commit：`269766c8fcd52bb41c1f3b11841a93fc52ba68b7`（2026-11-07）
+- 收录版本：`v2.3.0-r18.9-1`，commit `8619b6ee0d0629836e9c6ce668e8a785dfd53517`。
+- 本次正式版引入 KallRecon 符号解析器、精确符号查找，并在无法验证 `m_show` 时拒绝继续安装对应 hook。
+- `kernel/kallrecon/` 随该版本一并收录，许可证见其 `LICENSE`（GPL-2.0）；其嵌套 workflow 仅为来源文件，不属于本项目运行的 CI。
 - 许可证：**GPL-2.0**（`LICENSE`），与我们的内核态代码同族，可 vendor。
 - 它自己声明的上游：susfs4ksu（功能与 hook 点）+ SukiSU-Ultra（`patch_memory` /
   `lsm_hook` / `symbol_resolver`）。
@@ -23,8 +25,9 @@ SUSFS 只存在于自编译的 GKI 内置内核（见 `kernel/Kconfig` 的说明
 
 ## 我们改了什么
 
-暂无。保持上游原样，便于对账与升级；所有接线都在我们自己的树里做
-（`userspace/ksud/src/late_load.rs`、`.github/workflows/`）。
+保留 `susfs_supercall.c` 的本地 UID 前置鉴权：未授权调用不进入参数读取与命令分发。
+加载接线在 `userspace/ksud/src/late_load.rs`、`.github/workflows/`。
+此次只同步正式版，不引入上游 main 中仍在迭代的 HooKern hook 改造。
 
 ## 为什么不直接用它自己的加载器
 

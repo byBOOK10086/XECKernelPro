@@ -32,6 +32,7 @@ fun FlashScreen(flashIt: FlashIt) {
     // 这里把那条错误变成一个可点的清除动作，避免用户只能等重启或手动删文件。
     var showStuckBootTxn by rememberSaveable { mutableStateOf(false) }
     var flashingStatus by rememberSaveable { mutableStateOf(FlashingStatus.FLASHING) }
+    var actionInProgress by rememberSaveable { mutableStateOf(false) }
     val needJailbreakWarning = flashIt is FlashIt.FlashBoot && Natives.isLateLoadMode
     // Soft reboot keeps the jailbreak and still applies modules
     val softReboot = flashIt is FlashIt.FlashModules && isSoftRebootPreferred()
@@ -64,17 +65,24 @@ fun FlashScreen(flashIt: FlashIt) {
         showJailbreakWarning = needJailbreakWarning && !flashingEnabled,
         showStuckBootTxn = showStuckBootTxn,
         rebootLabelRes = if (softReboot) R.string.reboot_soft else R.string.reboot,
+        actionInProgress = actionInProgress,
     )
     val actions = FlashScreenActions(
         onBack = dropUnlessResumed { navigator.pop() },
         onSaveLog = saveLog(logContent, scope) { showMessage(it) },
         onReboot = {
+            actionInProgress = true
             scope.launch {
-                withContext(Dispatchers.IO) {
-                    reboot(if (softReboot) "soft_reboot" else "")
+                try {
+                    withContext(Dispatchers.IO) {
+                        reboot(if (softReboot) "soft_reboot" else "")
+                    }
+                } finally {
+                    actionInProgress = false
                 }
             }
         },
+        onClose = dropUnlessResumed { navigator.pop() },
         onConfirmJailbreakWarning = { flashingEnabled = true },
         onClearStuckBootTxn = {
             scope.launch {

@@ -253,6 +253,7 @@ XEC Project Team
     <string name="home_pr_kernel_warning">The kernel was built with PR signature support. This is not a production kernel!</string>
     <string name="action">Action</string>
     <string name="close">Close</string>
+    <string name="external_link_open_failed">Unable to open link</string>
     <string name="enable_web_debugging">WebView debugging</string>
     <string name="enable_web_debugging_summary">Can be used to debug WebUI. Please enable only when needed.</string>
     <string name="direct_install">Direct install (Recommended)</string>
@@ -1199,4 +1200,7 @@ See the log below for details.</string>
     <string name="home_hero_ready_install">Ready to install</string>
     <string name="home_hero_ready_title">Ready to go</string>
     <string name="home_hero_ready_subtitle">System environment is healthy — installation can start</string>
+    <string name="module_repo_download_url_blocked">Download blocked: only GitHub release downloads are allowed</string>
+    <string name="module_repo_download_verify_failed">%s failed the integrity check (size or SHA-256 mismatch) and was deleted</string>
+    <string name="open">Open</string>
 </resources>
