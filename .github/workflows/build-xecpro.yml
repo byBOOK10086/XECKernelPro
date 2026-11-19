@@ -678,7 +678,7 @@ jobs:
             --strip
 
       - name: Verify KMI modules in the manager APK
-        run: python3 .github/scripts/stage-kmi-modules.py --verify-apk dist/*.apk
+        run: python3 .github/scripts/stage-kmi-modules.py --abi arm64-v8a --verify-apk dist/*.apk
 
       - name: Verify Magisk payload survived repack + sign
         # 与 *Fetch Magisk payload* 同一个门控：debug 构建根本不装这条载荷，

@@ -75,9 +75,9 @@ def stage(local_paths):
         print(f"Staged {path.name}: {len(data)} bytes, SHA-256 verified")
 
 
-def verify_apk(apk):
+def verify_apk(apk, abis):
     with ZipFile(apk) as archive:
-        for abi in ("arm64-v8a", "x86_64"):
+        for abi in abis:
             binary = archive.read(f"lib/{abi}/libxeccli.so")
             for module, _, size, digest, _ in PAYLOADS:
                 # The Rust build stores the upstream archives without recompressing them.
@@ -100,10 +100,14 @@ def main():
     parser.add_argument("--rezygisk", type=Path, help="use a local copy of the pinned ReZygisk ZIP")
     parser.add_argument("--hma-oss", type=Path, help="use a local copy of the pinned HMA-OSS ZIP")
     parser.add_argument("--verify-apk", type=Path, nargs="+", help="check repacked manager APKs")
+    parser.add_argument(
+        "--abi", action="append", choices=("arm64-v8a", "x86_64"),
+        help="ABI required in the APK; repeat for multiple ABIs (default: both)",
+    )
     args = parser.parse_args()
     if args.verify_apk:
         for apk in args.verify_apk:
-            verify_apk(apk)
+            verify_apk(apk, args.abi or ("arm64-v8a", "x86_64"))
     else:
         stage((args.rezygisk, args.hma_oss))
 
