@@ -261,6 +261,10 @@ jobs:
         name: external-modules
         path: dist/*.zip
 
+    - name: Stage KMI module payloads
+      if: inputs.pack_lkm && (inputs.target == 'aarch64-linux-android' || inputs.target == 'x86_64-linux-android')
+      run: python3 .github/scripts/stage-kmi-modules.py
+
     - name: Build ksud
       env:
         ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}

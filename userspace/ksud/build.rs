@@ -241,7 +241,16 @@ fn main() {
     println!("cargo:rustc-env=VERSION_NAME={name}");
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS not set");
+    println!("cargo:rustc-check-cfg=cfg(kmi_module_bundle)");
     if target_os == "android" {
         configure_bindgen();
+        let dir = Path::new("bundled-modules");
+        println!("cargo:rerun-if-changed={}", dir.display());
+        let rezygisk = dir.join("rezygisk.zip").is_file();
+        let hma = dir.join("hma_oss_zygisk.zip").is_file();
+        assert_eq!(rezygisk, hma, "KMI module payloads must be staged together");
+        if rezygisk {
+            println!("cargo:rustc-cfg=kmi_module_bundle");
+        }
     }
 }

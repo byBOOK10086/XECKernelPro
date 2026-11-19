@@ -239,6 +239,12 @@ vendored 源码树（`third_party/`）始终**零修改**：上述修复全部�
 - 审计同时参考了各检测器的 `EVIDENCE.md`（其自述的依据、适用版本与已知盲区）。
 - 相关对抗性审计与隐蔽策略的分项记录，见仓库内 `docs/`（如随版本发布）与提交历史。
 
+## KMI 用户态附带模块
+
+- **ReZygisk v1.0.0**（The PerformanC Organization）和 **HMA-OSS oss-175**
+  （frknkrc44）以独立模块 ZIP 原样随 KMI 用户态分发。上游版本、对应源码、
+  许可证原文和署名见 [APK 内的第三方声明](manager/app/src/main/assets/kmi-modules/NOTICE.md)。
+
 ## 内嵌检测工具
 
 - **密钥链验机**（`manager/app/src/main/assets/detect/keychain-check.apk`，包名 `wu.keyChain.test`）— 第三方验机工具，版权归原作者。

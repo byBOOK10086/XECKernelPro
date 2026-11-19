@@ -381,12 +381,18 @@ fn run_boot_completed(commit_boot_txn: bool) {
     // 挂载态没有内核驱动：boot 事务与 UAPI 校验都跳过，但 boot-completed 阶段
     // 脚本必须照跑（模块靠它收尾）。
     let mount_state = utils::is_mount_state();
+    #[cfg(kmi_module_bundle)]
+    let mut provision_kmi_modules = false;
     if !mount_state {
         if commit_boot_txn {
             // 拆成"先取结果、再判 Err"两步：写成 `if commit_boot_txn { if let Err(..) }`
             // 会被 clippy::collapsible_if 判为可合并，而 let-chain 依赖更新的 edition，
             // 这里用中间绑定保持语义不变且不触发该 lint。
             let committed = crate::boot_txn::commit_boot_success();
+            #[cfg(kmi_module_bundle)]
+            {
+                provision_kmi_modules = committed.is_ok();
+            }
             if let Err(e) = committed {
                 // Keep the failed transaction armed for rollback, but still
                 // deliver the lifecycle hook to modules already started.
@@ -413,6 +419,11 @@ fn run_boot_completed(commit_boot_txn: bool) {
     }
 
     run_stage("boot-completed", ScriptWait::NoWait);
+
+    #[cfg(kmi_module_bundle)]
+    if provision_kmi_modules && ksucalls::is_lkm() && !ksucalls::is_late_load() {
+        crate::kmi_modules::on_boot_completed();
+    }
 }
 
 fn catch_bootlog(logname: &str, command: &[&str]) -> Result<()> {

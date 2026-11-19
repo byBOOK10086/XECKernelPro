@@ -60,6 +60,8 @@ mod feature_id;
 mod hot_install;
 #[cfg(target_os = "android")]
 mod init_event;
+#[cfg(all(target_os = "android", kmi_module_bundle))]
+mod kmi_modules;
 // SuSFS is Android-only: it reaches into `crate::utils`,
 // `crate::defs::WORKING_DIR` and the libc-backed susfs helpers, none of which
 // exist for the host-side (macOS / musl) boot-image patcher builds. Keep both
