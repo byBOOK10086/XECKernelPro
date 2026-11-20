@@ -33,7 +33,8 @@ optional fields; old themes retain the default font and wording.
 Text uses stable Android string-resource names, not text matching. Replacements
 apply to manager resource strings, including home labels and buttons. Actual
 device values, Android system dialogs, module WebUIs and custom canvas lettering
-are not rewritten. Replacement wording is used across app languages. Format
+are not rewritten. Link targets and internal configuration resources are excluded
+from both the editor and runtime replacement. Replacement wording is used across app languages. Format
 placeholders must keep their types and argument indexes; an incompatible locale
 falls back to its built-in string. Unknown resource names are preserved for newer
 clients but have no effect on this client.

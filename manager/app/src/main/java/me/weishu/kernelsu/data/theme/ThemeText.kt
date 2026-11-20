@@ -11,6 +11,13 @@ object ThemeText {
     const val MAX_LENGTH = 4096
     private val keyPattern = Regex("[a-z][a-z0-9_]{0,127}")
     private val format = Regex("%(?:(\\d+)\\$)?[-#+ 0,(<]*\\d*(?:\\.\\d+)?[tT]?[a-zA-Z%]")
+    @Volatile private var cachedKeys: Set<String>? = null
+
+    fun editableKeys(resources: Resources): Set<String> = cachedKeys ?: synchronized(this) {
+        cachedKeys ?: JSONArray(resources.assets.open("theme-text-keys.json").bufferedReader().use { it.readText() })
+            .let { json -> (0 until json.length()).map { json.getString(it) }.toSet() }
+            .also { cachedKeys = it }
+    }
 
     fun validateShape(values: Map<String, String>) {
         require(values.size <= MAX_ENTRIES) { "Too many text replacements (maximum $MAX_ENTRIES)" }
@@ -33,9 +40,7 @@ object ThemeText {
 
     fun catalog(context: Context): List<Entry> {
         val resources = originalResources(context.resources)
-        val keys = JSONArray(context.assets.open("theme-text-keys.json").bufferedReader().use { it.readText() })
-        return (0 until keys.length()).mapNotNull { index ->
-            val key = keys.getString(index)
+        return editableKeys(resources).mapNotNull { key ->
             val id = resources.getIdentifier(key, "string", context.packageName)
             if (id == 0) null else Entry(key, resources.getString(id))
         }.sortedBy { it.original }
@@ -47,8 +52,11 @@ object ThemeText {
         values.forEach { (key, replacement) ->
             val id = resources.getIdentifier(key, "string", context.packageName)
             // Unknown keys are kept for forward compatibility and ignored when rendering.
-            if (id != 0) require(compatible(resources.getString(id), replacement)) {
-                "Keep the original placeholders in $key (for example %1\$s)"
+            if (id != 0) {
+                require(key in editableKeys(resources)) { "Not an editable interface label: $key" }
+                require(compatible(resources.getString(id), replacement)) {
+                    "Keep the original placeholders in $key (for example %1\$s)"
+                }
             }
         }
     }
@@ -75,6 +83,7 @@ class ThemeTextResources(val source: Resources, private val replacements: Map<St
         val values = if (live) ThemeTextRuntime.replacements else replacements
         if (values.isEmpty()) return null
         val key = runCatching { source.getResourceEntryName(id) }.getOrNull() ?: return null
+        if (key !in ThemeText.editableKeys(source)) return null
         return values[key]?.takeIf { ThemeText.compatible(source.getString(id), it) }
     }
 

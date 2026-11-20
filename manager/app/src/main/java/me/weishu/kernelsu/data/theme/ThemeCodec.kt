@@ -512,6 +512,7 @@ object ThemeCodec {
                 zip.closeEntry()
             }
         }
+        if (out.size() > MAX_PACKAGE_BYTES) throw InvalidTheme("主题包超过 24 MB，请缩小字体或背景图后再导出")
         return out.toByteArray()
     }
 

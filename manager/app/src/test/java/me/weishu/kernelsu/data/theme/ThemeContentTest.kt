@@ -109,4 +109,23 @@ class ThemeContentTest {
         val changed = ThemeTextResources(source, mapOf("confirm" to "Custom"))
         assertEquals(source, ThemeText.originalResources(changed))
     }
+
+    @Test fun wordingCannotChangeLinkTargetsOrNonEditableResources() {
+        val source = context.resources
+        val replacements = mapOf("home_learn_kernelsu_url" to "https://example.invalid")
+        assertTrue(runCatching { ThemeText.validate(context, replacements) }.isFailure)
+        val changed = ThemeTextResources(source, replacements)
+        assertEquals(source.getString(R.string.home_learn_kernelsu_url), changed.getString(R.string.home_learn_kernelsu_url))
+        assertFalse(ThemeText.catalog(context).any { it.key == "home_learn_kernelsu_url" })
+        assertTrue(runCatching { ThemeText.validate(context, mapOf("hma_oss_title" to "Changed")) }.isFailure)
+    }
+
+    @Test fun exportRejectsPackagesThatOtherClientsCannotImport() {
+        val bytes = ByteArray(9 * 1024 * 1024).also { java.util.Random(42).nextBytes(it) }
+        val result = runCatching {
+            ThemeCodec.write(ThemeCodec.Spec("too-large", "Large"),
+                mapOf("one.jpg" to bytes, "two.jpg" to bytes, "three.jpg" to bytes), null)
+        }
+        assertTrue(result.exceptionOrNull() is ThemeCodec.InvalidTheme)
+    }
 }
