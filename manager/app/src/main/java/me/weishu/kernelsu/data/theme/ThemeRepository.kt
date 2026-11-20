@@ -65,6 +65,7 @@ object ThemeRepository {
     ) {
         val p = prefs(context)
         ThemeResolver.invalidate()
+        ThemeTextRuntime.select(context, id)
         // One preference transaction: every observer reads a complete selection.
         p.edit {
             putString("wallpaper_light", wallpapers.first)
@@ -124,6 +125,8 @@ object ThemeRepository {
         assets: ThemeCodec.Assets = ThemeCodec.Assets(),
         origin: Origin = Origin.LOCAL,
     ): Entry = withContext(Dispatchers.IO) { mutationMutex.withLock {
+        ThemeCodec.parseSpec(ThemeCodec.toJson(spec))
+        ThemeText.validate(context, spec.textOverrides)
         val dir = themeDir(context, spec.id)
         // 先写临时目录再整体替换：中途失败不会留下半个主题（旧的那份还在）。
         val staging = File(themesDir(context), ".staging-${spec.id}")
@@ -150,7 +153,13 @@ object ThemeRepository {
             writeAsset(staging, "preview.jpg", assets.preview())
             val badgeImage = writeAsset(staging, "mode-badge-image", assets.byName(spec.modeBadge?.image))
             val badgeFont = writeAsset(staging, "mode-badge-font", assets.byName(spec.modeBadge?.font))
+            val globalFont = spec.globalFont?.let { name ->
+                val bytes = assets.byName(name) ?: throw ThemeCodec.InvalidTheme("Missing global font: $name")
+                ThemeFont.validateHeader(bytes)
+                writeAsset(staging, ThemeFont.ASSET, bytes)!!.also { ThemeFont.validateFile(File(staging, it)) }
+            }
             val normalized = spec.copy(
+                globalFont = globalFont,
                 modeBadge = spec.modeBadge?.copy(image = badgeImage, font = badgeFont),
                 backgroundDark = darkName ?: spec.backgroundDark?.takeIf { assets.byName(it) != null },
                 backgroundLight = lightName ?: spec.backgroundLight?.takeIf { assets.byName(it) != null },
@@ -233,8 +242,44 @@ object ThemeRepository {
         spec.modeBadge?.font?.let { name ->
             File(entry.dir, name).takeIf { it.isFile }?.let { backgrounds[name] = it.readBytes() }
         }
+        spec.globalFont?.let { name ->
+            val font = File(entry.dir, name)
+            if (!font.isFile) throw ThemeCodec.InvalidTheme("Missing global font: $name")
+            backgrounds[name] = font.readBytes()
+        }
         val preview = File(entry.dir, "preview.jpg").takeIf { it.isFile }?.readBytes()
+            ?: createPreview(context, entry)
         return ThemeCodec.write(spec, backgrounds, preview)
+    }
+
+    /** The store requires a JPEG preview, including themes containing only fonts/text. */
+    private fun createPreview(context: Context, entry: Entry): ByteArray {
+        val bitmap = android.graphics.Bitmap.createBitmap(720, 405, android.graphics.Bitmap.Config.ARGB_8888)
+        try {
+            val canvas = android.graphics.Canvas(bitmap)
+            canvas.drawColor(ThemeCodec.parseColor(entry.spec.dark["backdrop"]) ?: android.graphics.Color.rgb(20, 24, 30))
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                color = ThemeCodec.parseColor(entry.spec.dark["text"]) ?: android.graphics.Color.WHITE
+                textSize = 40f
+                typeface = entry.spec.globalFont?.let { ThemeFont.validateFile(File(entry.dir, it)) }
+                    ?: android.graphics.Typeface.DEFAULT
+            }
+            val defaults = ThemeText.originalResources(context.resources)
+            canvas.drawText(entry.spec.name.take(24), 40f, 90f, paint)
+            paint.textSize = 28f
+            canvas.drawText((entry.spec.textOverrides["home_brand_title"]
+                ?: defaults.getString(me.weishu.kernelsu.R.string.home_brand_title)).take(32), 40f, 170f, paint)
+            canvas.drawText("Aa 123", 40f, 230f, paint)
+            paint.color = ThemeCodec.parseColor(entry.spec.dark["accent"]) ?: android.graphics.Color.rgb(107, 132, 255)
+            canvas.drawRoundRect(40f, 280f, 360f, 355f, 18f, 18f, paint)
+            paint.color = android.graphics.Color.BLACK
+            canvas.drawText((entry.spec.textOverrides["confirm"]
+                ?: defaults.getString(me.weishu.kernelsu.R.string.confirm)).take(16), 64f, 330f, paint)
+            return java.io.ByteArrayOutputStream().use { output ->
+                check(bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, output))
+                output.toByteArray()
+            }
+        } finally { bitmap.recycle() }
     }
 
     fun backgroundDark(context: Context, id: String): File? =

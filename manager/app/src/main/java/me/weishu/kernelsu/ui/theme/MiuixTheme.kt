@@ -54,7 +54,12 @@ fun MiuixKernelSUTheme(
     // 2026-11-11 字体规范：Miuix 的字阶全部映射到 XcTypography 的 9 个角色。
     // 上一版只是把正文压到 14sp，剩下的档位还是 miuix 默认（17/16sp），于是同一台
     // 手机里"页面标题 24、分组标题 17、正文 14"三套节奏打架。
+    val baseTextStyles = defaultTextStyles()
     val xcTextStyles = defaultTextStyles(
+        title1 = baseTextStyles.title1.copy(fontFamily = Xc.typography.pageTitle.fontFamily),
+        title2 = baseTextStyles.title2.copy(fontFamily = Xc.typography.pageTitle.fontFamily),
+        title3 = baseTextStyles.title3.copy(fontFamily = Xc.typography.pageTitle.fontFamily),
+        title4 = baseTextStyles.title4.copy(fontFamily = Xc.typography.pageTitle.fontFamily),
         main = Xc.typography.listTitle,
         paragraph = Xc.typography.listTitle,
         body1 = Xc.typography.listTitle,

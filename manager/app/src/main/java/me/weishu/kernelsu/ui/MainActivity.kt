@@ -174,6 +174,13 @@ private val BG_DARK_DRAWABLES = intArrayOf(
 )
 
 open class MainActivity : ComponentActivity() {
+    private var themeTextResources: me.weishu.kernelsu.data.theme.ThemeTextResources? = null
+    override fun getResources(): android.content.res.Resources {
+        val original = super.getResources()
+        return themeTextResources?.takeIf { it.source === original && it.configuration == original.configuration }
+            ?: me.weishu.kernelsu.data.theme.ThemeTextResources(original, live = true).also { themeTextResources = it }
+    }
+
 
     private val intentChannel = Channel<Intent>(capacity = Channel.BUFFERED)
     private var contentReady = false
@@ -186,6 +193,7 @@ open class MainActivity : ComponentActivity() {
         val splashScreen = installSplashScreen()
         splashStartedAt = SystemClock.uptimeMillis()
         super.onCreate(savedInstanceState)
+        me.weishu.kernelsu.data.theme.ThemeTextRuntime.refresh(applicationContext)
         // 隐身入口自愈：第一版曾误停基础 MainActivity 组件（图标点击弹回桌面、
         // 内部重启流程全断），这里无条件拉回 ENABLED。XecMainActivity 继承本类，
         // 从图标打开也会走到这里。

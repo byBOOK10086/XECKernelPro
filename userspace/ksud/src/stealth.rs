@@ -11,7 +11,7 @@
  *    连点到第 10 下（默认）= 拉起管理器。计数在守卫进程里独立进行。
  *  - v4 计数语义（真机教训 v1-v3）：只数「点按质量」的触摸——按下到抬起
  *    无位移（排除滑动）、时长 <400ms（排除长按/拖拽）才算一下；窗口是
- *    固定滚动窗（默认 3s，窗口内满 N 下才触发），窗口外的历史计数一律
+ *    固定滚动窗（默认 5s，窗口内满 N 下才触发），窗口外的历史计数一律
  *    丢弃。此前「每次按下都计数 + 链式续窗」会在浏览设置时被滑动/点按
  *    持续攒满，造成"点一下关于手机就跳转"。
  *  - 触发条件收紧到"前台焦点在系统设置包 + 固定窗内 N 下点按"。
@@ -20,7 +20,7 @@
  *
  * 实现要点：
  *  - /dev/input/event* 只读解析 input_event（24B/个，64 位 arm64 布局），
- *    只统计 BTN_TOUCH(0x14a) 按下沿；不 ioctl 筛设备（非触摸设备不产该码）。
+ *    通过 ioctl 筛选 BTN_TOUCH 触摸设备，按事件时间戳统计完整点按。
  *  - 前台校验仅在计数达标时跑一次 dumpsys（点击稀疏，代价可忽略）。
  *  - 配置 /data/adb/ksu/stealth.conf；启动写 pid 到 stealth.pid；
  *    守卫周期性自检配置被删即退出（Stop 免锁死）。
@@ -30,6 +30,7 @@ use clap::Subcommand;
 use log::{error, info, warn};
 use std::collections::VecDeque;
 use std::fs;
+use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -49,11 +50,14 @@ pub enum StealthCli {
         /// 管理器完整组件 <package>/<activity>
         #[arg(long)]
         component: String,
+        /// Android user owning the manager installation
+        #[arg(long, default_value_t = 0)]
+        user: u32,
         /// 触发点击次数（须 >5，5 下属于原生开发者选项）
         #[arg(long, default_value_t = 10)]
         count: u32,
         /// 连点时间窗（毫秒）：窗内攒满 count 下才触发，窗外计数作废
-        #[arg(long, default_value_t = 3000)]
+        #[arg(long, default_value_t = 5000)]
         window_ms: u64,
         /// 允许触发的前台包列表（逗号分隔）
         #[arg(
@@ -76,6 +80,7 @@ pub enum StealthCli {
 
 struct StealthConfig {
     component: String,
+    user: u32,
     count: u32,
     window_ms: u64,
     focus_pkgs: Vec<String>,
@@ -92,13 +97,16 @@ fn pid_path() -> PathBuf {
 fn read_config() -> Result<StealthConfig> {
     let text = fs::read_to_string(conf_path()).context("stealth.conf missing")?;
     let mut component = String::new();
+    let mut user = 0u32;
     let mut count = 10u32;
-    let mut window_ms = 3000u64;
+    let mut window_ms = 5000u64;
     let mut focus_pkgs = vec!["com.android.settings".to_string()];
     for line in text.lines() {
         let line = line.trim();
         if let Some(v) = line.strip_prefix("component=") {
             component = v.trim().to_string();
+        } else if let Some(v) = line.strip_prefix("user=") {
+            user = v.parse().context("invalid Android user")?;
         } else if let Some(v) = line.strip_prefix("count=") {
             count = v.trim().parse().unwrap_or(10);
         } else if let Some(v) = line.strip_prefix("window_ms=") {
@@ -121,19 +129,26 @@ fn read_config() -> Result<StealthConfig> {
     // 历史配置（v1-v3 写入的 1000/1600ms）配新语义太窄：固定窗内 10 下
     // 人类点不到，守卫会永远不触发。统一抬到 2s 下限（3s 默认）。
     if window_ms < 2000 {
-        window_ms = 3000;
+        window_ms = 5000;
     }
     Ok(StealthConfig {
         component,
+        user,
         count,
         window_ms,
         focus_pkgs,
     })
 }
 
-fn write_config(component: &str, count: u32, window_ms: u64, focus_pkgs: &str) -> Result<()> {
+fn write_config(
+    component: &str,
+    user: u32,
+    count: u32,
+    window_ms: u64,
+    focus_pkgs: &str,
+) -> Result<()> {
     let text = format!(
-        "component={component}\ncount={count}\nwindow_ms={window_ms}\nfocus_pkgs={focus_pkgs}\n"
+        "component={component}\nuser={user}\ncount={count}\nwindow_ms={window_ms}\nfocus_pkgs={focus_pkgs}\n"
     );
     fs::write(conf_path(), text).context("write stealth.conf")
 }
@@ -158,7 +173,7 @@ fn watcher_pids() -> Vec<u32> {
         };
         let args: Vec<&str> = cmd.split('\0').filter(|s| !s.is_empty()).collect();
         if args.len() >= 3
-            && (args[0].ends_with("ksud") || args[0].ends_with("xudc"))
+            && is_watcher_executable(args[0])
             && args[1] == "stealth"
             && args[2] == "watcher"
         {
@@ -176,12 +191,48 @@ fn kill_watcher() {
     for pid in watcher_pids() {
         let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
     }
+    for _ in 0..50 {
+        if watcher_pids().is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
     let _ = fs::remove_file(pid_path());
+    let _ = fs::remove_file(ready_path());
+}
+
+fn is_watcher_executable(path: &str) -> bool {
+    matches!(
+        std::path::Path::new(path)
+            .file_name()
+            .and_then(|n| n.to_str()),
+        Some("ksud" | "xudc" | "libxeccli.so")
+    )
+}
+
+fn state_lock(name: &str) -> Result<fs::File> {
+    fs::create_dir_all(defs::WORKING_DIR)?;
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(PathBuf::from(defs::WORKING_DIR).join(name))?;
+    anyhow::ensure!(
+        unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0,
+        "stealth operation already running"
+    );
+    Ok(file)
+}
+
+fn ready_path() -> PathBuf {
+    PathBuf::from(defs::WORKING_DIR).join("stealth.ready")
 }
 
 fn spawn_watcher() -> Result<()> {
+    let _ = fs::remove_file(ready_path());
     let exe = std::env::current_exe()?;
-    Command::new(exe)
+    let mut child = Command::new(exe)
         .args(["stealth", "watcher"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -189,13 +240,45 @@ fn spawn_watcher() -> Result<()> {
         .process_group(0)
         .spawn()
         .context("spawn stealth watcher")?;
-    Ok(())
+    let expected = child.id().to_string();
+    for _ in 0..160 {
+        if child.try_wait()?.is_some() {
+            bail!("touch watcher exited before readiness");
+        }
+        if fs::read_to_string(ready_path()).is_ok_and(|pid| pid == expected) {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    bail!("touch watcher readiness timed out; launcher must stay visible")
+}
+
+// EVIOCGBIT(EV_KEY): only accept an input node whose driver advertises BTN_TOUCH.
+// Drivers without this protocol are rejected before hiding instead of silently locking out users.
+fn supports_touch(fd: &OwnedFd) -> bool {
+    let mut bits = [0u8; 96];
+    let request = (2u32 << 30) | (96 << 16) | (u32::from(b'E') << 8) | 0x21;
+    let result = unsafe { libc::ioctl(fd.as_raw_fd(), request as _, bits.as_mut_ptr()) };
+    if result < 0 || bits[usize::from(BTN_TOUCH) / 8] & (1 << (BTN_TOUCH % 8)) == 0 {
+        return false;
+    }
+    // EVIOCSCLOCKID: all devices must use the same clock, unaffected by wall-clock updates.
+    let clock = libc::CLOCK_MONOTONIC;
+    unsafe { libc::ioctl(fd.as_raw_fd(), 0x4004_45a0, std::ptr::addr_of!(clock)) == 0 }
 }
 
 pub fn handle(cmd: StealthCli) -> Result<()> {
+    let _control = if matches!(cmd, StealthCli::Watcher) {
+        None
+    } else {
+        Some(state_lock("stealth-control.lock")?)
+    };
     match cmd {
         StealthCli::Start {
             component,
+            user,
             count,
             window_ms,
             focus_pkgs,
@@ -204,15 +287,22 @@ pub fn handle(cmd: StealthCli) -> Result<()> {
             if count <= 5 {
                 bail!("count must be > 5 (5 taps belongs to developer options)");
             }
-            if !component.contains('/') {
+            if !component.contains('/')
+                || !component
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._/$".contains(&b))
+            {
                 bail!("component must be <package>/<activity>");
             }
             fs::create_dir_all(defs::WORKING_DIR).ok();
-            write_config(&component, count, window_ms, &focus_pkgs)?;
             kill_watcher();
-            spawn_watcher()?;
+            write_config(&component, user, count, window_ms, &focus_pkgs)?;
+            if let Err(error) = spawn_watcher() {
+                let _ = fs::remove_file(conf_path());
+                return Err(error);
+            }
             info!("stealth entrance armed: {component} on {count} taps");
-            println!("stealth: armed ({component}, {count} taps, window {window_ms}ms)");
+            println!("stealth: ready v2");
         }
         StealthCli::Stop => {
             let _ = fs::remove_file(conf_path());
@@ -235,8 +325,13 @@ pub fn handle(cmd: StealthCli) -> Result<()> {
             }
         }
         StealthCli::Watcher => {
+            let _singleton = state_lock("stealth-watcher.lock")?;
             if let Err(e) = run_watcher() {
                 error!("stealth watcher: {e:#}");
+                if let Ok(cfg) = read_config() {
+                    restore_launcher(&cfg);
+                }
+                return Err(e);
             }
         }
         StealthCli::Ensure => {
@@ -251,45 +346,30 @@ pub fn handle(cmd: StealthCli) -> Result<()> {
     Ok(())
 }
 
-/// 开机自启：配置在就拉守护（on_boot_completed 调用，失败不影响启动）。
+/// A reboot ends the hidden session and restores the launcher.
 pub fn on_boot() -> Result<()> {
-    if conf_path().is_file() {
-        info!("stealth: config present, starting watcher at boot");
-        // 先清残留（核心升级后旧进程可能还活着，双实例会各自计数）。
-        kill_watcher();
-        spawn_watcher()?;
-        // boot-completed 阶段进程环境并不稳定（/dev/input 未就绪、init 清理
-        // 子进程、LMK 都可能让第一只守卫秒退）。留一个 60s 的 detached
-        // supervisor：每 5s 调一次 `stealth ensure`，配置在就补拉；不会与
-        // 已存活的守卫重复起实例。
-        spawn_boot_supervisor();
+    // A reboot ends the hidden session. The app BOOT_COMPLETED receiver also restores
+    // the icon without root; this path covers installations with a working daemon.
+    let _control = state_lock("stealth-control.lock")?;
+    if let Ok(cfg) = read_config() {
+        restore_launcher(&cfg);
     }
+    let _ = fs::remove_file(conf_path());
+    kill_watcher();
     Ok(())
 }
 
-fn spawn_boot_supervisor() {
-    let exe = match std::env::current_exe() {
-        Ok(p) => p,
-        Err(e) => {
-            warn!("stealth: cannot resolve current_exe for supervisor: {e}");
-            return;
-        }
+fn restore_launcher(cfg: &StealthConfig) {
+    let Some((package, _)) = cfg.component.split_once('/') else {
+        return;
     };
-    let loop_cmd = format!(
-        "n=0; while [ $n -lt 12 ]; do sleep 5; '{}' stealth ensure >/dev/null 2>&1; n=$((n+1)); done",
-        exe.display()
-    );
-    match Command::new("sh")
-        .arg("-c")
-        .arg(loop_cmd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .process_group(0)
-        .spawn()
+    let component = format!("{package}/com.xecpro.kernel.XecMainActivity");
+    match Command::new("pm")
+        .args(["enable", "--user", &cfg.user.to_string(), &component])
+        .status()
     {
-        Ok(_) => info!("stealth: boot supervisor armed (60s)"),
-        Err(e) => warn!("stealth: boot supervisor spawn failed: {e}"),
+        Ok(status) if status.success() => {}
+        result => warn!("stealth: launcher recovery failed: {result:?}"),
     }
 }
 
@@ -303,7 +383,7 @@ const ABS_MT_POSITION_Y: u16 = 0x36;
 const INPUT_EVENT_SIZE: usize = 24; // arm64: timeval(16) + type(2) + code(2) + value(4)
 const POLL_TICK: Duration = Duration::from_millis(200);
 /// 同一物理点按的最小间隔：滤掉副输入节点重复上报与压力抖动（第一版教训）。
-const MIN_TAP_INTERVAL: Duration = Duration::from_millis(120);
+const MIN_TAP_INTERVAL: Duration = Duration::from_millis(60);
 /// 按下期间的位移阈值（原始坐标单位）：超过即视为滑动而非点按（v4 教训：
 /// 把滑动计入连点会让浏览设置本身攒满计数，导致"点一下就跳转"）。
 const MOVE_THRESHOLD: i32 = 96;
@@ -312,7 +392,7 @@ const TAP_MAX_DOWN: Duration = Duration::from_millis(400);
 
 /// 单个输入节点的触摸轨迹态：用于区分「点按」与「滑动/长按」（v4 语义）。
 struct DownState {
-    at: Instant,
+    at: Duration,
     x: Option<i32>,
     y: Option<i32>,
     moved: bool,
@@ -342,14 +422,14 @@ impl TouchTrack {
         match (is_x, d.x, d.y) {
             (true, None, _) => d.x = Some(v),
             (false, _, None) => d.y = Some(v),
-            (true, Some(x0), _) if (x0 - v).abs() > MOVE_THRESHOLD => d.moved = true,
-            (false, _, Some(y0)) if (y0 - v).abs() > MOVE_THRESHOLD => d.moved = true,
+            (true, Some(x0), _) if x0.abs_diff(v) > MOVE_THRESHOLD as u32 => d.moved = true,
+            (false, _, Some(y0)) if y0.abs_diff(v) > MOVE_THRESHOLD as u32 => d.moved = true,
             _ => {}
         }
     }
 
     /// BTN_TOUCH 边沿：抬起时判定是否为有效点按，返回其时间戳。
-    fn on_btn(&mut self, value: i32, now: Instant) -> Option<Instant> {
+    fn on_btn(&mut self, value: i32, now: Duration) -> Option<Duration> {
         if value == 1 {
             if self.down.is_none() {
                 self.down = Some(DownState {
@@ -362,7 +442,11 @@ impl TouchTrack {
             None
         } else if value == 0 {
             let d = self.down.take()?;
-            if d.moved || now.duration_since(d.at) >= TAP_MAX_DOWN {
+            if d.moved
+                || now
+                    .checked_sub(d.at)
+                    .is_none_or(|elapsed| elapsed >= TAP_MAX_DOWN)
+            {
                 return None;
             }
             Some(now)
@@ -372,15 +456,25 @@ impl TouchTrack {
     }
 }
 
+// Kernel event time preserves spacing when several taps arrive in a single read.
+fn event_time(ev: &[u8; INPUT_EVENT_SIZE]) -> Option<Duration> {
+    let seconds = i64::from_ne_bytes(ev[..8].try_into().ok()?);
+    let micros = i64::from_ne_bytes(ev[8..16].try_into().ok()?);
+    if seconds < 0 || !(0..1_000_000).contains(&micros) {
+        return None;
+    }
+    Some(Duration::new(seconds as u64, micros as u32 * 1000))
+}
+
 fn run_watcher() -> Result<()> {
     let cfg = read_config().context("watcher: no config")?;
     fs::write(pid_path(), std::process::id().to_string()).ok();
 
     // 只读 + 非阻塞；权限被 SELinux 拦的设备跳过。boot-completed 阶段可能
-    // 早于 /dev/input 就绪，这里最多等 30s（15 × 2s）再认输，否则开机第一次
+    // 早于 /dev/input 就绪，这里最多等 10s（5 × 2s）再认输，否则开机第一次
     // 拉起会因「暂时没有可读 node」直接退出（真机复验踩过）。
     let mut devices: Vec<(OwnedFd, String)> = Vec::new();
-    for attempt in 0..15 {
+    for attempt in 0..6 {
         devices.clear();
         let mut entries: Vec<String> = match fs::read_dir("/dev/input") {
             Ok(rd) => rd
@@ -402,18 +496,19 @@ fn run_watcher() -> Result<()> {
                 OFlags::RDONLY | OFlags::NONBLOCK | OFlags::CLOEXEC,
                 Mode::empty(),
             ) {
-                Ok(fd) => devices.push((fd, path)),
+                Ok(fd) if supports_touch(&fd) => devices.push((fd, path)),
+                Ok(_) => {}
                 Err(e) => warn!("stealth watcher: skip {path}: {e}"),
             }
         }
         if !devices.is_empty() {
             break;
         }
-        if attempt == 14 {
-            bail!("no readable /dev/input/event* devices after 30s");
+        if attempt == 5 {
+            bail!("no supported readable touchscreen after 10s");
         }
         warn!(
-            "stealth watcher: no readable input devices yet (attempt {}/15), retrying",
+            "stealth watcher: no readable input devices yet (attempt {}/6), retrying",
             attempt + 1
         );
         std::thread::sleep(Duration::from_secs(2));
@@ -426,15 +521,15 @@ fn run_watcher() -> Result<()> {
         cfg.focus_pkgs.join(",")
     );
 
+    fs::write(ready_path(), std::process::id().to_string())?;
+
     // v4：固定滚动窗内的有效点按时间戳。窗口是硬边界——新点按到来时把
     // 窗口外的时间戳整批作废，绝不链式续窗（v3 的教训）。
     let window = Duration::from_millis(cfg.window_ms.max(2000));
     let cooldown = Duration::from_secs(3);
-    let mut tap_times: VecDeque<Instant> = VecDeque::new();
-    let mut last_tap: Option<Instant> = None;
-    let mut last_trigger = Instant::now()
-        .checked_sub(cooldown)
-        .unwrap_or_else(Instant::now);
+    let mut tap_times: VecDeque<Duration> = VecDeque::new();
+    let mut last_tap: Option<Duration> = None;
+    let mut last_trigger: Option<Duration> = None;
     let mut tracks: Vec<TouchTrack> = devices
         .iter()
         .map(|_| TouchTrack {
@@ -456,8 +551,7 @@ fn run_watcher() -> Result<()> {
         match poll(&mut polls, Some(&tick)) {
             Ok(_) | Err(rustix::io::Errno::INTR) => {}
             Err(e) => {
-                warn!("stealth watcher: poll failed: {e}");
-                std::thread::sleep(POLL_TICK);
+                bail!("touchscreen polling failed: {e}");
             }
         }
 
@@ -471,20 +565,29 @@ fn run_watcher() -> Result<()> {
         }
 
         for (idx, p) in polls.iter().enumerate() {
+            if p.revents()
+                .intersects(PollFlags::ERR | PollFlags::HUP | PollFlags::NVAL)
+            {
+                bail!("touchscreen disconnected; restoring launcher");
+            }
             // revents() 在本 rustix 版本直接返回 PollFlags（非 Option）。
             if !p.revents().contains(PollFlags::IN) {
                 continue;
             }
             loop {
                 let n = match read(&devices[idx].0, &mut buf) {
-                    Ok(0) | Err(_) => break,
+                    Ok(0) => bail!("touchscreen closed"),
+                    Err(rustix::io::Errno::AGAIN | rustix::io::Errno::INTR) => break,
+                    Err(e) => bail!("touchscreen read failed: {e}"),
                     Ok(n) => n,
                 };
                 for ev in buf[..n].as_chunks::<INPUT_EVENT_SIZE>().0 {
                     let typ = u16::from_ne_bytes([ev[16], ev[17]]);
                     let code = u16::from_ne_bytes([ev[18], ev[19]]);
                     let value = i32::from_ne_bytes([ev[20], ev[21], ev[22], ev[23]]);
-                    let now = Instant::now();
+                    let Some(now) = event_time(ev) else {
+                        continue;
+                    };
                     match typ {
                         EV_ABS => match code {
                             ABS_X | ABS_MT_POSITION_X => tracks[idx].on_pos(true, value),
@@ -497,15 +600,15 @@ fn run_watcher() -> Result<()> {
                                 continue;
                             };
                             // 全局最小点按间隔：同一物理点按被副输入节点重复
-                            // 上报时，120ms 内只认第一下。
-                            if last_tap.is_some_and(|t| tap_at.duration_since(t) < MIN_TAP_INTERVAL)
+                            // 上报时，60ms 内只认第一下。
+                            if last_tap.is_some_and(|t| tap_at.saturating_sub(t) < MIN_TAP_INTERVAL)
                             {
                                 continue;
                             }
                             last_tap = Some(tap_at);
                             // 固定滚动窗：窗口之外的历史计数一律作废。
                             while let Some(&front) = tap_times.front() {
-                                if tap_at.duration_since(front) > window {
+                                if tap_at.saturating_sub(front) > window {
                                     tap_times.pop_front();
                                 } else {
                                     break;
@@ -513,12 +616,16 @@ fn run_watcher() -> Result<()> {
                             }
                             tap_times.push_back(tap_at);
                             if tap_times.len() as u32 >= cfg.count
-                                && tap_at.duration_since(last_trigger) > cooldown
+                                && last_trigger
+                                    .is_none_or(|last| tap_at.saturating_sub(last) > cooldown)
                             {
-                                last_trigger = tap_at;
+                                last_trigger = Some(tap_at);
                                 tap_times.clear();
                                 if focus_matches(&cfg.focus_pkgs) {
-                                    launch_manager(&cfg.component);
+                                    if let Err(error) = launch_manager(&cfg) {
+                                        restore_launcher(&cfg);
+                                        return Err(error);
+                                    }
                                 } else {
                                     // 计数达标但前台不在设置：静默重置，不打扰。
                                     info!("stealth: taps reached but focus not in settings; reset");
@@ -659,16 +766,26 @@ fn focus_matches(pkgs: &[String]) -> bool {
     })
 }
 
-fn launch_manager(component: &str) {
-    info!("stealth: launching {component}");
-    match Command::new("am")
-        .args(["start", "-n", component])
+fn launch_manager(cfg: &StealthConfig) -> Result<()> {
+    let output = Command::new("am")
+        .args([
+            "start",
+            "--user",
+            &cfg.user.to_string(),
+            "-n",
+            &cfg.component,
+        ])
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-    {
-        Ok(_) => {}
-        Err(e) => error!("stealth: am start failed: {e}"),
-    }
+        .output()
+        .context("launch recovery activity")?;
+    let message = format!(
+        "{} {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    anyhow::ensure!(
+        output.status.success() && !message.contains("Error:") && !message.contains("Exception"),
+        "recovery activity launch failed: {message}"
+    );
+    Ok(())
 }

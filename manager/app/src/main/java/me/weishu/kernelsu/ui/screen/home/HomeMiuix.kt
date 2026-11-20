@@ -435,7 +435,7 @@ private fun UltraBrandTitle(modifier: Modifier = Modifier) {
     val style = Xc.typography.pageTitle
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         BasicText(
-            text = "XECKernel",
+            text = stringResource(R.string.home_brand_title),
             style = style.copy(color = Xc.colors.text),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

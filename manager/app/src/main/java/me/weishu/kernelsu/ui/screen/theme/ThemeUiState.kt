@@ -49,6 +49,8 @@ data class ThemeEditorState(
      * 没碰过）才能让"以已装主题为底稿"这条路径在保存时不把原有图又捞回来。
      */
     val pendingBlocks: Map<String, String> = emptyMap(),
+    val pendingFont: String? = null,
+    val fontLabel: String? = null,
     val savedAt: Long = 0L,
 )
 
@@ -67,6 +69,9 @@ data class ThemeActions(
     val onEditFrom: (String) -> Unit,
     val onEditMeta: (name: String?, id: String?, author: String?, version: String?, summary: String?, description: String?) -> Unit,
     /** 模式牌元素：只开放前后字与文字色（模式词系统生成，不可编辑）。 */
+    val onPickFont: () -> Unit,
+    val onClearFont: () -> Unit,
+    val onSetText: (String, String?) -> Unit,
     val onEditBadge: (prefix: String?, suffix: String?, textColor: String?) -> Unit,
     val onSetColor: (isDark: Boolean, token: String, hex: String) -> Unit,
     val onResetColor: (isDark: Boolean, token: String) -> Unit,

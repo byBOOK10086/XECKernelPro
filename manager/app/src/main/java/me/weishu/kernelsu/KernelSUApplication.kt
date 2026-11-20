@@ -19,6 +19,13 @@ import java.util.Locale
 lateinit var ksuApp: KernelSUApplication
 
 open class KernelSUApplication : Application(), ViewModelStoreOwner {
+    private var themeTextResources: me.weishu.kernelsu.data.theme.ThemeTextResources? = null
+    override fun getResources(): android.content.res.Resources {
+        val original = super.getResources()
+        return themeTextResources?.takeIf { it.source === original && it.configuration == original.configuration }
+            ?: me.weishu.kernelsu.data.theme.ThemeTextResources(original, live = true).also { themeTextResources = it }
+    }
+
 
     companion object {
         fun setEnableOnBackInvokedCallback(appInfo: ApplicationInfo, enable: Boolean) {
@@ -62,6 +69,8 @@ open class KernelSUApplication : Application(), ViewModelStoreOwner {
         if (!isUserUnlocked()) {
             return
         }
+
+        me.weishu.kernelsu.data.theme.ThemeTextRuntime.refresh(this)
 
         // 2026-11-18 磁吸磁贴板已下线：删掉它写进 settings 的布局/颜色记忆，
         // 界面恢复成原先的卡片首页，不再"记得"任何磁吸状态。

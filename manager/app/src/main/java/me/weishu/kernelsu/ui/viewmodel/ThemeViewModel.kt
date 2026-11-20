@@ -173,6 +173,8 @@ class ThemeViewModel : ViewModel() {
     // ------------------------------------------------------------------ 编辑器
 
     fun startNew() {
+        if (_ui.value.busy) return
+        clearPendingFont()
         pendingDark = null
         pendingLight = null
         val now = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).format(Date())
@@ -196,6 +198,8 @@ class ThemeViewModel : ViewModel() {
 
     /** 以某个已装主题为底稿继续改（"改别人的主题"这条路径）。 */
     fun editFrom(id: String) {
+        if (_ui.value.busy) return
+        clearPendingFont()
         val entry = ThemeRepository.find(context, id) ?: return
         pendingDark = ThemeRepository.backgroundDark(context, id)?.absolutePath
         pendingLight = ThemeRepository.backgroundLight(context, id)?.absolutePath
@@ -214,6 +218,8 @@ class ThemeViewModel : ViewModel() {
                     basedOn = id,
                     dirty = false,
                     pendingBlocks = pendingBlocks,
+                    pendingFont = entry.spec.globalFont?.let { File(entry.dir, it).absolutePath },
+                    fontLabel = entry.spec.globalFont,
                 ),
             )
         }
@@ -235,6 +241,52 @@ class ThemeViewModel : ViewModel() {
             summary = summary ?: spec.summary,
             description = description ?: spec.description,
         )
+    }
+
+    fun pickFont(uri: Uri, onDone: (Boolean, String?) -> Unit) {
+        if (_ui.value.busy) return
+        _ui.update { it.copy(busy = true) }
+        viewModelScope.launch {
+            val result = runCatching { withContext(Dispatchers.IO) {
+                val bytes = context.contentResolver.openInputStream(uri)?.use {
+                    me.weishu.kernelsu.data.theme.ThemeFont.read(it)
+                } ?: error("Cannot read font")
+                val file = File.createTempFile("theme-font-", ".ttf", context.cacheDir)
+                try {
+                    file.writeBytes(bytes)
+                    me.weishu.kernelsu.data.theme.ThemeFont.validateFile(file)
+                    file
+                } catch (e: Exception) { file.delete(); throw e }
+            } }
+            result.getOrNull()?.let { file ->
+                clearPendingFont()
+                _ui.update { it.copy(editor = it.editor.copy(
+                    spec = it.editor.spec?.copy(globalFont = me.weishu.kernelsu.data.theme.ThemeFont.ASSET),
+                    pendingFont = file.absolutePath, fontLabel = uri.lastPathSegment?.substringAfterLast('/') ?: "TTF / OTF",
+                    dirty = true,
+                )) }
+            }
+            _ui.update { it.copy(busy = false) }
+            onDone(result.isSuccess, result.exceptionOrNull()?.message)
+        }
+    }
+
+    private fun clearPendingFont() {
+        _ui.value.editor.pendingFont?.let { path ->
+            val file = File(path)
+            if (file.parentFile == context.cacheDir && file.name.startsWith("theme-font-")) file.delete()
+        }
+    }
+
+    fun clearFont() {
+        if (_ui.value.busy) return
+        clearPendingFont()
+        _ui.update { it.copy(editor = it.editor.copy(spec = it.editor.spec?.copy(globalFont = null),
+            pendingFont = null, fontLabel = null, dirty = true)) }
+    }
+
+    fun setText(key: String, text: String?) = mutateSpec { spec ->
+        spec.copy(textOverrides = if (text == null) spec.textOverrides - key else spec.textOverrides + (key to text))
     }
 
     fun setColor(isDark: Boolean, token: String, hex: String) = mutateSpec { spec ->
@@ -379,6 +431,7 @@ class ThemeViewModel : ViewModel() {
      * 与渲染侧查文件的名字**同一个来源**，所以"保存完却看不到"这种问题不可能出现。
      */
     fun saveEditor(onDone: (Boolean, String?) -> Unit = { _, _ -> }) {
+        if (_ui.value.busy) return
         val editor = _ui.value.editor
         val draft = editor.spec ?: return
         val pendingBlocks = editor.pendingBlocks
@@ -388,6 +441,17 @@ class ThemeViewModel : ViewModel() {
                 withContext(Dispatchers.IO) {
                     val backgrounds = LinkedHashMap<String, ByteArray>()
                     val assets = LinkedHashMap<String, ByteArray>()
+                    // Carry assets from the saved source when editing or saving repeatedly.
+                    val source = editor.basedOn?.let { ThemeRepository.find(context, it) }
+                    source?.let { entry ->
+                        (draft.blocks.values.mapNotNull { it.image } + listOfNotNull(draft.modeBadge?.image, draft.modeBadge?.font))
+                            .forEach { name -> File(entry.dir, name).takeIf { it.isFile }?.let { assets[name] = it.readBytes() } }
+                    }
+                    draft.globalFont?.let { name ->
+                        val path = editor.pendingFont ?: error("Select a font before saving")
+                        assets[name] = File(path).inputStream().use { me.weishu.kernelsu.data.theme.ThemeFont.read(it) }
+                    }
+
                     pendingDark?.let { path ->
                         val bytes = readImage(path)
                         if (bytes != null) {
@@ -452,6 +516,7 @@ class ThemeViewModel : ViewModel() {
             // 失败就留着，用户不用重新选一遍图。
             val saved = result.getOrNull()
             if (saved != null) {
+                clearPendingFont()
                 // 紧接着再保存一次时不能再读那两个 content://（一次性读权限已经用过了）：
                 // 改成指向刚落地的那份文件，与 editFrom 的形态一致。
                 pendingDark = ThemeRepository.backgroundDark(context, saved.id)?.absolutePath
@@ -463,6 +528,8 @@ class ThemeViewModel : ViewModel() {
                     editor = if (saved != null) {
                         state.editor.copy(
                             spec = saved,
+                            basedOn = saved.id,
+                            pendingFont = saved.globalFont?.let { File(ThemeRepository.themeDir(context, saved.id), it).absolutePath },
                             pendingBlocks = emptyMap(),
                             dirty = false,
                             savedAt = System.currentTimeMillis(),
@@ -485,6 +552,7 @@ class ThemeViewModel : ViewModel() {
     }
 
     private fun mutateSpec(block: (ThemeCodec.Spec) -> ThemeCodec.Spec) {
+        if (_ui.value.busy) return
         _ui.update { state ->
             val spec = state.editor.spec ?: return@update state
             state.copy(editor = state.editor.copy(spec = block(spec), dirty = true))

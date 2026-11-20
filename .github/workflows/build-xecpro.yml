@@ -94,6 +94,14 @@ jobs:
       - name: Kernel conversion and communication regressions
         run: python3 scripts/test_kernel_regressions.py --sanitize
 
+      - name: Stealth gesture regressions
+        run: python3 scripts/test_stealth_gesture.py
+
+      - name: Theme editor catalog stays in sync
+        run: |
+          python3 scripts/generate_theme_text_catalog.py
+          git diff --exit-code -- manager/app/src/main/assets/theme-text-keys.json manager/app/src/main/res/raw/theme_text_keep.xml
+
       # 包名是被"烘进产物"的身份，不是注释：ksud 的 KSU_PACKAGE_NAME 决定它在设备上
       # 认哪个包是管理器。这条链曾经整条写着上游的 me.weishu.kernelsu —— 构建 18/18
       # 全绿、设备上 su_daemon 的 is_manager_uid() 却永远返回 false（挂载态首授权

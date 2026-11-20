@@ -16,6 +16,11 @@ package me.weishu.kernelsu.ui.screen.tools
  * 不再一组一张卡；评分卡从雷达改成"大数字 + 九格"。
  */
 import android.content.Intent
+import android.widget.Toast
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -86,21 +91,26 @@ fun ToolsScreen() {
 
     var showKeyboxPool by rememberSaveable { mutableStateOf(false) }
     var stealthOn by rememberSaveable { mutableStateOf(false) }
-    var stealthBusy by rememberSaveable { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var stealthBusy by remember { mutableStateOf(false) }
     val showStealthConfirm = rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         stealthOn = StealthEntrance.isIconHidden(context)
     }
-    val stealthConfirm = rememberConfirmDialog(
-        onConfirm = {
-            stealthBusy = true
-            Thread {
-                val ok = StealthEntrance.enable(context)
-                stealthOn = ok
-                stealthBusy = false
-            }.start()
+    fun changeStealth(enable: Boolean) {
+        if (stealthBusy) return
+        stealthBusy = true
+        scope.launch {
+            try {
+                val ok = withContext(Dispatchers.IO) {
+                    runCatching { if (enable) StealthEntrance.enable(context) else StealthEntrance.disable(context) }.getOrDefault(false)
+                }
+                stealthOn = StealthEntrance.isIconHidden(context)
+                if (!ok) Toast.makeText(context, R.string.stealth_change_failed, Toast.LENGTH_LONG).show()
+            } finally { stealthBusy = false }
         }
-    )
+    }
+    val stealthConfirm = rememberConfirmDialog(onConfirm = { changeStealth(true) })
     if (showStealthConfirm.value) {
         stealthConfirm.showConfirm(
             title = stringResource(id = R.string.stealth_title),
@@ -116,12 +126,7 @@ fun ToolsScreen() {
         if (want) {
             showStealthConfirm.value = true
         } else if (!stealthBusy) {
-            stealthBusy = true
-            Thread {
-                StealthEntrance.disable(context)
-                stealthOn = false
-                stealthBusy = false
-            }.start()
+            changeStealth(false)
         }
     }
 

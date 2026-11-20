@@ -66,6 +66,11 @@ object ThemeResolver {
             backgroundDark = spec.backgroundDark,
             backgroundLight = spec.backgroundLight,
             blocks = blocksOf(spec, dir),
+            fontFamily = spec.globalFont?.let { name -> dir?.let { File(it, name) } }?.let { file ->
+                runCatching { androidx.compose.ui.text.font.FontFamily(ThemeFont.validateFile(file)) }.getOrNull()
+            },
+            textOverrides = spec.textOverrides,
+
         )
     }
 

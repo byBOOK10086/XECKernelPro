@@ -42,6 +42,8 @@ data class XcThemeData(
      * 可以留在这里，没人读就自然没效果 —— 与主题包格式的"未知键忽略"同一条口径。
      */
     val blocks: Map<String, XcBlockBackground> = emptyMap(),
+    val fontFamily: androidx.compose.ui.text.font.FontFamily? = null,
+    val textOverrides: Map<String, String> = emptyMap(),
 ) {
     fun colorsFor(isDark: Boolean, isAmoled: Boolean = false): XcColors = when {
         !isDark -> light

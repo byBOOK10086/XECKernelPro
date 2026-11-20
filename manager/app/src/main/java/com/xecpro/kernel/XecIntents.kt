@@ -12,6 +12,6 @@ import android.content.Intent
  */
 object XecIntents {
     fun openHome(context: Context): Intent =
-        Intent(context, XecMainActivity::class.java)
+        Intent(context, me.weishu.kernelsu.ui.StealthLaunchActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
 }

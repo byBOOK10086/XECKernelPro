@@ -127,7 +127,14 @@ fun ThemeScreen() {
     // 系统照片选择器：不需要任何存储权限，拿到的只是一次性的读权限 URI。
     val imageOnly = remember { PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly) }
 
+    val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.pickFont(uri) { ok, error -> if (!ok) toast(error ?: "Cannot load font") }
+    }
+
     val actions = ThemeActions(
+        onPickFont = { fontLauncher.launch(arrayOf("*/*")) },
+        onClearFont = viewModel::clearFont,
+        onSetText = viewModel::setText,
         onBack = { navigator.pop() },
         onSelectTab = viewModel::selectTab,
         onApply = { id ->

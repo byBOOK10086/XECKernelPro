@@ -51,6 +51,8 @@ object ThemeApplier {
 
     /** Caller holds the repository mutex. Decode every asset before changing any setting. */
     internal suspend fun applyLocked(context: Context, entry: ThemeRepository.Entry) {
+        ThemeText.validate(context, entry.spec.textOverrides)
+        entry.spec.globalFont?.let { ThemeFont.validateFile(File(entry.dir, it)) }
         val old = currentWallpapers(context)
         val baseline = ThemeRepository.rememberedUserWallpaper(context)
             ?: if (ThemeRepository.activeId(context) == null) old else ("" to "")

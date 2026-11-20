@@ -236,6 +236,7 @@ fun ThemeEditorTab(
         overscrollEffect = null,
     ) {
         item(key = "meta") { MetaCard(spec, actions, backdrop) }
+        item(key = "text-font") { ThemeTextEditor(state, actions) }
         item(key = "colors-dark") {
             ColorSection(R.string.theme_editor_colors_dark, true, spec, darkDefaults, actions, backdrop) { token ->
                 target = ColorTarget(isDark = true, token = token)

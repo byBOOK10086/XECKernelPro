@@ -49,6 +49,13 @@ data class XcTypography(
     /** 13sp / 等宽：版本号、包名、路径（`tnum`）。 */
     val mono: TextStyle,
 ) {
+    fun withFont(family: FontFamily?) = if (family == null) this else copy(
+        pageTitle = pageTitle.copy(fontFamily = family), heroTitle = heroTitle.copy(fontFamily = family),
+        dataNumberHero = dataNumberHero.copy(fontFamily = family), dataNumber = dataNumber.copy(fontFamily = family),
+        section = section.copy(fontFamily = family), listTitle = listTitle.copy(fontFamily = family),
+        caption = caption.copy(fontFamily = family), label = label.copy(fontFamily = family),
+        mono = mono.copy(fontFamily = family),
+    )
     // ---------------------------------------------------------------- 兼容别名
     // 这些名字是旧版 token 的字段，页面改造期间仍然会被读到；映射关系就是新规范里
     // 对应的角色，所以"没改过的页面"也会跟着新度量走。

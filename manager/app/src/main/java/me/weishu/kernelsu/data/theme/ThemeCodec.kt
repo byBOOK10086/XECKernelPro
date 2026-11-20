@@ -137,6 +137,8 @@ object ThemeCodec {
         val blocks: Map<String, BlockSpec> = emptyMap(),
         /** 模式牌元素（schema 2 可选）：null = 主题不动模式牌。 */
         val modeBadge: ModeBadgeSpec? = null,
+        val globalFont: String? = null,
+        val textOverrides: Map<String, String> = emptyMap(),
     ) {
         /** 商店卡片上的缩略色块用。 */
         val accentHex: String get() = dark["accent"] ?: light["accent"] ?: ""
@@ -237,6 +239,10 @@ object ThemeCodec {
                 throw InvalidTheme("模式牌字体 \"$name\" 不在主题包里")
             }
         }
+        spec.globalFont?.let { name ->
+            val font = byNameIn(files, name) ?: throw InvalidTheme("Missing global font: $name")
+            ThemeFont.validateHeader(font)
+        }
         return Package(spec, Assets(files))
     }
 
@@ -301,6 +307,19 @@ object ThemeCodec {
 
         val blocks = blockMap(json.optJSONObject("blocks"))
 
+        val globalFont = json.optString("globalFont", "").takeIf { it.isNotEmpty() }
+        if (globalFont != null && (!Regex("[a-zA-Z0-9._-]{1,128}").matches(globalFont) || globalFont.contains(".."))) {
+            throw InvalidTheme("Invalid global font filename")
+        }
+        val textOverrides = LinkedHashMap<String, String>()
+        json.optJSONObject("textOverrides")?.let { values ->
+            values.keys().forEach { key ->
+                val value = values.get(key)
+                if (value !is String) throw InvalidTheme("Text replacement must be a string: $key")
+                textOverrides[key] = value
+            }
+        }
+        ThemeText.validateShape(textOverrides)
         return Spec(
             id = id,
             name = name,
@@ -320,6 +339,8 @@ object ThemeCodec {
             backgroundLight = backgroundLight,
             blocks = blocks,
             modeBadge = modeBadge(json.optJSONObject("modeBadge")),
+            globalFont = globalFont,
+            textOverrides = textOverrides,
         )
     }
 
@@ -414,7 +435,9 @@ object ThemeCodec {
 
     fun toJson(spec: Spec): String = JSONObject().apply {
         // 带模式牌元素的包写 schema 2；纯配色包保持 1（对旧管理器零扰动）。
-        put("schema", if (spec.modeBadge != null) SCHEMA else 1)
+        put("schema", if (spec.modeBadge != null || spec.globalFont != null || spec.textOverrides.isNotEmpty()) SCHEMA else 1)
+        spec.globalFont?.let { put("globalFont", it) }
+        if (spec.textOverrides.isNotEmpty()) put("textOverrides", JSONObject(spec.textOverrides))
         put("id", spec.id)
         put("name", spec.name)
         put("author", spec.author)

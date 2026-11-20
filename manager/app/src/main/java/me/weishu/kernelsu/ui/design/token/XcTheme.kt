@@ -55,7 +55,12 @@ fun XcTheme(
             themeGlass.copy(surfaceAlpha = (themeGlass.surfaceAlpha * componentAlpha.coerceIn(0f, 1f)).coerceIn(0f, 1f))
         }
     }
+    val baseResources = me.weishu.kernelsu.data.theme.ThemeText.originalResources(androidx.compose.ui.platform.LocalResources.current)
+    val resources = remember(baseResources, theme?.textOverrides) {
+        me.weishu.kernelsu.data.theme.ThemeTextResources(baseResources, theme?.textOverrides.orEmpty())
+    }
     CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalResources provides resources,
         LocalXcColors provides colors,
         LocalXcShapes provides shapes,
         LocalXcGlass provides glass,
@@ -71,7 +76,7 @@ fun XcTheme(
         // 之后所有 `xcDuration()` / `xcSpec()` 读 local —— 避免每个调用点各注册一个观察者。
         LocalXcReducedMotion provides rememberReducedMotion(),
         LocalXcElevations provides XcElevationsDefault,
-        LocalXcTypography provides XcTypographyDefault,
+        LocalXcTypography provides XcTypographyDefault.withFont(theme?.fontFamily),
         content = content,
     )
 }
