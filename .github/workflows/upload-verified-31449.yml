@@ -1,0 +1,65 @@
+name: Upload verified 31449 assets
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the verified build and release draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, subprocess
+          repo = 'byBOOK10086/XECKernelPro'
+          def api(path): return json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/{path}']))
+          run = api('actions/runs/44704231341')
+          assert run['conclusion'] == 'success'
+          assert run['head_sha'] == 'f469e06d4ae347a3082fd034d5f2d2920c5f0c48'
+          release = api('releases/452497118')
+          assert release['draft'] and release['tag_name'] == 'v31449-f469e06d'
+          assert release['target_commitish'] == run['head_sha']
+          PY
+      - uses: actions/download-artifact@v8
+        with:
+          name: XECkernelPro-manager
+          run-id: 44704231341
+          github-token: ${{ github.token }}
+          path: verified/manager
+      - uses: actions/download-artifact@v8
+        with:
+          name: ksud-aarch64-linux-android
+          run-id: 44704231341
+          github-token: ${{ github.token }}
+          path: verified/daemon
+      - name: Verify and upload the two existing build assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib, subprocess
+          repo = 'byBOOK10086/XECKernelPro'
+          tag = 'v31449-f469e06d'
+          items = {
+              'XECKernel_Ultra_v31448-e2b3b2d1-3-gf469e06_31449-release.apk': 'eef11e36fe7a393625e84e74791f3279add84a7d24eb0d6887903c3883faf133',
+              'xudc': 'eb102ae1e7ef4efb942ed668d1c227e2893ddfaeb54033405102db56bb923a5d',
+          }
+          def release():
+              return json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/452497118']))
+          for name, digest in items.items():
+              paths = [p for p in pathlib.Path('verified').rglob(name) if p.is_file()]
+              assert len(paths) == 1
+              path = paths[0]
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
+              current = release()
+              assert current['draft']
+              asset = next((a for a in current['assets'] if a['name'] == name), None)
+              if asset is None:
+                  subprocess.check_call(['gh','release','upload',tag,str(path),'--repo',repo])
+                  asset = next(a for a in release()['assets'] if a['name'] == name)
+              assert asset['size'] == path.stat().st_size and asset['digest'] == 'sha256:' + digest
+              print('Verified release asset:', name)
+          PY
