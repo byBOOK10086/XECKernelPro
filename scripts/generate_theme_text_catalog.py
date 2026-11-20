@@ -7,8 +7,8 @@ main = Path(__file__).resolve().parents[1] / 'manager/app/src/main'
 keys = sorted({node.attrib['name'] for file in (main / 'res/values').glob('*.xml')
                for node in ET.parse(file).getroot().findall('string')
                if node.get('translatable') != 'false'})
-(main / 'assets/theme-text-keys.json').write_text(json.dumps(keys, indent=2) + '\n', encoding='utf-8')
+(main / 'assets/theme-text-keys.json').write_text(json.dumps(keys, indent=2) + '\n', encoding='utf-8', newline='\n')
 (main / 'res/raw/theme_text_keep.xml').write_text(
     '<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="' +
-    ','.join('@string/' + key for key in keys) + '" />\n', encoding='utf-8')
+    ','.join('@string/' + key for key in keys) + '" />\n', encoding='utf-8', newline='\n')
 print('Theme text catalog:', len(keys), 'strings')
