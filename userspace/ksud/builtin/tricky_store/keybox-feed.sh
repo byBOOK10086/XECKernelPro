@@ -93,10 +93,13 @@ feed_download() {
 refresh_keybox_if_stale() (
     keybox_lock || return 1
     feed_recover || return 1
-    local live="$RUNTIME/keybox.xml" live_sha ship_sha own_sha health now stamp age ta url
+    local live="$RUNTIME/keybox.xml" live_sha ship_sha own_sha health now stamp age ta url bb
     local raw xml work candidate saw_https=0
-    live_sha=$(feed_sha "$live") || { feed_status hash-unavailable; return 1; }
+    # A user-owned box is never replaced, and an HTTPS source is mandatory.
     [ ! -f "$RUNTIME/.keybox-user-managed" ] || { feed_status custom-preserved; return 0; }
+    for url in $XEC_KEYBOX_FEEDS; do case "$url" in https://*) saw_https=1 ;; esac; done
+    [ "$saw_https" = 1 ] || { feed_status blocked-no-https-source; return 1; }
+    live_sha=$(feed_sha "$live") || { feed_status hash-unavailable; return 1; }
     ship_sha=$(feed_sha "$MODPATH/keybox.xml")
     own_sha=$(cat "$RUNTIME/.keybox_feed.installed" 2>/dev/null)
     # Migrate legacy 16-digit ownership stamps only when they match the live hash.
@@ -107,15 +110,12 @@ refresh_keybox_if_stale() (
         feed_status custom-preserved
         return 0
     fi
-    for url in $XEC_KEYBOX_FEEDS; do case "$url" in https://*) saw_https=1 ;; esac; done
-    [ "$saw_https" = 1 ] || { feed_status blocked-no-https-source; return 1; }
     ta=$(_ta_enhanced_bin) || { feed_status validator-unavailable; return 1; }
     command -v timeout >/dev/null 2>&1 || { feed_status timeout-unavailable; return 1; }
     health=$(_keybox_health_line) || { feed_status health-unknown; return 1; }
     set -- $health
     case "${1:-}" in 0|1) : ;; *) feed_status health-unknown; return 1 ;; esac
     case "${2:-}" in ''|*[!0-9-]*) feed_status health-unknown; return 1 ;; esac
-    [ "$2" -eq "$2" ] 2>/dev/null || { feed_status health-unknown; return 1; }
     [ "${1:-0}" = 1 ] && [ "$2" -gt 10 ] && return 0
     now=$(date +%s)
     stamp=$(cat "$RUNTIME/.keybox_feed.stamp" 2>/dev/null)
@@ -127,7 +127,9 @@ refresh_keybox_if_stale() (
     trap 'rm -rf "$work"' EXIT
     trap 'exit 1' HUP INT TERM
     raw="$work/raw"; xml="$work/keybox.xml"
+    bb=$(_busybox_bin 2>/dev/null)
     for url in $XEC_KEYBOX_FEEDS; do
+        case "$url" in https://*) : ;; *) continue ;; esac
         rm -f "$raw" "$xml"
         feed_download "$url" "$raw" || continue
         [ -s "$raw" ] && [ "$(wc -c < "$raw")" -le 1048576 ] || continue
@@ -150,7 +152,7 @@ refresh_keybox_if_stale() (
             cp -p "$RUNTIME/.keybox_feed.installed" "$RUNTIME/.keybox-feed.owner-backup" || return 1
         fi
         printf '%s\n' "$candidate" > "$RUNTIME/.keybox-feed.pending" || return 1
-        chmod 600 "$xml" && mv -f "$xml" "$live" || { feed_recover; return 1; }
+        chmod 644 "$xml" && mv -f "$xml" "$live" || { feed_recover; return 1; }
         if ! _mirror_keybox_unlocked; then feed_recover; return 1; fi
         printf '%s\n' "$candidate" > "$RUNTIME/.keybox_feed.installed" || { feed_recover; return 1; }
         rm -f "$RUNTIME/.keybox-feed.pending"

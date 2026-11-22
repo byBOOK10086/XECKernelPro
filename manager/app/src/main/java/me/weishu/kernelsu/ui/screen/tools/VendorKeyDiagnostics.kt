@@ -1,50 +1,66 @@
 package me.weishu.kernelsu.ui.screen.tools
 
 import android.os.Build
+import com.topjohnwu.superuser.Shell
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.ui.util.awaitRootShell
 
-/** Service visibility is evidence only; Android has no generic RPMB provisioning API. */
 internal object VendorKeyDiagnostics {
-    data class Report(val device: String, val services: Map<String, Boolean?>)
+    private val serviceNames = mapOf(
+        "KeyMint / Keymaster" to listOf("keymint", "keymaster"),
+        "SOTER" to listOf("soter"),
+        "RPMB" to listOf("rpmb"),
+    )
+    private val binderLine = Regex("""^\s*\d+\s+(\S+):\s+\[([\w.\$]*)]\s*$""")
+    private val halName = Regex("""^[\w.]+@\d+\.\d+::\w+/[\w.-]+$""")
 
-    fun parseService(value: String?): Boolean? = when (value) {
-        "present" -> true
-        "absent" -> false
-        else -> null
+    enum class Visibility { LISTED, NOT_LISTED, UNKNOWN }
+
+    data class Listing(val lines: List<String> = emptyList(), val complete: Boolean = false)
+    data class Report(val device: String, val build: String, val services: Map<String, Visibility>)
+
+    // Match registered names and interface descriptors, never free-form command output.
+    fun observe(binder: Listing, hal: Listing): Map<String, Visibility> {
+        val binderNames = binder.lines.flatMap { line ->
+            binderLine.matchEntire(line)?.groupValues?.drop(1).orEmpty()
+        }
+        val halNames = hal.lines.flatMap { line ->
+            line.trim().split(Regex("""\s+""")).filter(halName::matches)
+        }
+        val registered = binderNames + halNames
+        return serviceNames.mapValues { (_, aliases) ->
+            when {
+                registered.any { name -> aliases.any { name.contains(it, ignoreCase = true) } } ->
+                    Visibility.LISTED
+                binder.complete && hal.complete -> Visibility.NOT_LISTED
+                else -> Visibility.UNKNOWN
+            }
+        }
     }
 
     suspend fun inspect(): Report = withContext(Dispatchers.IO) {
-        val names = listOf("keymint", "soter", "rpmb")
         val device = "${Build.MANUFACTURER} ${Build.MODEL} / Android ${Build.VERSION.RELEASE}"
-        val shell = awaitRootShell()
-        val unknown = Report(device, names.associateWith { null })
-        if (!shell.isRoot) return@withContext unknown
-        val result = runCatching {
-            shell.newJob().add(
-                """
-                B=${'$'}(timeout 8 service list 2>/dev/null); BR=${'$'}?
-                H=${'$'}(timeout 8 lshal 2>/dev/null); HR=${'$'}?
-                for name in keymint soter rpmb; do
-                    pattern="${'$'}name"
-                    [ "${'$'}name" = keymint ] && pattern='keymint|keymaster|keystore'
-                    if printf '%s\n%s\n' "${'$'}B" "${'$'}H" | grep -qiE "${'$'}pattern"; then
-                        echo "${'$'}name=present"
-                    elif [ "${'$'}BR" = 0 ] && [ "${'$'}HR" = 0 ]; then
-                        echo "${'$'}name=absent"
-                    else
-                        echo "${'$'}name=unknown"
-                    fi
-                done
-                """.trimIndent(),
-            ).to(ArrayList<String>(), ArrayList<String>()).exec()
-        }.getOrNull() ?: return@withContext unknown
-        if (!result.isSuccess) return@withContext unknown
-        val values = result.out.mapNotNull { line ->
-            val parts = line.trim().split('=', limit = 2)
-            if (parts.size == 2 && parts[0] in names) parts[0] to parseService(parts[1]) else null
-        }.toMap()
-        Report(device, names.associateWith { values[it] })
+        val shell = try {
+            awaitRootShell(timeoutMs = 2_500)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        val binder = shell?.takeIf { it.isRoot }?.list("service list") ?: Listing()
+        val hal = shell?.takeIf { it.isRoot }?.list("lshal") ?: Listing()
+        Report(device, Build.DISPLAY, observe(binder, hal))
+    }
+
+    private fun Shell.list(command: String): Listing = try {
+        val result = newJob().add("timeout 4 $command")
+            .to(ArrayList<String>(), ArrayList<String>()).exec()
+        Listing(result.out, result.isSuccess && result.err.isEmpty())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        Listing()
     }
 }

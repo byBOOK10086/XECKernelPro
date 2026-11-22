@@ -386,20 +386,22 @@ sync_scoop() {
 }
 
 # ---------------------------------------------------------------------------
-# keybox 自愈（2026-11-18）
+# keybox 自动换箱（2026-11-22 收紧：只接受 HTTPS 源）
 #
-# 为什么需要：内置 Yurikey 箱子的叶子只有 14 天有效期（Yurikey70: 2026-11-11..11-25），
-# 上游一换代、叶子一过期，engineconf 的验机工具路由就会判 off，检测工具被剥出
-# target.txt → 拿到真实 TEE → 春秋/鸭子的 TEE 卡必红。而 APK 内置副本在用户手机上
-# 无法自己更新。这里在"快到期(<=10 天)"时从**我们自己的镜像**取当期箱子
-# （客户端不访问 GitHub 上游），用 ta-enhanced 完整校验通过后原子替换 live 副本，
-# 由服务端 /keybox/yurikey 的刷新节奏驱动自愈；健康时完全不联网。
+# 背景：内置 Yurikey 箱子叶子只有 14 天有效期（Yurikey70: 2026-11-11..11-25）。
+# 叶子一过期，本文件的验机工具路由就会判 off，检测工具被剥出 target.txt →
+# 拿到真实 TEE → 春秋/鸭子的 TEE 卡必红；而 APK 内置副本用户自己没法更新。
 #
-# 只换单箱文件：OMY 的解析器按 TS 语义只认一个 <Keybox>（RSA+EC 两个 Key entry），
-# 不能把"多箱子合并文档"（/d/keybox/xec）喂给引擎——那是给管理器密钥池用的。
-# 候选源按顺序试：engine（服务端挑好的单箱最新）→ yurikey（上游单箱镜像）。
-# 两者都是自家域名，客户端不访问 GitHub 上游。
-XEC_KEYBOX_FEEDS=${XEC_KEYBOX_FEEDS:-${XEC_KEYBOX_FEED:-"http://42.193.123.248:5244/d/keybox/engine http://42.193.123.248:5244/d/keybox/yurikey"}}
+# 规则：
+#   1. 只有 **https://** 源才会被下载；明文 HTTP 一律拒绝，日志写
+#      blocked-no-https-source。客户端不访问 GitHub 上游。
+#   2. 当前没有配置 HTTPS 源（用户确认），所以默认=不联网、保留本地箱子；
+#      将来要启用，给服务环境导出 XEC_KEYBOX_FEEDS=https://... 即可。
+#   3. 候选必须通过 ta-enhanced 完整校验（全部 ok / Google 根 / key_match /
+#      叶子剩余 >=1 天），且只接管“我们自己的”箱子，用户自管箱子不动。
+#   4. 替换是事务化的：flock 串行 + 备份 + pending 日志，失败可回滚；
+#      镜像同步失败不会破坏 live 文件。
+XEC_KEYBOX_FEEDS=${XEC_KEYBOX_FEEDS:-${XEC_KEYBOX_FEED:-}}
 
 _busybox_bin() {
     local c
@@ -409,24 +411,6 @@ _busybox_bin() {
     c=$(command -v busybox 2>/dev/null)
     [ -n "$c" ] || return 1
     printf '%s\n' "$c"
-}
-
-# 本文件自带的短 sha：service.sh 里的 _kb_sha 只活在那个文件的作用域里，engineconf
-# 要能单独 source（离线单测），所以不依赖外部 helper。
-_engineconf_sha() {
-    if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum "$1" 2>/dev/null | cut -c1-16
-    else
-        printf 'size-%s' "$(wc -c < "$1" 2>/dev/null | tr -d ' ')"
-    fi
-}
-
-# 当前 live 箱子的剩余天数；取不到打 -1。
-_keybox_days_left() {
-    local _line
-    _line=$(_keybox_health_line) || { printf '%s\n' -1; return 0; }
-    set -- $_line
-    printf '%s\n' "${2:--1}"
 }
 
 . "$MODPATH/keybox-feed.sh"

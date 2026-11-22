@@ -16,3 +16,15 @@ There is no configured HTTPS feed (confirmed by the user). HTTP automatic replac
 will be blocked with an explicit diagnostic. No private keys, hardware secure storage,
 RPMB provisioning, SOTER enrollment or generated crypto configuration are reset.
 File rollback cannot restore application keys retired by the upstream engine.
+
+## Release decision (2026-11-22)
+
+The user asked to ship this branch as 31450. Adopted the read-only vendor
+diagnostics from the smaller carrier branch verbatim; kept this branch's
+OMY 1.3.0 payload and serialized HTTPS-only feed. Automatic keybox replacement
+stays off because no HTTPS feed is configured, so it reports
+blocked-no-https-source instead of downloading anything.
+
+Still unverified: no physical-device run of the new keystore2 injection path.
+The built-in box expires 2026-11-25; a follow-up build with a fresh keybox is
+required as soon as upstream rotates.

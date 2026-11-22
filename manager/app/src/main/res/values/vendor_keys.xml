@@ -2,14 +2,12 @@
 <resources>
     <string name="vendor_keys_title">Hardware key diagnostics</string>
     <string name="vendor_keys_summary">OnePlus engineering checks, RPMB and SOTER</string>
-    <string name="vendor_keys_limits">RPMB key: unknown. SOTER key: unknown. Service visibility does not prove that a hardware key is provisioned or valid. This check does not read private keys.</string>
-    <string name="vendor_keys_service_present">Related service found; key status unknown</string>
-    <string name="vendor_keys_service_absent">No related service listed; not proof of a missing key</string>
-    <string name="vendor_keys_service_unknown">Cannot inspect service status</string>
-    <string name="vendor_keys_recovery">On OnePlus, enter *#899# in the dialer if supported by your firmware. Record the exact RPMB / SOTER result. To check for interference, disable the built-in TEE, reboot manually and repeat the same test. External TEE modules must also be disabled. If the error remains, check official updates for your exact model or ask authorized support to check provisioning. Do not erase persist, secure storage or RPMB. A software keybox cannot reprovision these hardware keys.</string>
-    <string name="vendor_keys_disable">Disable built-in TEE for comparison</string>
-    <string name="vendor_keys_disable_warning">This changes the built-in TEE switch. Existing injection may remain until you reboot. Previously disabled external engines may become available again. It does not repair or erase hardware keys.</string>
-    <string name="vendor_keys_disable_confirm">Confirm disable</string>
-    <string name="vendor_keys_disabled">Built-in TEE disabled. Disable external engines too, then reboot manually and repeat the engineering check. You can re-enable the built-in TEE in Settings.</string>
-    <string name="vendor_keys_disable_failed">Could not change the switch. Check root access.</string>
+    <string name="vendor_keys_limits">Hardware key status is unknown. This screen only checks which related services Android lists.</string>
+    <string name="vendor_keys_checking">Checking Android services…</string>
+    <string name="vendor_keys_build">System build %1$s</string>
+    <string name="vendor_keys_service_row">%1$s: %2$s</string>
+    <string name="vendor_keys_service_present">Related service listed</string>
+    <string name="vendor_keys_service_absent">No related service listed</string>
+    <string name="vendor_keys_service_unknown">Service list unavailable or incomplete</string>
+    <string name="vendor_keys_recovery">On compatible OnePlus firmware, dial *#899# and record the exact RPMB and SOTER results. Turn off external TEE modules and the built-in TEE engine in Settings, then reboot and repeat the same checks. If the error persists, provide the model, system build and results to OnePlus support for a provisioning check. Keep persist, secure storage and RPMB intact.</string>
 </resources>

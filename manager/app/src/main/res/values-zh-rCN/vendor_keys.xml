@@ -1,15 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="vendor_keys_title">硬件密钥排查</string>
-    <string name="vendor_keys_summary">一加工厂检测、RPMB 与 SOTER</string>
-    <string name="vendor_keys_limits">RPMB key：尚未确认。SOTER key：尚未确认。能找到服务不代表硬件密钥已配置或有效；这里不会读取私钥。</string>
-    <string name="vendor_keys_service_present">找到相关服务，密钥状态仍未知</string>
-    <string name="vendor_keys_service_absent">未列出相关服务，不代表密钥丢失</string>
-    <string name="vendor_keys_service_unknown">无法读取服务状态</string>
-    <string name="vendor_keys_recovery">一加可在拨号盘输入 *#899#（入口取决于系统版本），记录 RPMB / SOTER 的原始结果。先关闭内置 TEE，手动重启后用同一页面复测，排查软件干扰；外部 TEE 模块也需要关闭。如果仍异常，检查本机型官方系统更新，或联系官方售后核查密钥配置。不要清空 persist、安全存储或 RPMB；软件 keybox 不能重新配置这些硬件密钥。</string>
-    <string name="vendor_keys_disable">关闭内置 TEE 后对照检查</string>
-    <string name="vendor_keys_disable_warning">这会关闭内置 TEE 开关，现有注入可能要重启才退出；此前被内置引擎停用的外部引擎可能重新启用。此操作不修复或清除硬件密钥。</string>
-    <string name="vendor_keys_disable_confirm">确认关闭</string>
-    <string name="vendor_keys_disabled">内置 TEE 已关闭。请同时关闭外部引擎，手动重启后复测工程模式。可在设置中重新开启内置 TEE。</string>
-    <string name="vendor_keys_disable_failed">未能修改开关，请检查 Root 授权。</string>
+    <string name="vendor_keys_summary">一加工程模式、RPMB 和 SOTER</string>
+    <string name="vendor_keys_limits">硬件密钥状态未知。此页只查看 Android 是否列出了相关服务。</string>
+    <string name="vendor_keys_checking">正在检查 Android 服务…</string>
+    <string name="vendor_keys_build">系统版本 %1$s</string>
+    <string name="vendor_keys_service_row">%1$s：%2$s</string>
+    <string name="vendor_keys_service_present">已列出相关服务</string>
+    <string name="vendor_keys_service_absent">未列出相关服务</string>
+    <string name="vendor_keys_service_unknown">服务列表不可读或不完整</string>
+    <string name="vendor_keys_recovery">在支持该入口的一加设备上拨打 *#899#，记录 RPMB 和 SOTER 的原始结果。关闭外部 TEE 模块，再到设置关闭内置 TEE 引擎，重启后在同一页面复测。如果仍有红项，把机型、系统版本和检测结果交给一加售后核查。请保留 persist、安全存储和 RPMB 数据。</string>
 </resources>
