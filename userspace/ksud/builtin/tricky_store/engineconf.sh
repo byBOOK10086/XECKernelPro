@@ -147,7 +147,7 @@ log_target_coverage() {
 # ---------------------------------------------------------------------------
 # 验机工具路由（2026-11-10）
 #
-# 背景：本轮把 OhMyKeymint 1.2.6 的源码读完之后，可以确定它让春秋/鸭子闭嘴的机制
+# 背景：本轮把 OhMyKeymint 1.3.0 的源码读完之后，可以确定它让春秋/鸭子闭嘴的机制
 # 不是"更强的伪造"，而是把验机工具的 keystore 调用整体改投到一套能自证的实现上；
 # 它自己的 FAQ 也写明——keybox 过期/被吊销时，工具看到的是"证书已过期"，这比让
 # 工具看到"bootloader 已解锁"更糟。
@@ -429,120 +429,7 @@ _keybox_days_left() {
     printf '%s\n' "${2:--1}"
 }
 
-refresh_keybox_if_stale() {
-    local live="$RUNTIME/keybox.xml" health ok days stamp now ago raw xml bb ta
-    local live_sha ship_sha own_sha
-    [ -f "$live" ] || return 0
-
-    # 健康度一次取全：ok 决定"是不是坏了"，days 决定"是不是快过期"。
-    health=$(_keybox_health_line) || health=""
-    set -- $health
-    ok=${1:-0}
-    days=${2:--1}
-    case "$days" in
-        ''|*[!0-9-]*) days=-1 ;;
-    esac
-    # 健康（ok=1 且 >10 天）就什么都不做——这条路径默认零网络。
-    if [ "$ok" = 1 ] && [ "$days" -gt 10 ] 2>/dev/null; then
-        return 0
-    fi
-
-    # 只接管"我们自己放进去的箱子"：内置副本，或上一次由本函数安装的副本。
-    # 用户通过管理器密钥池导入的箱子不覆盖——那是他自己的密钥身份，换掉会让他已绑定
-    # 的客户端密钥全部失效（OMY 的 retire_stale_keybox_bound_keys 默认开）。
-    # 例外：当前箱子已经验不过（ok=0，多半就是过期），换掉是帮忙不是破坏。
-    live_sha=$(_engineconf_sha "$live")
-    ship_sha=$(_engineconf_sha "$MODPATH/keybox.xml")
-    own_sha=$(cat "$RUNTIME/.keybox_feed.installed" 2>/dev/null)
-    [ -n "$own_sha" ] || own_sha="__none__"
-    if [ "$ok" = 1 ] && [ "$live_sha" != "$ship_sha" ] && [ "$live_sha" != "$own_sha" ]; then
-        log_line "INFO keybox feed: live keybox is not ours (sha=$live_sha); keeping the user's box"
-        return 0
-    fi
-
-    stamp="$RUNTIME/.keybox_feed.stamp"
-    now=$(date +%s 2>/dev/null || echo 0)
-    ago=$(( now - $(cat "$stamp" 2>/dev/null || echo 0) ))
-    [ "$ago" -ge 3600 ] || return 0
-    printf '%s\n' "$now" > "$stamp" 2>/dev/null
-    # 这里**不能**用 service.sh 的 worker_lock：它用 `exec 8>`，在 15s 对账循环里
-    # 会把循环自己持有的 sync 锁挤掉。刷新是低频幂等操作，靠 stamp 节流就够；
-    # 两个 worker 同时写也只会各自 mv 一份合法箱子。
-
-    raw="$RUNTIME/.keybox_feed.raw"
-    xml="$RUNTIME/.keybox_feed.xml"
-    bb=$(_busybox_bin)
-    got=0
-    for _url in $XEC_KEYBOX_FEEDS; do
-        rm -f "$raw" "$xml"
-        if [ -n "$bb" ]; then
-            "$bb" wget -q -T 20 -O "$raw" "$_url" 2>/dev/null || rm -f "$raw"
-        fi
-        if [ ! -s "$raw" ] && command -v curl >/dev/null 2>&1; then
-            curl -fsSL --max-time 20 -o "$raw" "$_url" 2>/dev/null || rm -f "$raw"
-        fi
-        [ -s "$raw" ] || continue
-        if grep -q '<AndroidAttestation' "$raw" 2>/dev/null; then
-            cp -f "$raw" "$xml" 2>/dev/null
-        else
-            [ -n "$bb" ] && "$bb" base64 -d "$raw" > "$xml" 2>/dev/null
-            if [ ! -s "$xml" ] && command -v base64 >/dev/null 2>&1; then
-                base64 -d "$raw" > "$xml" 2>/dev/null
-            fi
-        fi
-        if grep -q '<AndroidAttestation' "$xml" 2>/dev/null; then
-            got=1
-            break
-        fi
-    done
-    if [ "$got" != 1 ]; then
-        log_line "WARN keybox feed: fetch failed from [${XEC_KEYBOX_FEEDS}] (days_left=$days); keeping the live copy"
-        rm -f "$raw" "$xml"
-        return 1
-    fi
-    if cmp -s "$xml" "$live" 2>/dev/null; then
-        log_line "INFO keybox feed: feed copy identical to live copy (days_left=$days)"
-        rm -f "$raw" "$xml"
-        return 0
-    fi
-    ta=$(_ta_enhanced_bin)
-    if [ -n "$ta" ]; then
-        local _vj _vdays _vroot
-        if command -v timeout >/dev/null 2>&1; then
-            _vj=$(timeout 30 "$ta" keybox validate "$xml" 2>/dev/null)
-        else
-            _vj=$("$ta" keybox validate "$xml" 2>/dev/null)
-        fi
-        # 候选必须同时满足：链验证通过、根是 Google/Google-RKP、叶子剩余 >=1 天。
-        # 只发"能自证"的箱子：AOSP/测试根顶上去只会把"证书过期"换成"AOSP密钥/未知根证书"。
-        if ! printf '%s' "$_vj" | grep -qE '"root_type"[[:space:]]*:[[:space:]]*"google'; then
-            _vroot=$(printf '%s' "$_vj" | sed -n 's/.*"root_type"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
-            log_line "WARN keybox feed: candidate root is '${_vroot:-unparsed}' (not Google); keeping the live copy"
-            rm -f "$raw" "$xml"
-            return 1
-        fi
-        _vdays=$(printf '%s' "$_vj" | sed -n 's/.*"leaf_days_left"[[:space:]]*:[[:space:]]*\(-\{0,1\}[0-9]\{1,\}\).*/\1/p' | head -n 1)
-        case "$_vdays" in
-            ''|*[!0-9-]*) _vdays=-1 ;;
-        esac
-        if [ "$_vdays" -lt 1 ]; then
-            log_line "WARN keybox feed: candidate expires in ${_vdays}d (not usable); keeping the live copy"
-            rm -f "$raw" "$xml"
-            return 1
-        fi
-    fi
-    cp -f "$live" "$RUNTIME/keybox.xml.bak" 2>/dev/null
-    chmod 644 "$xml" 2>/dev/null
-    if mv -f "$xml" "$live" 2>/dev/null; then
-        printf '%s\n' "$(_engineconf_sha "$live")" > "$RUNTIME/.keybox_feed.installed" 2>/dev/null
-        log_line "INFO keybox feed: installed fresh keybox (was ok=$ok days_left=$days, now days_left=$(_keybox_days_left), DeviceID=$(sed -n 's/.*DeviceID="\([^"]*\)".*/\1/p' "$live" 2>/dev/null | head -n 1))"
-        rm -f "$raw"
-        return 0
-    fi
-    log_line "ERROR keybox feed: failed to install candidate"
-    rm -f "$raw" "$xml"
-    return 1
-}
+. "$MODPATH/keybox-feed.sh"
 
 # 只读诊断：把「证明里会写什么」与「运行时属性实际是什么」并排写进 .engine.log，
 # 供真机排查 2.3.0「检测到TEE伪装模块」的子项（补丁级别 / vbmeta 摘要 / 应用身份）。

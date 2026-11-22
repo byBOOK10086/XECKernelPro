@@ -57,13 +57,11 @@ kv target.detectors "$(grep -E 'duck|chunqiu|maple|keyattestation|nativetest|ris
 kv security_patch.txt "$(tr '\n' ' ' < "$RUNTIME/security_patch.txt" 2>/dev/null)"
 kv keymint.pid "$(pidof keymint 2>/dev/null)"
 kv keystore2.pid "$(pidof keystore2 2>/dev/null)"
-inj=no
-eng="$RUNTIME/engine"
-for pid in $(pidof keystore2 2>/dev/null); do
-    [ -r "/proc/$pid/maps" ] || continue
-    grep -qF "$eng/" "/proc/$pid/maps" 2>/dev/null && inj=yes
-done
+sh "$MODDIR/injection-status.sh"
+case $? in 0) inj=yes ;; 1) inj=no ;; *) inj=unknown ;; esac
 kv keystore2.injected "$inj"
+kv keybox.feed.status "$(cat "$RUNTIME/.keybox-feed.status" 2>/dev/null)"
+kv keybox.feed.last_install "$(cat "$RUNTIME/.keybox-feed.last-install" 2>/dev/null)"
 kv omk.log.tail "$(tail -n 3 "$OMK/logs/keymint.log" 2>/dev/null | tr '\n' '|' | cut -c1-200)"
 
 sec "scope (OMY scoop)"

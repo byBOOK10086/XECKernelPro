@@ -15,21 +15,7 @@ import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.ui.screen.settings.TeeDiagnostics
 
-/**
- * 引擎就绪自检：root 到手之后确认内置 TEE 引擎真的在跑，不在就就地拉起来。
- *
- * 2026-11-17 真机反馈「TEE 引擎首次不启动」，根因有两条，都在这里：
- *  1. 旧判据只看 [`isInjected`]，而它要读 `/proc/<keystore2>/maps` —— 有些设备上那个
- *     读不到，探针只能给 `null`；旧代码把 `null` 当成"没坏"直接返回，引擎永远没人修。
- *  2. 修复失败只有一行日志，界面上什么都看不到，用户只看到"开关是开的、引擎没动"。
- *
- * 现在把判据拆成两件互不依赖的事实，任一为假就修：
- *  - [`snapshot`]：内置树在不在、`keymint` 进程在不在（不读 maps，任何设备都读得到）；
- *  - [`isInjected`]：keystore2 里有没有载荷（可能 `null`，`null` 不再等于健康）。
- * 修复会先 `builtin start`，失败再补一次 `builtin install` 后重试；结果只写进 [state]
- * 和日志，**不再弹 Toast**（2026-11-18 用户明确要求：TEE 修复功能整体下线，
- * 不允许开机/进首页时再弹「修复失败」这类提示）。
- */
+/** Conservative recovery: missing evidence is Unknown, never a restart reason. */
 object TeeEngineStartup {
     enum class State { Unknown, Ready, Repaired, Failed }
 
@@ -50,20 +36,17 @@ object TeeEngineStartup {
     fun isInjected(): Boolean? {
         val result = runCatching {
             getRootShell().newJob().add(
-                "if sh /data/adb/ksu/builtin/tricky_store/injection-status.sh; " +
-                    "then echo injected=1; else echo injected=0; fi",
+                TeeEngineHealth.injectionProbe + "echo injected=\$I",
             ).to(ArrayList<String>(), ArrayList<String>()).exec()
         }.getOrNull() ?: return null
         if (!result.isSuccess) return null
-        return when (result.out.lastOrNull()?.trim()) {
-            "injected=1" -> true
-            "injected=0" -> false
-            else -> null
-        }
+        return TeeEngineHealth.parseInjection(
+            result.out.lastOrNull()?.trim()?.substringAfter("injected=", ""),
+        )
     }
 
     private data class Snapshot(val treePresent: Boolean, val keymintPid: Int) {
-        val healthy: Boolean get() = treePresent && keymintPid > 0
+        fun status(injected: Boolean?) = TeeEngineHealth.assess(treePresent, keymintPid, injected)
     }
 
     /** 不读 maps 的事实：内置树 + keymint 进程。任何设备都能拿到。 */
@@ -78,7 +61,7 @@ object TeeEngineStartup {
         if (!result.isSuccess) return null
         val line = result.out.lastOrNull { it.trim().startsWith("tree=") }?.trim() ?: return null
         val tree = line.substringAfter("tree=").substringBefore(' ').trim() == "1"
-        val pid = line.substringAfter("pid=", "").trim().toIntOrNull() ?: 0
+        val pid = line.substringAfter("pid=", "").trim().toIntOrNull() ?: return null
         return Snapshot(tree, pid)
     }
 
@@ -117,14 +100,14 @@ object TeeEngineStartup {
 
             val snapshotNow = snapshot()
             val injected = isInjected()
-            if (injected == true) {
+            if (snapshotNow?.status(injected) == TeeEngineHealth.Status.Ready) {
                 _state.value = State.Ready
                 return@withLock
             }
             // 修不修只看"能不能证明它坏了"：探针明确说没注入、或树/进程有一件不在。
             // 探针读不到（null）而树和进程都在时**不动手** —— 那可能只是读不到 maps，
             // 重启 keystore2 反而会打断正在用的证明链。
-            val definitelyBroken = injected == false || snapshotNow == null || !snapshotNow.healthy
+            val definitelyBroken = TeeEngineHealth.assess(snapshotNow?.treePresent, snapshotNow?.keymintPid, injected) == TeeEngineHealth.Status.Broken
             if (definitelyBroken) {
                 // 正常开机时 service 阶段可能还在跑；给一次宽限再动手，但用户刚点了
                 // 开关就不等（他自己要求立刻生效）。
@@ -133,11 +116,15 @@ object TeeEngineStartup {
 
                 val before = snapshot()
                 val stillInjected = isInjected()
-                if (stillInjected == true && before?.healthy == true) {
+                if (before?.status(stillInjected) == TeeEngineHealth.Status.Ready) {
                     _state.value = State.Ready
                     return@withLock
                 }
 
+                if (TeeEngineHealth.assess(before?.treePresent, before?.keymintPid, stillInjected) != TeeEngineHealth.Status.Broken) {
+                    _state.value = State.Unknown
+                    return@withLock
+                }
                 if (attemptedThisProcess && !startedByUser) return@withLock
                 val now = SystemClock.elapsedRealtime()
                 if (lastAttemptMs?.let { now - it < 60_000L } == true) return@withLock
@@ -146,25 +133,30 @@ object TeeEngineStartup {
                 lastAttemptMs = now
 
                 Log.i("TeeEngineStartup", "engine repair: present=$before injected=$stillInjected")
-                var repaired = TeeDiagnostics.restartEngine(null).fold(
+                val repaired = TeeDiagnostics.restartEngine(null).fold(
                     onSuccess = { true },
                     onFailure = { error ->
                         Log.w("TeeEngineStartup", "builtin start failed: ${error.message}")
                         false
                     },
                 )
-                if (!repaired) {
+                if (!repaired && snapshot()?.treePresent == false) {
                     // 树没落盘（首装、被清理、或换过 APK 版本）时 builtin start 也会失败：
                     // 先补装一次再试，别把"没装"报成"起不来"。
                     Log.i("TeeEngineStartup", "engine tree missing or broken, running builtin install")
                     runRoot("'${getKsuDaemonPath()}' builtin install")
-                    repaired = TeeDiagnostics.restartEngine(null).isSuccess
+                    TeeDiagnostics.restartEngine(null)
                 }
 
                 val after = snapshot()
                 val afterInjected = isInjected()
-                val healthy = after?.healthy == true && afterInjected != false
-                _state.value = if (healthy) State.Repaired else State.Failed
+                val status = TeeEngineHealth.assess(after?.treePresent, after?.keymintPid, afterInjected)
+                val healthy = status == TeeEngineHealth.Status.Ready
+                _state.value = when (status) {
+                    TeeEngineHealth.Status.Ready -> State.Repaired
+                    TeeEngineHealth.Status.Broken -> State.Failed
+                    TeeEngineHealth.Status.Unknown -> State.Unknown
+                }
                 if (healthy) {
                     Log.i("TeeEngineStartup", "engine repaired: pid=${after?.keymintPid} injected=$afterInjected")
                     startedByUser = false

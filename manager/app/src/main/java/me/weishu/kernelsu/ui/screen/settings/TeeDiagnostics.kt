@@ -4,6 +4,7 @@ import android.content.Context
 import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import me.weishu.kernelsu.ui.util.TeeEngineHealth
 import me.weishu.kernelsu.ui.util.awaitRootShell
 import me.weishu.kernelsu.ui.util.getKsuDaemonPath
 import org.json.JSONObject
@@ -21,15 +22,7 @@ object TeeDiagnostics {
     private const val LOG = "$SEC/ta-enhanced/logs/main.log"
 
 
-    /** Every live keystore2 must contain the PID-scoped OMY payload. */
-    private val injectionProbe =
-        "KS=\$(pidof keystore2 2>/dev/null); I=1; [ -n \"\$KS\" ] || I=0; " +
-            "for K in \$KS; do " +
-            "if [ -r /data/adb/omk/injector.payload ] && awk -v want_pid=\"\$K\" '" +
-            "FNR == NR { if (\$1 == want_pid && \$2 != \"\") ident = \$2; next } " +
-            "ident != \"\" && index(\$0, ident) { found = 1; exit } " +
-            "END { exit found ? 0 : 1 }' /data/adb/omk/injector.payload /proc/\$K/maps 2>/dev/null; " +
-            "then :; else grep -qF '/data/adb/tricky_store/engine/' /proc/\$K/maps 2>/dev/null || I=0; fi; done; "
+    private val injectionProbe = TeeEngineHealth.injectionProbe
 
     /**
      * 引擎可能落地的位置：**内置那份在最前面**。
@@ -68,7 +61,7 @@ object TeeDiagnostics {
         val engineEnabled: Boolean,
         val enginePid: Int,
         /** keystore2 的 maps 里是否已有 OMY inject：目录被删/模块被卸后，旧注入仍会残留到进程重启。 */
-        val engineInjected: Boolean,
+        val engineInjected: Boolean?,
         val daemonBinary: Boolean,
         val daemonPid: Int,
         val keyboxPresent: Boolean,
@@ -188,7 +181,7 @@ object TeeDiagnostics {
             engineDir = engineDir,
             engineEnabled = engineDir != null && values["ENGINE_DISABLED"] != "1",
             enginePid = values["ENGINE_PID"]?.toIntOrNull() ?: 0,
-            engineInjected = values["ENGINE_INJECTED"] == "1",
+            engineInjected = TeeEngineHealth.parseInjection(values["ENGINE_INJECTED"]),
             daemonBinary = daemonBinary,
             daemonPid = values["DAEMON_PID"]?.toIntOrNull() ?: 0,
             keyboxPresent = keyboxPresent,
@@ -221,7 +214,7 @@ object TeeDiagnostics {
         engineDir = null,
         engineEnabled = false,
         enginePid = 0,
-        engineInjected = false,
+        engineInjected = null,
         daemonBinary = false,
         daemonPid = 0,
         keyboxPresent = false,

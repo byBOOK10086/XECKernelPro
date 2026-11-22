@@ -486,6 +486,8 @@ internal object KeyboxPoolRepository {
                         case "${'$'}previous" in true|false) ;; *) exit 1;; esac
                         timeout 15 "${'$'}tool" config set keybox.enabled false >/dev/null 2>&1 || exit 1
                         if timeout 60 "${'$'}tool" keybox set-custom ${shQuote(file.absolutePath)} >/dev/null 2>&1; then
+                            mkdir -p /data/adb/tricky_store 2>/dev/null
+                            : > /data/adb/tricky_store/.keybox-user-managed
                             exit 0
                         fi
                         timeout 15 "${'$'}tool" config set keybox.enabled "${'$'}previous" >/dev/null 2>&1

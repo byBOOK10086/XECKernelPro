@@ -10,8 +10,8 @@
 | 名称 | Oh My Keymint（OMY / OMK） |
 | 作者 | James Clef `<qwq233@qwq2333.top>` |
 | 上游 | https://github.com/qwq233/OhMyKeymint |
-| 版本 | `1.2.6-9069c6c`（2026-11-06） |
-| 发行资产 | `OhMyKeymint-release-arm64-v8a-1.2.6-9069c6c.zip`，sha256 `045d72dd0e5804001e3f227611e74df1eb0ac466747ff2aa0e8af8948f2e0d07` |
+| 版本 | `1.3.0-7742865`（上游 CI 构建） |
+| 发行资产 | Actions artifact `14707335448`，sha256 `8991387df497c2b0feb1a61f101d1cfc5513a859c54633358a45ef65a642d8c8` |
 
 载荷（`engine/libs/arm64-v8a/keymint`、`engine/libs/arm64-v8a/inject`、`engine/daemon`、
 `engine/daemon-injector`）**逐字节取自上游发行产物**，本仓库不重新编译、也不修改它们。
@@ -66,3 +66,8 @@
    `author` 补上 James Clef；`versionCode` 提到 700 以触发老设备重新落盘。
 
 历史修改（旧引擎时期）见 git 历史中的本文件。
+
+2026-11-22: Upgraded the unmodified upstream payload and corresponding source to
+1.3.0-7742865. Carrier changes add tri-state observation and a serialized, validated
+HTTPS-only keybox feed with user-file preservation and file-level rollback.
+`keybox-feed.sh` and `injection-status.sh` are carrier-owned GPL-3.0 files.

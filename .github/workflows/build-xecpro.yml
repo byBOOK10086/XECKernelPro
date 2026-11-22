@@ -97,6 +97,9 @@ jobs:
       - name: Stealth gesture regressions
         run: python3 scripts/test_stealth_gesture.py
 
+      - name: TEE carrier reliability regressions
+        run: python3 scripts/test_tee_reliability.py
+
       - name: Theme editor catalog stays in sync
         run: |
           python3 scripts/generate_theme_text_catalog.py

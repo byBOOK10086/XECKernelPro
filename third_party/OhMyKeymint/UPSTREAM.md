@@ -7,12 +7,12 @@
 | 项 | 值 |
 |---|---|
 | 仓库 | https://github.com/qwq233/OhMyKeymint |
-| 版本 | `1.2.6-9069c6c`（2026-11-06 发布） |
-| 提交 | `9069c6c` |
+| 版本 | `1.3.0-7742865`（上游 CI 构建，尚未正式 Release） |
+| 提交 | `7742865b40643c8ae0f66e03f2f77f8c23b6acfc` |
 | 作者 | James Clef `<qwq233@qwq2333.top>` |
-| 发行资产 | `OhMyKeymint-release-arm64-v8a-1.2.6-9069c6c.zip` |
-| 资产大小 | 4,930,351 B |
-| 资产 sha256 | `045d72dd0e5804001e3f227611e74df1eb0ac466747ff2aa0e8af8948f2e0d07` |
+| 发行资产 | `OhMyKeymint-release-arm64-v8a-1.3.0-7742865`（Actions artifact 14707335448） |
+| 资产大小 | 4,511,524 B |
+| 资产 sha256 | `8991387df497c2b0feb1a61f101d1cfc5513a859c54633358a45ef65a642d8c8` |
 
 ## 目录内容
 
@@ -25,10 +25,10 @@ module/     # 上游成品模块，原样解出（36 个文件：18 个文件 + 
   post-fs-data.sh service.sh sepolicy.rule injector.toml keybox.xml
   module.prop customize.sh verify.sh META-INF/
   LICENSE.1  LICENSE.2  AOSP.Apache-license-2.0.txt  README.md
-src/        # 上游完整源码树（494 个文件，对应同一提交），供审计与再构建
+src/        # 上游完整源码树（476 个文件，对应同一提交），供审计与再构建
 ```
 
-`module/` 内的文件与发行 zip **逐字节一致**（可用 zip 内自带的 `.sha256` 逐个校验）。
+`module/` 内的文件与上游 Actions artifact zip **逐字节一致**（可用 zip 内自带的 `.sha256` 逐个校验）。
 本仓库不修改这些文件；我们对 OMY 的所有适配都写在自己的模块脚本里。
 
 ## 许可证（两个文件共同生效，缺一不可）
@@ -58,3 +58,12 @@ src/        # 上游完整源码树（494 个文件，对应同一提交），�
 3. 更新本文件的坐标表；
 4. 复核 `module/service.sh`、`module/daemon*`、`config.toml` 字段是否有变（见 `src/docs/CONFIGURATION.md`），有变就同步我们的 `engineconf.sh` / `service.sh`；
 5. 跑 `bash -n` 与模块目录对账，再进 CI。
+
+## 2026-11-22 upgrade verification
+
+- Successful upstream run: https://github.com/qwq233/OhMyKeymint/actions/runs/44902580852
+- Artifact digest verified against GitHub metadata; all bundled .sha256 files verified.
+- Source archive SHA256: `25b8193f2ba749dc306286170956f385406385bc372f4bb37518a413d7338f51`.
+- Both license files unchanged. Source and payload are verbatim upstream snapshots.
+- Daemon scripts, injector template and SELinux rules unchanged; native Binder implementation changed.
+- No hardware validation or claim that vendor RPMB/SOTER provisioning is repaired.

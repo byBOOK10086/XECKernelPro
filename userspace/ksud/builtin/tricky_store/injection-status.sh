@@ -1,20 +1,26 @@
 #!/system/bin/sh
-# XECKernelPro: read-only OMY injection status, scoped to the current process.
-# OMY records a randomized mapped library name together with its keystore2 PID.
-STATE=/data/adb/omk/injector.payload
-seen=0
-for pid in $(pidof keystore2 2>/dev/null); do
-    case "$pid" in ''|*[!0-9]*) continue ;; esac
-    seen=1
-    maps="/proc/$pid/maps"
-    [ -r "$maps" ] || exit 1
-    if [ -r "$STATE" ] && awk -v want_pid="$pid" '
-        FNR == NR { if ($1 == want_pid && $2 != "") ident = $2; next }
-        ident != "" && index($0, ident) { found = 1; exit }
-        END { exit found ? 0 : 1 }
-    ' "$STATE" "$maps" 2>/dev/null; then
-        continue
-    fi
-    grep -qF '/data/adb/tricky_store/engine/' "$maps" 2>/dev/null || exit 1
+# Read-only PID-scoped probe. 0=present, 1=absent, 2=unknown.
+# Failure to observe a process must never request an engine restart.
+STATE=${STATE:-/data/adb/omk/injector.payload}
+PROC_ROOT=${PROC_ROOT:-/proc}
+ENGINE_PATH=${ENGINE_PATH:-/data/adb/tricky_store/engine/}
+pids=$(pidof keystore2 2>/dev/null)
+rc=$?
+case "$rc" in 0|1) : ;; *) exit 2 ;; esac
+[ -n "$pids" ] || exit 1
+unknown=0
+absent=0
+for pid in $pids; do
+    case "$pid" in ''|*[!0-9]*) exit 2 ;; esac
+    maps="$PROC_ROOT/$pid/maps"
+    contents=$(cat "$maps" 2>/dev/null) || { unknown=1; continue; }
+    [ -n "$contents" ] || { unknown=1; continue; }
+    if printf '%s\n' "$contents" | grep -qF "$ENGINE_PATH"; then continue; fi
+    ident=$(awk -v want_pid="$pid" '$1 == want_pid && $2 != "" { print $2; exit }' "$STATE" 2>/dev/null) || { unknown=1; continue; }
+    if [ -n "$ident" ] && printf '%s\n' "$contents" | grep -qF "$ident"; then continue; fi
+    [ -d "$PROC_ROOT/$pid" ] || { unknown=1; continue; }
+    absent=1
 done
-[ "$seen" = 1 ]
+[ "$absent" = 0 ] || exit 1
+[ "$unknown" = 0 ] || exit 2
+exit 0

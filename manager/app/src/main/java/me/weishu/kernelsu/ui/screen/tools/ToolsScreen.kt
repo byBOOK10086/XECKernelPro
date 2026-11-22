@@ -89,6 +89,7 @@ fun ToolsScreen() {
     val homeState by homeViewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { homeViewModel.refresh() }
 
+    var showVendorKeys by rememberSaveable { mutableStateOf(false) }
     var showKeyboxPool by rememberSaveable { mutableStateOf(false) }
     var stealthOn by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -183,6 +184,13 @@ fun ToolsScreen() {
                     )
                     Xc8Panel {
                         Xc8Row(
+                            title = stringResource(R.string.vendor_keys_title),
+                            subtitle = stringResource(R.string.vendor_keys_summary),
+                            leading = Icons.Rounded.Key,
+                            onClick = { showVendorKeys = true },
+                            trailing = { Xc8Chevron() },
+                        )
+                        Xc8Row(
                             title = "收集密钥池",
                             subtitle = "获取上游密钥、查看时间并选择应用",
                             leading = Icons.Rounded.Key,
@@ -225,5 +233,6 @@ fun ToolsScreen() {
         }
     }
 
+    if (showVendorKeys) VendorKeyDialog(onDismiss = { showVendorKeys = false })
     if (showKeyboxPool) KeyboxPoolDialog(onDismiss = { showKeyboxPool = false })
 }

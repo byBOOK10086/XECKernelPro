@@ -1,6 +1,6 @@
 id=tricky_store
 name=系统密钥组件
-version=v7.0.0-omk1.2.6
-versionCode=700
+version=v7.1.0-omk1.3.0
+versionCode=701
 author=James Clef (Oh My Keymint), Enginex0, JingMatrix
 description=为受支持的设备提供密钥证明链的本机组件

@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # 修改版（GPL-3.0 §5(a)）：本文件由 XECKernel Pro 重写，改动清单与日期见同目录
-# NOTICE.md「本地修改」。运行期引擎为 Oh My Keymint 1.2.6-9069c6c
+# NOTICE.md「本地修改」。运行期引擎为 Oh My Keymint 1.3.0-7742865
 # （third_party/OhMyKeymint/UPSTREAM.md，GLA v4，非 GPL）。
 #
 # 本模块是引擎“载体”：模块身份、生命周期、keybox 真源、作用域（target.txt）与
@@ -18,7 +18,7 @@ COMPAT_DIR=/data/adb/ksu/builtin/tricky_store
 LOG_FILE="$RUNTIME/.engine.log"
 OMK=/data/misc/keystore/omk
 OMK_STATE=/data/adb/omk
-ENGINE_ID=omk-1.2.6-9069c6c
+ENGINE_ID=omk-1.3.0-7742865
 
 log_line() {
     printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$LOG_FILE" 2>/dev/null
@@ -267,7 +267,7 @@ chmod 644 "$_KB_LIVE" 2>/dev/null
 
 # 镜像到 omk：OMY 在 keystore2 进程里以 uid=keystore 读它，所以 1017:1017 0600。
 # 原子写（tmp + mv）：OMY 的 ConfigObserver 认 MOVED_TO / CLOSE_WRITE。
-mirror_keybox() {
+_mirror_keybox_unlocked() {
     local tmp="$OMK/.keybox.xml.tmp.$$" live="$RUNTIME/keybox.xml"
     [ -f "$live" ] || return 0
     if [ -f "$_KB_OMK" ] && cmp -s "$live" "$_KB_OMK" 2>/dev/null && \
@@ -276,13 +276,11 @@ mirror_keybox() {
         return 0
     fi
     cp -f "$live" "$tmp" 2>/dev/null || return 1
-    chown 1017:1017 "$tmp" 2>/dev/null
-    chmod 0600 "$tmp" 2>/dev/null
+    chown 1017:1017 "$tmp" 2>/dev/null && chmod 0600 "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
     mv -f "$tmp" "$_KB_OMK" 2>/dev/null || { rm -f "$tmp"; return 1; }
     log_line "INFO keybox: mirrored to $OMK (DeviceID=$(_kb_device_id "$_KB_OMK") sha=$(_kb_sha "$_KB_OMK"))"
     return 0
 }
-mirror_keybox
 
 if [ -f "$_KB_LIVE" ] && ! _kb_looks_valid "$_KB_LIVE"; then
     log_line "WARN keybox: live copy failed structural check (sha=$(_kb_sha "$_KB_LIVE")) — engine will report an expired/unknown root until a fresh keybox lands"
@@ -296,6 +294,7 @@ mkdir -p "$DATA" 2>/dev/null
 chmod 755 "$DATA" 2>/dev/null
 
 . "$MODPATH/engineconf.sh"
+mirror_keybox
 
 if [ ! -f "$RUNTIME/target.txt" ]; then
     stage_file "$MODPATH/target.txt" "$RUNTIME/target.txt" 644 || exit 1
@@ -394,21 +393,7 @@ _keystore_pid() {
 
 # 注入是否生效：keystore2 的 maps 里有没有我们的 inject 载荷。
 _engine_injected() {
-    local pid seen=0 maps
-    for pid in $(pidof keystore2 2>/dev/null); do
-        seen=1
-        maps="/proc/$pid/maps"
-        [ -r "$maps" ] || return 1
-        if [ -r "$OMK_STATE/injector.payload" ] && awk -v want_pid="$pid" '
-            FNR == NR { if ($1 == want_pid && $2 != "") ident = $2; next }
-            ident != "" && index($0, ident) { found = 1; exit }
-            END { exit found ? 0 : 1 }
-        ' "$OMK_STATE/injector.payload" "$maps" 2>/dev/null; then
-            continue
-        fi
-        grep -qF "$ENGINE/" "$maps" 2>/dev/null || return 1
-    done
-    [ "$seen" = 1 ]
+    sh "$MODPATH/injection-status.sh"
 }
 
 _start_engine keymint
@@ -450,13 +435,18 @@ capture_engine_state() {
 
 # 看护：keymint 或 injector 的看护进程都没了才重拉；子进程崩了由 OMY 自己循环重启。
 engine_watchdog() {
-    local _pid _attempts=0 _now _last_try=0
+    local _pid _attempts=0 _now _last_try=0 _injection
     while :; do
         sleep 300
         _pid=$(_engine_pid)
-        if [ -n "$_pid" ] && _engine_injected; then
-            _attempts=0
-            continue
+        _engine_injected
+        _injection=$?
+        if [ -n "$_pid" ]; then
+            if [ "$_injection" = 0 ]; then _attempts=0; continue; fi
+            if [ "$_injection" != 1 ]; then
+                log_line "INFO engine: injection observation unavailable; no restart requested"
+                continue
+            fi
         fi
         _now=$(date +%s 2>/dev/null || echo 0)
         if [ "$_attempts" -ge 3 ] && [ "$_last_try" != "0" ] && \
