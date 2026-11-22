@@ -434,11 +434,10 @@ capture_engine_state() {
         printf 'INFO engine omk log:\n%s\n' "$logtail" >> "$LOG_FILE" 2>/dev/null
     fi
     # 45s 复算：首启时 ta-enhanced 可能还没 stage，engineconf 的验机工具路由会先按
-    # "no-health" 注入；这里等 TA 就绪后再按真实 keybox 健康度收敛一次，并顺手做
-    # keybox 自愈（只读健康时零网络）。日志里能看到最终 route。
+    # "no-health" 注入；这里等 TA 就绪后再按真实 keybox 健康度收敛一次。
     apply_detector_routing
     sync_scoop
-    refresh_keybox_if_stale && mirror_keybox
+    log_line "INFO keybox feed: automatic remote replacement disabled; keeping local copy"
     log_attest_trust_state
     scan_env_residue
     log_boot_consistency
@@ -495,13 +494,12 @@ engine_watchdog() {
     mirror_keybox
     _n=$((_n + 1))
     # 首启 10 分钟每 1 分钟重算一次验机工具路由（ta-enhanced 可能还没 stage），稳定后
-    # 降到 5 分钟一次；keybox 自愈每轮都判一次健康度（健康时零网络，内部 1h 节流）。
+    # 降到 5 分钟一次。
     if [ "$_n" -le 40 ]; then
         [ $((_n % 4)) -eq 0 ] && apply_detector_routing
     else
         [ $((_n % 20)) -eq 0 ] && apply_detector_routing
     fi
-    [ $((_n % 4)) -eq 0 ] && { refresh_keybox_if_stale && mirror_keybox; }
   done ) >/dev/null 2>&1 &
 
 exit 0

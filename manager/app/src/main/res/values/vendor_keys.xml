@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="vendor_keys_title">Hardware key diagnostics</string>
+    <string name="vendor_keys_summary">OnePlus engineering checks, RPMB and SOTER</string>
+    <string name="vendor_keys_limits">Hardware key status is unknown. This screen only checks which related services Android lists.</string>
+    <string name="vendor_keys_checking">Checking Android services…</string>
+    <string name="vendor_keys_build">System build %1$s</string>
+    <string name="vendor_keys_service_row">%1$s: %2$s</string>
+    <string name="vendor_keys_service_present">Related service listed</string>
+    <string name="vendor_keys_service_absent">No related service listed</string>
+    <string name="vendor_keys_service_unknown">Service list unavailable or incomplete</string>
+    <string name="vendor_keys_recovery">On compatible OnePlus firmware, dial *#899# and record the exact RPMB and SOTER results. Turn off external TEE modules and the built-in TEE engine in Settings, then reboot and repeat the same checks. If the error persists, provide the model, system build and results to OnePlus support for a provisioning check. Keep persist, secure storage and RPMB intact.</string>
+</resources>

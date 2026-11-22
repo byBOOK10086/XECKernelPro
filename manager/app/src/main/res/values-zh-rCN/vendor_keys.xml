@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="vendor_keys_title">硬件密钥排查</string>
+    <string name="vendor_keys_summary">一加工程模式、RPMB 和 SOTER</string>
+    <string name="vendor_keys_limits">硬件密钥状态未知。此页只查看 Android 是否列出了相关服务。</string>
+    <string name="vendor_keys_checking">正在检查 Android 服务…</string>
+    <string name="vendor_keys_build">系统版本 %1$s</string>
+    <string name="vendor_keys_service_row">%1$s：%2$s</string>
+    <string name="vendor_keys_service_present">已列出相关服务</string>
+    <string name="vendor_keys_service_absent">未列出相关服务</string>
+    <string name="vendor_keys_service_unknown">服务列表不可读或不完整</string>
+    <string name="vendor_keys_recovery">在支持该入口的一加设备上拨打 *#899#，记录 RPMB 和 SOTER 的原始结果。关闭外部 TEE 模块，再到设置关闭内置 TEE 引擎，重启后在同一页面复测。如果仍有红项，把机型、系统版本和检测结果交给一加售后核查。请保留 persist、安全存储和 RPMB 数据。</string>
+</resources>

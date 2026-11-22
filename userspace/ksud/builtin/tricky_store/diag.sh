@@ -88,8 +88,7 @@ if [ -n "$TA_BIN" ]; then
     kv health "$("$TA_BIN" keybox health 2>/dev/null)"
     kv validate "$("$TA_BIN" keybox validate "$kb" 2>/dev/null | tr '\n' ' ' | cut -c1-400)"
 fi
-kv feed.installed "$(cat "$RUNTIME/.keybox_feed.installed" 2>/dev/null || echo '<none>')"
-kv feed.stamp "$(cat "$RUNTIME/.keybox_feed.stamp" 2>/dev/null || echo '<none>')"
+kv feed.auto_update disabled
 
 sec "OMY config [trust]/[device]（证明里会写什么）"
 grep -E '^[[:space:]]*(security_patch|os_patchlevel|vendor_patchlevel|boot_patchlevel|vb_key|vb_hash|verified_boot_state|device_locked|os_version|brand|device|product|manufacturer|model|serial)[[:space:]]*=' "$OMK/config.toml" 2>/dev/null | tee -a "$OUT" 2>/dev/null
