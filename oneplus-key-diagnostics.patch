@@ -1,0 +1,244 @@
+diff --git a/manager/app/src/main/java/me/weishu/kernelsu/ui/screen/tools/ToolsScreen.kt b/manager/app/src/main/java/me/weishu/kernelsu/ui/screen/tools/ToolsScreen.kt
+index 74541ca73b2d856ed53326d63aa541b4d42fa63a..e41964faf76285ecd8f75462070ce0a17847c155 100644
+--- a/manager/app/src/main/java/me/weishu/kernelsu/ui/screen/tools/ToolsScreen.kt
++++ b/manager/app/src/main/java/me/weishu/kernelsu/ui/screen/tools/ToolsScreen.kt
+@@ -89,6 +89,7 @@ fun ToolsScreen() {
+     val homeState by homeViewModel.uiState.collectAsStateWithLifecycle()
+     LaunchedEffect(Unit) { homeViewModel.refresh() }
+ 
++    var showVendorKeys by rememberSaveable { mutableStateOf(false) }
+     var showKeyboxPool by rememberSaveable { mutableStateOf(false) }
+     var stealthOn by rememberSaveable { mutableStateOf(false) }
+     val scope = rememberCoroutineScope()
+@@ -182,6 +183,13 @@ fun ToolsScreen() {
+                         modifier = Modifier.padding(top = 22.dp),
+                     )
+                     Xc8Panel {
++                        Xc8Row(
++                            title = stringResource(R.string.vendor_keys_title),
++                            subtitle = stringResource(R.string.vendor_keys_summary),
++                            leading = Icons.Rounded.Key,
++                            onClick = { showVendorKeys = true },
++                            trailing = { Xc8Chevron() },
++                        )
+                         Xc8Row(
+                             title = "收集密钥池",
+                             subtitle = "获取上游密钥、查看时间并选择应用",
+@@ -225,5 +233,6 @@ fun ToolsScreen() {
+         }
+     }
+ 
++    if (showVendorKeys) VendorKeyDialog(onDismiss = { showVendorKeys = false })
+     if (showKeyboxPool) KeyboxPoolDialog(onDismiss = { showKeyboxPool = false })
+ }
+diff --git a/manager/app/src/main/java/me/weishu/kernelsu/ui/screen/tools/VendorKeyDiagnostics.kt b/manager/app/src/main/java/me/weishu/kernelsu/ui/screen/tools/VendorKeyDiagnostics.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..ce7ed8c3b839a0d13682d01c5aea07e20c87825a
+--- /dev/null
++++ b/manager/app/src/main/java/me/weishu/kernelsu/ui/screen/tools/VendorKeyDiagnostics.kt
+@@ -0,0 +1,66 @@
++package me.weishu.kernelsu.ui.screen.tools
++
++import android.os.Build
++import com.topjohnwu.superuser.Shell
++import kotlinx.coroutines.CancellationException
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.withContext
++import me.weishu.kernelsu.ui.util.awaitRootShell
++
++internal object VendorKeyDiagnostics {
++    private val serviceNames = mapOf(
++        "KeyMint / Keymaster" to listOf("keymint", "keymaster"),
++        "SOTER" to listOf("soter"),
++        "RPMB" to listOf("rpmb"),
++    )
++    private val binderLine = Regex("""^\s*\d+\s+(\S+):\s+\[([\w.\$]*)]\s*$""")
++    private val halName = Regex("""^[\w.]+@\d+\.\d+::\w+/[\w.-]+$""")
++
++    enum class Visibility { LISTED, NOT_LISTED, UNKNOWN }
++
++    data class Listing(val lines: List<String> = emptyList(), val complete: Boolean = false)
++    data class Report(val device: String, val build: String, val services: Map<String, Visibility>)
++
++    // Match registered names and interface descriptors, never free-form command output.
++    fun observe(binder: Listing, hal: Listing): Map<String, Visibility> {
++        val binderNames = binder.lines.flatMap { line ->
++            binderLine.matchEntire(line)?.groupValues?.drop(1).orEmpty()
++        }
++        val halNames = hal.lines.flatMap { line ->
++            line.trim().split(Regex("""\s+""")).filter(halName::matches)
++        }
++        val registered = binderNames + halNames
++        return serviceNames.mapValues { (_, aliases) ->
++            when {
++                registered.any { name -> aliases.any { name.contains(it, ignoreCase = true) } } ->
++                    Visibility.LISTED
++                binder.complete && hal.complete -> Visibility.NOT_LISTED
++                else -> Visibility.UNKNOWN
++            }
++        }
++    }
++
++    suspend fun inspect(): Report = withContext(Dispatchers.IO) {
++        val device = "${Build.MANUFACTURER} ${Build.MODEL} / Android ${Build.VERSION.RELEASE}"
++        val shell = try {
++            awaitRootShell(timeoutMs = 2_500)
++        } catch (e: CancellationException) {
++            throw e
++        } catch (_: Exception) {
++            null
++        }
++        val binder = shell?.takeIf { it.isRoot }?.list("service list") ?: Listing()
++        val hal = shell?.takeIf { it.isRoot }?.list("lshal") ?: Listing()
++        Report(device, Build.DISPLAY, observe(binder, hal))
++    }
++
++    private fun Shell.list(command: String): Listing = try {
++        val result = newJob().add("timeout 4 $command")
++            .to(ArrayList<String>(), ArrayList<String>()).exec()
++        Listing(result.out, result.isSuccess && result.err.isEmpty())
++    } catch (e: CancellationException) {
++        throw e
++    } catch (_: Exception) {
++        Listing()
++    }
++}
+diff --git a/manager/app/src/main/java/me/weishu/kernelsu/ui/screen/tools/VendorKeyDialog.kt b/manager/app/src/main/java/me/weishu/kernelsu/ui/screen/tools/VendorKeyDialog.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..2d864cf34e046a3710a22bc29f1b6e121d4a9416
+--- /dev/null
++++ b/manager/app/src/main/java/me/weishu/kernelsu/ui/screen/tools/VendorKeyDialog.kt
+@@ -0,0 +1,54 @@
++package me.weishu.kernelsu.ui.screen.tools
++
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.heightIn
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.LaunchedEffect
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.res.stringResource
++import androidx.compose.ui.unit.dp
++import me.weishu.kernelsu.R
++import me.weishu.kernelsu.ui.component.dialog.XDialog
++import me.weishu.kernelsu.ui.component.dialog.XDialogTitle
++import top.yukonga.miuix.kmp.basic.Text
++import top.yukonga.miuix.kmp.basic.TextButton
++
++@Composable
++internal fun VendorKeyDialog(onDismiss: () -> Unit) {
++    var report by remember { mutableStateOf<VendorKeyDiagnostics.Report?>(null) }
++    LaunchedEffect(Unit) { report = VendorKeyDiagnostics.inspect() }
++
++    XDialog(show = true, onDismissRequest = onDismiss) {
++        XDialogTitle(text = stringResource(R.string.vendor_keys_title))
++        Column(
++            modifier = Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
++            verticalArrangement = Arrangement.spacedBy(12.dp),
++        ) {
++            Text(stringResource(R.string.vendor_keys_limits))
++            val snapshot = report
++            if (snapshot == null) {
++                Text(stringResource(R.string.vendor_keys_checking))
++            } else {
++                Text(snapshot.device)
++                Text(stringResource(R.string.vendor_keys_build, snapshot.build))
++                snapshot.services.forEach { (name, visibility) ->
++                    val state = when (visibility) {
++                        VendorKeyDiagnostics.Visibility.LISTED -> R.string.vendor_keys_service_present
++                        VendorKeyDiagnostics.Visibility.NOT_LISTED -> R.string.vendor_keys_service_absent
++                        VendorKeyDiagnostics.Visibility.UNKNOWN -> R.string.vendor_keys_service_unknown
++                    }
++                    Text(stringResource(R.string.vendor_keys_service_row, name, stringResource(state)))
++                }
++            }
++            Text(stringResource(R.string.vendor_keys_recovery))
++            TextButton(text = stringResource(android.R.string.ok), onClick = onDismiss)
++        }
++    }
++}
+diff --git a/manager/app/src/main/res/values-zh-rCN/vendor_keys.xml b/manager/app/src/main/res/values-zh-rCN/vendor_keys.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..7fc1e8b1f7f6d4ab08279893081fff82982e49ac
+--- /dev/null
++++ b/manager/app/src/main/res/values-zh-rCN/vendor_keys.xml
+@@ -0,0 +1,13 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <string name="vendor_keys_title">硬件密钥排查</string>
++    <string name="vendor_keys_summary">一加工程模式、RPMB 和 SOTER</string>
++    <string name="vendor_keys_limits">硬件密钥状态未知。此页只查看 Android 是否列出了相关服务。</string>
++    <string name="vendor_keys_checking">正在检查 Android 服务…</string>
++    <string name="vendor_keys_build">系统版本 %1$s</string>
++    <string name="vendor_keys_service_row">%1$s：%2$s</string>
++    <string name="vendor_keys_service_present">已列出相关服务</string>
++    <string name="vendor_keys_service_absent">未列出相关服务</string>
++    <string name="vendor_keys_service_unknown">服务列表不可读或不完整</string>
++    <string name="vendor_keys_recovery">在支持该入口的一加设备上拨打 *#899#，记录 RPMB 和 SOTER 的原始结果。关闭外部 TEE 模块，再到设置关闭内置 TEE 引擎，重启后在同一页面复测。如果仍有红项，把机型、系统版本和检测结果交给一加售后核查。请保留 persist、安全存储和 RPMB 数据。</string>
++</resources>
+diff --git a/manager/app/src/main/res/values/vendor_keys.xml b/manager/app/src/main/res/values/vendor_keys.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..8cdadf32703fc2442e493b6a35094faf41119ad5
+--- /dev/null
++++ b/manager/app/src/main/res/values/vendor_keys.xml
+@@ -0,0 +1,13 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <string name="vendor_keys_title">Hardware key diagnostics</string>
++    <string name="vendor_keys_summary">OnePlus engineering checks, RPMB and SOTER</string>
++    <string name="vendor_keys_limits">Hardware key status is unknown. This screen only checks which related services Android lists.</string>
++    <string name="vendor_keys_checking">Checking Android services…</string>
++    <string name="vendor_keys_build">System build %1$s</string>
++    <string name="vendor_keys_service_row">%1$s: %2$s</string>
++    <string name="vendor_keys_service_present">Related service listed</string>
++    <string name="vendor_keys_service_absent">No related service listed</string>
++    <string name="vendor_keys_service_unknown">Service list unavailable or incomplete</string>
++    <string name="vendor_keys_recovery">On compatible OnePlus firmware, dial *#899# and record the exact RPMB and SOTER results. Turn off external TEE modules and the built-in TEE engine in Settings, then reboot and repeat the same checks. If the error persists, provide the model, system build and results to OnePlus support for a provisioning check. Keep persist, secure storage and RPMB intact.</string>
++</resources>
+diff --git a/manager/app/src/test/java/me/weishu/kernelsu/ui/screen/tools/VendorKeyDiagnosticsTest.kt b/manager/app/src/test/java/me/weishu/kernelsu/ui/screen/tools/VendorKeyDiagnosticsTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..2bea4ef58c00986dfa577e6f48573e0d94817cf4
+--- /dev/null
++++ b/manager/app/src/test/java/me/weishu/kernelsu/ui/screen/tools/VendorKeyDiagnosticsTest.kt
+@@ -0,0 +1,35 @@
++package me.weishu.kernelsu.ui.screen.tools
++
++import me.weishu.kernelsu.ui.screen.tools.VendorKeyDiagnostics.Listing
++import me.weishu.kernelsu.ui.screen.tools.VendorKeyDiagnostics.Visibility
++import org.junit.Assert.assertEquals
++import org.junit.Test
++
++class VendorKeyDiagnosticsTest {
++    @Test fun keystoreAndErrorTextDoNotCountAsHardwareServices() {
++        val binder = Listing(listOf(
++            "0  android.system.keystore2.IKeystoreService/default: [android.system.keystore2.IKeystoreService]",
++            "Warning: soter lookup failed",
++        ), complete = true)
++        val observed = VendorKeyDiagnostics.observe(binder, Listing())
++        assertEquals(Visibility.UNKNOWN, observed["KeyMint / Keymaster"])
++        assertEquals(Visibility.UNKNOWN, observed["SOTER"])
++    }
++
++    @Test fun findsAidlAndHidlRegistrationsEvenWhenTheHalListIsPartial() {
++        val binder = Listing(listOf(
++            "12  android.hardware.security.keymint.IKeyMintDevice/default: [android.hardware.security.keymint.IKeyMintDevice]",
++        ), complete = true)
++        val hal = Listing(listOf("Y  vendor.oplus.hardware.soter@1.0::ISoter/default  741"))
++        val observed = VendorKeyDiagnostics.observe(binder, hal)
++        assertEquals(Visibility.LISTED, observed["KeyMint / Keymaster"])
++        assertEquals(Visibility.LISTED, observed["SOTER"])
++        assertEquals(Visibility.UNKNOWN, observed["RPMB"])
++    }
++
++    @Test fun completeListsWithoutMatchesOnlyReportNotListed() {
++        val listing = Listing(complete = true)
++        val observed = VendorKeyDiagnostics.observe(listing, listing)
++        assertEquals(setOf(Visibility.NOT_LISTED), observed.values.toSet())
++    }
++}
