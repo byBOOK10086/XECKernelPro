@@ -196,7 +196,12 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
     // 13. Execute boot-completed stage scripts (non-blocking)
     init_event::run_stage("boot-completed", ScriptWait::NoWait);
 
-    // 14. Restart Manager so it gets a fresh ksu fd from the newly loaded kernel module
+    // 14. Late load happens after the normal boot-completed hook, so the boot
+    // readers may already hold the kernel/logcat buffers: scrub the marked
+    // AVC/root traces here too instead of waiting for the next boot.
+    crate::bootlog_scrub::spawn();
+
+    // 15. Restart Manager so it gets a fresh ksu fd from the newly loaded kernel module
     info!("Restarting KernelSU Manager {package_name}...");
     let _ = Command::new("am")
         .args(["force-stop", package_name])

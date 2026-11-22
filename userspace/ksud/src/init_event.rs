@@ -434,6 +434,11 @@ fn run_boot_completed(commit_boot_txn: bool) {
 
     run_stage("boot-completed", ScriptWait::NoWait);
 
+    // Detection tools read dmesg/logcat for boot-time avc:/root traces. Scrub
+    // the marked buffers now and again after our boot-log capture window ends;
+    // never delay the lifecycle hook itself.
+    crate::bootlog_scrub::spawn();
+
     #[cfg(kmi_module_bundle)]
     if install_kmi_manager && ksucalls::is_lkm() && !ksucalls::is_late_load() {
         crate::kmi_modules::on_boot_completed();
