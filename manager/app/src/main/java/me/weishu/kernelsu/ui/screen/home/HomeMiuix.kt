@@ -69,11 +69,14 @@ import androidx.compose.material.icons.rounded.VolunteerActivism
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.ui.geometry.Offset
@@ -196,6 +199,18 @@ fun HomePagerMiuix(
 
     var showStatEditor by remember { mutableStateOf(false) }
 
+    // SELinux 宽容模式守卫：Permissive 会让部分应用直接发现 Root，首次探测到就提示
+    // 切回 Enforcing（重启后回到系统默认值）。每个进程只自动弹一次，用户可稍后从
+    // SELinux 状态行重新触发。
+    var showSelinuxGuard by rememberSaveable { mutableStateOf(false) }
+    var selinuxGuardPrompted by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(state.isSELinuxPermissive) {
+        if (state.isSELinuxPermissive && !selinuxGuardPrompted) {
+            selinuxGuardPrompted = true
+            showSelinuxGuard = true
+        }
+    }
+
     Scaffold(
         containerColor = Color.Transparent,
         topBar = { HomeHeader(isRefreshing = state.isRefreshing, onRefresh = actions.onRefresh) },
@@ -313,7 +328,15 @@ fun HomePagerMiuix(
                     DeviceSection(state = state, onRefresh = actions.onRefresh)
 
                     Xc8SectionLabel(text = stringResource(R.string.home8_section_security))
-                    SecurityPanel(state = state)
+                    SecurityPanel(
+                        state = state,
+                        // 宽容模式下点这一行可以重新打开守卫（自动提示每进程只弹一次）。
+                        onSelinuxClick = if (state.isSELinuxPermissive) {
+                            { showSelinuxGuard = true }
+                        } else {
+                            null
+                        },
+                    )
                     Xc8SectionLabel(text = stringResource(R.string.home8_section_overview))
                     OverviewPanel(
                         state = state,
@@ -341,6 +364,9 @@ fun HomePagerMiuix(
     // 编辑页挂在 Scaffold 之外：它是一个独立的 Dialog 窗口，和滚动区域无关。
     if (showStatEditor) {
         HomeStatEditorDialog(onDismissRequest = { showStatEditor = false })
+    }
+    if (showSelinuxGuard) {
+        SelinuxGuardDialog(onDismiss = { showSelinuxGuard = false })
     }
 }
 
@@ -1044,7 +1070,7 @@ private fun UpdateCard(
 
 /** 安全状态：SELinux / SUSFS / Seccomp / 启动状态，异常档直接给标签。 */
 @Composable
-private fun SecurityPanel(state: HomeUiState) {
+private fun SecurityPanel(state: HomeUiState, onSelinuxClick: (() -> Unit)? = null) {
     // 文案统一走 HomeStatItem.kt 里的 selinuxLabel()：设备表 / 安全面板 / 数据面板
     // 三处曾经各抄一份 when，删一处就会漏一处。
     val selinuxText = selinuxLabel(state.systemInfo.selinuxStatus)
@@ -1066,6 +1092,7 @@ private fun SecurityPanel(state: HomeUiState) {
         Xc8Row(
             title = stringResource(R.string.home_selinux_status),
             leading = Icons.Rounded.Security,
+            onClick = onSelinuxClick,
             trailing = {
                 Xc8Tag(
                     text = selinuxText,

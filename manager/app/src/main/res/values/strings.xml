@@ -24,6 +24,11 @@
     <string name="selinux_status_enforcing">Enforcing</string>
     <string name="selinux_status_permissive">Permissive</string>
     <string name="selinux_status_unknown">Unknown</string>
+    <string name="selinux_guard_title">SELinux is not enforcing</string>
+    <string name="selinux_guard_message">SELinux is currently permissive, so system security protection is off and some apps can detect root through it. Confirm to switch it back to enforcing. It returns to the system default after a reboot.</string>
+    <string name="selinux_guard_confirm">Switch to enforcing</string>
+    <string name="selinux_guard_done">Switched to enforcing</string>
+    <string name="selinux_guard_failed">Couldn\'t switch, check root access</string>
     <string name="home_seccomp_status">Seccomp status</string>
     <string name="seccomp_status_not_supported">Not supported</string>
     <string name="seccomp_status_disabled">Disabled</string>

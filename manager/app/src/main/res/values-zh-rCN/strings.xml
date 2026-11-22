@@ -24,6 +24,11 @@
     <string name="selinux_status_enforcing">强制执行</string>
     <string name="selinux_status_permissive">宽容模式</string>
     <string name="selinux_status_unknown">未知</string>
+    <string name="selinux_guard_title">SELinux 未处于强制模式</string>
+    <string name="selinux_guard_message">当前 SELinux 处于宽容模式（Permissive），系统的安全保护是关着的，部分应用也能借此发现 Root。点击确认会把它切换回强制模式（Enforcing）。重启后会恢复为系统原本的设置。</string>
+    <string name="selinux_guard_confirm">确认，切换为强制模式</string>
+    <string name="selinux_guard_done">已切换为强制模式</string>
+    <string name="selinux_guard_failed">切换失败，请检查 Root 权限</string>
     <string name="home_seccomp_status">Seccomp 状态</string>
     <string name="seccomp_status_not_supported">内核未开启</string>
     <string name="seccomp_status_disabled">未启用</string>
