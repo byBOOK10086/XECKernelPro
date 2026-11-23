@@ -33,13 +33,15 @@ struct policydb {
 struct context { u32 user, role, type; void *mls; };
 struct selinux_policy;
 struct sidtab {
-    int calls, error_once;
+    int calls, error_once, fail_on_call;
     u32 last_type;
     struct selinux_policy *replacement;
 };
 struct selinux_policy { struct policydb policydb; struct sidtab *sidtab; u32 latest_granting; };
 static struct { struct selinux_policy *policy; } selinux_state;
 static int contexts, buffers, rcu_depth;
+static bool fail_copy_once;
+static int mls_calls, fail_mls_call;
 static const struct policydb *ksu_original_types_policy;
 static u32 ksu_original_types_limit, ksu_original_types_generation;
 static struct selinux_policy *backup_sepolicy;
@@ -56,6 +58,9 @@ static void context_destroy(struct context *context)
 static int mls_context_to_sid(struct policydb *policy, char delimiter, char *suffix,
                              struct context *context, struct sidtab *sidtab, u32 def_sid)
 {
+    /* An MLS allocation can fail after an earlier conversion was retried. */
+    if (++mls_calls == fail_mls_call)
+        return -ENOMEM;
     context->mls = malloc(1);
     assert(context->mls);
     contexts++;
@@ -75,6 +80,8 @@ static int sidtab_context_to_sid(struct sidtab *table, struct context *context, 
     assert(rcu_depth == 1);
     table->calls++;
     table->last_type = context->type;
+    if (table->calls == table->fail_on_call)
+        return -ENOMEM;
     if (table->error_once) {
         int error = table->error_once;
         table->error_once = 0;
@@ -86,6 +93,10 @@ static int sidtab_context_to_sid(struct sidtab *table, struct context *context, 
 }
 static void *kmemdup_nul(const char *source, u32 length, gfp_t flags)
 {
+    if (fail_copy_once) {
+        fail_copy_once = false;
+        return NULL;
+    }
     char *copy = malloc((size_t)length + 1);
     assert(copy);
     memcpy(copy, source, length);
@@ -119,6 +130,8 @@ static void init_policy(struct selinux_policy *policy, struct sidtab *table, u32
 static void reset(void)
 {
     assert(contexts == 0 && buffers == 0 && rcu_depth == 0);
+    fail_copy_once = false;
+    mls_calls = fail_mls_call = 0;
     init_policy(&backup, &backup_sids, 0);
     init_policy(&live, &live_sids, 100);
     init_policy(&reloaded, &reloaded_sids, 200);
@@ -141,9 +154,43 @@ static void convert(const char *input, int expected, int expected_live, u32 expe
     free(original);
     assert(contexts == 0 && buffers == 0 && rcu_depth == 0);
 }
+static void check_early_errors(const char *input)
+{
+    /* Both optional outputs may be omitted independently. */
+    for (unsigned int mask = 0; mask < 4; mask++) {
+        for (unsigned int allocation_error = 0; allocation_error < 2; allocation_error++) {
+            reset();
+            u32 sid = 999, live_sid = 999;
+            int live_error = 999;
+            int expected = allocation_error ? -ENOMEM : -EINVAL;
+            fail_copy_once = allocation_error;
+            int rc = security_context_to_sid_with_policy(&backup, input,
+                         allocation_error ? (u32)strlen(input) : 0, &sid, 0, 0,
+                         mask & 1 ? &live_sid : NULL, mask & 2 ? &live_error : NULL);
+            assert(rc == expected && sid == SECSID_NULL);
+            if (mask & 1)
+                assert(live_sid == SECSID_NULL);
+            if (mask & 2)
+                assert(live_error == expected);
+            assert(backup_sids.calls == 0 && live_sids.calls == 0);
+            assert(contexts == 0 && buffers == 0 && rcu_depth == 0);
+        }
+    }
+    reset();
+    u32 sid = 999;
+    assert(security_context_to_sid_live(input, 0, &sid) == -EINVAL);
+    assert(sid == SECSID_NULL);
+    sid = 999;
+    fail_copy_once = true;
+    assert(security_context_to_sid_live(input, strlen(input), &sid) == -ENOMEM);
+    assert(sid == SECSID_NULL);
+    assert(backup_sids.calls == 0 && live_sids.calls == 0);
+    assert(contexts == 0 && buffers == 0 && rcu_depth == 0);
+}
 int main(void)
 {
     const char *input = "user:role:type:s0:c0";
+    check_early_errors(input);
     reset();
     convert(input, 0, 0, 30, 1030);
     assert(backup_sids.calls == 1 && live_sids.calls == 1);
@@ -183,6 +230,27 @@ int main(void)
     live_sids.replacement = &reloaded;
     convert(input, 0, 0, 30, 2030);
     assert(backup_sids.calls == 2 && live_sids.calls == 1 && reloaded_sids.calls == 1);
+
+    /* A successful first backup conversion must not survive a failed retry. */
+    reset();
+    live_sids.error_once = -ESTALE;
+    live_sids.replacement = &reloaded;
+    fail_mls_call = 3;
+    convert(input, -ENOMEM, -EINVAL, SECSID_NULL, SECSID_NULL);
+    assert(backup_sids.calls == 1 && live_sids.calls == 1 && reloaded_sids.calls == 0);
+
+    reset();
+    live_sids.error_once = -ESTALE;
+    live_sids.replacement = &reloaded;
+    backup_sids.fail_on_call = 2;
+    convert(input, -ENOMEM, -ENOMEM, SECSID_NULL, SECSID_NULL);
+    assert(backup_sids.calls == 2 && live_sids.calls == 1 && reloaded_sids.calls == 0);
+
+    /* Backup success and live failure remain distinct results. */
+    reset();
+    live_sids.error_once = -ENOMEM;
+    convert(input, 0, -ENOMEM, 30, SECSID_NULL);
+    assert(backup_sids.calls == 1 && live_sids.calls == 1);
 
     reset();
     convert("not-a-context", -EINVAL, -EINVAL, 0, 0);

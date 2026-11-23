@@ -1015,19 +1015,24 @@ KSU_SUSFS_LINKAGE int security_context_to_sid_with_policy(struct selinux_policy 
     int rc = 0, orig_rc = -EINVAL;
     u32 orig_sid;
 
+    /* Failed conversions must not expose outputs from an earlier call. */
+    *sid = SECSID_NULL;
+    if (orig_sid_p)
+        *orig_sid_p = SECSID_NULL;
+    if (orig_rc_p)
+        *orig_rc_p = -EINVAL;
+
     /* An empty security context is never valid. */
     if (!scontext_len)
         return -EINVAL;
 
     /* Copy the string to allow changes and ensure a NUL terminator */
     scontext2 = kmemdup_nul(scontext, scontext_len, gfp_flags);
-    if (!scontext2)
+    if (!scontext2) {
+        if (orig_rc_p)
+            *orig_rc_p = -ENOMEM;
         return -ENOMEM;
-
-    // removed: if (!selinux_initialized())
-    *sid = SECSID_NULL;
-    if (orig_sid_p)
-        *orig_sid_p = SECSID_NULL;
+    }
 
     // removed: if (force)
 retry:
@@ -1074,6 +1079,9 @@ retry:
     }
 out_unlock:
     rcu_read_unlock();
+    /* A retry may have already produced a SID before its final failure. */
+    if (rc)
+        *sid = SECSID_NULL;
     if (orig_rc_p)
         *orig_rc_p = orig_rc;
     kfree(scontext2);
@@ -1175,6 +1183,8 @@ static int security_context_to_sid_live(const char *scontext, u32 scontext_len, 
     u32 backup_sid;
     int rc;
 
+    *sid = SECSID_NULL;
+
     /* An empty security context is never valid. */
     if (!scontext_len)
         return -EINVAL;
@@ -1184,7 +1194,6 @@ static int security_context_to_sid_live(const char *scontext, u32 scontext_len, 
     if (!scontext2)
         return -ENOMEM;
 
-    *sid = SECSID_NULL;
 retry:
     rcu_read_lock();
     policy = rcu_dereference(selinux_state.policy);
@@ -1207,6 +1216,8 @@ retry:
     }
 out_unlock:
     rcu_read_unlock();
+    if (rc)
+        *sid = SECSID_NULL;
     kfree(scontext2);
     return rc;
 }
