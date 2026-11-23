@@ -40,6 +40,13 @@ def function(path: str, name: str) -> str:
 
 
 CASES = {
+    "selinux_audit": [
+        ("kernel/selinux/sepolicy.c", "ksu_exists"),
+        ("kernel/selinux/sepolicy.c", "ksu_dontaudit"),
+        ("kernel/selinux/sepolicy.c", "ksu_set_original_types"),
+        ("kernel/selinux/sepolicy.c", "ksu_type_is_original"),
+        ("kernel/selinux/rules.c", "apply_app_audit_rules"),
+    ],
     "selinux_context": [
         ("kernel/selinux/sepolicy.c", "ksu_set_original_types"),
         ("kernel/selinux/sepolicy.c", "ksu_advance_original_types"),

@@ -12,7 +12,7 @@ images. The APK was not executed.
 | --- | --- | --- |
 | Context conversion | A global one-entry rejected-context cache, up to 128 bytes; a hit returns `-EINVAL` before parsing | The current parser has no rejected-context cache. Existing regressions exercise single/dual parsing and policy reloads. |
 | Policy conversion | Parse the backup policy, then `sync_context_sids` looks up the live user/role/type, MLS and SID tables | The current code has a single-parse path with generation validation and a dual-parse fallback. |
-| Audit rules | Wildcard `dontaudit` from `untrusted_app_all`, `isolated_app_all`, `sdk_sandbox_all` to `domain`, `selinuxfs`, `ksu_file`, `adb_data_file`, `binderfs_logs` | These broad sample rules are absent from the current `kernel/selinux` implementation. |
+| Audit rules | Wildcard `dontaudit` from `untrusted_app_all`, `isolated_app_all`, `sdk_sandbox_all` to `domain`, `selinuxfs`, `ksu_file`, `adb_data_file`, `binderfs_logs` | Ported all 15 combinations, mapping `ksu_file` to `KERNEL_SU_FILE` (`xecpro_file`). Missing policy symbols are skipped. |
 | Boot logs | Clear dmesg and matching Android buffers at boot completion, then again after 35 seconds | The preceding release already contains this userspace mechanism. This audit additionally covers the persistent log copies. |
 | Manager status | `getenforce`; permission denial can be displayed as Enforcing | Status now requires a successful command and one exact recognized value. |
 | Diagnostic export | Temporarily set global `kptr_restrict=1`, collect kallsyms, then restore | Export now reads under the existing policy without writing this sysctl. |
@@ -23,6 +23,10 @@ distribution. No timing-detector threshold was recovered from this manager.
 
 ## Confirmed fixes
 
+- The app audit rules are applied to the unpublished policy clone. Allocation
+  failure discards that clone before registering its type metadata. The rules
+  clear auditdeny masks; they do not grant access or change enforcement. Later
+  explicit module policy updates retain their existing override semantics.
 - SELinux queries keep the shared root shell open, return Unknown without root,
   and bound command waits to five seconds. `setenforce` still requires a
   successful readback. Denied probes no longer claim Enforcing.
@@ -45,6 +49,10 @@ creation, existing-log permissions, rotation, repeated collector failures,
 links and FIFOs. Kernel host
 tests cover parsing semantics and reload generations, not LSM execution or
 device timing.
+The audit selector tests cover the 15 source/target combinations, missing
+symbols and failure propagation. Their mocked policy backend does not prove
+kernel policy loading; the auditdeny mask behavior was also checked directly
+in the existing `add_rule_raw` implementation.
 
 Reproduce the focused checks with:
 

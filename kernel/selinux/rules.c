@@ -4,6 +4,7 @@
 #include <linux/types.h>
 #include <linux/version.h>
 #include <linux/lockdep.h>
+#include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 
@@ -40,6 +41,31 @@ static void reset_avc_cache(u32 seqno)
     selinux_status_update_policyload(&selinux_state, seqno);
 #endif
     selinux_xfrm_notify_policyload();
+}
+
+static bool apply_app_audit_rules(struct policydb *db)
+{
+    static const char * const audit_sources[] = {
+        "untrusted_app_all", "isolated_app_all", "sdk_sandbox_all",
+    };
+    static const char * const audit_targets[] = {
+        "domain", "selinuxfs", KERNEL_SU_FILE, "adb_data_file", "binderfs_logs",
+    };
+    size_t source, target;
+
+    /* Android releases differ in which attributes and file types they define.
+     * Only use existing symbols; this changes denial auditing, not access. */
+    for (source = 0; source < ARRAY_SIZE(audit_sources); source++) {
+        if (!ksu_exists(db, audit_sources[source]))
+            continue;
+        for (target = 0; target < ARRAY_SIZE(audit_targets); target++) {
+            if (!ksu_exists(db, audit_targets[target]))
+                continue;
+            if (!ksu_dontaudit(db, audit_sources[source], audit_targets[target], ALL, ALL))
+                return false;
+        }
+    }
+    return true;
 }
 
 void apply_kernelsu_rules()
@@ -85,8 +111,6 @@ void apply_kernelsu_rules()
     db = &pol->policydb;
 
     pol->latest_granting = old_pol->latest_granting + 1;
-    if (!ksu_set_original_types(db, &old_pol->policydb, pol->latest_granting))
-        pr_warn("failed to save original type metadata, use backup lookups\n");
 
     ksu_type(db, KERNEL_SU_DOMAIN, "domain");
     ksu_permissive(db, KERNEL_SU_DOMAIN);
@@ -159,6 +183,16 @@ void apply_kernelsu_rules()
     // Allow system server kill su process
     ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "getpgid");
     ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "sigkill");
+
+    if (!apply_app_audit_rules(db)) {
+        pr_warn("failed to apply app audit rules\n");
+        ksu_destroy_sepolicy(pol);
+        goto out_unlock;
+    }
+
+    /* Register metadata only for the policy that is about to be published. */
+    if (!ksu_set_original_types(db, &old_pol->policydb, pol->latest_granting))
+        pr_warn("failed to save original type metadata, use backup lookups\n");
 
     rcu_assign_pointer(selinux_state.policy, pol);
     synchronize_rcu();
