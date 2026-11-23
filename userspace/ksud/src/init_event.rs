@@ -392,6 +392,11 @@ fn run_boot_completed(commit_boot_txn: bool) {
         warn!("Android has not completed boot; keeping module boot guards armed");
         return;
     }
+    // 检测器会读 dmesg/logcat 里的 boot 期 avc:/root 痕迹。清洗必须在下面
+    // 任何 early return（尤其是 UAPI 不匹配 —— 只升级管理器、内核还是旧版时
+    // 必走这条）之前启动，否则 boot 期残留的 u:r:xecpro 拒绝记录会一直留着。
+    crate::bootlog_scrub::spawn();
+
     // 挂载态没有内核驱动：boot 事务与 UAPI 校验都跳过，但 boot-completed 阶段
     // 脚本必须照跑（模块靠它收尾）。
     let mount_state = utils::is_mount_state();
@@ -433,11 +438,6 @@ fn run_boot_completed(commit_boot_txn: bool) {
     }
 
     run_stage("boot-completed", ScriptWait::NoWait);
-
-    // Detection tools read dmesg/logcat for boot-time avc:/root traces. Scrub
-    // the marked buffers now and again after our boot-log capture window ends;
-    // never delay the lifecycle hook itself.
-    crate::bootlog_scrub::spawn();
 
     #[cfg(kmi_module_bundle)]
     if install_kmi_manager && ksucalls::is_lkm() && !ksucalls::is_late_load() {
