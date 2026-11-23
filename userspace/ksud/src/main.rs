@@ -123,9 +123,25 @@ mod utils;
 #[allow(nonstandard_style, unused, unsafe_op_in_unsafe_fn)]
 mod ksu_uapi;
 
+/// 非 root 身份启动时（典型场景：libsu 以 app uid 拉起
+/// `libxeccli.so debug su` 去建立 root shell），内核 audit 的 `comm=` 会直接
+/// 写出 APK 内的二进制名，检测器读 dmesg/logcat 就能确认 XEC 管理器存在。
+/// 在进入任何业务逻辑前把 comm 改成中性的 `sh`：su 客户端本来就以 shell
+/// 名义出现，ksud 内部没有任何依赖自身 comm 的逻辑，root 后功能不受影响。
+#[cfg(target_os = "android")]
+fn mask_unprivileged_comm() {
+    if rustix::process::getuid().as_raw() != 0 {
+        let name = b"sh\0";
+        unsafe {
+            libc::prctl(libc::PR_SET_NAME, name.as_ptr(), 0, 0, 0);
+        }
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     #[cfg(target_os = "android")]
     {
+        mask_unprivileged_comm();
         cli::run()
     }
     #[cfg(not(target_os = "android"))]
