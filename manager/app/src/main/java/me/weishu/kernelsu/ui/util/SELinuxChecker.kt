@@ -7,7 +7,12 @@ import com.topjohnwu.superuser.Shell
  * Safe to call from any thread (IO recommended).
  */
 fun getSELinuxStatusRaw(): String {
-    val shell = Shell.Builder.create().build("sh")
+    // 优先走 root shell：app 身份 exec `getenforce` 会在 audit 里留下
+    // comm="getenforce" + selinuxfs read denied（真机 dmesg 已抓到），等于把
+    // “这个管理器在查 SELinux”写进日志。root shell 属于 xecpro 域，selinuxfs
+    // 读取是设计内权限，不会再落一条 untrusted_app 的拒绝记录。
+    val shell = runCatching { getRootShell() }.getOrNull()?.takeIf { it.isRoot }
+        ?: Shell.Builder.create().build("sh")
 
     val stdoutList = ArrayList<String>()
     val stderrList = ArrayList<String>()

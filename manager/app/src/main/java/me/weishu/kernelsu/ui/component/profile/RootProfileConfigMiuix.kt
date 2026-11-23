@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,6 +26,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.profile.Capabilities
@@ -450,7 +454,16 @@ private fun SELinuxPanel(
         val regex = Regex("^[a-z_]+:[a-z0-9_]+:[a-z0-9_]+(:[a-z0-9_]+)?$")
         domain.matches(regex)
     }
-    val isRulesValid = remember(rules) { isSepolicyValid(rules) }
+    // isSepolicyValid() 会同步 exec `ksud sepolicy check`（libsu 阻塞调用），
+    // 绝不能在每个输入字符触发的 composition 里跑：之前 remember(rules) 直接同步
+    // 执行，真机上把 SELinux 面板卡死过。改为 debounce + IO 异步校验。
+    var isRulesValid by remember(rules) { mutableStateOf(true) }
+    LaunchedEffect(rules) {
+        delay(350)
+        isRulesValid = withContext(Dispatchers.IO) {
+            runCatching { isSepolicyValid(rules) }.getOrDefault(true)
+        }
+    }
 
     XDialog(
         show = showDialog.value,

@@ -63,6 +63,7 @@ import com.topjohnwu.superuser.ShellUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.dialog.XDialog
 import me.weishu.kernelsu.ui.component.dialog.XDialogTitle
@@ -113,6 +114,9 @@ private const val KEY_AVC_LOG_SPOOFING = "enable_avc_log_spoofing"
 /** 多值 key 的分隔符：susfs_config 用 `;` 存路径、用 `;;` 存 kstat 配置。 */
 private const val PATH_SEP = ";"
 private const val KSTAT_SEP = ";;"
+
+/** 一条 susfs CLI 写操作的上限。root shell 卡死时用来解锁 busy。 */
+private const val SUSFS_CMD_TIMEOUT_MS = 20_000L
 
 private data class SusfsSnapshot(
     val version: String = "",
@@ -179,8 +183,12 @@ fun SusfsScreen() {
     val defaultText = stringResource(R.string.susfs_default_value)
 
     suspend fun refresh() {
-        snapshot = loadSnapshot()
-        loading = false
+        loading = true
+        try {
+            snapshot = loadSnapshot()
+        } finally {
+            loading = false
+        }
     }
 
     LaunchedEffect(Unit) { refresh() }
@@ -191,10 +199,17 @@ fun SusfsScreen() {
         busy = true
         message = null
         scope.launch {
-            val ok = withContext(Dispatchers.IO) { execKsud("susfs config set $key ${shQuote(value)}", true) }
-            snapshot = loadSnapshot()
-            message = if (ok) savedText else failedText
-            busy = false
+            try {
+                // 超时必须兜底：root shell 卡住时 busy 会永远置位，整个页面所有开关
+                // 变成 enabled=false（真机反馈“SUSFS 界面点不动”就是这么来的）。
+                val ok = withTimeoutOrNull(SUSFS_CMD_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) { execKsud("susfs config set $key ${shQuote(value)}", true) }
+                } == true
+                snapshot = loadSnapshot()
+                message = if (ok) savedText else failedText
+            } finally {
+                busy = false
+            }
         }
     }
 
@@ -208,10 +223,15 @@ fun SusfsScreen() {
                 busy = true
                 message = null
                 scope.launch {
-                    val ok = withContext(Dispatchers.IO) { execKsud("susfs config reset", true) }
-                    snapshot = loadSnapshot()
-                    message = if (ok) savedText else failedText
-                    busy = false
+                    try {
+                        val ok = withTimeoutOrNull(SUSFS_CMD_TIMEOUT_MS) {
+                            withContext(Dispatchers.IO) { execKsud("susfs config reset", true) }
+                        } == true
+                        snapshot = loadSnapshot()
+                        message = if (ok) savedText else failedText
+                    } finally {
+                        busy = false
+                    }
                 }
             }
         }

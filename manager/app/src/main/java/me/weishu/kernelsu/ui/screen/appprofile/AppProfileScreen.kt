@@ -14,7 +14,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.navigation3.LocalNavigator
@@ -60,14 +62,25 @@ fun AppProfileScreen(uid: Int) {
     val initialProfile = remember(uid, packageName, primaryAppInfo.special) {
         Natives.getAppProfile(packageName, uid).let {
             if (primaryAppInfo.special) it.copy(allowSu = false) else it
-        }.also {
-            if (it.allowSu && !primaryAppInfo.special) {
-                it.rules = getSepolicy(packageName)
-            }
         }
     }
     var profile by rememberSaveable(uid, packageName) {
         mutableStateOf(initialProfile)
+    }
+
+    // getSepolicy() 是同步 root shell（libsu Shell.Job.exec），绝不能放进
+    // composition/remember：从超级用户列表点进 App 详情时，主线程会卡在
+    // ShellImpl 的 job 锁上（真机 MIUIScout APP_SCOUT_HANG 抓到的就是这条栈）。
+    // 改为进入页面后 IO 异步取 sepolicy，拿到再回填，规则为空时不动用户编辑。
+    LaunchedEffect(uid, packageName, primaryAppInfo.special) {
+        if (initialProfile.allowSu && !primaryAppInfo.special) {
+            val rules = withContext(Dispatchers.IO) {
+                runCatching { getSepolicy(packageName) }.getOrDefault("")
+            }
+            if (rules.isNotEmpty() && profile.rules.isEmpty()) {
+                profile = profile.copy(rules = rules)
+            }
+        }
     }
 
     val failToUpdateAppProfile = stringResource(R.string.failed_to_update_app_profile).format(primaryAppInfo.label)
