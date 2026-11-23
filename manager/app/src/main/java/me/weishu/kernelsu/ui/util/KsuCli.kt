@@ -37,7 +37,9 @@ import org.json.JSONArray
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.zip.ZipFile
 
 /**
@@ -119,6 +121,60 @@ object KsuCli {
      * 下一次访问会重新拉起它。留个上限是为了没装 root 的机器上不养一个常驻线程。
      */
     private const val SUPERVISOR_MAX_ATTEMPTS = 8
+
+    /**
+     * 单条 CLI 的上限。libsu 的阻塞 exec 不可取消：root shell 卡死时调用线程会
+     * 永久停在 ShellImpl 的 job 锁上，于是 superuser 详情 / SUSFS 页“点不动”。
+     * 用 Future 兜底超时并丢弃缓存 shell，下一次调用重建，页面才能恢复。
+     */
+    private const val EXEC_TIMEOUT_MS = 20_000L
+
+    private val commandExecutor = Executors.newCachedThreadPool { runnable ->
+        Thread(runnable, "xec-cli").apply { isDaemon = true }
+    }
+
+    /** 丢弃缓存里的 root shell 候选。只在 shell 被判定卡死/超时后调用。 */
+    fun invalidateRootShell(globalMnt: Boolean = false) {
+        synchronized(shellLock) {
+            val slot = if (globalMnt) globalMountSlot else normalSlot
+            slot.candidate = null
+            slot.needsRefresh = true
+            slot.retryAtElapsedMs = 0
+            slot.probing = false
+        }
+    }
+
+    /** 在线程池里跑一次阻塞 CLI；超时就丢弃 root shell 并返回 false。 */
+    fun runCli(globalMnt: Boolean, block: () -> Boolean): Boolean {
+        val future = commandExecutor.submit<Boolean> { runCatching(block).getOrDefault(false) }
+        return try {
+            future.get(EXEC_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        } catch (_: TimeoutException) {
+            Log.w(TAG, "xudc command timed out, dropping root shell")
+            future.cancel(true)
+            invalidateRootShell(globalMnt)
+            false
+        } catch (e: Exception) {
+            Log.w(TAG, "xudc command failed", e)
+            false
+        }
+    }
+
+    /** 在线程池里跑一次阻塞 stdout 捕获；超时就丢弃 root shell 并返回空串。 */
+    fun runCapture(globalMnt: Boolean, timeoutMs: Long, block: () -> String): String {
+        val future = commandExecutor.submit<String> { runCatching(block).getOrDefault("") }
+        return try {
+            future.get(timeoutMs, TimeUnit.MILLISECONDS)
+        } catch (_: TimeoutException) {
+            Log.w(TAG, "xudc capture timed out, dropping root shell")
+            future.cancel(true)
+            invalidateRootShell(globalMnt)
+            ""
+        } catch (e: Exception) {
+            Log.w(TAG, "xudc capture failed", e)
+            ""
+        }
+    }
 
     private val shellLock = Any()
     private val normalSlot = RootShellSlot()
@@ -521,14 +577,28 @@ private fun createRootShellCandidate(globalMnt: Boolean): RootShellCandidate {
     return RootShellCandidate(Shell.Builder.create().build("sh"), RootProvider.NONE)
 }
 fun execKsud(args: String, newShell: Boolean = false, globalMnt: Boolean = false): Boolean {
-    return if (newShell) {
-        withNewRootShell(globalMnt = globalMnt) {
-            ShellUtils.fastCmdResult(this, "${getKsuDaemonPath()} $args")
+    return KsuCli.runCli(globalMnt) {
+        if (newShell) {
+            withNewRootShell(globalMnt = globalMnt) {
+                ShellUtils.fastCmdResult(this, "${getKsuDaemonPath()} $args")
+            }
+        } else {
+            ShellUtils.fastCmdResult(getRootShell(globalMnt), "${getKsuDaemonPath()} $args")
         }
-    } else {
-        ShellUtils.fastCmdResult(getRootShell(globalMnt), "${getKsuDaemonPath()} $args")
     }
 }
+
+/** 与 [execKsud] 同源的 stdout 捕获（带超时）。超时/失败返回空串。 */
+fun captureKsud(args: String, globalMnt: Boolean = false, timeoutMs: Long = 20_000L): String =
+    KsuCli.runCapture(globalMnt, timeoutMs) {
+        getRootShell(globalMnt).newJob()
+            .add("${getKsuDaemonPath()} $args")
+            .to(ArrayList<String>(), null)
+            .exec()
+            .out
+            .joinToString("\n")
+            .trim()
+    }
 
 suspend fun getFeatureStatus(feature: String): String = withContext(Dispatchers.IO) {
     val shell = getRootShell()

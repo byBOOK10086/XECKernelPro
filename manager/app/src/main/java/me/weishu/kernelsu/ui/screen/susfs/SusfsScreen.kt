@@ -59,7 +59,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.topjohnwu.superuser.ShellUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -77,9 +76,8 @@ import me.weishu.kernelsu.ui.design.panel.Xc8Switch
 import me.weishu.kernelsu.ui.design.panel.Xc8Value
 import me.weishu.kernelsu.ui.design.token.Xc
 import me.weishu.kernelsu.ui.navigation3.LocalNavigator
+import me.weishu.kernelsu.ui.util.captureKsud
 import me.weishu.kernelsu.ui.util.execKsud
-import me.weishu.kernelsu.ui.util.getKsuDaemonPath
-import me.weishu.kernelsu.ui.util.getRootShell
 import me.weishu.kernelsu.ui.util.shQuote
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -136,13 +134,9 @@ private data class SusfsSnapshot(
 }
 
 private suspend fun loadSnapshot(): SusfsSnapshot = withContext(Dispatchers.IO) {
-    val shell = runCatching { getRootShell() }.getOrNull()
-        ?: return@withContext SusfsSnapshot()
-    if (!shell.isRoot) return@withContext SusfsSnapshot()
-    fun cmd(args: String): String =
-        runCatching { ShellUtils.fastCmd(shell, "${getKsuDaemonPath()} $args") }
-            .getOrDefault("")
-            .trim()
+    // 每条读取都走带超时的 captureKsud：root shell 卡死时最多等 8s 就返回空，
+    // 页面落到“读不到”状态但仍可交互（用户反馈的“SUSFS 界面点不动”）。
+    fun cmd(args: String): String = captureKsud(args, timeoutMs = 8_000L)
     val config = cmd("susfs config list").lineSequence()
         .mapNotNull { line ->
             val index = line.indexOf('=')
