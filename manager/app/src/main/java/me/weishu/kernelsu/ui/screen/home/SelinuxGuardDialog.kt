@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.dialog.XDialog
 import me.weishu.kernelsu.ui.component.dialog.XDialogTitle
+import me.weishu.kernelsu.ui.util.KsuCli
 import me.weishu.kernelsu.ui.util.awaitRootShell
 import me.weishu.kernelsu.ui.util.getSELinuxStatusRaw
 import top.yukonga.miuix.kmp.basic.Text
@@ -77,10 +78,9 @@ private suspend fun enforceSelinux(): Boolean = withContext(Dispatchers.IO) {
     val shell = runCatching { awaitRootShell(timeoutMs = 5_000) }.getOrNull()
         ?: return@withContext false
     if (!shell.isRoot) return@withContext false
-    val stdout = ArrayList<String>()
-    val stderr = ArrayList<String>()
-    val executed = runCatching {
-        shell.newJob().add("setenforce 1").to(stdout, stderr).exec()
-    }.getOrNull()
-    executed?.isSuccess == true && getSELinuxStatusRaw() == "Enforcing"
+    val executed = KsuCli.runCapture(globalMnt = false, timeoutMs = 5_000) {
+        val result = shell.newJob().add("setenforce 1").exec()
+        if (result.isSuccess) "ok" else ""
+    }
+    executed == "ok" && getSELinuxStatusRaw() == "Enforcing"
 }

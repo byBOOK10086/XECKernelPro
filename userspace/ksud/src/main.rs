@@ -88,6 +88,8 @@ mod module_config;
 #[cfg(target_os = "android")]
 mod preinit;
 #[cfg(target_os = "android")]
+mod private_bootlog;
+#[cfg(target_os = "android")]
 mod profile;
 #[cfg(all(target_arch = "aarch64", target_os = "android"))]
 mod ramdisk_patch;

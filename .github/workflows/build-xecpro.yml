@@ -94,6 +94,9 @@ jobs:
       - name: Kernel conversion and communication regressions
         run: python3 scripts/test_kernel_regressions.py --sanitize
 
+      - name: Private boot-log filesystem regressions
+        run: cargo test --manifest-path tests/private-bootlog/Cargo.toml --locked
+
       - name: Stealth gesture regressions
         run: python3 scripts/test_stealth_gesture.py
 

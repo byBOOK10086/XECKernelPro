@@ -2,6 +2,7 @@ package me.weishu.kernelsu.ui.util
 
 import android.content.Context
 import android.os.Build
+import android.os.Process
 import android.system.Os
 import com.topjohnwu.superuser.ShellUtils
 import me.weishu.kernelsu.Natives
@@ -65,7 +66,8 @@ fun getBugreportFile(context: Context): File {
     shell.newJob().add("cp /proc/bootconfig ${bootConfig.absolutePath}").exec()
     shell.newJob().add("cp /proc/config.gz ${kernelConfig.absolutePath}").exec()
     shell.newJob()
-        .add($$"ORIG=$(cat /proc/sys/kernel/kptr_restrict); echo 1 > /proc/sys/kernel/kptr_restrict; cat /proc/kallsyms > $${kallsyms.absolutePath}; echo $ORIG > /proc/sys/kernel/kptr_restrict")
+        // Collect under the current policy without changing a global sysctl.
+        .add("cat /proc/kallsyms > " + shQuote(kallsyms.absolutePath))
         .exec()
 
     val selinux = ShellUtils.fastCmd(shell, "getenforce")
@@ -107,24 +109,22 @@ fun getBugreportFile(context: Context): File {
     val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH_mm")
     val current = LocalDateTime.now().format(formatter)
 
-    val targetFile = File(context.cacheDir, "XECKernelUltra_bugreport_${current}.tar.gz")
+    // App creation gives the archive the app-data label and avoids reusing an
+    // older report from the same minute. Root collection keeps it owner-only.
+    val targetFile = File.createTempFile("XECKernelUltra_bugreport_${current}_", ".tar.gz", context.cacheDir)
+    val appUid = Process.myUid()
 
-    // 三处都要逐项引号化：改名后路径里带空格，`chmod 0644 /…/XECKernel Ultra_…`
-    // 会被 shell 拆成两个参数 → chmod 失败 → 文件保持 root:0600 → 应用侧读不了，
-    // 点「发送日志」时 FileProvider/拷贝直接抛异常。tar/rm 同理。
-    shell.newJob().add(
-        "tar czf " + shQuote(targetFile.absolutePath) + " -C " + shQuote(bugreportDir.absolutePath) + " .",
+    val archive = shell.newJob().add(
+        "chmod 0600 " + shQuote(targetFile.absolutePath) +
+            " && tar czf " + shQuote(targetFile.absolutePath) +
+            " -C " + shQuote(bugreportDir.absolutePath) + " ." +
+            " && chown $appUid:$appUid " + shQuote(targetFile.absolutePath),
     ).exec()
-    shell.newJob().add("rm -rf " + shQuote(bugreportDir.absolutePath)).exec()
-    shell.newJob().add("chmod 0644 " + shQuote(targetFile.absolutePath)).exec()
-
-    // 校验产物：不存在/空文件时不要把手里的 File 交给上层（FileProvider 会抛）。
-    val ok = shell.newJob()
-        .add("test -s " + shQuote(targetFile.absolutePath) + " && echo ok || echo missing")
-        .to(ArrayList<String>(), ArrayList<String>()).exec()
-    if (!ok.isSuccess || ok.out.joinToString(" ").trim() != "ok") {
-        throw IllegalStateException("bugreport archive was not produced")
+    if (!archive.isSuccess || !targetFile.isFile || !targetFile.canRead() || targetFile.length() == 0L) {
+        targetFile.delete()
+        throw IllegalStateException("bugreport archive was not produced or is unreadable")
     }
+    shell.newJob().add("rm -rf " + shQuote(bugreportDir.absolutePath)).exec()
     return targetFile
 }
 

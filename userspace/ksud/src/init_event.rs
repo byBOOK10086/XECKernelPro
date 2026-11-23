@@ -53,8 +53,12 @@ pub fn on_post_fs_data() -> Result<()> {
         warn!("clear temp configs failed: {e}");
     }
 
-    let _ = catch_bootlog("logcat", &["logcat", "-b", "all"]);
-    let _ = catch_bootlog("dmesg", &["dmesg", "-w", "-r"]);
+    if let Err(error) = catch_bootlog("logcat", &["logcat", "-b", "all"]) {
+        warn!("logcat boot-log capture failed: {error:#}");
+    }
+    if let Err(error) = catch_bootlog("dmesg", &["dmesg", "-w", "-r"]) {
+        warn!("dmesg boot-log capture failed: {error:#}");
+    }
 
     if utils::has_magisk_installed() {
         warn!("Magisk detected, skip post-fs-data!");
@@ -445,39 +449,61 @@ fn run_boot_completed(commit_boot_txn: bool) {
     }
 }
 
+// A collector is provisional until its private log rotation is published. If
+// publication fails, stop its whole process group before reaping the leader.
+struct PendingBootlog {
+    child: std::process::Child,
+    committed: bool,
+}
+
+impl Drop for PendingBootlog {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        let group_stopped = libc::pid_t::try_from(self.child.id()).is_ok_and(|group| {
+            // SAFETY: Command::process_group(0) created a group led by this
+            // unreaped child, whose PID cannot be reused before wait().
+            unsafe { libc::kill(-group, libc::SIGKILL) == 0 }
+        });
+        if !group_stopped
+            && let Err(error) = self.child.kill()
+            && error.raw_os_error() != Some(libc::ESRCH)
+        {
+            warn!("failed to stop unpublished boot-log collector: {error}");
+        }
+        if let Err(error) = self.child.wait() {
+            warn!("failed to reap unpublished boot-log collector: {error}");
+        }
+    }
+}
+
 fn catch_bootlog(logname: &str, command: &[&str]) -> Result<()> {
     use std::os::unix::process::CommandExt;
     use std::process::Stdio;
 
-    let logdir = Path::new(defs::LOG_DIR);
-    utils::ensure_dir_exists(logdir)?;
-    let bootlog = logdir.join(format!("{logname}.log"));
-    let oldbootlog = logdir.join(format!("{logname}.old.log"));
-
-    if bootlog.exists() {
-        std::fs::rename(&bootlog, oldbootlog)?;
-    }
-
-    let bootlog = std::fs::File::create(bootlog)?;
-
     let mut args = vec!["-s", "9", defs::BOOTLOG_TIMEOUT];
     args.extend_from_slice(command);
     // timeout -s 9 30s logcat > boot.log
-    let result = unsafe {
-        std::process::Command::new("timeout")
-            .process_group(0)
-            .pre_exec(|| {
-                utils::switch_cgroups();
-                Ok(())
+    let mut collector =
+        crate::private_bootlog::start_rotated(Path::new(defs::LOG_DIR), logname, |bootlog| {
+            let child = unsafe {
+                std::process::Command::new("timeout")
+                    .process_group(0)
+                    .pre_exec(|| {
+                        utils::switch_cgroups();
+                        Ok(())
+                    })
+                    .args(args)
+                    .stdout(Stdio::from(bootlog))
+                    .spawn()?
+            };
+            Ok(PendingBootlog {
+                child,
+                committed: false,
             })
-            .args(args)
-            .stdout(Stdio::from(bootlog))
-            .spawn()
-    };
-
-    if let Err(e) = result {
-        warn!("Failed to start logcat: {e:#}");
-    }
-
+        })
+        .with_context(|| format!("failed to start private {logname} boot-log capture"))?;
+    collector.committed = true;
     Ok(())
 }
