@@ -12,6 +12,7 @@
 
 #include "klog.h" // IWYU pragma: keep
 #include "util.h"
+#include "runtime/ksud.h"
 #include "hook/syscall_hook.h"
 #include "preinit/preinit.h"
 
@@ -161,3 +162,87 @@ bool ksu_preinit_handle_execve(const char __user **filename_user, const char __u
     }
     return true;
 }
+
+#ifdef CONFIG_KSU_SUSFS
+// SUSFS v2.4.0+ 的 50_add_susfs 补丁不再走 tracepoint execve hook，而是在基线
+// fs/exec.c 的 do_execveat_common 里直接调用这两个入口。语义与上游 KernelSU
+// 新 preinit ABI 保持一致：setup 把 PID1 的 /system/bin/init 换成预置 runner 的
+// /proc/self/fd/<n>（返回 fd>0 表示进入 preinit 会话）；post 在 exec 失败时恢复
+// 原 init 路径并返回非 0，让基线代码重走原流程。
+static bool is_selinux_setup_user_arg(struct user_arg_ptr *argv_user)
+{
+    static const char expected[] = "selinux_setup";
+    char buf[sizeof(expected) + 1] = { 0 };
+    const char __user *arg;
+
+    if (!argv_user)
+        return false;
+    arg = get_user_arg_ptr(*argv_user, 1);
+    if (!arg || IS_ERR(arg))
+        return false;
+    if (strncpy_from_user(buf, arg, sizeof(buf) - 1) < 0)
+        return false;
+    return !strcmp(buf, expected);
+}
+
+int ksu_setup_preinit_file(struct filename **filename_ptr, struct user_arg_ptr *argv_user)
+{
+    char fd_path[32] = { 0 };
+    struct file *file;
+    struct path path;
+    int fd, len;
+
+    if (likely(!READ_ONCE(ksu_preinit_file)))
+        return -EINVAL;
+    if (!filename_ptr || !*filename_ptr || !(*filename_ptr)->name)
+        return -EINVAL;
+    if (strcmp((*filename_ptr)->name, INIT_PATH) || !is_selinux_setup_user_arg(argv_user))
+        return -EINVAL;
+
+    // One shot: the runner's own exec of the real init must pass through.
+    file = xchg(&ksu_preinit_file, NULL);
+    if (!file)
+        return -EINVAL;
+
+    fd = get_unused_fd_flags(O_CLOEXEC);
+    if (fd < 0) {
+        pr_err("preinit: get fd failed: %d\n", fd);
+        fput(file);
+        return -EINVAL;
+    }
+    // The fd owns the file from here on; close-on-exec frees it once the
+    // runner has been loaded.
+    fd_install(fd, file);
+
+    len = snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", fd);
+    if (kern_path(fd_path, LOOKUP_FOLLOW, &path)) {
+        pr_err("preinit: %s not reachable, booting without preinit\n", fd_path);
+        ksu_close_fd(fd);
+        return -EINVAL;
+    }
+    path_put(&path);
+
+    memset((void *)(*filename_ptr)->name, 0, strlen((*filename_ptr)->name));
+    memcpy((void *)(*filename_ptr)->name, fd_path, strlen(fd_path));
+
+    pr_info("preinit: exec runner via %s\n", fd_path);
+    return fd;
+}
+
+int ksu_preinit_handle_post_execveat(int *fd, struct filename **filename_ptr, void *argv_user, void *envp_user,
+                                     int *flags, int *retval, int *preinit_fd)
+{
+    (void)fd;
+    (void)argv_user;
+    (void)envp_user;
+    (void)flags;
+    if (retval && *retval && preinit_fd && *preinit_fd > 0 && filename_ptr && *filename_ptr &&
+        (*filename_ptr)->name) {
+        ksu_close_fd(*preinit_fd);
+        memset((void *)(*filename_ptr)->name, 0, strlen((*filename_ptr)->name));
+        memcpy((void *)(*filename_ptr)->name, INIT_PATH, strlen(INIT_PATH));
+        return -EINVAL;
+    }
+    return 0;
+}
+#endif
