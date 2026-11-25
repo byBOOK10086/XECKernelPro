@@ -90,13 +90,13 @@ jobs:
           # 下表是 2026-11-10 用 GitLab API 解析出的各 KMI 分支尖端（上游已升到 SUSFS v2.4.0，要尝鲜就用
           # 新增 CMD_SUSFS_SET_PRIORITY_UID_FILTER；ksud 侧仍是 v2.3.0 的命令集，属增量兼容）。
           case "$KMI" in
-            android12-5.10) PINNED_SHA=5436438b5cc77f146e04f71070da153dabe17a9d ;;
-            android13-5.10) PINNED_SHA=1bea9e8fb4a64920f068e5da43f9751dfe601199 ;;
-            android13-5.15) PINNED_SHA=fe943d15ec6a1891f7a360bf210589bdffe4e318 ;;
-            android14-5.15) PINNED_SHA=10751e3c83f6e63f886cd2af937fd0a34463824b ;;
-            android14-6.1)  PINNED_SHA=69b8e734920b8f9ed885ab8d112969719698e242 ;;
-            android15-6.6)  PINNED_SHA=ec03d0c73b821afa1d5037d6d493216f59744fcb ;;
-            android16-6.12) PINNED_SHA=395a8c0c88d348e9fe7c14f66a456fde4653287c ;;
+            android12-5.10) PINNED_SHA=784ac9e6fd49bb02499b5b60c57ccc9d0c680204 ;;
+            android13-5.10) PINNED_SHA=d480b312d650601888550529695706f4a112e29e ;;
+            android13-5.15) PINNED_SHA=84df37836649478593c1d40492fa37267720699a ;;
+            android14-5.15) PINNED_SHA=a293ab199ff84b7482d57ece06b4199411cd5c01 ;;
+            android14-6.1)  PINNED_SHA=3042e23226e178dc18363a442955a68fd44ede9c ;;
+            android15-6.6)  PINNED_SHA=f98f08223bbf469cc0a1542166383d253557fc32 ;;
+            android16-6.12) PINNED_SHA=b213c54126fb243595ce7876e91d84d6e0861fec ;;
             *) PINNED_SHA="" ;;
           esac
           WANT_SHA="${{ inputs.susfs_sha }}"
