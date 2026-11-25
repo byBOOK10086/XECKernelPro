@@ -103,6 +103,14 @@ jobs:
       - name: TEE carrier reliability regressions
         run: python3 scripts/test_tee_reliability.py
 
+      # 2026-11-25 真机故障：31452/31453 内置的是 11-11..11-25 那一代 Yurikey。
+      # 叶子过期后引擎的验机工具路由判 off，检测工具拿到真实 TEE 证明，而回锁态
+      # 属性仍说设备已锁 —— Maple 因此报出 4 项危险（证明与命令行不符、TEE 状态
+      # 异常、TEE 启动态侧信道、引导锁分级）。这条闸门要求发布前换上新箱子，
+      # 过期时直接失败并打印是哪份文件/哪个 box 不新鲜。
+      - name: Bundled keybox stays fresh
+        run: python3 scripts/check_keybox_freshness.py
+
       - name: Theme editor catalog stays in sync
         run: |
           python3 scripts/generate_theme_text_catalog.py
