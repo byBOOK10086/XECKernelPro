@@ -92,9 +92,9 @@ jobs:
           case "$KMI" in
             android12-5.10) PINNED_SHA=5436438b5cc77f146e04f71070da153dabe17a9d ;;
             android13-5.10) PINNED_SHA=1bea9e8fb4a64920f068e5da43f9751dfe601199 ;;
-            android13-5.15) PINNED_SHA=fe943d15ec6a1891f7a360bf210589bdffe4e318 ;;
+            android13-5.15) PINNED_SHA=84df37836649478593c1d40492fa37267720699a ;;
             android14-5.15) PINNED_SHA=10751e3c83f6e63f886cd2af937fd0a34463824b ;;
-            android14-6.1)  PINNED_SHA=69b8e734920b8f9ed885ab8d112969719698e242 ;;
+            android14-6.1)  PINNED_SHA=3042e23226e178dc18363a442955a68fd44ede9c ;;
             android15-6.6)  PINNED_SHA=ec03d0c73b821afa1d5037d6d493216f59744fcb ;;
             android16-6.12) PINNED_SHA=395a8c0c88d348e9fe7c14f66a456fde4653287c ;;
             *) PINNED_SHA="" ;;
@@ -269,12 +269,24 @@ jobs:
           # 捕获编译输出，失败时以 annotation 形式给出可读的错误段落
           BUILD_LOG=$(mktemp)
           set +e
-          make O="$ODIR" ARCH=arm64 LLVM=1 LLVM_IAS=1 -j"$(nproc)" Image.gz >"$BUILD_LOG" 2>&1
+          # 固定 susfs4ksu 提交里有若干 helper 只在新于该 KMI 的基线内核中被调用
+          # （susfs_switch_to_ksu_domain / susfs_restore_creds），-Werror 会把厂商补丁里
+          # 的死代码升级成构建失败；kernel/ 树里也有只在非 SUSFS 分支使用的对象，
+          # -Wno-unused-variable 同理。两处抑制都只作用于本次 Image.gz 构建，
+          # 我们自己的树仍在其它 CI 门禁里保持 warning-clean。
+          make O="$ODIR" ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            KCFLAGS="-Wno-unused-function -Wno-unused-variable" \
+            -j"$(nproc)" Image.gz >"$BUILD_LOG" 2>&1
           BUILD_RC=$?
           set -e
+          grep -n -i -m 40 -E 'error:|fatal error:|undefined reference|No such file' "$BUILD_LOG" || true
           tail -n 30 "$BUILD_LOG"
           if [ $BUILD_RC -ne 0 ]; then
-            MSG=$(tail -n 200 "$BUILD_LOG" | sed -e 's/%/%25/g' -e 's/\r//g' | awk '{printf "%s%%0A", $0}')
+            MSG=$(grep -i -m 40 -E 'error:|fatal error:|undefined reference' "$BUILD_LOG" \
+                    | sed -e 's/%/%25/g' -e 's/\r//g' | awk '{printf "%s%%0A", $0}')
+            if [ -z "$MSG" ]; then
+              MSG=$(tail -n 40 "$BUILD_LOG" | sed -e 's/%/%25/g' -e 's/\r//g' | awk '{printf "%s%%0A", $0}')
+            fi
             echo "::error title=SUSFS GKI ${{ inputs.kmi }} compiler output::$MSG"
             exit $BUILD_RC
           fi
